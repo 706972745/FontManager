@@ -712,6 +712,87 @@ fn apply_watch(app: &tauri::AppHandle, enabled: bool, extra: &[String]) -> Resul
     Ok(())
 }
 
+fn close_to_tray_enabled(app: &tauri::AppHandle) -> bool {
+    app.try_state::<Store>()
+        .and_then(|store| {
+            store
+                .0
+                .lock()
+                .ok()
+                .and_then(|s| s.prefs.get("closeToTray").and_then(|v| v.as_bool()))
+        })
+        .unwrap_or(false)
+}
+
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+
+    let show = MenuItem::with_id(app, "show", "Show ZFontManager", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+
+    let icon = app
+        .default_window_icon()
+        .ok_or_else(|| tauri::Error::InvalidIcon(std::io::Error::other("no bundled window icon")))?
+        .clone();
+
+    let builder = TrayIconBuilder::with_id("main-tray")
+        .icon(icon)
+        .tooltip("ZFontManager")
+        .menu(&menu);
+
+    let builder = if cfg!(target_os = "windows") {
+        builder.show_menu_on_left_click(false)
+    } else {
+        builder
+    };
+
+    builder
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => show_main(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                button_state: tauri::tray::MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let mgr = app.autolaunch();
+    if enabled {
+        mgr.enable().map_err(|e| e.to_string())
+    } else {
+        mgr.disable().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn get_prefs(store: State<Store>) -> Result<serde_json::Value, String> {
     let state = store.0.lock().map_err(|e| e.to_string())?;
@@ -787,11 +868,29 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(Store(std::sync::Mutex::new(state)))
         .manage(watcher::WatchHandle(std::sync::Mutex::new(None)))
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
                 fit_window(&window, ui_scale_pref);
+            }
+            let tray_ok = build_tray(app.handle()).is_ok();
+            if let Some(window) = app.get_webview_window("main") {
+                let handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        if tray_ok && close_to_tray_enabled(&handle) {
+                            api.prevent_close();
+                            if let Some(w) = handle.get_webview_window("main") {
+                                let _ = w.hide();
+                            }
+                        }
+                    }
+                });
             }
             allow_previews(app.handle(), &extra_dirs);
             allow_dir(
@@ -817,6 +916,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_autostart,
+            get_autostart,
             scan_fonts,
             set_font_active,
             set_fonts_active,

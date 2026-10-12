@@ -12,7 +12,7 @@ from one clean, fast, native app. Your fonts never leave your machine.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-7c3aed?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.6.1-5b21b6?style=flat-square)](https://zsync.eu/zfontmanager/)
+[![Version](https://img.shields.io/badge/Version-0.7.0-5b21b6?style=flat-square)](https://zsync.eu/zfontmanager/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20·%20Windows%20·%20macOS-2d2a4a?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-4f46e5?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-24C8DB?style=flat-square)](https://tauri.app)
@@ -283,6 +283,11 @@ Four complementary ways to impose order on font chaos:
 ### Find anything
 
 - **Search** by name, live as you type (press <kbd>/</kbd> to jump to the box).
+- **Click a font's name to copy it** — the family name in the detail panel, or
+  the PostScript name below it. For the applications whose settings are a text
+  file with no font picker.
+- **Live in the tray** — optionally close to tray, start with your system, and
+  start minimised. All off by default.
 - **Show** all fonts, only the ones your system shipped, or only the ones you
   installed yourself. Handy when your own fonts are buried among hundreds of
   system faces.

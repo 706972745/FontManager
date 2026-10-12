@@ -14,6 +14,13 @@ import { classifyLicense } from "../lib/license";
 import { playStar, playTag } from "../lib/sound";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 
+function copyName(text: string, what: string) {
+  navigator.clipboard
+    .writeText(text)
+    .then(() => toast.success(translate("toast.copied", { what }), undefined, "tick"))
+    .catch((e) => toast.error(translate("toast.couldntCopy"), String(e)));
+}
+
 const WATERFALL = [14, 20, 28, 40, 56];
 
 function StyleRow({
@@ -615,7 +622,13 @@ export function DetailPanel() {
               variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
             >
               <FormatBadge format={family.formats[0]} isVariable={family.isVariable} />
-              <h2 className="detail-title">{family.name}</h2>
+              <button
+                className="detail-title copy-name"
+                onClick={() => copyName(family.name, t("copy.familyName"))}
+                title={t("detail.copyNameHint")}
+              >
+                {family.name}
+              </button>
               <motion.button
                 className={`star-btn ${favorite ? "star-on" : ""}`}
                 aria-label={t(favorite ? "detail.unfavorite" : "detail.favorite")}
@@ -784,7 +797,17 @@ export function DetailPanel() {
                 {lead.postscriptName && (
                   <>
                     <dt>{t("detail.postscript")}</dt>
-                    <dd className="detail-mono">{lead.postscriptName}</dd>
+                    <dd>
+                      <button
+                        className="detail-mono copy-name"
+                        onClick={() =>
+                          copyName(lead.postscriptName as string, t("copy.postscriptName"))
+                        }
+                        title={t("detail.copyNameHint")}
+                      >
+                        {lead.postscriptName}
+                      </button>
+                    </dd>
                   </>
                 )}
                 <dt>{t("detail.location")}</dt>

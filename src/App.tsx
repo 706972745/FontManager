@@ -172,9 +172,9 @@ export default function App() {
   const motionPref = useFontStore((s) => s.motionPref);
 
   useEffect(() => {
-    void init();
-
-    void getCurrentWindow().show();
+    void init().then(() => {
+      if (!useFontStore.getState().startMinimized) void getCurrentWindow().show();
+    });
   }, [init]);
 
   useEffect(() => {

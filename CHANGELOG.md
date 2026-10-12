@@ -4,6 +4,37 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-10-12
+
+### Added
+
+- **Copy a font's name with one click.** Click the family name in the detail
+  panel to copy it, or the PostScript name in the metadata list to copy that
+  instead. Useful when an application has no font picker and expects you to
+  type the name into a config file by hand. (#14)
+
+- **System tray.** ZFontManager can now live in the tray. Three new settings
+  under *System*:
+
+  - **Close to tray** — the close button hides the window instead of quitting.
+  - **Start with system** — launch at sign-in.
+  - **Start minimised** — start in the tray without opening the window.
+
+  All three are off by default, so nothing changes unless you turn them on.
+
+  On Windows, left-click the tray icon to bring the window back and right-click
+  for the menu. On macOS and Linux the menu opens on click, following each
+  platform's convention — Linux desktops do not deliver tray click events to
+  the application at all, so the menu is the way back. If the tray cannot be
+  created, *Close to tray* stays inactive rather than leaving you with no way
+  to reach the window. (#15)
+
+### Changed
+
+- Tauri updated from 2.11.5 to 2.12.3, which the autostart integration
+  requires. This also moves the underlying webview layer (wry) from 0.55 to
+  0.57.
+
 ## [0.6.1] — 2026-09-22
 
 ### Added

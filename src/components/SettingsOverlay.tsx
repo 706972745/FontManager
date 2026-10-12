@@ -21,6 +21,7 @@ import { LoaderCircle } from "lucide-react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { springSoft } from "../design/springs";
 import { ipc } from "../lib/ipc";
+import { toast } from "../design/primitives/Toast";
 import { useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useT } from "../lib/i18n";
@@ -56,8 +57,18 @@ export function SettingsOverlay() {
   const scanProgress = useFontStore((s) => s.scanProgress);
   const trapRef = useFocusTrap<HTMLDivElement>(openState);
   const [defaultLibDir, setDefaultLibDir] = useState("");
+  const closeToTray = useFontStore((s) => s.closeToTray);
+  const setCloseToTray = useFontStore((s) => s.setCloseToTray);
+  const startMinimized = useFontStore((s) => s.startMinimized);
+  const setStartMinimized = useFontStore((s) => s.setStartMinimized);
+  const [autostart, setAutostart] = useState(false);
   const affinityConnection = useFontStore((s) => s.affinityConnection);
   const refreshAffinityConnection = useFontStore((s) => s.refreshAffinityConnection);
+
+  useEffect(() => {
+    if (!openState) return;
+    void ipc.getAutostart().then(setAutostart).catch(() => {});
+  }, [openState]);
 
   useEffect(() => {
     if (openState && !IS_LINUX && settings.affinityEnabled) void refreshAffinityConnection();
@@ -200,6 +211,54 @@ export function SettingsOverlay() {
                     <ArrowUpRight size={12} strokeWidth={1.5} className="settings-btn-arrow" />
                   </button>
                 </div>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <div className="detail-heading">{t("settings.system")}</div>
+
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">{t("settings.closeToTray")}</div>
+                  <div className="settings-sub">{t("settings.closeToTraySub")}</div>
+                </div>
+                <PillToggle
+                  on={closeToTray}
+                  onChange={(on) => setCloseToTray(on)}
+                  label={t("settings.closeToTray")}
+                />
+              </div>
+
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">{t("settings.autostart")}</div>
+                  <div className="settings-sub">{t("settings.autostartSub")}</div>
+                </div>
+                <PillToggle
+                  on={autostart}
+                  onChange={(on) => {
+                    setAutostart(on);
+                    void ipc
+                      .setAutostart(on)
+                      .catch((e) => {
+                        setAutostart(!on);
+                        toast.error(t("toast.autostartFailed"), String(e));
+                      });
+                  }}
+                  label={t("settings.autostart")}
+                />
+              </div>
+
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">{t("settings.startMinimized")}</div>
+                  <div className="settings-sub">{t("settings.startMinimizedSub")}</div>
+                </div>
+                <PillToggle
+                  on={startMinimized}
+                  onChange={(on) => setStartMinimized(on)}
+                  label={t("settings.startMinimized")}
+                />
               </div>
             </section>
 

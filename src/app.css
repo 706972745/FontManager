@@ -1064,6 +1064,27 @@
   font-family: var(--font-mono);
   font-size: var(--fs-11);
 }
+.copy-name {
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: color var(--t-quick) ease, background var(--t-quick) ease;
+}
+h2.detail-title.copy-name {
+  padding: 1px 5px;
+  margin-left: -5px;
+}
+.copy-name:hover {
+  color: var(--accent-soft);
+  background: rgba(var(--ink-rgb), 0.06);
+}
+.copy-name:active {
+  background: rgba(var(--ink-rgb), 0.1);
+}
+.copy-name:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .detail-path {
   line-height: 1.3;
 }

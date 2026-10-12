@@ -114,6 +114,8 @@ interface FontStore {
   adobeAvailable: boolean;
   motionPref: MotionPref;
   transparencyPref: TransparencyPref;
+  closeToTray: boolean;
+  startMinimized: boolean;
   uiScale: UiScale;
   appliedScale: number;
   soundPref: SoundLevel;
@@ -193,6 +195,8 @@ interface FontStore {
   installOnlineFamily: (id: string) => Promise<void>;
   setMotionPref: (pref: MotionPref) => void;
   setTransparencyPref: (pref: TransparencyPref) => void;
+  setCloseToTray: (v: boolean) => void;
+  setStartMinimized: (v: boolean) => void;
   setUiScale: (scale: UiScale) => void;
   toggleFormat: (f: FontFormat) => void;
   toggleFeature: (tag: string) => void;
@@ -245,6 +249,8 @@ function persistPrefs(get: () => FontStore) {
       panelWidth: s.panelWidth,
       motionPref: s.motionPref,
       transparencyPref: s.transparencyPref,
+      closeToTray: s.closeToTray,
+      startMinimized: s.startMinimized,
       uiScale: s.uiScale === "auto" ? null : s.uiScale,
       collapsedSections: s.collapsedSections,
       soundPref: s.soundPref,
@@ -295,6 +301,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   soundPref: "off",
   themePref: "dark",
   transparencyPref: "full",
+  closeToTray: false,
+  startMinimized: false,
   uiScale: "auto",
   appliedScale: 1,
   localePref: getLocalePref(),
@@ -348,6 +356,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
             : 348,
         motionPref: prefs.motionPref === "reduced" ? "reduced" : "system",
         transparencyPref: prefs.transparencyPref === "reduced" ? "reduced" : "full",
+        closeToTray: prefs.closeToTray === true,
+        startMinimized: prefs.startMinimized === true,
         uiScale: typeof prefs.uiScale === "number" ? prefs.uiScale : "auto",
         collapsedSections: Array.isArray(prefs.collapsedSections)
           ? (prefs.collapsedSections as unknown[]).filter((n): n is string => typeof n === "string")
@@ -1204,6 +1214,14 @@ export const useFontStore = create<FontStore>((set, get) => ({
   setTransparencyPref: (transparencyPref) => {
     set({ transparencyPref });
     applyTransparencyPref(transparencyPref);
+    persistPrefs(get);
+  },
+  setCloseToTray: (closeToTray) => {
+    set({ closeToTray });
+    persistPrefs(get);
+  },
+  setStartMinimized: (startMinimized) => {
+    set({ startMinimized });
     persistPrefs(get);
   },
   setUiScale: (uiScale) => {
