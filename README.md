@@ -12,7 +12,7 @@ from one clean, fast, native app. Your fonts never leave your machine.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-7c3aed?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.7.0-5b21b6?style=flat-square)](https://zsync.eu/zfontmanager/)
+[![Version](https://img.shields.io/badge/Version-0.7.1-5b21b6?style=flat-square)](https://zsync.eu/zfontmanager/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20·%20Windows%20·%20macOS-2d2a4a?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-4f46e5?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-24C8DB?style=flat-square)](https://tauri.app)
@@ -183,6 +183,13 @@ off when you quit. Nothing is installed permanently.
 Turn it on under **Settings → Affinity by Canva auto activation**. It needs
 **Affinity 3.2 or newer** with *Settings → Model Context Protocol* enabled
 (restart Affinity afterwards).
+
+ZFontManager waits a short while after Affinity appears before it connects,
+because Affinity accepts connections before it has finished starting and a
+request landing in that window can close it. Fonts for a document you open at
+launch are therefore activated a moment after Affinity is up, not instantly.
+After that it checks for newly opened documents every half minute, reusing the
+address and protocol it already knows work.
 
 > [!NOTE]
 > Affinity by Canva ships for Windows and macOS only, so this section is

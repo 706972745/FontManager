@@ -30,6 +30,11 @@ const CANDIDATE_URLS: [&str; 3] = [
 /// Protocol versions to offer, newest first (the server picks one it speaks).
 const PROTOCOL_VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2024-11-05"];
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+const STARTUP_GRACE: Duration = Duration::from_secs(20);
+const RETRY_BASE: Duration = Duration::from_secs(5);
+const RETRY_MAX: Duration = Duration::from_secs(120);
+const QUIET_FAILURES: u32 = 3;
+const POLL_EVERY_TICKS: u32 = 15;
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Read-only probe, verified live: open docs with the fonts they use.
@@ -165,14 +170,17 @@ impl Session {
         };
         // Server picks a protocol version it speaks; fall back to the older one.
         let mut version = None;
+        let mut accepted = false;
         let mut last_err = String::new();
-        for v in PROTOCOL_VERSIONS {
+        for v in ordered_protocols() {
             match session.request("initialize", serde_json::json!({
                 "protocolVersion": v,
                 "capabilities": {},
                 "clientInfo": { "name": "ZFontManager", "version": env!("CARGO_PKG_VERSION") },
             }), CONNECT_TIMEOUT).await {
                 Ok(res) => {
+                    accepted = true;
+                    remember(best_protocol(), v.to_string());
                     version = res
                         .pointer("/serverInfo/version")
                         .and_then(|v| v.as_str())
@@ -182,7 +190,7 @@ impl Session {
                 Err(e) => last_err = e,
             }
         }
-        if version.is_none() {
+        if !accepted {
             let detail = if last_err.is_empty() {
                 "no protocol version accepted".to_string()
             } else {
@@ -431,12 +439,16 @@ async fn run_doc_fonts_script(session: &mut Session) -> Result<Vec<AffinityDoc>,
 /// Open a session on the first reachable loopback spelling.
 async fn open_any() -> Result<(Session, Option<String>), String> {
     let mut last_err = String::new();
-    for url in CANDIDATE_URLS {
+    for url in ordered_urls() {
         match Session::open(url).await {
-            Ok(opened) => return Ok(opened),
+            Ok(opened) => {
+                remember(best_url(), url.to_string());
+                return Ok(opened);
+            }
             Err(e) => last_err = e,
         }
     }
+    forget_endpoint();
     Err(last_err)
 }
 
@@ -472,6 +484,98 @@ static AFFINITY_SESSION: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static WAS_RUNNING: AtomicBool = AtomicBool::new(false);
 static KNOWN_DOCS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static TICK: AtomicU32 = AtomicU32::new(0);
+static PRIMED: AtomicBool = AtomicBool::new(false);
+static BEST_URL: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+static BEST_PROTOCOL: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn best_url() -> &'static Mutex<Option<String>> {
+    BEST_URL.get_or_init(|| Mutex::new(None))
+}
+
+fn best_protocol() -> &'static Mutex<Option<String>> {
+    BEST_PROTOCOL.get_or_init(|| Mutex::new(None))
+}
+
+fn remember<T: Clone>(cell: &'static Mutex<Option<T>>, value: T) {
+    if let Ok(mut c) = cell.lock() {
+        *c = Some(value);
+    }
+}
+
+fn forget_endpoint() {
+    if let Ok(mut c) = best_url().lock() {
+        *c = None;
+    }
+    if let Ok(mut c) = best_protocol().lock() {
+        *c = None;
+    }
+}
+
+fn ordered_urls() -> Vec<&'static str> {
+    let preferred = best_url().lock().ok().and_then(|c| c.clone());
+    let mut out: Vec<&'static str> = Vec::with_capacity(CANDIDATE_URLS.len());
+    if let Some(p) = preferred.as_deref() {
+        if let Some(hit) = CANDIDATE_URLS.iter().find(|u| **u == p) {
+            out.push(hit);
+        }
+    }
+    for u in CANDIDATE_URLS {
+        if !out.contains(&u) {
+            out.push(u);
+        }
+    }
+    out
+}
+
+fn ordered_protocols() -> Vec<&'static str> {
+    let preferred = best_protocol().lock().ok().and_then(|c| c.clone());
+    let mut out: Vec<&'static str> = Vec::with_capacity(PROTOCOL_VERSIONS.len());
+    if let Some(p) = preferred.as_deref() {
+        if let Some(hit) = PROTOCOL_VERSIONS.iter().find(|v| **v == p) {
+            out.push(hit);
+        }
+    }
+    for v in PROTOCOL_VERSIONS {
+        if !out.contains(&v) {
+            out.push(v);
+        }
+    }
+    out
+}
+static FAILURES: AtomicU32 = AtomicU32::new(0);
+static GATE: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
+
+fn gate() -> &'static Mutex<Option<std::time::Instant>> {
+    GATE.get_or_init(|| Mutex::new(None))
+}
+
+fn arm_gate(after: Duration) {
+    if let Ok(mut g) = gate().lock() {
+        *g = Some(std::time::Instant::now() + after);
+    }
+}
+
+fn gate_open() -> bool {
+    match gate().lock() {
+        Ok(g) => g.map(|t| std::time::Instant::now() >= t).unwrap_or(true),
+        Err(_) => true,
+    }
+}
+
+fn retry_delay(failures: u32) -> Duration {
+    RETRY_BASE
+        .saturating_mul(1u32 << failures.min(5))
+        .min(RETRY_MAX)
+}
+
+fn reset_watch_state() {
+    PRIMED.store(false, Ordering::SeqCst);
+    FAILURES.store(0, Ordering::SeqCst);
+    forget_endpoint();
+    if let Ok(mut g) = gate().lock() {
+        *g = None;
+    }
+}
 
 fn known_docs() -> &'static Mutex<HashSet<String>> {
     KNOWN_DOCS.get_or_init(|| Mutex::new(HashSet::new()))
@@ -544,6 +648,7 @@ pub fn tick(app: &tauri::AppHandle) {
     };
     if !enabled {
         WAS_RUNNING.store(false, Ordering::SeqCst);
+        reset_watch_state();
         if !session_empty() {
             if let Some(store) = app.try_state::<Store>() {
                 if let Ok(mut state) = store.0.lock() {
@@ -562,20 +667,36 @@ pub fn tick(app: &tauri::AppHandle) {
     let was = WAS_RUNNING.swap(running, Ordering::SeqCst);
 
     if running && !was {
-        // Affinity just started: query everything.
-        match tauri::async_runtime::block_on(doc_fonts()) {
-            Ok((_, docs)) => {
-                if let Ok(mut known) = known_docs().lock() {
-                    *known = docs.iter().map(|d| d.path.clone()).collect();
-                }
-                emit(app, "needs", docs, None);
-            }
-            Err(e) => emit(app, "error", Vec::new(), Some(e)),
-        }
+        reset_watch_state();
+        arm_gate(STARTUP_GRACE);
     } else if running && was {
+        if !gate_open() {
+            return;
+        }
+        if !PRIMED.load(Ordering::SeqCst) {
+            match tauri::async_runtime::block_on(doc_fonts()) {
+                Ok((_, docs)) => {
+                    PRIMED.store(true, Ordering::SeqCst);
+                    FAILURES.store(0, Ordering::SeqCst);
+                    if let Ok(mut known) = known_docs().lock() {
+                        *known = docs.iter().map(|d| d.path.clone()).collect();
+                    }
+                    emit(app, "needs", docs, None);
+                }
+                Err(e) => {
+                    let n = FAILURES.fetch_add(1, Ordering::SeqCst) + 1;
+                    forget_endpoint();
+                    arm_gate(retry_delay(n));
+                    if n == QUIET_FAILURES {
+                        emit(app, "error", Vec::new(), Some(e));
+                    }
+                }
+            }
+            return;
+        }
         // While running, re-query periodically for newly opened documents.
         let n = TICK.fetch_add(1, Ordering::SeqCst);
-        if n % 5 == 0 {
+        if n % POLL_EVERY_TICKS == 0 {
             if let Ok((_, docs)) = tauri::async_runtime::block_on(doc_fonts()) {
                 let fresh: Vec<AffinityDoc> = match known_docs().lock() {
                     Ok(mut known) => {
@@ -595,6 +716,7 @@ pub fn tick(app: &tauri::AppHandle) {
             }
         }
     } else if !running && was {
+        reset_watch_state();
         if let Ok(mut known) = known_docs().lock() {
             known.clear();
         }
@@ -606,5 +728,66 @@ pub fn tick(app: &tauri::AppHandle) {
             }
             emit(app, "deactivated", Vec::new(), None);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retry_backs_off_and_caps() {
+        assert_eq!(retry_delay(1), Duration::from_secs(10));
+        assert_eq!(retry_delay(2), Duration::from_secs(20));
+        assert_eq!(retry_delay(3), Duration::from_secs(40));
+        assert_eq!(retry_delay(4), Duration::from_secs(80));
+        assert_eq!(retry_delay(5), RETRY_MAX);
+        assert_eq!(retry_delay(99), RETRY_MAX);
+    }
+
+    #[test]
+    fn gate_holds_until_the_grace_window_passes() {
+        arm_gate(Duration::from_secs(30));
+        assert!(!gate_open());
+        arm_gate(Duration::from_millis(0));
+        assert!(gate_open());
+    }
+
+    #[test]
+    fn cached_endpoint_and_protocol_are_tried_first() {
+        forget_endpoint();
+        assert_eq!(ordered_urls(), CANDIDATE_URLS.to_vec());
+        assert_eq!(ordered_protocols(), PROTOCOL_VERSIONS.to_vec());
+
+        remember(best_url(), CANDIDATE_URLS[2].to_string());
+        remember(best_protocol(), PROTOCOL_VERSIONS[2].to_string());
+
+        let urls = ordered_urls();
+        assert_eq!(urls[0], CANDIDATE_URLS[2]);
+        assert_eq!(urls.len(), CANDIDATE_URLS.len());
+        for u in CANDIDATE_URLS {
+            assert!(urls.contains(&u));
+        }
+
+        let vs = ordered_protocols();
+        assert_eq!(vs[0], PROTOCOL_VERSIONS[2]);
+        assert_eq!(vs.len(), PROTOCOL_VERSIONS.len());
+        for v in PROTOCOL_VERSIONS {
+            assert!(vs.contains(&v));
+        }
+
+        forget_endpoint();
+        assert_eq!(ordered_urls(), CANDIDATE_URLS.to_vec());
+    }
+
+    #[test]
+    fn polling_is_not_aggressive() {
+        assert!(POLL_EVERY_TICKS >= 10);
+    }
+
+    #[test]
+    fn grace_is_long_enough_to_clear_startup() {
+        assert!(STARTUP_GRACE >= Duration::from_secs(15));
+        assert!(QUIET_FAILURES >= 2);
     }
 }

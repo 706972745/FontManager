@@ -4,6 +4,45 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] — 2026-10-15
+
+### Fixed
+
+- **Affinity could be taken down at startup by the font activation
+  integration.** Affinity's MCP server starts accepting connections before the
+  application has finished initialising, and ZFontManager connected to it the
+  instant the process appeared — often while Affinity was still on
+  "Initializing...". The request landing in that window could close Affinity
+  with no error dialog, and left ZFontManager showing
+  "preamble read failed: error decoding response body" or a failed link to
+  `localhost:6767/sse`.
+
+  ZFontManager now leaves Affinity alone for the first 20 seconds after it
+  appears, and if the link still fails it retries with a widening gap (10s,
+  20s, 40s, up to two minutes) instead of reconnecting on every pass. A failed
+  link is only reported after three consecutive attempts, so a slow start no
+  longer raises an error you need to dismiss.
+
+  One consequence worth knowing: fonts for a document open at launch are now
+  activated a short time after Affinity starts rather than immediately.
+
+  Reported by zeusextremachine on Windows 11 with Affinity 3.3.1. (#16)
+
+- **The Affinity link is far less demanding in general.** Reviewing the above
+  turned up three further problems in the same code:
+
+  - Every poll reopened a session from scratch, retrying all three loopback
+    spellings and up to three protocol versions each time. The working address
+    and protocol are now remembered after the first success and tried first,
+    so a healthy link is one connection rather than up to nine attempts. Both
+    are forgotten again on failure, so a changed setup is still found.
+  - Documents were re-queried every 10 seconds, each time with a complete
+    handshake. That is now every 30 seconds.
+  - A server that accepted the connection but did not report its own version
+    string was treated as having refused every protocol version, and the link
+    failed for no reason. Acceptance and the reported version are now tracked
+    separately.
+
 ## [0.7.0] — 2026-10-12
 
 ### Added
