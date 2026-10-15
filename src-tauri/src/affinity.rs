@@ -485,7 +485,22 @@ static WAS_RUNNING: AtomicBool = AtomicBool::new(false);
 static KNOWN_DOCS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static TICK: AtomicU32 = AtomicU32::new(0);
 static PRIMED: AtomicBool = AtomicBool::new(false);
+static LINK: OnceLock<Mutex<Option<AffinityConnection>>> = OnceLock::new();
 static BEST_URL: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn link() -> &'static Mutex<Option<AffinityConnection>> {
+    LINK.get_or_init(|| Mutex::new(None))
+}
+
+fn set_link(value: Option<AffinityConnection>) {
+    if let Ok(mut c) = link().lock() {
+        *c = value;
+    }
+}
+
+pub fn last_link() -> Option<AffinityConnection> {
+    link().lock().ok().and_then(|c| c.clone())
+}
 static BEST_PROTOCOL: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 fn best_url() -> &'static Mutex<Option<String>> {
@@ -572,6 +587,7 @@ fn reset_watch_state() {
     PRIMED.store(false, Ordering::SeqCst);
     FAILURES.store(0, Ordering::SeqCst);
     forget_endpoint();
+    set_link(None);
     if let Ok(mut g) = gate().lock() {
         *g = None;
     }
@@ -675,9 +691,15 @@ pub fn tick(app: &tauri::AppHandle) {
         }
         if !PRIMED.load(Ordering::SeqCst) {
             match tauri::async_runtime::block_on(doc_fonts()) {
-                Ok((_, docs)) => {
+                Ok((version, docs)) => {
                     PRIMED.store(true, Ordering::SeqCst);
                     FAILURES.store(0, Ordering::SeqCst);
+                    set_link(Some(AffinityConnection {
+                        reachable: true,
+                        version,
+                        doc_count: docs.len(),
+                        error: None,
+                    }));
                     if let Ok(mut known) = known_docs().lock() {
                         *known = docs.iter().map(|d| d.path.clone()).collect();
                     }
@@ -687,6 +709,12 @@ pub fn tick(app: &tauri::AppHandle) {
                     let n = FAILURES.fetch_add(1, Ordering::SeqCst) + 1;
                     forget_endpoint();
                     arm_gate(retry_delay(n));
+                    set_link(Some(AffinityConnection {
+                        reachable: false,
+                        version: None,
+                        doc_count: 0,
+                        error: Some(e.clone()),
+                    }));
                     if n == QUIET_FAILURES {
                         emit(app, "error", Vec::new(), Some(e));
                     }
@@ -697,7 +725,13 @@ pub fn tick(app: &tauri::AppHandle) {
         // While running, re-query periodically for newly opened documents.
         let n = TICK.fetch_add(1, Ordering::SeqCst);
         if n % POLL_EVERY_TICKS == 0 {
-            if let Ok((_, docs)) = tauri::async_runtime::block_on(doc_fonts()) {
+            if let Ok((version, docs)) = tauri::async_runtime::block_on(doc_fonts()) {
+                set_link(Some(AffinityConnection {
+                    reachable: true,
+                    version,
+                    doc_count: docs.len(),
+                    error: None,
+                }));
                 let fresh: Vec<AffinityDoc> = match known_docs().lock() {
                     Ok(mut known) => {
                         let fresh: Vec<AffinityDoc> = docs

@@ -185,6 +185,7 @@ interface FontStore {
   setPaletteOpen: (open: boolean) => void;
   updateSettings: (settings: AppSettings) => Promise<void>;
   refreshAffinityConnection: () => Promise<void>;
+  pollAffinityLink: () => Promise<void>;
   loadOnlineCatalogue: (force: boolean) => Promise<void>;
   setOnlineQuery: (q: string) => void;
   setOnlineCategory: (c: string | null) => void;
@@ -1016,6 +1017,14 @@ export const useFontStore = create<FontStore>((set, get) => ({
     );
   },
 
+  pollAffinityLink: async () => {
+    try {
+      const link = await ipc.affinityLink();
+      if (link) set({ affinityConnection: link });
+    } catch {
+      return;
+    }
+  },
   refreshAffinityConnection: async () => {
     try {
       set({ affinityConnection: await ipc.affinityConnection() });

@@ -200,6 +200,7 @@ export const ipc = {
   adobeAvailable: () => invoke<boolean>("adobe_available"),
   applyFontInApp: (app: AdobeApp, postscriptName: string, label: string) =>
     invoke<string>("apply_font_in_app", { app, postscriptName, label }),
+  affinityLink: () => invoke<AffinityConnection | null>("affinity_link"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
   getAutostart: () => invoke<boolean>("get_autostart"),
   getPrefs: () => invoke<Record<string, unknown> | null>("get_prefs"),

@@ -64,6 +64,7 @@ export function SettingsOverlay() {
   const [autostart, setAutostart] = useState(false);
   const affinityConnection = useFontStore((s) => s.affinityConnection);
   const refreshAffinityConnection = useFontStore((s) => s.refreshAffinityConnection);
+  const pollAffinityLink = useFontStore((s) => s.pollAffinityLink);
 
   useEffect(() => {
     if (!openState) return;
@@ -73,6 +74,12 @@ export function SettingsOverlay() {
   useEffect(() => {
     if (openState && !IS_LINUX && settings.affinityEnabled) void refreshAffinityConnection();
   }, [openState, settings.affinityEnabled, refreshAffinityConnection]);
+
+  useEffect(() => {
+    if (!openState || IS_LINUX || !settings.affinityEnabled) return;
+    const id = window.setInterval(() => void pollAffinityLink(), 2000);
+    return () => window.clearInterval(id);
+  }, [openState, settings.affinityEnabled, pollAffinityLink]);
 
   useEffect(() => {
     if (!openState || defaultLibDir) return;

@@ -4,6 +4,26 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] — 2026-10-15
+
+### Fixed
+
+- **The Affinity connection status in Settings did not refresh while the panel
+  was open.** It showed whatever it found the moment you opened Settings, so
+  during the startup grace period added in 0.7.1 it could sit on
+  "Offline · Affinity link failed..." long after Affinity had connected. That
+  wording is identical to one of the errors from #16, which made a working
+  installation look like a failed one. The panel now follows the link live.
+
+- **Opening Settings could connect to Affinity during its startup.** The status
+  check ran a full connection of its own, outside the grace period that keeps
+  the watcher away from Affinity while it starts — so opening Settings at the
+  wrong moment could trigger the very crash 0.7.1 fixes. The watcher now
+  publishes what it already knows, and the panel reads that instead of opening
+  a connection. The *Test connection* button still probes on demand, as before.
+
+  Found while testing 0.7.1 on Windows.
+
 ## [0.7.1] — 2026-10-15
 
 ### Fixed

@@ -186,6 +186,11 @@ async fn affinity_connection() -> Result<affinity::AffinityConnection, String> {
 }
 
 #[tauri::command]
+fn affinity_link() -> Option<affinity::AffinityConnection> {
+    affinity::last_link()
+}
+
+#[tauri::command]
 fn affinity_session_activate(
     store: State<Store>,
     paths: Vec<String>,
@@ -926,6 +931,7 @@ pub fn run() {
             uninstall_font,
             list_trash,
             affinity_connection,
+            affinity_link,
             affinity_session_activate,
             online_catalogue,
             online_family,
