@@ -1,3 +1,7 @@
+
+<video src="https://raw.githubusercontent.com/TheHolyOneZ/ZFontManager/main/zfontmanager.mp4" controls width="100%"></video>
+
+
 <div align="center">
 
 <img src="src-tauri/icons/128x128.png" alt="ZFontManager icon" width="110" />
