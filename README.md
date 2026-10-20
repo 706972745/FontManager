@@ -1,5 +1,7 @@
 
-<video src="https://raw.githubusercontent.com/TheHolyOneZ/ZFontManager/main/zfontmanager.mp4" controls width="100%"></video>
+## Demo Video
+
+[Watch ZFontManager Demo](https://github.com/TheHolyOneZ/ZFontManager/blob/main/zfontmanager.mp4)
 
 
 <div align="center">
