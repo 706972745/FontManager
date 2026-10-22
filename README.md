@@ -1,3 +1,9 @@
+
+## Demo Video
+
+[Watch ZFontManager Demo](https://github.com/TheHolyOneZ/ZFontManager/blob/main/zfontmanager.mp4)
+
+
 <div align="center">
 
 <img src="src-tauri/icons/128x128.png" alt="ZFontManager icon" width="110" />
