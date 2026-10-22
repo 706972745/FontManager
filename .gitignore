@@ -13,3 +13,7 @@ Thumbs.db
 
 strip-comments.mjs
 /src-tauri/gen/
+/release.txt
+/Issue-18.txt
+/.npmrc
+/.gitignore
