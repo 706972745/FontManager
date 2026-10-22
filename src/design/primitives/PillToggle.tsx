@@ -5,22 +5,24 @@ import { playToggle } from "../../lib/sound";
 
 interface Props {
   on: boolean;
+  mixed?: boolean;
   disabled?: boolean;
   onChange: (on: boolean) => void;
   label: string;
   size?: "sm" | "lg";
 }
 
-export function PillToggle({ on, disabled, onChange, label, size = "sm" }: Props) {
+export function PillToggle({ on, mixed = false, disabled, onChange, label, size = "sm" }: Props) {
+  const isMixed = mixed && !on;
   const [pressed, setPressed] = useState(false);
 
   return (
     <motion.button
       role="switch"
-      aria-checked={on}
+      aria-checked={isMixed ? "mixed" : on}
       aria-label={label}
       disabled={disabled}
-      className={`pill-toggle pill-${size} ${on ? "pill-on" : ""}`}
+      className={`pill-toggle pill-${size} ${on ? "pill-on" : ""} ${isMixed ? "pill-mixed" : ""}`}
       onClick={(e) => {
         e.stopPropagation();
         playToggle(!on);

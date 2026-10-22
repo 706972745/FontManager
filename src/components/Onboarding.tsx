@@ -6,7 +6,6 @@ import { useFontStore } from "../state/fontStore";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 
 interface TourStep {
-
   target?: string;
   title: TKey;
   body: TKey;
@@ -95,7 +94,6 @@ function useTargetRect(selector: string | undefined, step: number) {
         el.scrollIntoView({ block: "nearest" });
         setRect(el.getBoundingClientRect());
       } else if (tries++ < 40) {
-
         raf = requestAnimationFrame(find);
       } else {
         setRect(null);

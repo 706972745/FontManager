@@ -167,6 +167,7 @@
   "detail.stylesCount_other": "{count} 种样式",
   "detail.active": "已启用",
   "detail.inactive": "已停用",
+  "detail.partial": "部分启用 · {active}/{total} 个样式",
   "detail.visibleElsewhere": "在其他应用的字体列表中可见",
   "detail.systemFont": "系统字体——由操作系统管理",
   "detail.sourceManaged": "已托管",

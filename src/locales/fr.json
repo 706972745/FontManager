@@ -171,6 +171,7 @@
   "detail.stylesCount_many": "{count} styles",
   "detail.active": "Active",
   "detail.inactive": "Inactive",
+  "detail.partial": "Partiellement active · {active} styles sur {total}",
   "detail.visibleElsewhere": "Visible dans les sélecteurs de police des autres applications",
   "detail.systemFont": "Police système — gérée par le système d’exploitation",
   "detail.sourceManaged": "Gérée",

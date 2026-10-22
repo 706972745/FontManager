@@ -163,6 +163,7 @@
   "detail.stylesCount_other": "{count} スタイル",
   "detail.active": "有効",
   "detail.inactive": "無効",
+  "detail.partial": "一部有効 · {total} スタイル中 {active}",
   "detail.visibleElsewhere": "他のアプリのフォント一覧に表示されます",
   "detail.systemFont": "システムフォント — OS が管理しています",
   "detail.sourceManaged": "管理対象",

@@ -185,6 +185,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
         {family.deactivatable ? (
           <PillToggle
             on={family.active}
+            mixed={family.partial}
             onChange={(on) => void setFamilyActive(family.name, on)}
             label={t(family.active ? "card.deactivate" : "card.activate", { name: family.name })}
           />

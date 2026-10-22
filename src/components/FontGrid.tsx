@@ -25,7 +25,6 @@ export function FontGrid({ families }: { families: Family[] }) {
     if (!selectedFamily) return;
     const idx = families.findIndex((f) => f.name === selectedFamily);
     if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "auto" });
-
   }, [selectedFamily]);
 
   const arriving = Date.now() - mountedAt.current < 1200;

@@ -686,13 +686,18 @@ export function DetailPanel() {
               variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
             >
               <div>
-                <div className="activate-label">{t(family.active ? "detail.active" : "detail.inactive")}</div>
+                <div className="activate-label">
+                  {family.partial
+                    ? t("detail.partial", { active: family.activeCount, total: family.faces.length })
+                    : t(family.active ? "detail.active" : "detail.inactive")}
+                </div>
                 <div className="activate-sub">
                   {t(family.deactivatable ? "detail.visibleElsewhere" : "detail.systemFont")}
                 </div>
               </div>
               <PillToggle
                 on={family.active}
+                mixed={family.partial}
                 disabled={!family.deactivatable}
                 onChange={(on) => void setFamilyActive(family.name, on)}
                 label={t(family.active ? "card.deactivate" : "card.activate", { name: family.name })}

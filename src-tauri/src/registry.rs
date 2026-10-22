@@ -1,5 +1,3 @@
-
-
 #![cfg(target_os = "windows")]
 
 use std::collections::HashSet;
@@ -226,11 +224,9 @@ pub fn unique_user_name(base: &str, path: &str) -> String {
         .unwrap_or_else(|| base.to_string())
 }
 
-pub fn add_font_resource(path: &str) {
+pub fn add_font_resource(path: &str) -> i32 {
     let w = wide(path);
-    unsafe {
-        AddFontResourceW(w.as_ptr());
-    }
+    unsafe { AddFontResourceW(w.as_ptr()) }
 }
 
 pub fn remove_font_resource(path: &str) {
@@ -257,8 +253,11 @@ pub fn load_registered_outside(dir: &Path) {
         if normalize(&path).starts_with(&inside) || !Path::new(&path).is_file() {
             continue;
         }
-        add_font_resource(&path);
-        loaded += 1;
+        if add_font_resource(&path) > 0 {
+            loaded += 1;
+        } else {
+            crate::diag::log(&format!("startup: Windows couldn't load registered font {path}"));
+        }
     }
     if loaded > 0 {
         broadcast_font_change();

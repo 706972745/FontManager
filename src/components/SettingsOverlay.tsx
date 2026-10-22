@@ -102,17 +102,14 @@ export function SettingsOverlay() {
   const pickLibraryDir = async () => {
     const dir = await open({ directory: true, title: t("settings.libraryFolderTitle") });
     if (!dir) return;
-    // Picking a folder turns the custom folder on.
     void updateSettings({ ...settings, libraryDir: dir, libraryDirEnabled: true });
   };
 
   const setCustomDirEnabled = (on: boolean) => {
     if (on === settings.libraryDirEnabled) return;
-    // The path is kept while disabled, so re-enabling restores it as-is.
     void updateSettings({ ...settings, libraryDirEnabled: on });
   };
 
-  // The custom folder is in effect only when enabled with a folder picked.
   const customDirActive = settings.libraryDirEnabled && settings.libraryDir != null;
 
   const affinityDetail = !settings.affinityEnabled

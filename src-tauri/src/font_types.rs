@@ -21,7 +21,6 @@ pub enum FontFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FontSource {
-
     System,
 
     User,
@@ -43,7 +42,6 @@ pub enum Classification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FontFace {
-
     pub id: String,
     pub path: String,
 

@@ -1,5 +1,3 @@
-
-
 #![cfg_attr(
     not(any(target_os = "windows", target_os = "macos")),
     allow(dead_code, unused_imports)
@@ -69,7 +67,6 @@ fn photoshop_script(postscript: &str, label: &str) -> String {
     executeAction(charIDToTypeID("slct"), desc, DialogModes.NO);
   }}
 
-  // 1 = applied, 0 = not a text layer, -1 = Photoshop does not know the font
   function applyTo(layer) {{
     if (layer.kind !== LayerKind.TEXT) {{ return 0; }}
     layer.textItem.font = font;
@@ -281,4 +278,3 @@ mod tests {
         assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
     }
 }
-

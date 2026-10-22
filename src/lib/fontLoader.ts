@@ -1,5 +1,3 @@
-
-
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import type { FontFace as ZFontFace } from "./ipc";
@@ -9,7 +7,6 @@ const cache = new Map<string, LoadState>();
 const listeners = new Map<string, Set<() => void>>();
 
 function cssName(face: ZFontFace): string {
-
   return `zfm-${hash(face.id)}`;
 }
 

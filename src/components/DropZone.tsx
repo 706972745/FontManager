@@ -19,8 +19,6 @@ export function DropZone() {
   const libraryDirEnabled = useFontStore((s) => s.settings.libraryDirEnabled);
   const moveRef = useRef<HTMLDivElement>(null);
 
-  // DOM drag events don't fire reliably during a native file drag, so the
-  // active panel is picked from the cursor position Tauri reports instead.
   const sideAt = (pos: { x: number; y: number }): InstallMode => {
     const dpr = window.devicePixelRatio || 1;
     const r = moveRef.current?.getBoundingClientRect();

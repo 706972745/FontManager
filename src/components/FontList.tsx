@@ -28,7 +28,6 @@ export function FontList({ families }: { families: Family[] }) {
     if (!selectedFamily) return;
     const idx = families.findIndex((f) => f.name === selectedFamily);
     if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "auto" });
-
   }, [selectedFamily]);
 
   return (
@@ -81,6 +80,7 @@ export function FontList({ families }: { families: Family[] }) {
                 <span className="col-status">
                   <PillToggle
                     on={fam.active}
+                    mixed={fam.partial}
                     disabled={!fam.deactivatable}
                     onChange={(on) => void setFamilyActive(fam.name, on)}
                     label={t(fam.active ? "card.deactivate" : "card.activate", { name: fam.name })}

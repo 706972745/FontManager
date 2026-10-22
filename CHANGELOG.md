@@ -4,6 +4,72 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Affinity only got one style of a family.** When a document used a font,
+  the Affinity integration switched on that one file and nothing else, so a
+  document set in Regular left the other eleven styles of a twelve-style family
+  asleep and Affinity's font menu offered Regular alone. A matched font now
+  wakes its whole family, the way Affinity lists it. Only styles that were off
+  are switched on, so quitting Affinity no longer turns off styles you had
+  activated yourself.
+
+- **A family looked active when only one of its styles was.** The family switch
+  was on as soon as any single style was active, which hid the problem above:
+  there was no reason to click it. Families now have a third state. A partly
+  active family shows a centred switch and "Partly active · 1 of 12 styles" in
+  the detail panel, and one click activates the styles that are missing. It
+  appears under both **Activated** and **Deactivated** in the sidebar.
+
+- **Affinity font names with spaces in the family were never matched by
+  family.** PostScript names drop the spaces ("SourceSerif4-Semibold"), and the
+  fallback compared them against the spaced family name, so it found nothing.
+  Names are now compared with spaces and hyphens ignored. A name that matches
+  no family in the library is skipped instead of being guessed.
+
+- **Windows: a font Windows refused to load still counted as active.** The
+  result of loading the file was never checked, so a font could be registered,
+  shown as active and still be missing from every other app. The file is now
+  loaded first and only registered once that worked; if registering fails, it
+  is unloaded again. Either way the toggle reports the error.
+
+- **Turning on part of a batch reported only the first error.** Activating a
+  family or a selection now says how many files failed ("3 of 12 fonts
+  failed: ..."), and the library reloads its real state instead of flipping
+  every switch back as if nothing had changed.
+
+- **macOS: activating a font that was already active failed** with "no parked
+  copy recorded", which would have broken activating the rest of a partly
+  active family. It is now a no-op. A failed move back out of the parking
+  folder also no longer forgets where the file was parked.
+
+- **Activate until close could turn off styles that were already on.** It sent
+  every file of the family, so closing the app deactivated styles you had
+  switched on permanently. It now only sends the ones that were off.
+
+Reported by zeusextremachine on Windows with Affinity by Canva, with an
+unusually thorough investigation. (#18)
+
+### Added
+
+- **An activation log.** Every activation and deactivation is written to
+  `activation.log` in the app data folder, with the result for each file and
+  the names inside it (family, style, full and PostScript name). On Windows it
+  also records how many fonts Windows loaded from the file and which registry
+  entry was written. When a file claims the same name as one already
+  activated, or shares its PostScript name with another file the library scan
+  found (system fonts included), the log warns about it: apps then show only
+  one of the two, which looks exactly like a missing style. Fonts Windows refuses to load at startup
+  are logged too. The log stays under 1 MB.
+
+### Changed
+
+- All nine languages gained the string for partly active families.
+- `pnpm test` runs tests for the Affinity matching and family states, and the
+  Rust side has tests for the log.
+
 ## [0.7.2] — 2026-10-15
 
 ### Fixed

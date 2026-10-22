@@ -132,7 +132,6 @@ function readStoredPref(): LocalePref {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (isLocalePref(raw)) return raw;
   } catch {
-
   }
   return "system";
 }
@@ -176,7 +175,6 @@ export function setLocalePref(next: LocalePref) {
   try {
     localStorage.setItem(STORAGE_KEY, next);
   } catch {
-
   }
   apply(next);
 }
@@ -185,7 +183,6 @@ export function hydrateLocalePref(next: LocalePref) {
   try {
     localStorage.setItem(STORAGE_KEY, next);
   } catch {
-
   }
   if (next !== pref) apply(next);
 }

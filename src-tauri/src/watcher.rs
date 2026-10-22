@@ -19,7 +19,6 @@ pub fn start(app: tauri::AppHandle, dirs: Vec<PathBuf>) -> Result<notify::Recomm
 
     for dir in dirs {
         if dir.is_dir() {
-
             let _ = watcher.watch(&dir, RecursiveMode::Recursive);
         }
     }

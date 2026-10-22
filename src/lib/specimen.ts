@@ -1,5 +1,3 @@
-
-
 import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "../design/primitives/Toast";
 import { loadFaceCss } from "./fontLoader";

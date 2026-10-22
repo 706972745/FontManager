@@ -167,6 +167,7 @@
   "detail.stylesCount_other": "{count} styles",
   "detail.active": "Active",
   "detail.inactive": "Inactive",
+  "detail.partial": "Partly active · {active} of {total} styles",
   "detail.visibleElsewhere": "Visible in other apps' font pickers",
   "detail.systemFont": "System font — managed by the OS",
   "detail.sourceManaged": "Managed",

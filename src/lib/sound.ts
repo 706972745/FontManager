@@ -1,5 +1,3 @@
-
-
 import { invoke } from "@tauri-apps/api/core";
 
 export type SoundLevel = "off" | "subtle" | "on";

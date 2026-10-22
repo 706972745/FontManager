@@ -18,34 +18,37 @@ export interface AffinityEvent {
 }
 
 const lower = (s: string | null | undefined) => (s ?? "").toLowerCase();
+const squash = (s: string | null | undefined) => lower(s).replace(/[\s_-]+/g, "");
 
-/**
- * Match Affinity font names (PostScript-style, e.g. "Montserrat-Bold")
- * to library file paths. Already-installed fonts are skipped.
- */
+function familyFor(faces: FontFace[], want: string): string | null {
+  const exact = faces.find((f) => lower(f.postscriptName) === lower(want));
+  if (exact) return exact.family;
+  const key = squash(want);
+  const loose =
+    faces.find((f) => squash(f.postscriptName) === key) ??
+    faces.find((f) => squash(`${f.family}${f.style}`) === key) ??
+    faces.find((f) => squash(f.family) === key);
+  if (loose) return loose.family;
+  const dash = want.indexOf("-");
+  if (dash > 0) {
+    const famKey = squash(want.slice(0, dash));
+    const byPrefix = faces.find((f) => squash(f.family) === famKey);
+    if (byPrefix) return byPrefix.family;
+  }
+  return null;
+}
+
 export function matchAffinityFonts(faces: FontFace[], needs: AffinityFontNeed[]): string[] {
-  const paths: string[] = [];
+  const families = new Set<string>();
   for (const need of needs) {
     if (need.installed) continue;
     const want = need.name.trim();
     if (!want) continue;
-    let face = faces.find((f) => lower(f.postscriptName) === lower(want));
-    if (!face && want.includes("-")) {
-      const idx = want.indexOf("-");
-      const fam = want.slice(0, idx).trim();
-      const style = want.slice(idx + 1).trim();
-      face = faces.find(
-        (f) => lower(f.family) === lower(fam) && lower(f.style) === lower(style),
-      );
-    }
-    if (!face) {
-      const fam = want.includes("-")
-        ? want.slice(0, want.indexOf("-")).trim()
-        : want;
-      const inFam = faces.filter((f) => lower(f.family) === lower(fam));
-      face = inFam.find((f) => lower(f.style) === "regular") ?? inFam[0];
-    }
-    if (face && !paths.includes(face.path)) paths.push(face.path);
+    const family = familyFor(faces, want);
+    if (family !== null) families.add(family);
   }
-  return paths;
+  const paths = faces
+    .filter((f) => families.has(f.family) && f.deactivatable && !f.active)
+    .map((f) => f.path);
+  return [...new Set(paths)];
 }

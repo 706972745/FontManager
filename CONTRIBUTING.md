@@ -112,7 +112,8 @@ better than silent gaps nobody notices.
 pnpm install
 pnpm i18n:check          # every language at 100%
 npx tsc --noEmit         # no type errors
-cd src-tauri && cargo check
+pnpm test                # frontend logic tests
+cd src-tauri && cargo test
 ```
 
 `cargo check` only compiles the platform you run it on. Code inside
@@ -156,7 +157,10 @@ somebody else.
 
 Open an issue with your operating system and version, what you expected, what
 happened instead, and steps to reproduce it. If it involves a specific font,
-saying which one helps enormously.
+saying which one helps enormously. For activation problems, attach
+`activation.log` from the app data folder (`%APPDATA%\ZFontManager` on
+Windows, `~/Library/Application Support/ZFontManager` on macOS,
+`~/.local/share/ZFontManager` on Linux).
 
 ---
 

@@ -1,4 +1,3 @@
-
 import type { Transition } from "motion/react";
 
 export const spring: Transition = { type: "spring", stiffness: 300, damping: 30, mass: 1 };

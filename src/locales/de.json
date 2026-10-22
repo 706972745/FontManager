@@ -167,6 +167,7 @@
   "detail.stylesCount_other": "{count} Schnitte",
   "detail.active": "Aktiv",
   "detail.inactive": "Inaktiv",
+  "detail.partial": "Teilweise aktiv · {active} von {total} Schnitten",
   "detail.visibleElsewhere": "In den Schriftlisten anderer Programme sichtbar",
   "detail.systemFont": "Systemschrift — vom Betriebssystem verwaltet",
   "detail.sourceManaged": "Verwaltet",

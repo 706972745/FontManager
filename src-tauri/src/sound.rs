@@ -1,5 +1,3 @@
-
-
 use rodio::buffer::SamplesBuffer;
 use rodio::OutputStream;
 use std::sync::mpsc::{channel, Sender};
@@ -60,7 +58,6 @@ fn sender() -> &'static Sender<(String, f32)> {
     TX.get_or_init(|| {
         let (tx, rx) = channel::<(String, f32)>();
         std::thread::spawn(move || {
-
             let stream = OutputStream::try_default().ok();
             for (kind, vol) in rx {
                 if let Some((_stream, handle)) = &stream {

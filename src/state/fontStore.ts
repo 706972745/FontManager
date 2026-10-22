@@ -16,6 +16,7 @@ import {
   type TrashEntry,
 } from "../lib/ipc";
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
+import { familyActivation, pathsToToggle } from "../lib/familyState";
 import { toast } from "../design/primitives/Toast";
 import { setSoundLevel, type SoundLevel } from "../lib/sound";
 import { applyTheme, type ThemePref } from "../lib/theme";
@@ -30,9 +31,6 @@ import {
 
 export const SIZES = [8, 14, 18, 24, 32, 48, 64, 96] as const;
 
-// init() subscribes to backend events; React StrictMode runs the mounting
-// effect twice in dev, so guard it — a second run would attach every
-// listener twice and each toast would appear twice.
 let initStarted = false;
 
 export type ViewMode = "grid" | "list" | "waterfall";
@@ -62,6 +60,8 @@ export interface Family {
   formats: string[];
   isVariable: boolean;
   active: boolean;
+  partial: boolean;
+  activeCount: number;
   deactivatable: boolean;
   tags: string[];
   totalSize: number;
@@ -378,7 +378,6 @@ export const useFontStore = create<FontStore>((set, get) => ({
       setSoundLevel(get().soundPref);
       hydrateLocalePref(get().localePref);
     } catch {
-
     }
     applyTheme(get().themePref);
     applyMotionPref(get().motionPref);
@@ -387,17 +386,14 @@ export const useFontStore = create<FontStore>((set, get) => ({
       const scale = get().uiScale;
       set({ appliedScale: await ipc.setUiScale(scale === "auto" ? null : scale) });
     } catch {
-
     }
     try {
       set({ settings: await ipc.getSettings() });
     } catch {
-
     }
     try {
       set({ adobeAvailable: await ipc.adobeAvailable() });
     } catch {
-
     }
 
     let watchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -469,12 +465,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
         ipc.listTrash(),
       ]);
       set({ fonts, tags, collections, favorites, notes, trash, phase: "ready" });
-      // Drop last-imported entries that no longer exist.
       const names = new Set(fonts.map((f) => f.family));
       const keptImported = get().lastImported.filter((n) => names.has(n));
       if (get().charFilter) set({ charMatches: null, charSearching: false });
       if (keptImported.length !== get().lastImported.length) set({ lastImported: keptImported });
-      // Drop session entries that no longer exist or are no longer active.
       const alive = new Set(fonts.filter((f) => f.active).map((f) => f.family));
       const kept = get().sessionActivated.filter((n) => alive.has(n));
       if (kept.length !== get().sessionActivated.length) set({ sessionActivated: kept });
@@ -486,7 +480,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   setFamilyActive: async (family, active) => {
     const faces = get().fonts.filter((f) => f.family === family && f.deactivatable);
-    const paths = [...new Set(faces.map((f) => f.path))];
+    const paths = pathsToToggle(faces, active);
     if (paths.length === 0) return;
 
     const prevSession = get().sessionActivated;
@@ -499,19 +493,15 @@ export const useFontStore = create<FontStore>((set, get) => ({
     try {
       await ipc.setFontsActive(paths, active);
     } catch (e) {
-      set({
-        fonts: get().fonts.map((f) =>
-          f.family === family && f.deactivatable ? { ...f, active: !active } : f,
-        ),
-        sessionActivated: prevSession,
-      });
+      set({ sessionActivated: prevSession });
       toast.error(t(active ? "toast.couldntActivate" : "toast.couldntDeactivate"), String(e));
+      await get().rescan();
     }
   },
 
   activateFamilySession: async (family) => {
     const faces = get().fonts.filter((f) => f.family === family && f.deactivatable);
-    const paths = [...new Set(faces.map((f) => f.path))];
+    const paths = pathsToToggle(faces, true);
     if (paths.length === 0) return;
     set({
       fonts: get().fonts.map((f) =>
@@ -527,19 +517,14 @@ export const useFontStore = create<FontStore>((set, get) => ({
         "toggle-on",
       );
     } catch (e) {
-      set({
-        fonts: get().fonts.map((f) =>
-          f.family === family && f.deactivatable ? { ...f, active: false } : f,
-        ),
-      });
       toast.error(t("toast.couldntActivate"), String(e));
+      await get().rescan();
     }
   },
 
   setFontFileActive: async (path, active) => {
     const faces = get().fonts.filter((f) => f.path === path);
     if (faces.length === 0) return;
-    // System files are protected: never deactivate or remove them from here.
     if (faces.every((f) => f.source === "system")) {
       toast.error(t("toast.cantUninstallSystem"), t("toast.cantUninstallSystemSub"));
       return;
@@ -563,7 +548,6 @@ export const useFontStore = create<FontStore>((set, get) => ({
   uninstallFontFile: async (path) => {
     const faces = get().fonts.filter((f) => f.path === path);
     if (faces.length === 0) return;
-    // System files are protected: they cannot be moved to trash.
     if (faces.some((f) => f.source === "system")) {
       toast.error(t("toast.cantUninstallSystem"), t("toast.cantUninstallSystemSub"));
       return;
@@ -858,13 +842,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   setFamiliesActiveBulk: async (families, active) => {
-    const paths = [
-      ...new Set(
-        get()
-          .fonts.filter((f) => families.includes(f.family) && f.deactivatable)
-          .map((f) => f.path),
-      ),
-    ];
+    const paths = pathsToToggle(
+      get().fonts.filter((f) => families.includes(f.family)),
+      active,
+    );
     if (paths.length === 0) return;
     const prevFonts = get().fonts;
     const prevSession = get().sessionActivated;
@@ -885,8 +866,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
         { label: t("toast.undo"), run: () => void get().setFamiliesActiveBulk(families, !active) },
       );
     } catch (e) {
-      set({ fonts: prevFonts, sessionActivated: prevSession });
+      set({ sessionActivated: prevSession });
       toast.error(t("toast.bulkUpdateFailed"), String(e));
+      await get().rescan();
     }
   },
 
@@ -1240,7 +1222,6 @@ export const useFontStore = create<FontStore>((set, get) => ({
       .setUiScale(uiScale === "auto" ? null : uiScale)
       .then((applied) => set({ appliedScale: applied }))
       .catch(() => {
-
       });
   },
   setToggleableOnly: (toggleableOnly) => set({ toggleableOnly }),
@@ -1347,6 +1328,8 @@ export function computeFamilies(
         formats: [],
         isVariable: false,
         active: false,
+        partial: false,
+        activeCount: 0,
         deactivatable: false,
         tags: tags[f.family] ?? [],
         totalSize: 0,
@@ -1371,12 +1354,12 @@ export function computeFamilies(
       if (!fam.features.includes(ft)) fam.features.push(ft);
     }
     fam.glyphCount = Math.max(fam.glyphCount, f.glyphCount ?? 0);
-    fam.active ||= f.active;
     fam.deactivatable ||= f.deactivatable;
     fam.totalSize += f.fileSize;
   }
   for (const fam of map.values()) {
     fam.faces.sort((a, b) => styleOrder(a) - styleOrder(b));
+    Object.assign(fam, familyActivation(fam.faces));
   }
   return map;
 }
@@ -1448,7 +1431,7 @@ export function selectVisibleFamilies(s: {
     out = out.filter((f) => s.lastImported.includes(f.name));
   }
   if (s.nav.kind === "activated") {
-    out = out.filter((f) => f.active && !s.sessionActivated.includes(f.name));
+    out = out.filter((f) => (f.active || f.partial) && !s.sessionActivated.includes(f.name));
   }
   if (s.nav.kind === "activatedSession") {
     out = out.filter((f) => s.sessionActivated.includes(f.name));
@@ -1521,7 +1504,6 @@ const conflictCache = new WeakMap<FontFace[], Map<string, FontConflict[]>>();
 
 const activeConflictCache = new WeakMap<FontFace[], Map<string, FontConflict[]>>();
 
-/** Conflicts among ACTIVE fonts only: these are the ones apps can actually see. */
 export function activeConflictsFor(fonts: FontFace[]): Map<string, FontConflict[]> {
   let cached = activeConflictCache.get(fonts);
   if (!cached) {
@@ -1563,4 +1545,3 @@ export function computeConflicts(fonts: FontFace[]): Map<string, FontConflict[]>
   }
   return out;
 }
-

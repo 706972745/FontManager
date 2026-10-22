@@ -12,7 +12,6 @@ pub struct ScanProgress {
     pub total: usize,
 }
 
-/// Default folder moved imports are stored in (per-user fonts on Windows).
 pub fn managed_font_dir() -> PathBuf {
     #[cfg(target_os = "linux")]
     {
@@ -35,7 +34,6 @@ pub fn managed_font_dir() -> PathBuf {
     }
 }
 
-/// Effective library folder: the settings override when set, else the default.
 pub fn effective_managed_dir(library_dir: Option<&str>) -> PathBuf {
     match library_dir.map(str::trim).filter(|s| !s.is_empty()) {
         Some(dir) => PathBuf::from(dir),

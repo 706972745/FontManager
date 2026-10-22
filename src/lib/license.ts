@@ -1,5 +1,3 @@
-
-
 export type LicenseClass = "open" | "restrictive" | "unknown";
 
 const OPEN_MARKERS = [

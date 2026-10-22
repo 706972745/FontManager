@@ -25,12 +25,9 @@ pub struct InstallResult {
     pub duplicates: Vec<String>,
 }
 
-/// How a dropped font joins the library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallMode {
-    /// The file stays where it is; only registered with the library.
     Link,
-    /// The file is moved into the library folder (the original is deleted).
     Move,
 }
 
@@ -43,8 +40,6 @@ impl InstallMode {
         }
     }
 }
-/// Identity used for duplicate detection: the PostScript name when present,
-// otherwise "Family Style". The frontend mirrors this exact formula.
 pub fn dup_key(face: &FontFace) -> String {
     face.postscript_name
         .clone()
@@ -59,8 +54,6 @@ fn move_file(from: &Path, to: &Path) -> Result<(), String> {
     recycle(from)
 }
 
-/// User files are never deleted outright: they go to the OS recycle bin
-/// (Windows Recycle Bin, macOS Trash, freedesktop trash on Linux).
 fn recycle(path: &Path) -> Result<(), String> {
     trash::delete(path).map_err(|e| e.to_string())
 }
@@ -142,8 +135,6 @@ pub fn install(
 
     let total = files.len();
     for (i, src) in files.into_iter().enumerate() {
-        // Skip fonts that are already in the library (or earlier in this batch).
-        // Unparseable files fall through to the regular path (old behavior).
         let src_faces = parser::parse_font_file(&src, FontSource::Managed);
         let src_keys: Vec<String> = src_faces.iter().map(dup_key).collect();
         if !src_keys.is_empty() && src_keys.iter().all(|k| known.contains(k)) {
@@ -202,9 +193,6 @@ pub fn install(
                         error: None,
                     },
                 );
-                // New fonts start deactivated: parse only, do NOT register.
-                // (activation::sync(..., false) runs right after in install_fonts,
-                // and the toggle registers on demand.)
                 let mut faces = src_faces;
                 for face in &mut faces {
                     face.active = false;
@@ -232,9 +220,6 @@ pub fn install(
                 );
                 match moved {
                     Ok(()) => {
-                        // New fonts start deactivated: parse only, do NOT register.
-                        // (activation::sync(..., false) runs right after in install_fonts,
-                        // and the toggle registers on demand.)
                         let mut faces = parser::parse_font_file(&dest, FontSource::Managed);
                         for face in &mut faces {
                             face.active = false;
@@ -254,7 +239,6 @@ pub fn install(
 }
 
 pub fn uninstall(path: &str, family: &str) -> Result<TrashEntry, String> {
-
     #[cfg(target_os = "windows")]
     unregister_user_font(path);
 
@@ -307,8 +291,6 @@ pub fn restore(entry_id: &str) -> Result<RestoreOutcome, String> {
         .find(|t| t.id == entry_id)
         .ok_or("trash entry not found")?;
     if entry.original_path == entry.trashed_path {
-        // Linked entry: the original file was never touched, so there is
-        // nothing to move back — the caller re-links the path instead.
         if let Some(sidecar) = find_sidecar(&crate::store::trash_dir(), entry_id) {
             let _ = fs::remove_file(sidecar);
         }
@@ -329,7 +311,6 @@ pub fn empty_trash() -> Result<(), String> {
     if !trash.exists() {
         return Ok(());
     }
-    // Linked entries leave no files behind, only sidecars.
     let mut errors = Vec::new();
     for entry in list_trash() {
         if entry.original_path == entry.trashed_path {
@@ -342,7 +323,6 @@ pub fn empty_trash() -> Result<(), String> {
     if !errors.is_empty() {
         return Err(errors.join("; "));
     }
-    // Sidecars and anything unlisted are app metadata: drop them outright.
     fs::remove_dir_all(&trash).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -353,7 +333,6 @@ pub fn delete_trash_entry(entry_id: &str) -> Result<(), String> {
         .find(|t| t.id == entry_id)
         .ok_or("trash entry not found")?;
     if entry.original_path == entry.trashed_path {
-        // Linked entry: the original file stays, only the sidecar goes.
         if let Some(sidecar) = find_sidecar(&crate::store::trash_dir(), entry_id) {
             fs::remove_file(sidecar).map_err(|e| e.to_string())?;
         }
@@ -364,15 +343,11 @@ pub fn delete_trash_entry(entry_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// What restoring a trash entry did (the caller re-links on Relinked).
 pub enum RestoreOutcome {
     Moved,
     Relinked(String),
 }
 
-/// Remove a linked font from the library. The original file is never touched:
-/// it stays exactly where it is, only the registration is removed. The trash
-/// sidecar marks a re-link restore (trashed_path == original_path).
 pub fn unlink(path: &str, family: &str) -> Result<TrashEntry, String> {
     #[cfg(target_os = "windows")]
     unregister_user_font(path);
@@ -462,7 +437,6 @@ mod tests {
         assert!(Path::new(&entry.trashed_path).exists());
 
         let listed = list_trash();
-        // Scoped by id: the real trash dir may hold other entries.
         let found = listed
             .iter()
             .find(|t| t.id == entry.id)

@@ -140,6 +140,9 @@ to sleep. Flip the toggle again and it's back.
 - Toggle a single family with one click (or press <kbd>Space</kbd>)
 - Select many families and activate/deactivate them all at once
 - Deactivated fonts stay in your library, gently dimmed, ready to wake up
+- A family with only some styles on shows a half-way switch and "Partly
+  active · 3 of 12 styles", so it never passes for fully active. One click
+  turns on the rest
 
 Each platform has its own proper mechanism under the hood (see
 [Platform notes](#-platform-notes)) — but from where you sit, it's just a
@@ -179,6 +182,12 @@ layer is added with the family name as its sample. A sleeping font is woken
 Open a document in Affinity and ZFontManager can switch on the fonts it asks
 for, automatically, for as long as Affinity is running — then switch them back
 off when you quit. Nothing is installed permanently.
+
+A font the document uses brings in its **whole family**, so every weight and
+italic is there in Affinity's font menu, not just the one style the document
+happens to use. Styles you had already switched on are left alone and stay on
+after Affinity closes. A font name that matches nothing in your library is
+skipped rather than swapped for a different style.
 
 Turn it on under **Settings → Affinity by Canva auto activation**. It needs
 **Affinity 3.2 or newer** with *Settings → Model Context Protocol* enabled
@@ -524,7 +533,9 @@ offering it. Nothing is moved or deleted.</td>
 <td>Uses the per-user font registration Windows itself uses. The toggle
 reflects what Windows actually lists: fonts in a folder you added show up
 <i>inactive</i> until you switch them on, which registers them for your user
-account right where they are — an external drive is fine. Deactivating
+account right where they are — an external drive is fine. A font is only
+registered once Windows has actually loaded it, so a file Windows rejects
+shows an error instead of a switch that says active. Deactivating
 unregisters the font; the file stays put. No admin rights needed for your own
 fonts.</td>
 </tr>
@@ -655,6 +666,18 @@ startup. Restart the app and the font will be there. (Some apps also have
 their own "refresh font list" command.) For Photoshop and Illustrator you
 can skip the font menu entirely: right-click the family → <i>Apply in
 Photoshop…</i> / <i>Apply in Illustrator…</i>.
+<br><br>
+If only some styles show up, check the family's switch: a half-way switch and
+"Partly active" in the detail panel mean some of its styles are still off, and
+one click turns on the rest. Still missing? Every activation is written to
+<code>activation.log</code>, together with the names each file gives Windows
+or macOS and a warning when two files claim the same name, which makes apps
+show only one of them. Attach it to an issue:
+<ul>
+<li><b>Windows:</b> <code>%APPDATA%\ZFontManager\activation.log</code></li>
+<li><b>macOS:</b> <code>~/Library/Application Support/ZFontManager/activation.log</code></li>
+<li><b>Linux:</b> <code>~/.local/share/ZFontManager/activation.log</code></li>
+</ul>
 </details>
 
 <details>
@@ -678,7 +701,8 @@ read and modify under the GPL-3.0 license. There is no paid tier, no
 <br>
 Please do! Open an issue on
 <a href="https://github.com/TheHolyOneZ/ZFontManager/issues">the GitHub issue tracker</a>
-with what you did and what happened. Screenshots help a lot.
+with what you did and what happened. Screenshots help a lot, and for anything
+about activating fonts, so does <code>activation.log</code> (see above).
 </details>
 
 ---

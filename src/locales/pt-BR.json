@@ -171,6 +171,7 @@
   "detail.stylesCount_many": "{count} estilos",
   "detail.active": "Ativa",
   "detail.inactive": "Inativa",
+  "detail.partial": "Parcialmente ativa · {active} de {total} estilos",
   "detail.visibleElsewhere": "Visível nos seletores de fonte de outros aplicativos",
   "detail.systemFont": "Fonte do sistema — gerenciada pelo sistema operacional",
   "detail.sourceManaged": "Gerenciada",

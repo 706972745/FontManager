@@ -1,12 +1,3 @@
-//! Affinity by Canva (v3) integration over its built-in MCP server.
-//!
-//! Affinity 3.2+ exposes a legacy-SSE MCP endpoint (default
-//! `http://localhost:6767/sse`, enabled under Settings > Model Context
-//! Protocol). We run a minimal client against it: open documents and the
-//! fonts they use come from a read-only script, matched against the library
-//! and session-activated while Affinity runs. No backward compatibility:
-//! without a reachable MCP server the integration simply reports offline.
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::{
@@ -18,16 +9,12 @@ use tauri::{Emitter, Manager};
 
 use crate::store::{self, Store};
 
-/// Affinity binds its MCP server to the IPv6 loopback on some systems, so a
-/// `localhost` URL may resolve to an IPv4 address nothing listens on.
-/// Try every loopback spelling, IPv6 first (observed in the wild).
 const CANDIDATE_URLS: [&str; 3] = [
     "http://[::1]:6767/sse",
     "http://127.0.0.1:6767/sse",
     "http://localhost:6767/sse",
 ];
 
-/// Protocol versions to offer, newest first (the server picks one it speaks).
 const PROTOCOL_VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2024-11-05"];
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const STARTUP_GRACE: Duration = Duration::from_secs(20);
@@ -37,8 +24,6 @@ const QUIET_FAILURES: u32 = 3;
 const POLL_EVERY_TICKS: u32 = 15;
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Read-only probe, verified live: open docs with the fonts they use.
-/// `isInstalled` marks fonts missing from the system (those need activation).
 const DOC_FONTS_SCRIPT: &str = r#"const { Document } = require('/document.js');
 const out = [];
 for (const doc of Document.all) {
@@ -94,11 +79,6 @@ struct AffinityEvent {
     message: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Minimal legacy-SSE MCP client (one session per query, no background tasks)
-// ---------------------------------------------------------------------------
-
-/// Split completed SSE frames (`event:`/`data:` pairs) off the buffer.
 fn drain_frames(buf: &mut Vec<u8>) -> Vec<(String, String)> {
     let mut out = Vec::new();
     loop {
@@ -168,7 +148,6 @@ impl Session {
             buf,
             next_id: 1,
         };
-        // Server picks a protocol version it speaks; fall back to the older one.
         let mut version = None;
         let mut accepted = false;
         let mut last_err = String::new();
@@ -274,7 +253,6 @@ fn join_endpoint(sse_url: &str, endpoint: &str) -> String {
     if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
         return endpoint.to_string();
     }
-    // Relative (usually "/messages?sessionId=…"): same origin as the SSE URL.
     match sse_url.find("://") {
         Some(scheme_end) => {
             let after_scheme = &sse_url[scheme_end + 3..];
@@ -304,7 +282,6 @@ fn connect_error(detail: &str) -> String {
     }
 }
 
-/// Pick the script-running tool and its script-text argument from tools/list.
 fn pick_script_tool(tools: &[serde_json::Value]) -> Result<(String, String), String> {
     let mut fallback: Option<(&serde_json::Value, String)> = None;
     for tool in tools {
@@ -378,8 +355,6 @@ async fn tools_list(session: &mut Session) -> Result<Vec<serde_json::Value>, Str
         .ok_or_else(|| "tools/list returned no tools".to_string())
 }
 
-/// Invoke a named tool and return its result; tool-level failures come back
-/// as the tool's own error text.
 async fn call_tool(
     session: &mut Session,
     name: &str,
@@ -399,10 +374,6 @@ async fn call_tool(
     Ok(res)
 }
 
-/// The server refuses `execute_script` until the preamble doc topic has been
-/// read in the current session ("The preamble documentation topic has not yet
-/// been read"). Do that first; if the docs tool is missing, try the script
-/// anyway.
 async fn read_preamble(session: &mut Session, tools: &[serde_json::Value]) -> Result<(), String> {
     let has_docs_tool = tools
         .iter()
@@ -436,7 +407,6 @@ async fn run_doc_fonts_script(session: &mut Session) -> Result<Vec<AffinityDoc>,
     Ok(resp.docs)
 }
 
-/// Open a session on the first reachable loopback spelling.
 async fn open_any() -> Result<(Session, Option<String>), String> {
     let mut last_err = String::new();
     for url in ordered_urls() {
@@ -452,7 +422,6 @@ async fn open_any() -> Result<(Session, Option<String>), String> {
     Err(last_err)
 }
 
-/// Full query: connect, run the font probe, drop the session.
 pub async fn doc_fonts() -> Result<(Option<String>, Vec<AffinityDoc>), String> {
     let (mut session, version) = open_any().await?;
     let docs = run_doc_fonts_script(&mut session).await?;
@@ -475,10 +444,6 @@ pub async fn connection() -> AffinityConnection {
         },
     }
 }
-
-// ---------------------------------------------------------------------------
-// Process watcher: session-activate while Affinity runs, revert on quit
-// ---------------------------------------------------------------------------
 
 static AFFINITY_SESSION: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static WAS_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -611,7 +576,6 @@ fn session_empty() -> bool {
     AFFINITY_SESSION.lock().map(|s| s.is_empty()).unwrap_or(true)
 }
 
-/// Deactivate everything the Affinity watcher turned on. Returns the count.
 pub fn revert_session(state: &mut crate::store::AppState) -> usize {
     let paths: Vec<String> = match AFFINITY_SESSION.lock() {
         Ok(mut s) => std::mem::take(&mut *s),
@@ -657,7 +621,6 @@ fn settings_snapshot(app: &tauri::AppHandle) -> Option<(bool, bool)> {
     Some((state.affinity_enabled, state.affinity_deactivate_on_quit))
 }
 
-/// One watcher step, called every couple of seconds from a background thread.
 pub fn tick(app: &tauri::AppHandle) {
     let Some((enabled, deactivate_on_quit)) = settings_snapshot(app) else {
         return;
@@ -722,7 +685,6 @@ pub fn tick(app: &tauri::AppHandle) {
             }
             return;
         }
-        // While running, re-query periodically for newly opened documents.
         let n = TICK.fetch_add(1, Ordering::SeqCst);
         if n % POLL_EVERY_TICKS == 0 {
             if let Ok((version, docs)) = tauri::async_runtime::block_on(doc_fonts()) {

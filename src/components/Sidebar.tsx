@@ -150,7 +150,7 @@ export function Sidebar() {
   const sessionActivated = useFontStore((s) => s.sessionActivated);
   const allFamilies = [...familiesFor(fonts, tags).values()];
   const activatedCount = allFamilies.filter(
-    (f) => f.active && !sessionActivated.includes(f.name),
+    (f) => (f.active || f.partial) && !sessionActivated.includes(f.name),
   ).length;
   const sessionCount = allFamilies.filter((f) =>
     sessionActivated.includes(f.name),

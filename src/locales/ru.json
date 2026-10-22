@@ -175,6 +175,7 @@
   "detail.stylesCount_many": "{count} начертаний",
   "detail.active": "Активен",
   "detail.inactive": "Неактивен",
+  "detail.partial": "Частично активен · {active} из {total} начертаний",
   "detail.visibleElsewhere": "Виден в списках шрифтов других программ",
   "detail.systemFont": "Системный шрифт — им управляет операционная система",
   "detail.sourceManaged": "Управляемый",
