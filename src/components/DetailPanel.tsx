@@ -546,6 +546,8 @@ export function DetailPanel() {
 
   const favorites = useFontStore((s) => s.favorites);
   const toggleFavorite = useFontStore((s) => s.toggleFavorite);
+  const snapshots = useFontStore((s) => s.snapshots);
+  const toggleFamilyInSnapshot = useFontStore((s) => s.toggleFamilyInSnapshot);
 
   const lead =
     family?.faces.find((f) => f.id === styleId) ??
@@ -579,6 +581,13 @@ export function DetailPanel() {
       : undefined;
   const favorite = family ? favorites.includes(family.name) : false;
   const conflicts = family ? conflictsFor(fonts).get(family.name) ?? [] : [];
+  const snapshotToggles = snapshots.map((sn) => ({
+    name: sn.name,
+    on:
+      !!family &&
+      family.faces.length > 0 &&
+      family.faces.every((f) => sn.entries.some((e) => e.path === f.path)),
+  }));
 
   const variation =
     lead && lead.isVariable && Object.keys(axisValues).length > 0
@@ -704,6 +713,35 @@ export function DetailPanel() {
                 size="lg"
               />
             </motion.section>
+
+            {snapshots.length > 0 && (
+              <motion.section
+                className="detail-snapshot"
+                variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
+              >
+                <div className="detail-heading">{t("detail.snapshotToggle")}</div>
+                <div className="detail-snap-list">
+                  {snapshotToggles.map((sn) => (
+                    <div key={sn.name} className="detail-snap-row">
+                      <span className="detail-snap-name" title={sn.name}>
+                        {sn.name}
+                      </span>
+                      <PillToggle
+                        on={sn.on}
+                        onChange={(next) => {
+                          if (next !== sn.on)
+                            void toggleFamilyInSnapshot(sn.name, family.name);
+                        }}
+                        label={t(sn.on ? "detail.snapRemove" : "detail.snapAdd", {
+                          name: family.name,
+                          snapshot: sn.name,
+                        })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </motion.section>
+            )}
 
             <motion.section
               className="detail-waterfall"

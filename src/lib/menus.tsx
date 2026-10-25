@@ -108,6 +108,45 @@ export async function exportFontList(families: Family[], title: string) {
   }
 }
 
+function snapshotToggleAction(snapshot: string, families: string[]) {
+  return () => {
+    const s = useFontStore.getState();
+    const snap = s.snapshots.find((sn) => sn.name === snapshot);
+    if (!snap) return;
+    const familyPaths = [
+      ...new Set(
+        s.fonts.filter((f) => families.includes(f.family)).map((f) => f.path),
+      ),
+    ];
+    if (familyPaths.length === 0) return;
+    const inPaths = new Set(snap.entries.map((e) => e.path));
+    const allIn = familyPaths.every((p) => inPaths.has(p));
+    const entries = allIn
+      ? snap.entries.filter((e) => !familyPaths.includes(e.path))
+      : [
+          ...snap.entries,
+          ...familyPaths
+            .filter((p) => !inPaths.has(p))
+            .map((path) => {
+              const face = s.fonts.find((f) => f.path === path);
+              return {
+                path,
+                family: face?.family ?? "",
+                system: face?.source === "system",
+              };
+            }),
+        ];
+    useFontStore.setState({
+      snapshots: useFontStore
+        .getState()
+        .snapshots.map((sn) => (sn.name === snapshot ? { ...sn, entries } : sn)),
+    });
+    void ipc.saveSnapshot({ ...snap, entries }).catch(() => {
+      useFontStore.setState({ snapshots: s.snapshots });
+    });
+  };
+}
+
 function buildBulkMenu(names: string[]): MenuItem[] {
   const s = useFontStore.getState();
   const familyMap = familiesFor(s.fonts, s.tags);
@@ -115,6 +154,8 @@ function buildBulkMenu(names: string[]): MenuItem[] {
     .map((n) => familyMap.get(n))
     .filter((f): f is Family => Boolean(f));
   const collectionNames = Object.keys(s.collections).sort((a, b) => a.localeCompare(b));
+  const snapshotNames = s.snapshots.map((sn) => sn.name).sort((a, b) => a.localeCompare(b));
+  const snapshotByName = new Map(s.snapshots.map((sn) => [sn.name, sn] as const));
   const n = names.length;
 
   return [
@@ -157,6 +198,28 @@ function buildBulkMenu(names: string[]): MenuItem[] {
         },
       }),
     ),
+    { kind: "separator" },
+    { kind: "heading", label: t("menu.snapshots") },
+    ...snapshotNames.map(
+      (name): MenuItem => ({
+        kind: "check",
+        label: name,
+        checked: (() => {
+          const paths = new Set(
+            s.fonts.filter((f) => names.includes(f.family)).map((f) => f.path),
+          );
+          if (paths.size === 0) return false;
+          const entryPaths = new Set(snapshotByName.get(name)?.entries.map((e) => e.path) ?? []);
+          return [...paths].every((p) => entryPaths.has(p));
+        })(),
+        action: snapshotToggleAction(name, names),
+      }),
+    ),
+    {
+      label: t("menu.newSnapshot"),
+      icon: <Plus size={14} strokeWidth={1.5} />,
+      action: () => useFontStore.setState({ pendingSnapshotFor: names[0] }),
+    },
     { kind: "separator" },
     { kind: "heading", label: t("menu.tagAll") },
     ...[...allTags(s.tags).keys()].map(
@@ -253,6 +316,33 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
       label: t("menu.newCollection"),
       icon: <FolderPlus size={14} strokeWidth={1.5} />,
       action: () => useFontStore.setState({ pendingCollectionFor: family.name }),
+    },
+    { kind: "separator" },
+    { kind: "heading", label: t("menu.snapshots") },
+    ...s.snapshots
+      .map((sn) => sn.name)
+      .sort((a, b) => a.localeCompare(b))
+      .map(
+        (name): MenuItem => ({
+          kind: "check",
+          label: name,
+          checked: (() => {
+            const familyPaths = new Set(family.faces.map((fc) => fc.path));
+            if (familyPaths.size === 0) return false;
+            const entryPaths = new Set(
+              s.snapshots
+                .find((sn) => sn.name === name)
+                ?.entries.map((e) => e.path) ?? [],
+            );
+            return [...familyPaths].every((p) => entryPaths.has(p));
+          })(),
+          action: snapshotToggleAction(name, [family.name]),
+        }),
+      ),
+    {
+      label: t("menu.newSnapshot"),
+      icon: <Plus size={14} strokeWidth={1.5} />,
+      action: () => useFontStore.setState({ pendingSnapshotFor: family.name }),
     },
     { kind: "separator" },
     {

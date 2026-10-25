@@ -61,6 +61,8 @@ export function SettingsOverlay() {
   const setCloseToTray = useFontStore((s) => s.setCloseToTray);
   const startMinimized = useFontStore((s) => s.startMinimized);
   const setStartMinimized = useFontStore((s) => s.setStartMinimized);
+  const restoreOnLaunch = useFontStore((s) => s.restoreOnLaunch);
+  const setRestoreOnLaunch = useFontStore((s) => s.setRestoreOnLaunch);
   const [autostart, setAutostart] = useState(false);
   const affinityConnection = useFontStore((s) => s.affinityConnection);
   const refreshAffinityConnection = useFontStore((s) => s.refreshAffinityConnection);
@@ -262,6 +264,18 @@ export function SettingsOverlay() {
                   on={startMinimized}
                   onChange={(on) => setStartMinimized(on)}
                   label={t("settings.startMinimized")}
+                />
+              </div>
+
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">{t("settings.restoreOnLaunch")}</div>
+                  <div className="settings-sub">{t("settings.restoreOnLaunchSub")}</div>
+                </div>
+                <PillToggle
+                  on={restoreOnLaunch}
+                  onChange={(on) => setRestoreOnLaunch(on)}
+                  label={t("settings.restoreOnLaunch")}
                 />
               </div>
             </section>

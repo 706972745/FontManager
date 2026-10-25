@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { MotionConfig, motion } from "motion/react";
-import { Clock, FolderOpen, History, Monitor, Power, PowerOff, SearchX, Star, Tag as TagIcon, Type } from "lucide-react";
+import { Clock, Camera, FolderOpen, History, Monitor, Power, PowerOff, SearchX, Star, Tag as TagIcon, Type } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { DetailPanel } from "./components/DetailPanel";
 import { ResizeGrips } from "./components/ResizeGrips";
@@ -14,6 +14,7 @@ import { TrashView } from "./components/TrashView";
 import { OnlineView } from "./components/OnlineView";
 import { AboutView } from "./components/AboutView";
 import { WaterfallView } from "./components/WaterfallView";
+import { SnapshotBar } from "./components/SnapshotBar";
 import { CompareOverlay } from "./components/CompareOverlay";
 import { SelectionBar } from "./components/SelectionBar";
 import { SettingsOverlay } from "./components/SettingsOverlay";
@@ -66,6 +67,10 @@ function EmptyLibrary({ searching, nav }: { searching: boolean; nav: Nav }) {
     icon = <FolderOpen size={26} strokeWidth={1.5} />;
     title = t("empty.collection.title");
     hint = t("empty.collection.body", { name: nav.name });
+  } else if (nav.kind === "snapshot") {
+    icon = <Camera size={26} strokeWidth={1.5} />;
+    title = t("empty.snapshot.title");
+    hint = t("empty.snapshot.body");
   } else if (nav.kind === "tag") {
     icon = <TagIcon size={26} strokeWidth={1.5} />;
     title = t("empty.tag.title");
@@ -108,6 +113,7 @@ function MainContent() {
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
+  const snapshots = useFontStore((s) => s.snapshots);
   const favorites = useFontStore((s) => s.favorites);
   const sessionActivated = useFontStore((s) => s.sessionActivated);
   const lastImported = useFontStore((s) => s.lastImported);
@@ -127,11 +133,11 @@ function MainContent() {
   const families = useMemo(
     () =>
       selectVisibleFamilies({
-        fonts, tags, collections, favorites, sessionActivated, lastImported, notes, search,
+        fonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search,
         classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
         variableOnly, toggleableOnly, nav, sort,
       }),
-    [fonts, tags, collections, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, nav, sort],
+    [fonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, nav, sort],
   );
 
   useEffect(() => {
@@ -142,8 +148,8 @@ function MainContent() {
   if (nav.kind === "about") return <AboutView />;
   if (nav.kind === "online") return <OnlineView />;
   if (phase === "scanning") return <ScanSkeleton />;
-  if (families.length === 0)
-    return (
+  const body =
+    families.length === 0 ? (
       <EmptyLibrary
         nav={nav}
         searching={
@@ -158,13 +164,22 @@ function MainContent() {
           toggleableOnly
         }
       />
+    ) : viewMode === "waterfall" ? (
+      <WaterfallView families={families} />
+    ) : viewMode === "grid" ? (
+      <FontGrid families={families} />
+    ) : (
+      <FontList families={families} />
     );
-  if (viewMode === "waterfall") return <WaterfallView families={families} />;
-  return viewMode === "grid" ? (
-    <FontGrid families={families} />
-  ) : (
-    <FontList families={families} />
-  );
+  if (nav.kind === "snapshot") {
+    return (
+      <div className="snapshot-view">
+        <SnapshotBar name={nav.name} />
+        {body}
+      </div>
+    );
+  }
+  return body;
 }
 
 export default function App() {

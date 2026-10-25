@@ -331,6 +331,46 @@ fn rename_collection(store: State<Store>, from: String, to: String) -> Result<()
 }
 
 #[tauri::command]
+fn get_snapshots(store: State<Store>) -> Result<Vec<store::Snapshot>, String> {
+    let state = store.0.lock().map_err(|e| e.to_string())?;
+    Ok(state.snapshots.clone())
+}
+
+#[tauri::command]
+fn save_snapshot(store: State<Store>, snapshot: store::Snapshot) -> Result<Vec<store::Snapshot>, String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    state.save_snapshot(snapshot);
+    store::save(&state)?;
+    Ok(state.snapshots.clone())
+}
+
+#[tauri::command]
+fn delete_snapshot(store: State<Store>, name: String) -> Result<(), String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    state.snapshots.retain(|s| s.name != name);
+    store::save(&state)
+}
+
+#[tauri::command]
+fn rename_snapshot(store: State<Store>, from: String, to: String) -> Result<(), String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    if state.snapshot(&to).is_some() {
+        return Err(format!("a snapshot named \"{to}\" already exists"));
+    }
+    let snap = state
+        .snapshot(&from)
+        .cloned()
+        .ok_or_else(|| format!("snapshot \"{from}\" not found"))?;
+    state.snapshots.retain(|s| s.name != from);
+    state.save_snapshot(store::Snapshot {
+        name: to,
+        created_at: snap.created_at,
+        entries: snap.entries,
+    });
+    store::save(&state)
+}
+
+#[tauri::command]
 fn play_sound(kind: String, level: String) {
     sound::play(&kind, &level);
 }
@@ -938,6 +978,10 @@ pub fn run() {
             set_collection,
             delete_collection,
             rename_collection,
+            get_snapshots,
+            save_snapshot,
+            delete_snapshot,
+            rename_snapshot,
             export_font,
             export_fonts,
             write_text_file,

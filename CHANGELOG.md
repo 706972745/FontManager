@@ -4,6 +4,46 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.1-beta.1] — 2026-10-25
+
+### Added
+
+- **字体快照（Font snapshots）.** Save the set of currently activated fonts as a
+  named snapshot and restore the whole environment later with one click.
+  - Up to 5 snapshots; the oldest is evicted automatically.
+  - Two apply modes: **切换到此快照** (deactivate everything else, keep only the
+    snapshot's fonts) and **合并到当前启用** (activate the snapshot's fonts on
+    top of what is already active).
+  - System-installed fonts are recorded into snapshots and clearly annotated
+    (a "N 个系统字体" badge); applying a snapshot never deactivates system
+    fonts.
+  - Fine-grained control: an "加入快照" toggle per snapshot in the detail
+    panel, per-family check items in context menus (multi-select supported),
+    and a "清除快照内所有字体" entry in the snapshot context menu that empties
+    a snapshot while keeping it.
+  - Import / export: exports are named
+    `ZFontManager_<快照名>_<导出时间>.json`; importing offers 仅导入 /
+    导入并切换 / 导入并合并; both v1 and v2 export formats are accepted.
+- **启动自动恢复（Restore on launch）.** The app re-activates on startup the
+  fonts that were active in the previous session. Off-switch in Settings,
+  on by default.
+
+### Changed
+
+- **Monochrome (black-white-gray) theme completed.** All 53 icon assets —
+  application icon, tray icon, installer icons, in-app images — were
+  desaturated from purple to grayscale with luminance preserved; the two
+  remaining accent colors in the UI (system badge blue, warning amber) are now
+  neutral gray as well.
+- Version bumped to 0.8.1 (shown as *0.8.1 Beta 1* in About and Settings).
+
+### Fixed
+
+- The snapshot sidebar count counts font files while the "System fonts" view
+  counts families; both are now documented to avoid confusion.
+
+[0.8.1-beta.1]: https://github.com/TheHolyOneZ/ZFontManager/compare/v0.8.0...HEAD
+
 ## [0.8.0] — 2026-10-23
 
 ### Fixed

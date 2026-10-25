@@ -13,6 +13,8 @@ import {
   type OnlineFamilyDetail,
   type OnlineProgress,
   type ScanProgress,
+  type Snapshot,
+  type SnapshotEntry,
   type TrashEntry,
 } from "../lib/ipc";
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
@@ -38,6 +40,8 @@ export type MotionPref = "system" | "reduced";
 export type TransparencyPref = "full" | "reduced";
 export type UiScale = "auto" | number;
 export type SortMode = "name" | "styles" | "size" | "glyphs";
+/** 快照应用方式：switch = 切换为快照（停用其他）；merge = 合并到当前启用 */
+export type SnapshotApplyMode = "switch" | "merge";
 export type SourceFilter = "all" | "system" | "user";
 
 export type Nav =
@@ -46,6 +50,7 @@ export type Nav =
   | { kind: "about" }
   | { kind: "tag"; tag: string }
   | { kind: "collection"; name: string }
+  | { kind: "snapshot"; name: string }
   | { kind: "favorites" }
   | { kind: "activated" }
   | { kind: "activatedSession" }
@@ -83,6 +88,7 @@ interface FontStore {
   lastImported: string[];
   notes: Record<string, string>;
   trash: TrashEntry[];
+  snapshots: Snapshot[];
   panelWidth: number;
 
   selection: string[];
@@ -116,6 +122,8 @@ interface FontStore {
   transparencyPref: TransparencyPref;
   closeToTray: boolean;
   startMinimized: boolean;
+  restoreOnLaunch: boolean;
+  lastActivePaths: string[];
   uiScale: UiScale;
   appliedScale: number;
   soundPref: SoundLevel;
@@ -151,10 +159,13 @@ interface FontStore {
 
   pendingCollectionFor: string | null;
 
+  pendingSnapshotFor: string | null;
+
   duplicateReport: { names: string[]; at: number } | null;
 
   init: () => Promise<void>;
   rescan: () => Promise<void>;
+  restoreLastActivation: () => Promise<void>;
   setFamilyActive: (family: string, active: boolean) => Promise<void>;
   activateFamilySession: (family: string) => Promise<void>;
   setFontFileActive: (path: string, active: boolean) => Promise<void>;
@@ -169,6 +180,19 @@ interface FontStore {
   deleteCollection: (name: string) => Promise<void>;
   renameCollection: (from: string, to: string) => Promise<void>;
   toggleFamilyInCollection: (collection: string, family: string) => Promise<void>;
+  createSnapshot: (name: string) => Promise<void>;
+  deleteSnapshot: (name: string) => Promise<void>;
+  renameSnapshot: (from: string, to: string) => Promise<void>;
+  toggleFamilyInSnapshot: (snapshot: string, family: string) => Promise<void>;
+  addActiveToSnapshot: (snapshot: string) => Promise<void>;
+  /** 应用快照：switch = 关掉其他字体只留快照内的；merge = 在当前启用基础上叠加快照内的字体 */
+  applySnapshot: (name: string, mode: SnapshotApplyMode) => Promise<void>;
+  removeMissingFromSnapshot: (name: string) => Promise<void>;
+  /** 清空快照内所有字体（快照本身保留） */
+  clearSnapshot: (name: string) => Promise<void>;
+  exportSnapshot: (name: string, dest: string) => Promise<void>;
+  /** mode: none = 仅导入；switch = 导入并切换；merge = 导入并合并到当前启用 */
+  importSnapshots: (src: string, mode?: SnapshotApplyMode | "none") => Promise<void>;
   toggleFavorite: (family: string) => Promise<void>;
   setFamilyNote: (family: string, note: string) => Promise<void>;
   setFamiliesActiveBulk: (families: string[], active: boolean) => Promise<void>;
@@ -198,6 +222,7 @@ interface FontStore {
   setTransparencyPref: (pref: TransparencyPref) => void;
   setCloseToTray: (v: boolean) => void;
   setStartMinimized: (v: boolean) => void;
+  setRestoreOnLaunch: (v: boolean) => void;
   setUiScale: (scale: UiScale) => void;
   toggleFormat: (f: FontFormat) => void;
   toggleFeature: (tag: string) => void;
@@ -259,8 +284,63 @@ function persistPrefs(get: () => FontStore) {
       localePref: s.localePref,
       onboarded: s.onboarded,
       lastImported: s.lastImported,
+      restoreOnLaunch: s.restoreOnLaunch,
+      lastActivePaths: s.fonts.filter((f) => f.active).map((f) => f.path),
     });
   }, 600);
+}
+
+function entryFromFace(f: FontFace): SnapshotEntry {
+  return { path: f.path, family: f.family, system: f.source === "system" };
+}
+
+/**
+ * 应用一组快照条目（applySnapshot 与导入后应用共用）。
+ * 系统安装的字体（system=true）只做记录与标注，无论何种模式都绝不会被停用。
+ */
+async function applyEntries(
+  entries: SnapshotEntry[],
+  mode: SnapshotApplyMode,
+  label: string,
+): Promise<void> {
+  const paths = [...new Set(entries.map((e) => e.path))];
+  if (paths.length === 0) return;
+  const s = useFontStore.getState();
+  const byPath = new Map(s.fonts.map((f) => [f.path, f] as const));
+  const snapshotSet = new Set(paths);
+  const toActivate = paths.filter((p) => {
+    const f = byPath.get(p);
+    return !!f && f.deactivatable && !f.active;
+  });
+  const toDeactivate =
+    mode === "switch"
+      ? s.fonts
+          .filter((f) => f.active && f.deactivatable && !snapshotSet.has(f.path))
+          .map((f) => f.path)
+      : [];
+  if (toActivate.length === 0 && toDeactivate.length === 0) {
+    toast.success(t("snap.alreadyActive"));
+    return;
+  }
+  try {
+    if (toDeactivate.length > 0) await ipc.setFontsActive(toDeactivate, false);
+    if (toActivate.length > 0) await ipc.setFontsActive(toActivate, true);
+    await useFontStore.getState().rescan();
+    persistPrefs(useFontStore.getState);
+    toast.success(
+      mode === "switch"
+        ? t("snap.switchDone", {
+            count: toActivate.length,
+            deactivated: toDeactivate.length,
+            name: label,
+          })
+        : t("snap.mergeDone", { count: toActivate.length, name: label }),
+      undefined,
+      "activate",
+    );
+  } catch (e) {
+    toast.error(t("toast.couldntActivate"), String(e));
+  }
 }
 
 export const useFontStore = create<FontStore>((set, get) => ({
@@ -269,6 +349,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   fonts: [],
   tags: {},
   collections: {},
+  snapshots: [],
   favorites: [],
   sessionActivated: [],
   lastImported: [],
@@ -304,6 +385,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   transparencyPref: "full",
   closeToTray: false,
   startMinimized: false,
+  restoreOnLaunch: true,
+  lastActivePaths: [],
   uiScale: "auto",
   appliedScale: 1,
   localePref: getLocalePref(),
@@ -330,6 +413,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   nav: { kind: "library" },
   selectedFamily: null,
   pendingCollectionFor: null,
+  pendingSnapshotFor: null,
   duplicateReport: null,
 
   init: async () => {
@@ -359,6 +443,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
         transparencyPref: prefs.transparencyPref === "reduced" ? "reduced" : "full",
         closeToTray: prefs.closeToTray === true,
         startMinimized: prefs.startMinimized === true,
+        restoreOnLaunch: prefs.restoreOnLaunch !== false,
         uiScale: typeof prefs.uiScale === "number" ? prefs.uiScale : "auto",
         collapsedSections: Array.isArray(prefs.collapsedSections)
           ? (prefs.collapsedSections as unknown[]).filter((n): n is string => typeof n === "string")
@@ -373,6 +458,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
         localePref: isLocalePref(prefs.localePref) ? prefs.localePref : get().localePref,
         lastImported: Array.isArray(prefs.lastImported)
           ? (prefs.lastImported as unknown[]).filter((n): n is string => typeof n === "string")
+          : [],
+        lastActivePaths: Array.isArray(prefs.lastActivePaths)
+          ? (prefs.lastActivePaths as unknown[]).filter((n): n is string => typeof n === "string")
           : [],
       });
       setSoundLevel(get().soundPref);
@@ -451,20 +539,46 @@ export const useFontStore = create<FontStore>((set, get) => ({
       set({ onlineProgress: e.payload });
     });
     await get().rescan();
+    await get().restoreLastActivation();
+  },
+
+  restoreLastActivation: async () => {
+    if (!get().restoreOnLaunch) return;
+    const saved = get().lastActivePaths;
+    if (saved.length === 0) return;
+    const byPath = new Map(get().fonts.map((f) => [f.path, f] as const));
+    const missing = [
+      ...new Set(
+        saved.filter((p) => {
+          const face = byPath.get(p);
+          return face ? face.deactivatable && !face.active : false;
+        }),
+      ),
+    ];
+    if (missing.length === 0) return;
+    try {
+      await ipc.setFontsActive(missing, true);
+      await get().rescan();
+      persistPrefs(get);
+      toast.success(t("toast.restoredLast", { count: missing.length }), undefined, "activate");
+    } catch (e) {
+      toast.error(t("toast.couldntRestoreLast"), String(e));
+    }
   },
 
   rescan: async () => {
     set({ phase: "scanning" });
     try {
-      const [fonts, tags, collections, favorites, notes, trash] = await Promise.all([
+      const [fonts, tags, collections, snapshots, favorites, notes, trash] = await Promise.all([
         ipc.scanFonts(),
         ipc.getTags(),
         ipc.getCollections(),
+        ipc.getSnapshots(),
         ipc.getFavorites(),
         ipc.getNotes(),
         ipc.listTrash(),
       ]);
-      set({ fonts, tags, collections, favorites, notes, trash, phase: "ready" });
+      set({ fonts, tags, collections, snapshots, favorites, notes, trash, phase: "ready" });
       const names = new Set(fonts.map((f) => f.family));
       const keptImported = get().lastImported.filter((n) => names.has(n));
       if (get().charFilter) set({ charMatches: null, charSearching: false });
@@ -492,10 +606,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
     });
     try {
       await ipc.setFontsActive(paths, active);
+      persistPrefs(get);
     } catch (e) {
       set({ sessionActivated: prevSession });
       toast.error(t(active ? "toast.couldntActivate" : "toast.couldntDeactivate"), String(e));
       await get().rescan();
+      persistPrefs(get);
     }
   },
 
@@ -539,6 +655,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     });
     try {
       await ipc.setFontsActive([path], active);
+      persistPrefs(get);
     } catch (e) {
       set({ fonts: prevFonts });
       toast.error(t(active ? "toast.couldntActivate" : "toast.couldntDeactivate"), String(e));
@@ -815,6 +932,274 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
   },
 
+  createSnapshot: async (name) => {
+    const clean = name.trim();
+    if (!clean) return;
+    if (get().snapshots.some((s) => s.name === clean)) {
+      toast.error(t("toast.snapshotExists"), t("toast.nameTakenSub", { name: clean }));
+      return;
+    }
+    const prev = get().snapshots;
+    const prevPending = get().pendingSnapshotFor;
+    const family = prevPending;
+    const seen = new Set<string>();
+    const entries: SnapshotEntry[] = [];
+    for (const f of get().fonts) {
+      const wanted = family ? f.family === family && f.deactivatable : f.active;
+      if (!wanted || seen.has(f.path)) continue;
+      seen.add(f.path);
+      entries.push({ path: f.path, family: f.family, system: f.source === "system" });
+    }
+    set({ snapshots: [...prev, { name: clean, createdAt: Date.now(), entries }], pendingSnapshotFor: null });
+    try {
+      const saved = await ipc.saveSnapshot({ name: clean, createdAt: Date.now(), entries });
+      set({ snapshots: saved });
+      const systemCount = entries.filter((e) => e.system).length;
+      toast.success(
+        t("toast.createdSnapshot", { name: clean }),
+        family
+          ? t("toast.familyAdded", { name: family })
+          : systemCount > 0
+            ? t("snap.systemNote", { count: systemCount })
+            : t("toast.rightClickToAdd"),
+      );
+    } catch (e) {
+      set({ snapshots: prev, pendingSnapshotFor: prevPending });
+      toast.error(t("toast.couldntCreateSnapshot"), String(e));
+    }
+  },
+
+  deleteSnapshot: async (name) => {
+    const prev = get().snapshots;
+    const next = prev.filter((s) => s.name !== name);
+    const nav = get().nav;
+    set({
+      snapshots: next,
+      nav: nav.kind === "snapshot" && nav.name === name ? { kind: "library" } : nav,
+    });
+    try {
+      await ipc.deleteSnapshot(name);
+    } catch (e) {
+      set({ snapshots: prev });
+      toast.error(t("toast.couldntDeleteSnapshot"), String(e));
+    }
+  },
+
+  renameSnapshot: async (from, to) => {
+    const clean = to.trim();
+    if (!clean || clean === from) return;
+    const prev = get().snapshots;
+    if (prev.some((s) => s.name === clean)) {
+      toast.error(t("toast.nameTaken"), t("toast.nameTakenSub", { name: clean }));
+      return;
+    }
+    const next = prev.map((s) => (s.name === from ? { ...s, name: clean } : s));
+    const nav = get().nav;
+    set({
+      snapshots: next,
+      nav: nav.kind === "snapshot" && nav.name === from ? { kind: "snapshot", name: clean } : nav,
+    });
+    try {
+      await ipc.renameSnapshot(from, clean);
+    } catch (e) {
+      set({ snapshots: prev });
+      toast.error(t("toast.couldntRenameSnapshot"), String(e));
+    }
+  },
+
+  toggleFamilyInSnapshot: async (snapshot, family) => {
+    const prev = get().snapshots;
+    const snap = prev.find((s) => s.name === snapshot);
+    if (!snap) return;
+    // 包含系统字体（system 标注），应用快照时系统字体不受影响
+    const familyFaces = get().fonts.filter((f) => f.family === family);
+    if (familyFaces.length === 0) return;
+    const inPaths = new Set(snap.entries.map((e) => e.path));
+    const allIn = familyFaces.every((f) => inPaths.has(f.path));
+    const entries: SnapshotEntry[] = allIn
+      ? snap.entries.filter((e) => !familyFaces.some((f) => f.path === e.path))
+      : [...snap.entries, ...familyFaces.filter((f) => !inPaths.has(f.path)).map(entryFromFace)];
+    set({ snapshots: prev.map((s) => (s.name === snapshot ? { ...s, entries } : s)) });
+    try {
+      const saved = await ipc.saveSnapshot({ ...snap, entries });
+      set({ snapshots: saved });
+    } catch (e) {
+      set({ snapshots: prev });
+      toast.error(t("toast.couldntUpdateSnapshot"), String(e));
+    }
+  },
+
+  addActiveToSnapshot: async (snapshot) => {
+    const prev = get().snapshots;
+    const snap = prev.find((s) => s.name === snapshot);
+    if (!snap) return;
+    const inPaths = new Set(snap.entries.map((e) => e.path));
+    const add = get().fonts.filter((f) => f.active && !inPaths.has(f.path)).map(entryFromFace);
+    if (add.length === 0) {
+      toast.info?.(t("snap.alreadyActive"));
+      return;
+    }
+    const entries = [...snap.entries, ...add];
+    set({ snapshots: prev.map((s) => (s.name === snapshot ? { ...s, entries } : s)) });
+    try {
+      const saved = await ipc.saveSnapshot({ ...snap, entries });
+      set({ snapshots: saved });
+      toast.success(
+        t("toast.addedToSnapshot", { count: add.length, name: snapshot }),
+        undefined,
+        "install",
+      );
+    } catch (e) {
+      set({ snapshots: prev });
+      toast.error(t("toast.couldntUpdateSnapshot"), String(e));
+    }
+  },
+
+  applySnapshot: async (name, mode = "merge") => {
+    const snap = get().snapshots.find((s) => s.name === name);
+    if (!snap) return;
+    await applyEntries(snap.entries, mode, name);
+  },
+
+  removeMissingFromSnapshot: async (name) => {
+    const prev = get().snapshots;
+    const snap = prev.find((s) => s.name === name);
+    if (!snap) return;
+    const alive = new Set(get().fonts.map((f) => f.path));
+    const entries = snap.entries.filter((e) => alive.has(e.path));
+    if (entries.length === snap.entries.length) return;
+    set({ snapshots: prev.map((s) => (s.name === name ? { ...s, entries } : s)) });
+    try {
+      await ipc.saveSnapshot({ ...snap, entries });
+      toast.success(t("toast.removedMissing", { count: snap.entries.length - entries.length }));
+    } catch (e) {
+      set({ snapshots: prev });
+      toast.error(t("toast.couldntUpdateSnapshot"), String(e));
+    }
+  },
+
+  clearSnapshot: async (name) => {
+    const prev = get().snapshots;
+    const snap = prev.find((s) => s.name === name);
+    if (!snap || snap.entries.length === 0) return;
+    set({ snapshots: prev.map((s) => (s.name === name ? { ...s, entries: [] } : s)) });
+    try {
+      const saved = await ipc.saveSnapshot({ ...snap, entries: [] });
+      set({ snapshots: saved });
+      toast.success(t("toast.snapshotCleared", { name }));
+    } catch (e) {
+      set({ snapshots: prev });
+      toast.error(t("toast.couldntUpdateSnapshot"), String(e));
+    }
+  },
+
+  exportSnapshot: async (name, dest) => {
+    const snap = get().snapshots.find((s) => s.name === name);
+    const payload = {
+      app: "ZFontManager",
+      kind: "snapshots",
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      snapshots: snap ? [snap] : [],
+    };
+    try {
+      await ipc.writeTextFile(dest, JSON.stringify(payload, null, 2));
+      toast.success(t("toast.snapshotExported"), dest, "install");
+    } catch (e) {
+      toast.error(t("toast.exportFailed"), String(e));
+    }
+  },
+
+  importSnapshots: async (src, mode = "none") => {
+    try {
+      const raw: unknown = JSON.parse(await ipc.readTextFile(src));
+      const d = raw as Partial<{ app: string; kind: string; snapshots: unknown }>;
+      if (d?.app !== "ZFontManager" || !d.snapshots || typeof d.snapshots !== "object") {
+        toast.error(t("toast.notAnExport"), t("toast.notAnExportSub"));
+        return;
+      }
+      // v2 格式：snapshots: Snapshot[]；兼容 v1 旧格式：snapshots: Record<string, string[]>
+      let list: Snapshot[];
+      if (Array.isArray(d.snapshots)) {
+        list = (d.snapshots as Snapshot[])
+          .filter((s) => s && typeof s.name === "string" && Array.isArray(s.entries))
+          .map((s) => ({
+            name: s.name,
+            createdAt: typeof s.createdAt === "number" ? s.createdAt : Date.now(),
+            entries: s.entries
+              .filter((e) => e && typeof e.path === "string")
+              .map((e) => ({
+                path: e.path,
+                family: typeof e.family === "string" ? e.family : "",
+                system: !!e.system,
+              })),
+          }));
+      } else {
+        list = Object.entries(d.snapshots as Record<string, unknown>).flatMap(
+          ([origName, value]) =>
+            Array.isArray(value)
+              ? [
+                  {
+                    name: origName,
+                    createdAt: Date.now(),
+                    entries: value
+                      .filter((p): p is string => typeof p === "string")
+                      .map((path) => ({ path, family: "", system: false })),
+                  },
+                ]
+              : [],
+        );
+      }
+      if (list.length === 0) {
+        toast.error(t("toast.importFailed"), t("toast.notAnExportSub"));
+        return;
+      }
+      const imported: Snapshot[] = [];
+      for (const snap of list) {
+        let name = snap.name;
+        let n = 2;
+        while (get().snapshots.some((s) => s.name === name)) {
+          name = `${snap.name} (${n++})`;
+        }
+        const prev = get().snapshots;
+        set({ snapshots: [...prev, { ...snap, name }] });
+        try {
+          const saved = await ipc.saveSnapshot({ ...snap, name });
+          set({ snapshots: saved });
+          imported.push({ ...snap, name });
+        } catch {
+          set({ snapshots: prev });
+        }
+      }
+      if (imported.length > 0) {
+        if (mode === "none") {
+          toast.success(
+            t("toast.snapshotsImported", { count: imported.length }),
+            undefined,
+            "restore",
+          );
+        } else {
+          // 合并所有导入快照的条目后应用（切换 / 合并到当前启用）
+          const seen = new Set<string>();
+          const entries: SnapshotEntry[] = [];
+          for (const snap of imported) {
+            for (const e of snap.entries) {
+              if (!seen.has(e.path)) {
+                seen.add(e.path);
+                entries.push(e);
+              }
+            }
+          }
+          await applyEntries(entries, mode, imported.map((s) => s.name).join(", "));
+        }
+      } else {
+        toast.error(t("toast.importFailed"), t("toast.notAnExportSub"));
+      }
+    } catch (e) {
+      toast.error(t("toast.importFailed"), String(e));
+    }
+  },
+
   toggleFavorite: async (family) => {
     const prev = get().favorites;
     const favorite = !prev.includes(family);
@@ -857,6 +1242,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     });
     try {
       await ipc.setFontsActive(paths, active);
+      persistPrefs(get);
       toast.success(
         t(active ? "toast.activatedCount" : "toast.deactivatedCount", {
           count: families.length,
@@ -869,6 +1255,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
       set({ sessionActivated: prevSession });
       toast.error(t("toast.bulkUpdateFailed"), String(e));
       await get().rescan();
+      persistPrefs(get);
     }
   },
 
@@ -1215,6 +1602,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({ startMinimized });
     persistPrefs(get);
   },
+  setRestoreOnLaunch: (restoreOnLaunch) => {
+    set({ restoreOnLaunch });
+    persistPrefs(get);
+  },
   setUiScale: (uiScale) => {
     set({ uiScale });
     persistPrefs(get);
@@ -1368,6 +1759,7 @@ export function selectVisibleFamilies(s: {
   fonts: FontFace[];
   tags: Record<string, string[]>;
   collections: Record<string, string[]>;
+  snapshots: Snapshot[];
   favorites: string[];
   sessionActivated: string[];
   lastImported: string[];
@@ -1423,6 +1815,21 @@ export function selectVisibleFamilies(s: {
   if (s.nav.kind === "collection") {
     const members = s.collections[s.nav.name] ?? [];
     out = out.filter((f) => members.includes(f.name));
+  }
+  if (s.nav.kind === "snapshot") {
+    const snapshotName = s.nav.name;
+    const snap = s.snapshots.find((sn) => sn.name === snapshotName);
+    const members = snap?.entries.map((e) => e.path) ?? [];
+    const memberSet = new Set(members);
+    out = out.filter((f) => f.faces.some((fc) => memberSet.has(fc.path)));
+    const order = new Map(members.map((p, i) => [p, i] as const));
+    const firstIndex = (f: Family) =>
+      f.faces.reduce(
+        (min, fc) => Math.min(min, order.get(fc.path) ?? Number.MAX_SAFE_INTEGER),
+        Number.MAX_SAFE_INTEGER,
+      );
+    out.sort((a, b) => firstIndex(a) - firstIndex(b) || a.name.localeCompare(b.name));
+    return out;
   }
   if (s.nav.kind === "favorites") {
     out = out.filter((f) => s.favorites.includes(f.name));

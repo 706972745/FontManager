@@ -17,3 +17,7 @@ strip-comments.mjs
 /Issue-18.txt
 /.npmrc
 /.gitignore
+
+# local session / machine-specific env
+.workbuddy/
+src-tauri/.cargo/

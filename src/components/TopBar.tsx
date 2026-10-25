@@ -4,6 +4,7 @@ import {
   Check,
   Columns2,
   Filter,
+  FolderOpen,
   LayoutGrid,
   List,
   RefreshCw,
@@ -11,6 +12,7 @@ import {
   Type,
   X,
 } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useState, type CSSProperties } from "react";
 import { springSnappy, springSoft } from "../design/springs";
 import { SIZES, useFontStore, type SortMode } from "../state/fontStore";
@@ -336,6 +338,40 @@ function RescanButton() {
   );
 }
 
+function ImportFolderButton() {
+  const t = useT();
+  const installPaths = useFontStore((s) => s.installPaths);
+  const [busy, setBusy] = useState(false);
+  return (
+    <motion.button
+      className="rescan-btn"
+      aria-label={t("top.importFolder")}
+      title={t("top.importFolder")}
+      disabled={busy}
+      onClick={async () => {
+        const dir = await open({
+          directory: true,
+          multiple: false,
+          title: t("top.importFolder"),
+        });
+        if (typeof dir !== "string") return;
+        setBusy(true);
+        try {
+          // The backend install_fonts expands directories recursively,
+          // so every font in the folder and its subfolders is linked
+          // into the library exactly like a drag-and-drop import.
+          await installPaths([dir], "link");
+        } finally {
+          setBusy(false);
+        }
+      }}
+      whileTap={{ scale: 0.94 }}
+    >
+      <FolderOpen size={14} strokeWidth={1.5} />
+    </motion.button>
+  );
+}
+
 function CompareButton() {
   const t = useT();
   const selection = useFontStore((s) => s.selection);
@@ -442,6 +478,8 @@ export function TopBar() {
       <SortMenu />
 
       <CompareButton />
+
+      <ImportFolderButton />
 
       <RescanButton />
 

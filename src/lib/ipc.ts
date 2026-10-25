@@ -47,6 +47,21 @@ export interface TrashEntry {
   trashedAt: number;
 }
 
+/** 快照条目：仅记录字体文件路径等引用信息，不携带字体文件本身 */
+export interface SnapshotEntry {
+  path: string;
+  family: string;
+  /** 该条目是否为系统安装的字体（应用快照时系统字体不受影响） */
+  system: boolean;
+}
+
+export interface Snapshot {
+  name: string;
+  /** 创建时间（毫秒时间戳） */
+  createdAt: number;
+  entries: SnapshotEntry[];
+}
+
 export interface InstallResult {
   installed: FontFace[];
   errors: string[];
@@ -192,6 +207,12 @@ export const ipc = {
   deleteCollection: (name: string) => invoke<void>("delete_collection", { name }),
   renameCollection: (from: string, to: string) =>
     invoke<void>("rename_collection", { from, to }),
+  getSnapshots: () => invoke<Snapshot[]>("get_snapshots"),
+  saveSnapshot: (snapshot: Snapshot) =>
+    invoke<Snapshot[]>("save_snapshot", { snapshot }),
+  deleteSnapshot: (name: string) => invoke<void>("delete_snapshot", { name }),
+  renameSnapshot: (from: string, to: string) =>
+    invoke<void>("rename_snapshot", { from, to }),
   exportFont: (src: string, dest: string) => invoke<void>("export_font", { src, dest }),
   writeTextFile: (path: string, content: string) =>
     invoke<void>("write_text_file", { path, content }),
