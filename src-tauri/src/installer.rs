@@ -72,15 +72,61 @@ fn unique_dest(dir: &Path, file_name: &std::ffi::OsStr) -> PathBuf {
     dest
 }
 
-fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<PathBuf>, String> {
+/// 暂存/待处理文件：字体 或 版权信息类文件（许可证、版权说明等）
+#[derive(Debug, Clone)]
+pub struct StagedFile {
+    pub path: PathBuf,
+    /// 是否为字体文件（false = 版权信息类文件）
+    pub is_font: bool,
+    /// 在压缩包/拖入文件夹内的相对目录（空 = 根目录），用于把许可证与对应字体归到同一字族
+    pub rel: PathBuf,
+}
+
+/// 判断是否为值得保留的版权信息类文件（许可证、版权声明、说明文档等）
+fn is_info_file(name: &Path) -> bool {
+    let Some(fname) = name.file_name().and_then(|f| f.to_str()) else {
+        return false;
+    };
+    let lower = fname.to_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or("");
+    if matches!(ext, "ttf" | "otf" | "ttc" | "woff" | "woff2") {
+        return false;
+    }
+    let keyword = ["license", "licence", "copyright", "ofl", "readme", "notice", "patents", "授权", "版权", "许可"]
+        .iter()
+        .any(|k| lower.contains(k));
+    matches!(ext, "txt" | "md" | "pdf") || keyword
+}
+
+fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String> {
     if path.is_dir() {
-        return Ok(walkdir::WalkDir::new(path)
+        let mut out = Vec::new();
+        for e in walkdir::WalkDir::new(path)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
-            .map(|e| e.into_path())
-            .filter(|p| parser::is_font_file(p))
-            .collect());
+        {
+            let p = e.path();
+            let rel = p
+                .strip_prefix(path)
+                .ok()
+                .and_then(|r| r.parent().map(|pp| pp.to_path_buf()))
+                .unwrap_or_default();
+            if parser::is_font_file(p) {
+                out.push(StagedFile {
+                    path: p.to_path_buf(),
+                    is_font: true,
+                    rel,
+                });
+            } else if is_info_file(p) {
+                out.push(StagedFile {
+                    path: p.to_path_buf(),
+                    is_font: false,
+                    rel,
+                });
+            }
+        }
+        return Ok(out);
     }
     if path
         .extension()
@@ -94,19 +140,32 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<PathBuf>, String> {
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
             let Some(name) = entry.enclosed_name() else { continue };
-            if !parser::is_font_file(&name) {
-                continue;
+            let is_font = parser::is_font_file(&name);
+            let is_info = !is_font && is_info_file(&name);
+            if !is_font && !is_info {
+                continue; // 其余文件（安装器、图片等）不保留
             }
             let file_name = name.file_name().ok_or("bad zip entry")?.to_owned();
             let dest = unique_dest(staging, &file_name);
             let mut out_file = fs::File::create(&dest).map_err(|e| e.to_string())?;
             std::io::copy(&mut entry, &mut out_file).map_err(|e| e.to_string())?;
-            out.push(dest);
+            out.push(StagedFile {
+                path: dest,
+                is_font,
+                rel: name
+                    .parent()
+                    .map(|pp| pp.to_path_buf())
+                    .unwrap_or_default(),
+            });
         }
         return Ok(out);
     }
     if parser::is_font_file(path) {
-        return Ok(vec![path.to_path_buf()]);
+        return Ok(vec![StagedFile {
+            path: path.to_path_buf(),
+            is_font: true,
+            rel: PathBuf::new(),
+        }]);
     }
     Err(format!("not a font file: {}", path.display()))
 }
@@ -129,7 +188,7 @@ pub fn install(
         }
     }
 
-    let mut files: Vec<PathBuf> = Vec::new();
+    let mut files: Vec<StagedFile> = Vec::new();
     for p in &dropped {
         match expand_dropped(Path::new(p), &staging) {
             Ok(mut f) => files.append(&mut f),
@@ -137,8 +196,21 @@ pub fn install(
         }
     }
 
-    let total = files.len();
-    for (i, src) in files.into_iter().enumerate() {
+    let infos: Vec<StagedFile> = files
+        .iter()
+        .filter(|f| !f.is_font)
+        .cloned()
+        .collect();
+    let fonts: Vec<StagedFile> = files.into_iter().filter(|f| f.is_font).collect();
+    let total = fonts.len();
+
+    // 归档追踪：相对目录 → 该目录中的字体被归入的字族目录；以及本次安装创建的全部字族目录
+    let mut rel_family_dirs: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+    let mut all_family_dirs: Vec<PathBuf> = Vec::new();
+
+    for (i, staged) in fonts.into_iter().enumerate() {
+        let src = staged.path;
         let src_faces = parser::parse_font_file(&src, FontSource::Managed);
         let src_keys: Vec<String> = src_faces.iter().map(dup_key).collect();
         if !src_keys.is_empty() && src_keys.iter().all(|k| known.contains(k)) {
@@ -252,10 +324,55 @@ pub fn install(
                             face.active = false;
                             known.insert(dup_key(face));
                         }
+                        // 记录字族目录，供版权信息文件归档
+                        if let Some(parent) = Path::new(&dest).parent() {
+                            if parent != library {
+                                if !all_family_dirs.iter().any(|d| d == parent) {
+                                    all_family_dirs.push(parent.to_path_buf());
+                                }
+                                rel_family_dirs
+                                    .entry(staged.rel.clone())
+                                    .or_default()
+                                    .push(parent.to_path_buf());
+                            }
+                        }
                         result.installed.extend(faces);
                     }
                     Err(e) => result.errors.push(e),
                 }
+            }
+        }
+    }
+
+    // 版权信息文件（许可证/版权声明/说明）随字体归档到字族目录：
+    // 与字体同处一个子目录且该目录只归入一个字族 → 只进那个字族；
+    // 否则若本次安装只产生一个字族 → 进它；多字族时每个字族目录都放一份
+    if mode == InstallMode::Move {
+        for info in &infos {
+            let Some(name) = info.path.file_name().map(|f| f.to_owned()) else {
+                continue;
+            };
+            let mut targets: Vec<PathBuf> = Vec::new();
+            if let Some(dirs) = rel_family_dirs.get(&info.rel) {
+                let mut uniq: Vec<PathBuf> = Vec::new();
+                for d in dirs {
+                    if !uniq.contains(d) {
+                        uniq.push(d.clone());
+                    }
+                }
+                if uniq.len() == 1 {
+                    targets.push(uniq.remove(0));
+                }
+            }
+            if targets.is_empty() {
+                if all_family_dirs.len() == 1 {
+                    targets.push(all_family_dirs[0].clone());
+                } else {
+                    targets.extend(all_family_dirs.iter().cloned());
+                }
+            }
+            for t in targets {
+                let _ = fs::copy(&info.path, unique_dest(&t, &name));
             }
         }
     }
@@ -551,6 +668,17 @@ fn refresh_system_font_cache() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detects_info_files() {
+        assert!(is_info_file(Path::new("OFL.txt")));
+        assert!(is_info_file(Path::new("LICENSE")));
+        assert!(is_info_file(Path::new("Font-License.pdf")));
+        assert!(is_info_file(Path::new("版权说明.txt")));
+        assert!(!is_info_file(Path::new("Font.ttf")));
+        assert!(!is_info_file(Path::new("preview.png")));
+        assert!(!is_info_file(Path::new("installer.exe")));
+    }
 
     #[test]
     fn uninstall_restore_roundtrip() {
