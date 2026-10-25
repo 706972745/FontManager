@@ -939,6 +939,15 @@ export function DetailPanel() {
               <GlyphMap face={lead} fontFamily={fontFamily} variation={variation} />
             </motion.section>
 
+            {lead.copyright && (
+              <motion.section
+                variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
+              >
+                <div className="detail-heading">{t("detail.copyright")}</div>
+                <p className="detail-copyright-text">{lead.copyright}</p>
+              </motion.section>
+            )}
+
             {(lead.license || lead.licenseUrl) && (
               <motion.section
                 variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}

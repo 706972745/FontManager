@@ -7,6 +7,7 @@ import { useFontCss } from "../lib/fontLoader";
 import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
+import { classifyLicense } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
 import { playStar } from "../lib/sound";
 import type { FontFace } from "../lib/ipc";
@@ -92,6 +93,9 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   const { fontFamily, failed } = useFontCss(lead);
   const text = sampleText.trim() || family.name;
+  const licCls = classifyLicense(lead.license ?? null);
+  const licKey =
+    licCls === "open" ? "card.licFree" : licCls === "restrictive" ? "card.licPaid" : "card.licUnknown";
 
   return (
     <motion.article
@@ -152,6 +156,9 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
           </motion.button>
         )}
         <span className="card-spacer" />
+        <span className={`lic-chip lic-${licCls}`} title={t("detail.copyright")}>
+          {t(licKey)}
+        </span>
         {hasActiveConflict ? (
           <span
             className="conflict-badge"

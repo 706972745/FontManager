@@ -634,5 +634,9 @@
   "trash.emptyTitle": "回收站是空的",
   "trash.restore": "恢复",
   "waterfall.emptyBody": "先在网格或列表视图中选择一个字体，再回到瀑布视图。",
-  "waterfall.emptyTitle": "没有可展示的字体"
+  "waterfall.emptyTitle": "没有可展示的字体",
+  "card.licFree": "免费字体",
+  "card.licPaid": "收费字体",
+  "card.licUnknown": "未知版权",
+  "detail.copyright": "版权信息"
 }

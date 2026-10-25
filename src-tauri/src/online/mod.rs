@@ -59,6 +59,8 @@ pub struct DownloadResult {
     pub family: String,
     pub paths: Vec<String>,
     pub license_path: String,
+    /// 来源缩写（如 "google-fonts"），用作库目录下的子文件夹名
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

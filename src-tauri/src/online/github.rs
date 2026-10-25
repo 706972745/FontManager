@@ -9,6 +9,22 @@ use tauri::Emitter;
 
 pub const RAW_BASE: &str = "https://raw.githubusercontent.com/google/fonts/main";
 
+/// 来源缩写：取 RAW_BASE 域名后的前两段，如 "google/fonts" → "google-fonts"
+pub fn source_abbrev() -> String {
+    let after_domain = RAW_BASE
+        .split("://")
+        .nth(1)
+        .and_then(|s| s.splitn(2, '/').nth(1))
+        .unwrap_or("unknown-source");
+    let segs: Vec<&str> = after_domain.split('/').filter(|s| !s.is_empty()).collect();
+    let abbrev = segs.iter().take(2).cloned().collect::<Vec<_>>().join("-");
+    if abbrev.is_empty() {
+        "unknown-source".to_string()
+    } else {
+        abbrev
+    }
+}
+
 const DIRS: [&str; 3] = ["ofl", "apache", "ufl"];
 
 fn encode_segment(s: &str) -> String {
@@ -170,6 +186,7 @@ pub async fn download(app: &tauri::AppHandle, client: &reqwest::Client, id: &str
         family: det.family,
         paths,
         license_path: license_path.to_string_lossy().into_owned(),
+        source: source_abbrev(),
     })
 }
 

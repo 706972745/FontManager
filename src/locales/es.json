@@ -660,5 +660,9 @@
   "trash.emptyTitle": "La papelera está vacía",
   "trash.restore": "Restaurar",
   "waterfall.emptyBody": "Elige una fuente en la vista de cuadrícula o lista y vuelve luego a la cascada.",
-  "waterfall.emptyTitle": "Nada que mostrar en cascada"
+  "waterfall.emptyTitle": "Nada que mostrar en cascada",
+  "card.licFree": "Libre",
+  "card.licPaid": "De pago",
+  "card.licUnknown": "Desconocida",
+  "detail.copyright": "Copyright"
 }

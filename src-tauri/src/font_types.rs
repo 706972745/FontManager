@@ -53,6 +53,7 @@ pub struct FontFace {
     pub foundry: Option<String>,
     pub license: Option<String>,
     pub license_url: Option<String>,
+    pub copyright: Option<String>,
     pub format: FontFormat,
     pub is_variable: bool,
     pub axes: Vec<VariationAxis>,

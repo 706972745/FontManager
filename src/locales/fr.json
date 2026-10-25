@@ -660,5 +660,9 @@
   "trash.emptyTitle": "La corbeille est vide",
   "trash.restore": "Restaurer",
   "waterfall.emptyBody": "Choisissez une police en vue grille ou liste, puis revenez à la cascade.",
-  "waterfall.emptyTitle": "Rien à faire cascader"
+  "waterfall.emptyTitle": "Rien à faire cascader",
+  "card.licFree": "Libre",
+  "card.licPaid": "Payante",
+  "card.licUnknown": "Inconnue",
+  "detail.copyright": "Copyright"
 }

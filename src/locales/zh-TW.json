@@ -626,5 +626,9 @@
   "trash.emptyTitle": "垃圾桶是空的",
   "trash.restore": "還原",
   "waterfall.emptyBody": "先在格狀或清單檢視中選擇一個字型，再回到瀑布檢視。",
-  "waterfall.emptyTitle": "沒有可展示的字型"
+  "waterfall.emptyTitle": "沒有可展示的字型",
+  "card.licFree": "免費字體",
+  "card.licPaid": "收費字體",
+  "card.licUnknown": "未知版權",
+  "detail.copyright": "版權資訊"
 }

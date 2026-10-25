@@ -643,5 +643,9 @@
   "trash.emptyTitle": "Papierkorb ist leer",
   "trash.restore": "Wiederherstellen",
   "waterfall.emptyBody": "Wähl eine Schrift in der Raster- oder Listenansicht und komm dann zum Wasserfall zurück.",
-  "waterfall.emptyTitle": "Nichts zum Staffeln"
+  "waterfall.emptyTitle": "Nichts zum Staffeln",
+  "card.licFree": "Kostenlos",
+  "card.licPaid": "Kostenpflichtig",
+  "card.licUnknown": "Unbekannt",
+  "detail.copyright": "Urheberrecht"
 }

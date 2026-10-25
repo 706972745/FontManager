@@ -23,6 +23,7 @@ export interface FontFace {
   foundry: string | null;
   license: string | null;
   licenseUrl: string | null;
+  copyright: string | null;
   format: FontFormat;
   isVariable: boolean;
   axes: VariationAxis[];
@@ -141,6 +142,7 @@ export interface OnlineDownloadResult {
   family: string;
   paths: string[];
   licensePath: string;
+  source: string;
 }
 
 export interface OnlineProgress {
@@ -181,6 +183,20 @@ export const ipc = {
     invoke<void>("set_fonts_active_session", { paths }),
   installFonts: (paths: string[], existing: string[], mode: InstallMode) =>
     invoke<InstallResult>("install_fonts", { paths, existing, mode }),
+  installOnline: (
+    paths: string[],
+    existing: string[],
+    family: string,
+    licensePath: string | null,
+    source: string,
+  ) =>
+    invoke<InstallResult>("install_online_family", {
+      paths,
+      existing,
+      family,
+      licensePath,
+      source,
+    }),
   uninstallFont: (path: string, family: string) =>
     invoke<TrashEntry>("uninstall_font", { path, family }),
   listTrash: () => invoke<TrashEntry[]>("list_trash"),

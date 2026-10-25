@@ -163,6 +163,7 @@ fn parse_face(
         .or_else(|| name_string(&face, ttf_parser::name_id::DESIGNER));
     let license = name_string(&face, ttf_parser::name_id::LICENSE);
     let license_url = name_string(&face, ttf_parser::name_id::LICENSE_URL);
+    let copyright = name_string(&face, ttf_parser::name_id::COPYRIGHT_NOTICE);
 
     let axes: Vec<VariationAxis> = face
         .variation_axes()
@@ -190,6 +191,7 @@ fn parse_face(
         foundry,
         license,
         license_url,
+        copyright,
         format,
         is_variable: face.is_variable(),
         axes,
@@ -233,6 +235,7 @@ pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
             foundry: None,
             license: None,
             license_url: None,
+            copyright: None,
             format,
             is_variable: false,
             axes: Vec::new(),

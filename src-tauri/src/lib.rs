@@ -1,6 +1,7 @@
 mod activation;
 mod adobe;
 mod affinity;
+mod copyright;
 mod diag;
 mod font_types;
 mod installer;
@@ -130,6 +131,56 @@ async fn install_fonts(
                 state.linked.insert(face.path.clone());
             }
         }
+        auto = state.auto_activate_imports && result.installed.len() < 64;
+        for face in &result.installed {
+            let _ = activation::sync(&mut state, &face.path, auto);
+        }
+        let _ = store::save(&state);
+    }
+    for face in &result.installed {
+        let p = std::path::Path::new(&face.path);
+        if let Some(parent) = p.parent() {
+            allow_dir(&scope_app, parent);
+        }
+    }
+    for face in &mut result.installed {
+        face.active = auto;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+async fn install_online_family(
+    app: tauri::AppHandle,
+    store: State<'_, Store>,
+    paths: Vec<String>,
+    existing: Vec<String>,
+    family: String,
+    license_path: Option<String>,
+    source: String,
+) -> Result<installer::InstallResult, String> {
+    let library_dir = {
+        let state = store.0.lock().map_err(|e| e.to_string())?;
+        state.active_library_dir().map(|s| s.to_owned())
+    };
+    let library = scanner::effective_managed_dir(library_dir.as_deref());
+    let known: std::collections::HashSet<String> = existing.into_iter().collect();
+    let scope_app = app.clone();
+    let mut result = tauri::async_runtime::spawn_blocking(move || {
+        installer::install_online(
+            &app,
+            paths,
+            &known,
+            &family,
+            license_path.as_deref(),
+            &source,
+            &library,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let mut auto = false;
+    if let Ok(mut state) = store.0.lock() {
         auto = state.auto_activate_imports && result.installed.len() < 64;
         for face in &result.installed {
             let _ = activation::sync(&mut state, &face.path, auto);
@@ -958,6 +1009,7 @@ pub fn run() {
             set_fonts_active,
             set_fonts_active_session,
             install_fonts,
+            install_online_family,
             uninstall_font,
             list_trash,
             affinity_connection,

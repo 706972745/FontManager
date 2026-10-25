@@ -4193,3 +4193,38 @@ h2.detail-title.copy-name {
   padding: 2px 6px;
   max-width: 90px;
 }
+
+/* ===== 版权信息显示 ===== */
+.lic-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-10);
+  font-weight: 500;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  color: var(--text-secondary);
+  background: var(--e2);
+  white-space: nowrap;
+}
+.lic-chip.lic-open {
+  border-style: dashed;
+  background: transparent;
+}
+.lic-chip.lic-restrictive {
+  background: rgba(var(--ink-rgb), 0.14);
+  color: var(--text-primary);
+}
+.detail-copyright-text {
+  font-size: var(--fs-11);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--e1);
+  border: 1px solid rgba(var(--ink-rgb), 0.06);
+}

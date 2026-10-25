@@ -1,3 +1,4 @@
+use crate::copyright;
 use crate::font_types::{FontFace, FontSource, TrashEntry};
 use crate::parser;
 use serde::Serialize;
@@ -6,6 +7,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
+
+/// 在线下载字体在库目录下的父文件夹名
+pub const ONLINE_DIR_NAME: &str = "在线栏目";
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -202,7 +206,30 @@ pub fn install(
             }
             InstallMode::Move => {
                 let file_name = src.file_name().map(|f| f.to_owned()).unwrap_or_default();
-                let dest = unique_dest(library, &file_name);
+                // 按字族归档：<库目录>/<家族名（版权后缀）>/；解析失败时退回库根目录
+                let target_dir = match src_faces.first() {
+                    Some(f0) => {
+                        let class = copyright::classify(f0.license.as_deref());
+                        library.join(copyright::family_dir_name(&f0.family, class))
+                    }
+                    None => library.to_path_buf(),
+                };
+                let created = fs::create_dir_all(&target_dir).map_err(|e| e.to_string());
+                if let Err(e) = created {
+                    let _ = app.emit(
+                        "install:progress",
+                        InstallProgress {
+                            file: file_name.to_string_lossy().into_owned(),
+                            done: i + 1,
+                            total,
+                            ok: false,
+                            error: Some(e.clone()),
+                        },
+                    );
+                    result.errors.push(e);
+                    continue;
+                }
+                let dest = unique_dest(&target_dir, &file_name);
                 let moved = move_file(&src, &dest).map_err(|e| e.to_string());
                 let (ok, error) = match &moved {
                     Ok(()) => (true, None),
@@ -236,6 +263,109 @@ pub fn install(
     let _ = fs::remove_dir_all(&staging);
     refresh_system_font_cache();
     result
+}
+
+/// 在线下载字体的安装：
+/// 目标结构 <库目录>/在线栏目/<来源缩写>/<家族名（版权后缀）>/，
+/// 字体文件移入该目录，许可证文件复制一份进去，最后清掉本次下载的 staging 目录。
+pub fn install_online(
+    app: &tauri::AppHandle,
+    paths: Vec<String>,
+    existing: &HashSet<String>,
+    family: &str,
+    license_path: Option<&str>,
+    source: &str,
+    library: &Path,
+) -> InstallResult {
+    let mut result = InstallResult::default();
+    let mut known: HashSet<String> = existing.clone();
+    let total = paths.len();
+
+    // 许可证文本 → 版权分类 → 目录名后缀
+    let license_text = license_path.and_then(|p| fs::read_to_string(p).ok());
+    let class = copyright::classify(license_text.as_deref());
+    let dir = library
+        .join(ONLINE_DIR_NAME)
+        .join(sanitize_component(source))
+        .join(copyright::family_dir_name(family, class));
+    if let Err(e) = fs::create_dir_all(&dir) {
+        result.errors.push(e.to_string());
+        return result;
+    }
+
+    let emit = |file: &str, done: usize, ok: bool, error: Option<String>| {
+        let _ = app.emit(
+            "install:progress",
+            InstallProgress {
+                file: file.to_string(),
+                done,
+                total,
+                ok,
+                error,
+            },
+        );
+    };
+
+    let mut staging_parent: Option<PathBuf> = None;
+    for (i, p) in paths.iter().enumerate() {
+        let src = Path::new(p);
+        let file_name = src.file_name().map(|f| f.to_owned()).unwrap_or_default();
+        let src_faces = parser::parse_font_file(src, FontSource::Managed);
+        let src_keys: Vec<String> = src_faces.iter().map(dup_key).collect();
+        if !src_keys.is_empty() && src_keys.iter().all(|k| known.contains(k)) {
+            for k in &src_keys {
+                if !result.duplicates.contains(k) {
+                    result.duplicates.push(k.clone());
+                }
+            }
+            emit(&file_name.to_string_lossy(), i + 1, true, None);
+            continue;
+        }
+        let dest = unique_dest(&dir, &file_name);
+        match move_file(src, &dest) {
+            Ok(()) => {
+                if staging_parent.is_none() {
+                    staging_parent = src.parent().map(|p| p.to_path_buf());
+                }
+                let mut faces = parser::parse_font_file(&dest, FontSource::Managed);
+                for face in &mut faces {
+                    face.active = false;
+                    known.insert(dup_key(face));
+                }
+                result.installed.extend(faces);
+                emit(&file_name.to_string_lossy(), i + 1, true, None);
+            }
+            Err(e) => {
+                result.errors.push(e.clone());
+                emit(&file_name.to_string_lossy(), i + 1, false, Some(e));
+            }
+        }
+    }
+
+    // 许可证文件复制进字族目录（保留原文件名）
+    if let Some(lp) = license_path {
+        if let Some(name) = Path::new(lp).file_name() {
+            let _ = fs::copy(lp, dir.join(name));
+        }
+    }
+    // 清掉本次下载的 staging 目录
+    if let Some(parent) = staging_parent {
+        let _ = fs::remove_dir_all(parent);
+    }
+    refresh_system_font_cache();
+    result
+}
+
+/// 清理路径组件中的非法字符
+fn sanitize_component(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => ' ',
+            _ => c,
+        })
+        .collect();
+    cleaned.trim().to_string()
 }
 
 pub fn uninstall(path: &str, family: &str) -> Result<TrashEntry, String> {

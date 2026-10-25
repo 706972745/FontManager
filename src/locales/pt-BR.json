@@ -660,5 +660,9 @@
   "trash.emptyTitle": "A lixeira está vazia",
   "trash.restore": "Restaurar",
   "waterfall.emptyBody": "Escolha uma fonte na visualização em grade ou lista e volte para a cascata.",
-  "waterfall.emptyTitle": "Nada para exibir em cascata"
+  "waterfall.emptyTitle": "Nada para exibir em cascata",
+  "card.licFree": "Livre",
+  "card.licPaid": "Paga",
+  "card.licUnknown": "Desconhecida",
+  "detail.copyright": "Direitos autorais"
 }

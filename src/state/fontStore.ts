@@ -1452,12 +1452,32 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({ onlineDownloading: id, onlineProgress: null });
     try {
       const res = await ipc.onlineDownload(id);
-      await get().installPaths(res.paths, "move");
-      const existing = get().tags[res.family] ?? [];
-      if (!existing.includes("Online")) {
-        await get().setFamilyTags(res.family, [...existing, "Online"]);
+      // 安装到 <库目录>/在线栏目/<来源>/<家族（版权后缀）>/，含许可证文件
+      const dupKeyOf = (f: { postscriptName: string | null; family: string; style: string }) =>
+        f.postscriptName ?? `${f.family} ${f.style}`;
+      const existing = get().fonts.map(dupKeyOf);
+      const result = await ipc.installOnline(
+        res.paths,
+        existing,
+        res.family,
+        res.licensePath,
+        res.source,
+      );
+      if (result.installed.length > 0) {
+        set({ fonts: [...get().fonts, ...result.installed], lastImported: [res.family] });
+        persistPrefs(get);
+        toast.success(t("toast.installedOne", { name: res.family }), undefined, "install");
       }
-      await ipc.onlineClearStaging(id);
+      for (const err of result.errors) toast.error(t("toast.installFailed"), err);
+      if (result.duplicates.length > 0) {
+        set({
+          duplicateReport: { names: [...result.duplicates], at: Date.now() },
+        });
+      }
+      const tags = get().tags[res.family] ?? [];
+      if (!tags.includes("Online")) {
+        await get().setFamilyTags(res.family, [...tags, "Online"]);
+      }
       set({ onlineDetail: null, onlinePreviewPath: null });
     } catch (e) {
       toast.error(t("toast.onlineDownloadFailed"), String(e));

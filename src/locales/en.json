@@ -643,5 +643,9 @@
   "trash.emptyTitle": "Trash is empty",
   "trash.restore": "Restore",
   "waterfall.emptyBody": "Select a font in grid or list view, then come back to the waterfall.",
-  "waterfall.emptyTitle": "Nothing to cascade"
+  "waterfall.emptyTitle": "Nothing to cascade",
+  "card.licFree": "Free",
+  "card.licPaid": "Paid",
+  "card.licUnknown": "Unknown",
+  "detail.copyright": "Copyright"
 }

@@ -626,5 +626,9 @@
   "trash.emptyTitle": "ゴミ箱は空です",
   "trash.restore": "元に戻す",
   "waterfall.emptyBody": "グリッドまたはリスト表示でフォントを選んでから、ウォーターフォールに戻ってください。",
-  "waterfall.emptyTitle": "表示するフォントがありません"
+  "waterfall.emptyTitle": "表示するフォントがありません",
+  "card.licFree": "フリー",
+  "card.licPaid": "有料",
+  "card.licUnknown": "不明",
+  "detail.copyright": "著作権"
 }

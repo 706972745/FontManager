@@ -677,5 +677,9 @@
   "trash.emptyTitle": "Корзина пуста",
   "trash.restore": "Восстановить",
   "waterfall.emptyBody": "Выберите шрифт в виде сетки или списка, затем вернитесь к каскаду.",
-  "waterfall.emptyTitle": "Нечего показать каскадом"
+  "waterfall.emptyTitle": "Нечего показать каскадом",
+  "card.licFree": "Бесплатный",
+  "card.licPaid": "Платный",
+  "card.licUnknown": "Неизвестно",
+  "detail.copyright": "Авторские права"
 }
