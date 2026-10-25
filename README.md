@@ -1,4 +1,62 @@
 
+<div align="center">
+
+<img src="src-tauri/icons/128x128.png" alt="ZFontManager icon" width="110" />
+
+# ZFontManager（中文增强版）
+
+**跨平台字体管理器：预览、整理、一键启用/停用字体，字体文件永不离开你的电脑。**
+
+本分支在 [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) 的基础上进行了中文本地化与功能增强。
+
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-0.8.1%20Beta%201-gray?style=flat-square)](../../releases)
+[![Platform](https://img.shields.io/badge/平台-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-platform-notes)
+[![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-translations)
+
+<br>
+
+**[⬇ 下载最新版](../../releases/latest)** ·
+**[📝 更新日志](CHANGELOG.md)** ·
+**[🐛 问题反馈](../../issues)**
+
+</div>
+
+---
+
+## 🇨🇳 中文说明（本分支新增内容）
+
+### ✨ 新增功能
+
+- **字体快照**：把当前已启用的字体保存为一组"快照"，随时一键恢复
+  - 最多保存 5 个快照，超出自动淘汰最旧的
+  - 两种应用方式：**切换到此快照**（停用其他字体）或 **合并到当前启用**（叠加启用）
+  - 系统字体也会记录并明确标注，应用快照时**系统字体绝不会被停用**
+  - 支持导入/导出（导出文件名自动命名为 `ZFontManager_快照名_导出时间.json`），导入时可选仅导入 / 导入并切换 / 导入并合并
+  - 可在字体详情面板用开关把整个字族加入/移出快照，也可右键精细控制
+- **启动自动恢复**：每次打开软件自动重新启用上次会话中启用的字体
+- **黑白灰界面**：全部图标与界面配色统一为黑白灰风格（原版为紫色）
+
+### ⬇ 安装
+
+到 [Releases](../../releases/latest) 页面下载 `ZFontManager_0.8.1_x64-setup.exe`（Windows 64 位），双击安装即可。已有旧版本数据会完整保留。
+
+### 🔨 从源码构建
+
+```bash
+# 需要 Node.js 18+、Rust (MSVC 工具链)、Visual Studio Build Tools (C++ 桌面开发)
+corepack pnpm install        # 安装依赖
+corepack pnpm tauri build    # 构建安装包（产物在 src-tauri/target/release/bundle/）
+```
+
+### 📖 其他
+
+- 界面支持 9 种语言（简体中文、繁体中文、英语、日语、德语、西班牙语、法语、葡萄牙语、俄语）
+- 本分支遵循上游的 GPL-3.0 协议，感谢原作者 [TheHolyOneZ](https://github.com/TheHolyOneZ)
+- 以下为上游英文原版说明 ↓
+
+---
+
 ## Demo Video
 
 [Watch ZFontManager Demo](https://github.com/TheHolyOneZ/ZFontManager/blob/main/zfontmanager.mp4)
