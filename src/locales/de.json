@@ -26,6 +26,8 @@
   "card.conflictResolved": "Namenskonflikt gelöst — nur eine Kopie ist aktiv",
   "card.deactivate": "{name} deaktivieren",
   "card.expandStyles": "Schnitte ausklappen",
+  "card.inSnapshot": "Snapshot: {name}",
+  "card.inCollection": "Sammlung: {name}",
   "card.favorite": "{name} zu Favoriten hinzufügen",
   "card.noPreview": "Dieses Format lässt sich noch nicht anzeigen",
   "card.osManaged": "Vom Betriebssystem verwaltet — kann nicht ausgeschaltet werden",

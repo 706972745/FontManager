@@ -26,6 +26,8 @@
   "card.conflictResolved": "名前の重複を解決しました — 有効なのは 1 つだけです",
   "card.deactivate": "{name} を無効化",
   "card.expandStyles": "スタイルを展開",
+  "card.inSnapshot": "スナップショット：{name}",
+  "card.inCollection": "コレクション：{name}",
   "card.favorite": "{name} をお気に入りに追加",
   "card.noPreview": "この形式はまだプレビューできません",
   "card.osManaged": "オペレーティングシステムが管理しています — 無効にはできません",

@@ -4131,3 +4131,65 @@ h2.detail-title.copy-name {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ===== 字族归属徽标（快照 / 分组） ===== */
+.card-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 14px 0;
+}
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-10);
+  font-weight: 500;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--e2);
+  border: 1px solid rgba(var(--ink-rgb), 0.1);
+}
+.member-chip svg {
+  flex: none;
+  opacity: 0.7;
+}
+/* 快照徽标：虚线边框区分 */
+.member-chip-snap {
+  border-style: dashed;
+  background: transparent;
+}
+/* 分组徽标：实底 */
+.member-chip-coll {
+  background: var(--e2);
+}
+/* 列表行内 */
+.row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.row-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-members {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+}
+.row-members .member-chip {
+  padding: 2px 6px;
+  max-width: 90px;
+}

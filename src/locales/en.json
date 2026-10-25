@@ -26,6 +26,8 @@
   "card.conflictResolved": "Name conflict resolved — only one copy is active",
   "card.deactivate": "Deactivate {name}",
   "card.expandStyles": "Expand styles",
+  "card.inSnapshot": "Snapshot: {name}",
+  "card.inCollection": "Collection: {name}",
   "card.favorite": "Favorite {name}",
   "card.noPreview": "This format can't be previewed yet",
   "card.osManaged": "Managed by the operating system — it can’t be turned off",

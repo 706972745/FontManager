@@ -26,6 +26,8 @@
   "card.conflictResolved": "名称冲突已解决 — 只有一个副本处于启用状态",
   "card.deactivate": "停用 {name}",
   "card.expandStyles": "展开样式",
+  "card.inSnapshot": "快照：{name}",
+  "card.inCollection": "分组：{name}",
   "card.favorite": "收藏 {name}",
   "card.noPreview": "这种格式暂时无法预览",
   "card.osManaged": "由操作系统管理 — 无法停用",

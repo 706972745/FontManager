@@ -1,5 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useRef } from "react";
+import { Camera, Folder } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { formatBytes } from "../lib/fontLoader";
 import { useFontStore, type Family } from "../state/fontStore";
@@ -14,6 +15,28 @@ export function FontList({ families }: { families: Family[] }) {
   const setFamilyActive = useFontStore((s) => s.setFamilyActive);
   const selectWith = useFontStore((s) => s.selectWith);
   const selection = useFontStore((s) => s.selection);
+  const snapshots = useFontStore((s) => s.snapshots);
+  const collections = useFontStore((s) => s.collections);
+
+  // 字族 → 所属快照/分组（列表行是虚拟化的，批量算一次避免行内调 hook）
+  const membership = useMemo(() => {
+    const map = new Map<string, { snaps: string[]; colls: string[] }>();
+    for (const sn of snapshots) {
+      for (const e of sn.entries) {
+        const rec = map.get(e.family) ?? { snaps: [], colls: [] };
+        if (!rec.snaps.includes(sn.name)) rec.snaps.push(sn.name);
+        map.set(e.family, rec);
+      }
+    }
+    for (const [name, members] of Object.entries(collections)) {
+      for (const fam of members) {
+        const rec = map.get(fam) ?? { snaps: [], colls: [] };
+        if (!rec.colls.includes(name)) rec.colls.push(name);
+        map.set(fam, rec);
+      }
+    }
+    return map;
+  }, [snapshots, collections]);
 
   const virtualizer = useVirtualizer({
     count: families.length,
@@ -43,6 +66,8 @@ export function FontList({ families }: { families: Family[] }) {
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((item) => {
             const fam = families[item.index];
+            const mem = membership.get(fam.name);
+            const hasMem = !!mem && (mem.snaps.length > 0 || mem.colls.length > 0);
             return (
               <button
                 key={item.key}
@@ -71,7 +96,33 @@ export function FontList({ families }: { families: Family[] }) {
                 }}
                 onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(fam))}
               >
-                <span className="row-name">{fam.name}</span>
+                <span className="row-name">
+                  <span className="row-name-text">{fam.name}</span>
+                  {hasMem && (
+                    <span className="row-members">
+                      {mem!.snaps.map((n) => (
+                        <span
+                          key={`snap-${n}`}
+                          className="member-chip member-chip-snap"
+                          title={t("card.inSnapshot", { name: n })}
+                        >
+                          <Camera size={9} strokeWidth={1.75} />
+                          {n}
+                        </span>
+                      ))}
+                      {mem!.colls.map((n) => (
+                        <span
+                          key={`coll-${n}`}
+                          className="member-chip member-chip-coll"
+                          title={t("card.inCollection", { name: n })}
+                        >
+                          <Folder size={9} strokeWidth={1.75} />
+                          {n}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </span>
                 <span className="col-styles tabular">{fam.faces.length}</span>
                 <span className="col-format">
                   <FormatBadge format={fam.formats[0]} isVariable={fam.isVariable} />

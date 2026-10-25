@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, ChevronRight, Lock, Star } from "lucide-react";
+import { AlertTriangle, Camera, ChevronRight, Folder, Lock, Star } from "lucide-react";
 import { memo, useState } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
@@ -7,6 +7,7 @@ import { useFontCss } from "../lib/fontLoader";
 import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
+import { useFamilyMembership } from "../lib/membership";
 import { playStar } from "../lib/sound";
 import type { FontFace } from "../lib/ipc";
 import { useT } from "../lib/i18n";
@@ -84,6 +85,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const toggleFavorite = useFontStore((s) => s.toggleFavorite);
   const hasActiveConflict = useFontStore((s) => activeConflictsFor(s.fonts).has(family.name));
   const hasDormantConflict = useFontStore((s) => conflictsFor(s.fonts).has(family.name));
+  const { inSnapshots, inCollections } = useFamilyMembership(family.name);
   const [expanded, setExpanded] = useState(false);
 
   const size = SIZES[sizeIndex];
@@ -196,6 +198,31 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
           </span>
         )}
       </header>
+
+      {(inSnapshots.length > 0 || inCollections.length > 0) && (
+        <div className="card-members" onClick={(e) => e.stopPropagation()}>
+          {inSnapshots.map((n) => (
+            <span
+              key={`snap-${n}`}
+              className="member-chip member-chip-snap"
+              title={t("card.inSnapshot", { name: n })}
+            >
+              <Camera size={10} strokeWidth={1.75} />
+              {n}
+            </span>
+          ))}
+          {inCollections.map((n) => (
+            <span
+              key={`coll-${n}`}
+              className="member-chip member-chip-coll"
+              title={t("card.inCollection", { name: n })}
+            >
+              <Folder size={10} strokeWidth={1.75} />
+              {n}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="card-preview" style={{ minHeight: size * 1.35 }}>
         <AnimatePresence mode="wait">

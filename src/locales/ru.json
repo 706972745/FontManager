@@ -26,6 +26,8 @@
   "card.conflictResolved": "Конфликт имён решён — активна только одна копия",
   "card.deactivate": "Деактивировать {name}",
   "card.expandStyles": "Развернуть начертания",
+  "card.inSnapshot": "Снимок: {name}",
+  "card.inCollection": "Коллекция: {name}",
   "card.favorite": "Добавить {name} в избранное",
   "card.noPreview": "Этот формат пока нельзя показать",
   "card.osManaged": "Управляется операционной системой — отключить нельзя",

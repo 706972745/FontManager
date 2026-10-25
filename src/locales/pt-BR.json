@@ -26,6 +26,8 @@
   "card.conflictResolved": "Conflito de nomes resolvido — só uma cópia está ativa",
   "card.deactivate": "Desativar {name}",
   "card.expandStyles": "Expandir os estilos",
+  "card.inSnapshot": "Instantâneo: {name}",
+  "card.inCollection": "Coleção: {name}",
   "card.favorite": "Adicionar {name} às favoritas",
   "card.noPreview": "Este formato ainda não pode ser visualizado",
   "card.osManaged": "Gerenciada pelo sistema operacional — não pode ser desativada",
