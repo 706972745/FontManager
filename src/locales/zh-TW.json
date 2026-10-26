@@ -630,5 +630,13 @@
   "card.licFree": "免費字體",
   "card.licPaid": "收費字體",
   "card.licUnknown": "未知版權",
-  "detail.copyright": "版權資訊"
+  "detail.copyright": "版權資訊",
+  "copyright.auto": "自動識別",
+  "copyright.free": "免費",
+  "copyright.paid": "付費",
+  "copyright.timelimited": "有時間限制",
+  "copyright.unknown": "未知",
+  "detail.copyrightStatus": "版權狀態",
+  "filter.copyright": "版權",
+  "sort.added": "入庫時間"
 }

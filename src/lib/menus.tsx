@@ -18,6 +18,7 @@ import {
 import type { MenuItem } from "../design/primitives/ContextMenu";
 import { toast } from "../design/primitives/Toast";
 import { allTags, familiesFor, useFontStore, type Family } from "../state/fontStore";
+import { entryFromFace, faceKey } from "./snapshotKey";
 import { ipc } from "./ipc";
 import { exportSpecimen } from "./specimen";
 import { t } from "./i18n";
@@ -113,29 +114,22 @@ function snapshotToggleAction(snapshot: string, families: string[]) {
     const s = useFontStore.getState();
     const snap = s.snapshots.find((sn) => sn.name === snapshot);
     if (!snap) return;
-    const familyPaths = [
-      ...new Set(
-        s.fonts.filter((f) => families.includes(f.family)).map((f) => f.path),
-      ),
-    ];
-    if (familyPaths.length === 0) return;
-    const inPaths = new Set(snap.entries.map((e) => e.path));
-    const allIn = familyPaths.every((p) => inPaths.has(p));
+    const seen = new Set<string>();
+    const faces = s.fonts
+      .filter((f) => families.includes(f.family))
+      .map(entryFromFace)
+      .filter((e) => {
+        if (seen.has(e.key)) return false;
+        seen.add(e.key);
+        return true;
+      });
+    if (faces.length === 0) return;
+    const keys = faces.map((e) => e.key);
+    const inKeys = new Set(snap.entries.map((e) => e.key));
+    const allIn = keys.every((k) => inKeys.has(k));
     const entries = allIn
-      ? snap.entries.filter((e) => !familyPaths.includes(e.path))
-      : [
-          ...snap.entries,
-          ...familyPaths
-            .filter((p) => !inPaths.has(p))
-            .map((path) => {
-              const face = s.fonts.find((f) => f.path === path);
-              return {
-                path,
-                family: face?.family ?? "",
-                system: face?.source === "system",
-              };
-            }),
-        ];
+      ? snap.entries.filter((e) => !keys.includes(e.key))
+      : [...snap.entries, ...faces.filter((e) => !inKeys.has(e.key))];
     useFontStore.setState({
       snapshots: useFontStore
         .getState()
@@ -205,12 +199,10 @@ function buildBulkMenu(names: string[]): MenuItem[] {
         kind: "check",
         label: name,
         checked: (() => {
-          const paths = new Set(
-            s.fonts.filter((f) => names.includes(f.family)).map((f) => f.path),
-          );
-          if (paths.size === 0) return false;
-          const entryPaths = new Set(snapshotByName.get(name)?.entries.map((e) => e.path) ?? []);
-          return [...paths].every((p) => entryPaths.has(p));
+          const keys = s.fonts.filter((f) => names.includes(f.family)).map(faceKey);
+          if (keys.length === 0) return false;
+          const entryKeys = new Set(snapshotByName.get(name)?.entries.map((e) => e.key) ?? []);
+          return keys.every((k) => entryKeys.has(k));
         })(),
         action: snapshotToggleAction(name, names),
       }),
@@ -327,14 +319,12 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
           kind: "check",
           label: name,
           checked: (() => {
-            const familyPaths = new Set(family.faces.map((fc) => fc.path));
-            if (familyPaths.size === 0) return false;
-            const entryPaths = new Set(
-              s.snapshots
-                .find((sn) => sn.name === name)
-                ?.entries.map((e) => e.path) ?? [],
+            const familyKeys = family.faces.map(faceKey);
+            if (familyKeys.length === 0) return false;
+            const entryKeys = new Set(
+              s.snapshots.find((sn) => sn.name === name)?.entries.map((e) => e.key) ?? [],
             );
-            return [...familyPaths].every((p) => entryPaths.has(p));
+            return familyKeys.every((k) => entryKeys.has(k));
           })(),
           action: snapshotToggleAction(name, [family.name]),
         }),

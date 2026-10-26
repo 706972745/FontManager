@@ -3,6 +3,7 @@ import { Camera, Download, Eraser, Plus, Repeat, Layers, Trash2 } from "lucide-r
 import { save } from "@tauri-apps/plugin-dialog";
 import { springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
+import { buildFaceIndex, missingEntries, resolveEntry } from "../lib/snapshotKey";
 import { useT } from "../lib/i18n";
 
 export function SnapshotBar({ name }: { name: string }) {
@@ -17,9 +18,10 @@ export function SnapshotBar({ name }: { name: string }) {
 
   const snap = snapshots.find((sn) => sn.name === name);
   const entries = snap?.entries ?? [];
-  const alive = new Set(fonts.map((f) => f.path));
-  const missing = entries.filter((e) => !alive.has(e.path));
-  const systemCount = entries.filter((e) => e.system && alive.has(e.path)).length;
+  // 快照条目不含路径，按可移植标识解析到本机字体后再判断“丢没丢”
+  const index = buildFaceIndex(fonts);
+  const missing = missingEntries(entries, index);
+  const systemCount = entries.filter((e) => e.system && resolveEntry(e, index).length > 0).length;
 
   const exportFlow = async () => {
     const now = new Date();
@@ -74,7 +76,7 @@ export function SnapshotBar({ name }: { name: string }) {
         <button
           className="snapshot-btn snapshot-warn"
           onClick={() => void removeMissingFromSnapshot(name)}
-          title={missing.map((e) => e.path).join("\n")}
+          title={missing.map((e) => e.family).join("\n")}
         >
           <Eraser size={13} strokeWidth={1.5} />
           {t("snap.removeMissing", { count: missing.length })}

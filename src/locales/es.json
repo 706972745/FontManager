@@ -664,5 +664,13 @@
   "card.licFree": "Libre",
   "card.licPaid": "De pago",
   "card.licUnknown": "Desconocida",
-  "detail.copyright": "Copyright"
+  "detail.copyright": "Copyright",
+  "copyright.auto": "Automático",
+  "copyright.free": "Gratis",
+  "copyright.paid": "De pago",
+  "copyright.timelimited": "Tiempo limitado",
+  "copyright.unknown": "Desconocido",
+  "detail.copyrightStatus": "Estado de copyright",
+  "filter.copyright": "Copyright",
+  "sort.added": "Fecha de adición"
 }

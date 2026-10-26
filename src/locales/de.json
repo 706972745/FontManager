@@ -647,5 +647,13 @@
   "card.licFree": "Kostenlos",
   "card.licPaid": "Kostenpflichtig",
   "card.licUnknown": "Unbekannt",
-  "detail.copyright": "Urheberrecht"
+  "detail.copyright": "Urheberrecht",
+  "copyright.auto": "Automatisch",
+  "copyright.free": "Kostenlos",
+  "copyright.paid": "Kostenpflichtig",
+  "copyright.timelimited": "Zeitlich begrenzt",
+  "copyright.unknown": "Unbekannt",
+  "detail.copyrightStatus": "Urheberrechtsstatus",
+  "filter.copyright": "Urheberrecht",
+  "sort.added": "Hinzugefügt am"
 }

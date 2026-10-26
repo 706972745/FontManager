@@ -11,6 +11,7 @@ import { FormatBadge } from "./FamilyCard";
 import { exportFace, exportFamily } from "../lib/menus";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { classifyLicense } from "../lib/license";
+import { faceKey } from "../lib/snapshotKey";
 import { playStar, playTag } from "../lib/sound";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 
@@ -334,6 +335,35 @@ function NoteEditor({ family }: { family: string }) {
   );
 }
 
+const COPYRIGHT_STATUS_OPTIONS = ["auto", "free", "paid", "timelimited"] as const;
+
+/** 版权状态手动设置：默认"自动"（根据版权信息识别），也可手动指定免费/收费/时间限制 */
+function CopyrightStatusSection({ family }: { family: string }) {
+  const t = useT();
+  const status = useFontStore((s) => s.copyrightStatus[family] ?? "auto");
+  const setCopyrightStatus = useFontStore((s) => s.setCopyrightStatus);
+  return (
+    <motion.section
+      variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
+    >
+      <div className="detail-heading">{t("detail.copyrightStatus")}</div>
+      <div className="copyright-status-row" role="radiogroup" aria-label={t("detail.copyrightStatus")}>
+        {COPYRIGHT_STATUS_OPTIONS.map((opt) => (
+          <button
+            key={opt}
+            role="radio"
+            aria-checked={status === opt}
+            className={`copyright-status-btn ${status === opt ? "copyright-status-active" : ""}`}
+            onClick={() => setCopyrightStatus(family, opt)}
+          >
+            {t(`copyright.${opt}`)}
+          </button>
+        ))}
+      </div>
+    </motion.section>
+  );
+}
+
 function LicenseSection({ license, licenseUrl }: { license: string | null; licenseUrl: string | null }) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
@@ -586,7 +616,10 @@ export function DetailPanel() {
     on:
       !!family &&
       family.faces.length > 0 &&
-      family.faces.every((f) => sn.entries.some((e) => e.path === f.path)),
+      family.faces.every((f) => {
+        const key = faceKey(f);
+        return sn.entries.some((e) => e.key === key);
+      }),
   }));
 
   const variation =
@@ -947,6 +980,8 @@ export function DetailPanel() {
                 <p className="detail-copyright-text">{lead.copyright}</p>
               </motion.section>
             )}
+
+            <CopyrightStatusSection family={family.name} />
 
             {(lead.license || lead.licenseUrl) && (
               <motion.section

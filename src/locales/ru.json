@@ -681,5 +681,13 @@
   "card.licFree": "Бесплатный",
   "card.licPaid": "Платный",
   "card.licUnknown": "Неизвестно",
-  "detail.copyright": "Авторские права"
+  "detail.copyright": "Авторские права",
+  "copyright.auto": "Автоматически",
+  "copyright.free": "Бесплатно",
+  "copyright.paid": "Платно",
+  "copyright.timelimited": "Ограничено по времени",
+  "copyright.unknown": "Неизвестно",
+  "detail.copyrightStatus": "Статус лицензии",
+  "filter.copyright": "Лицензия",
+  "sort.added": "Дата добавления"
 }

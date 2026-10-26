@@ -7,11 +7,11 @@ import { useFontCss } from "../lib/fontLoader";
 import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
-import { classifyLicense } from "../lib/license";
+import { effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
 import { playStar } from "../lib/sound";
 import type { FontFace } from "../lib/ipc";
-import { useT } from "../lib/i18n";
+import { useT, type TKey } from "../lib/i18n";
 
 export function FormatBadge({ format, isVariable }: { format: string; isVariable: boolean }) {
   if (isVariable) return <span className="badge badge-variable">VAR</span>;
@@ -87,15 +87,15 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const hasActiveConflict = useFontStore((s) => activeConflictsFor(s.fonts).has(family.name));
   const hasDormantConflict = useFontStore((s) => conflictsFor(s.fonts).has(family.name));
   const { inSnapshots, inCollections } = useFamilyMembership(family.name);
+  const copyrightOverride = useFontStore((s) => s.copyrightStatus[family.name]);
   const [expanded, setExpanded] = useState(false);
 
   const size = SIZES[sizeIndex];
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   const { fontFamily, failed } = useFontCss(lead);
   const text = sampleText.trim() || family.name;
-  const licCls = classifyLicense(lead.license ?? null);
-  const licKey =
-    licCls === "open" ? "card.licFree" : licCls === "restrictive" ? "card.licPaid" : "card.licUnknown";
+  const licCls = effectiveCopyrightClass(lead.license ?? null, copyrightOverride);
+  const licKey = `copyright.${licCls}` as TKey;
 
   return (
     <motion.article

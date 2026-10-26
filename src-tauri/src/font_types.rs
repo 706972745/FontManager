@@ -69,6 +69,9 @@ pub struct FontFace {
     pub source: FontSource,
     pub deactivatable: bool,
     pub active: bool,
+    /// 入库时间（Unix 秒）：安装/在线下载时记录，扫描时合并
+    #[serde(default)]
+    pub added_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

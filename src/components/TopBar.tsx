@@ -19,19 +19,22 @@ import { SIZES, useFontStore, type SortMode } from "../state/fontStore";
 import type { Classification, FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
 
-const SORT_MODES = ["name", "styles", "size", "glyphs"] as const satisfies readonly SortMode[];
+const SORT_MODES = ["name", "styles", "size", "glyphs", "added"] as const satisfies readonly SortMode[];
 
 const SORT_KEYS: Record<SortMode, TKey> = {
   name: "sort.name",
   styles: "sort.styles",
   size: "sort.size",
   glyphs: "sort.glyphs",
+  added: "sort.added",
 };
 
 const FORMAT_FILTERS = ["otf", "ttf", "woff", "woff2"] as const;
 
 const FEATURE_FILTERS = ["swsh", "salt", "dlig", "smcp", "onum", "frac"] as const;
 const SOURCE_FILTERS = ["all", "system", "user"] as const;
+
+const COPYRIGHT_FILTERS = ["free", "paid", "timelimited", "unknown"] as const;
 
 function SortMenu() {
   const t = useT();
@@ -124,6 +127,8 @@ function FilterMenu() {
   const toggleFeature = useFontStore((s) => s.toggleFeature);
   const sourceFilter = useFontStore((s) => s.sourceFilter);
   const setSourceFilter = useFontStore((s) => s.setSourceFilter);
+  const licenseFilter = useFontStore((s) => s.licenseFilter);
+  const toggleLicenseFilter = useFontStore((s) => s.toggleLicenseFilter);
   const charFilter = useFontStore((s) => s.charFilter);
   const charSearching = useFontStore((s) => s.charSearching);
   const setCharFilter = useFontStore((s) => s.setCharFilter);
@@ -134,6 +139,7 @@ function FilterMenu() {
     scriptFilter.length +
     formatFilter.length +
     featureFilter.length +
+    licenseFilter.length +
     (sourceFilter !== "all" ? 1 : 0) +
     (charFilter ? 1 : 0) +
     (variableOnly ? 1 : 0) +
@@ -195,6 +201,23 @@ function FilterMenu() {
                   >
                     <span>{t(`class.${c}`)}</span>
                     {classFilter.includes(c) && <Check size={13} strokeWidth={2} />}
+                  </button>
+                </li>
+              ))}
+              <li className="sort-sep" role="none" />
+              <li className="filter-heading" role="none">
+                {t("filter.copyright")}
+              </li>
+              {COPYRIGHT_FILTERS.map((c) => (
+                <li key={c}>
+                  <button
+                    role="option"
+                    aria-selected={licenseFilter.includes(c)}
+                    className={licenseFilter.includes(c) ? "sort-item sort-active" : "sort-item"}
+                    onClick={() => toggleLicenseFilter(c)}
+                  >
+                    <span>{t(`copyright.${c}`)}</span>
+                    {licenseFilter.includes(c) && <Check size={13} strokeWidth={2} />}
                   </button>
                 </li>
               ))}

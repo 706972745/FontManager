@@ -157,6 +157,12 @@
   "filter.containsCharSearching": "搜索中…",
   "filter.fileFormat": "文件格式",
   "filter.languageSupport": "语言支持",
+  "filter.copyright": "版权",
+  "copyright.auto": "自动识别",
+  "copyright.free": "免费",
+  "copyright.paid": "收费",
+  "copyright.timelimited": "有时间限制",
+  "copyright.unknown": "未知",
   "filter.show": "显示",
   "filter.toggleableOnly": "隐藏系统不允许停用的字体",
   "filter.typography": "排版特性",
@@ -464,6 +470,7 @@
   "sort.name": "名称",
   "sort.size": "文件大小",
   "sort.styles": "样式数",
+  "sort.added": "入库时间",
   "sound.off": "关闭",
   "sound.on": "开启",
   "sound.subtle": "轻微",
@@ -638,5 +645,6 @@
   "card.licFree": "免费字体",
   "card.licPaid": "收费字体",
   "card.licUnknown": "未知版权",
-  "detail.copyright": "版权信息"
+  "detail.copyright": "版权信息",
+  "detail.copyrightStatus": "版权状态"
 }

@@ -129,15 +129,17 @@ function MainContent() {
   const charFilter = useFontStore((s) => s.charFilter);
   const charMatches = useFontStore((s) => s.charMatches);
   const sort = useFontStore((s) => s.sort);
+  const licenseFilter = useFontStore((s) => s.licenseFilter);
+  const copyrightStatus = useFontStore((s) => s.copyrightStatus);
 
   const families = useMemo(
     () =>
       selectVisibleFamilies({
         fonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search,
         classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
-        variableOnly, toggleableOnly, nav, sort,
+        variableOnly, toggleableOnly, licenseFilter, copyrightStatus, nav, sort,
       }),
-    [fonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, nav, sort],
+    [fonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus, nav, sort],
   );
 
   useEffect(() => {

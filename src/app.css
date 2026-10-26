@@ -4213,9 +4213,48 @@ h2.detail-title.copy-name {
   border-style: dashed;
   background: transparent;
 }
+.lic-chip.lic-free {
+  border-style: dashed;
+  background: transparent;
+}
 .lic-chip.lic-restrictive {
   background: rgba(var(--ink-rgb), 0.14);
   color: var(--text-primary);
+}
+.lic-chip.lic-paid {
+  background: rgba(var(--ink-rgb), 0.14);
+  color: var(--text-primary);
+}
+.lic-chip.lic-timelimited {
+  background: rgba(var(--warn-rgb, 234, 179, 8), 0.18);
+  color: var(--text-primary);
+}
+
+/* ===== 版权状态手动设置（详情面板） ===== */
+.copyright-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.copyright-status-btn {
+  font-size: var(--fs-11);
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  background: var(--e1);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.copyright-status-btn:hover {
+  color: var(--text-primary);
+}
+.copyright-status-btn.copyright-status-active {
+  background: rgba(var(--ink-rgb), 0.14);
+  border-color: rgba(var(--ink-rgb), 0.2);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 .detail-copyright-text {
   font-size: var(--fs-11);

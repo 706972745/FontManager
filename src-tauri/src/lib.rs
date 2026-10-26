@@ -19,6 +19,17 @@ use std::collections::HashMap;
 use store::Store;
 use tauri::{Manager, State};
 
+/// 读取文件时间（Unix 秒）。birth=true 时优先取创建时间（入库时间兜底），否则取修改时间。
+fn file_time(path: &str, birth: bool) -> Option<u64> {
+    let meta = std::fs::metadata(path).ok()?;
+    let t = if birth {
+        meta.created().or_else(|_| meta.modified()).ok()?
+    } else {
+        meta.modified().ok()?
+    };
+    t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs())
+}
+
 #[tauri::command]
 async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
     let (extra, library_dir, linked) = {
@@ -66,6 +77,11 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
         .into_iter()
         .map(|mut f| {
             f.active = activation::is_active(&probe, &state, &f);
+            f.added_at = state
+                .added
+                .get(&f.path)
+                .copied()
+                .or_else(|| file_time(&f.path, true));
             f
         })
         .collect();
@@ -118,6 +134,7 @@ async fn install_fonts(
         state.active_library_dir().map(|s| s.to_owned())
     };
     let library = scanner::effective_managed_dir(library_dir.as_deref());
+    let library_for_check = library.clone();
     let known: std::collections::HashSet<String> = existing.into_iter().collect();
     let scope_app = app.clone();
     let mut result =
@@ -125,15 +142,23 @@ async fn install_fonts(
             .await
             .map_err(|e| e.to_string())?;
     let mut auto = false;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     if let Ok(mut state) = store.0.lock() {
         if mode == installer::InstallMode::Link {
             for face in &result.installed {
-                state.linked.insert(face.path.clone());
+                // zip 来源的字体实际已移动进字体库，不属于链接字体
+                if !std::path::Path::new(&face.path).starts_with(&library_for_check) {
+                    state.linked.insert(face.path.clone());
+                }
             }
         }
         auto = state.auto_activate_imports && result.installed.len() < 64;
         for face in &result.installed {
             let _ = activation::sync(&mut state, &face.path, auto);
+            state.added.insert(face.path.clone(), now);
         }
         let _ = store::save(&state);
     }
@@ -145,6 +170,7 @@ async fn install_fonts(
     }
     for face in &mut result.installed {
         face.active = auto;
+        face.added_at = Some(now);
     }
     Ok(result)
 }
@@ -180,10 +206,15 @@ async fn install_online_family(
     .await
     .map_err(|e| e.to_string())?;
     let mut auto = false;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     if let Ok(mut state) = store.0.lock() {
         auto = state.auto_activate_imports && result.installed.len() < 64;
         for face in &result.installed {
             let _ = activation::sync(&mut state, &face.path, auto);
+            state.added.insert(face.path.clone(), now);
         }
         let _ = store::save(&state);
     }
@@ -195,6 +226,7 @@ async fn install_online_family(
     }
     for face in &mut result.installed {
         face.active = auto;
+        face.added_at = Some(now);
     }
     Ok(result)
 }

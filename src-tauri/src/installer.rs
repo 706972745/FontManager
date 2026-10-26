@@ -78,6 +78,8 @@ pub struct StagedFile {
     pub path: PathBuf,
     /// 是否为字体文件（false = 版权信息类文件）
     pub is_font: bool,
+    /// 是否来自 zip 压缩包（zip 导入无论选择何种模式都移动进字体库）
+    pub is_zip: bool,
     /// 在压缩包/拖入文件夹内的相对目录（空 = 根目录），用于把许可证与对应字体归到同一字族
     pub rel: PathBuf,
 }
@@ -116,12 +118,14 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
                 out.push(StagedFile {
                     path: p.to_path_buf(),
                     is_font: true,
+                    is_zip: false,
                     rel,
                 });
             } else if is_info_file(p) {
                 out.push(StagedFile {
                     path: p.to_path_buf(),
                     is_font: false,
+                    is_zip: false,
                     rel,
                 });
             }
@@ -152,6 +156,7 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
             out.push(StagedFile {
                 path: dest,
                 is_font,
+                is_zip: true,
                 rel: name
                     .parent()
                     .map(|pp| pp.to_path_buf())
@@ -164,6 +169,7 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
         return Ok(vec![StagedFile {
             path: path.to_path_buf(),
             is_font: true,
+            is_zip: false,
             rel: PathBuf::new(),
         }]);
     }
@@ -181,13 +187,6 @@ pub fn install(
     let mut result = InstallResult::default();
     let mut known: HashSet<String> = existing.clone();
 
-    if mode == InstallMode::Move {
-        if let Err(e) = fs::create_dir_all(library) {
-            result.errors.push(e.to_string());
-            return result;
-        }
-    }
-
     let mut files: Vec<StagedFile> = Vec::new();
     for p in &dropped {
         match expand_dropped(Path::new(p), &staging) {
@@ -196,6 +195,9 @@ pub fn install(
         }
     }
 
+    // zip 导入无论选择何种模式都移动进字体库（zip 解压出的临时文件没有"链接"意义）
+    let any_zip = files.iter().any(|f| f.is_zip);
+
     let infos: Vec<StagedFile> = files
         .iter()
         .filter(|f| !f.is_font)
@@ -203,6 +205,13 @@ pub fn install(
         .collect();
     let fonts: Vec<StagedFile> = files.into_iter().filter(|f| f.is_font).collect();
     let total = fonts.len();
+
+    if mode == InstallMode::Move || any_zip {
+        if let Err(e) = fs::create_dir_all(library) {
+            result.errors.push(e.to_string());
+            return result;
+        }
+    }
 
     // 归档追踪：相对目录 → 该目录中的字体被归入的字族目录；以及本次安装创建的全部字族目录
     let mut rel_family_dirs: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
@@ -234,7 +243,9 @@ pub fn install(
             );
             continue;
         }
-        match mode {
+        // zip 来源的字体强制走移动模式，保证字体与版权信息文件一起进入字体库
+        let eff_mode = if staged.is_zip { InstallMode::Move } else { mode };
+        match eff_mode {
             InstallMode::Link => {
                 if src_faces.is_empty() {
                     let name = src
@@ -347,7 +358,7 @@ pub fn install(
     // 版权信息文件（许可证/版权声明/说明）随字体归档到字族目录：
     // 与字体同处一个子目录且该目录只归入一个字族 → 只进那个字族；
     // 否则若本次安装只产生一个字族 → 进它；多字族时每个字族目录都放一份
-    if mode == InstallMode::Move {
+    if mode == InstallMode::Move || any_zip {
         for info in &infos {
             let Some(name) = info.path.file_name().map(|f| f.to_owned()) else {
                 continue;
@@ -678,6 +689,46 @@ mod tests {
         assert!(!is_info_file(Path::new("Font.ttf")));
         assert!(!is_info_file(Path::new("preview.png")));
         assert!(!is_info_file(Path::new("installer.exe")));
+    }
+
+    /// zip 导入时应同时暂存字体与版权信息文件，并标记为 zip 来源（强制移动入库）
+    #[test]
+    fn zip_stages_fonts_and_info_files() {
+        let tmp = std::env::temp_dir().join(format!("zfm-zip-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let zip_path = tmp.join("pack.zip");
+        {
+            let file = fs::File::create(&zip_path).unwrap();
+            let mut zw = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default();
+            for (name, body) in [
+                ("Fonts/Font-Regular.ttf", &b"font-bytes"[..]),
+                ("Fonts/OFL.txt", &b"SIL Open Font License"[..]),
+                ("Fonts/preview.png", &b"png"[..]),
+            ] {
+                zw.start_file(name, opts).unwrap();
+                std::io::Write::write_all(&mut zw, body).unwrap();
+            }
+            zw.finish().unwrap();
+        }
+
+        let staging = tmp.join("staging");
+        let files = expand_dropped(&zip_path, &staging).unwrap();
+
+        assert_eq!(files.len(), 2, "font + license only, images skipped");
+        assert!(files.iter().all(|f| f.is_zip), "all zip entries force move");
+        let font = files.iter().find(|f| f.is_font).expect("font staged");
+        assert_eq!(font.rel, PathBuf::from("Fonts"));
+        let info = files.iter().find(|f| !f.is_font).expect("license staged");
+        assert_eq!(
+            info.path.file_name().and_then(|n| n.to_str()),
+            Some("OFL.txt")
+        );
+        assert_eq!(info.rel, PathBuf::from("Fonts"));
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]

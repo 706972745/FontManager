@@ -206,6 +206,7 @@ fn parse_face(
         source,
         deactivatable: crate::activation::can_deactivate(source),
         active: true,
+        added_at: None,
     })
 }
 
@@ -250,6 +251,7 @@ pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
             source,
             deactivatable: crate::activation::can_deactivate(source),
             active: true,
+            added_at: None,
         }];
     }
 

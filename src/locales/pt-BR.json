@@ -664,5 +664,13 @@
   "card.licFree": "Livre",
   "card.licPaid": "Paga",
   "card.licUnknown": "Desconhecida",
-  "detail.copyright": "Direitos autorais"
+  "detail.copyright": "Direitos autorais",
+  "copyright.auto": "Automático",
+  "copyright.free": "Gratuito",
+  "copyright.paid": "Pago",
+  "copyright.timelimited": "Tempo limitado",
+  "copyright.unknown": "Desconhecido",
+  "detail.copyrightStatus": "Status de copyright",
+  "filter.copyright": "Copyright",
+  "sort.added": "Data de adição"
 }

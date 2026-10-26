@@ -10,8 +10,17 @@ pub const MAX_SNAPSHOTS: usize = 5;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotEntry {
-    pub path: String,
+    /// 跨设备可移植的字体标识（postScriptName 优先，回退 字族+样式+字重），
+    /// 不含任何目录信息，因此换电脑、改字体库路径后仍能对上号
+    #[serde(default)]
+    pub key: String,
+    /// 旧版快照数据中的绝对路径，仅用于升级/导入时反查，新数据不再写入
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     pub family: String,
+    /// 字体样式名（Regular、Bold……），作为 key 失效时的兜底匹配项
+    #[serde(default)]
+    pub style: String,
     /// 该条目是否为系统安装的字体（应用快照时系统字体不受影响）
     #[serde(default)]
     pub system: bool,
@@ -61,6 +70,10 @@ pub struct AppState {
 
     pub linked: HashSet<String>,
 
+    /// 字体入库时间：路径 → Unix 秒，用于"按入库时间排序"
+    #[serde(default)]
+    pub added: HashMap<String, u64>,
+
     pub affinity_enabled: bool,
 
     #[serde(default = "default_true")]
@@ -93,8 +106,10 @@ where
                 entries: paths
                     .into_iter()
                     .map(|path| SnapshotEntry {
-                        path,
+                        key: String::new(),
+                        path: Some(path),
                         family: String::new(),
+                        style: String::new(),
                         system: false,
                     })
                     .collect(),
@@ -177,4 +192,60 @@ pub fn save(state: &AppState) -> Result<(), String> {
     let json = serde_json::to_vec_pretty(state).map_err(|e| e.to_string())?;
     fs::write(&tmp, json).map_err(|e| e.to_string())?;
     fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 新版快照：只存可移植标识，序列化后不能出现绝对路径
+    #[test]
+    fn portable_snapshot_has_no_path() {
+        let snap = Snapshot {
+            name: "work".into(),
+            created_at: 1,
+            entries: vec![SnapshotEntry {
+                key: "ps:inter-regular".into(),
+                path: None,
+                family: "Inter".into(),
+                style: "Regular".into(),
+                system: false,
+            }],
+        };
+        let json = serde_json::to_string(&snap).unwrap();
+        assert!(json.contains("\"key\":\"ps:inter-regular\""));
+        assert!(!json.contains("path"));
+        // 往返一致
+        let back: Snapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.entries[0].key, "ps:inter-regular");
+        assert!(back.entries[0].path.is_none());
+    }
+
+    /// 旧版快照（绝对路径）仍能读入，路径保留下来供前端迁移
+    #[test]
+    fn legacy_path_snapshot_still_loads() {
+        let json = r#"{
+            "snapshots": [{
+                "name": "old",
+                "createdAt": 0,
+                "entries": [{"path": "D:\\Fonts\\Inter-Regular.ttf", "family": "Inter", "system": false}]
+            }]
+        }"#;
+        let state: AppState = serde_json::from_str(json).unwrap();
+        let entry = &state.snapshots[0].entries[0];
+        assert_eq!(entry.key, "");
+        assert_eq!(entry.path.as_deref(), Some("D:\\Fonts\\Inter-Regular.ttf"));
+    }
+
+    /// 更旧的 HashMap<String, Vec<String>> 格式也能迁移
+    #[test]
+    fn hashmap_snapshot_still_loads() {
+        let json = r#"{"snapshots": {"old": ["C:\\Windows\\Fonts\\arial.ttf"]}}"#;
+        let state: AppState = serde_json::from_str(json).unwrap();
+        assert_eq!(state.snapshots.len(), 1);
+        assert_eq!(
+            state.snapshots[0].entries[0].path.as_deref(),
+            Some("C:\\Windows\\Fonts\\arial.ttf")
+        );
+    }
 }

@@ -630,5 +630,13 @@
   "card.licFree": "フリー",
   "card.licPaid": "有料",
   "card.licUnknown": "不明",
-  "detail.copyright": "著作権"
+  "detail.copyright": "著作権",
+  "copyright.auto": "自動",
+  "copyright.free": "無料",
+  "copyright.paid": "有料",
+  "copyright.timelimited": "期間制限あり",
+  "copyright.unknown": "不明",
+  "detail.copyrightStatus": "著作権ステータス",
+  "filter.copyright": "著作権",
+  "sort.added": "追加日"
 }

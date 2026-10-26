@@ -38,6 +38,8 @@ export interface FontFace {
   source: FontSource;
   deactivatable: boolean;
   active: boolean;
+  /** 入库时间（Unix 秒），系统字体等无记录时为 null */
+  addedAt: number | null;
 }
 
 export interface TrashEntry {
@@ -48,10 +50,18 @@ export interface TrashEntry {
   trashedAt: number;
 }
 
-/** 快照条目：仅记录字体文件路径等引用信息，不携带字体文件本身 */
+/**
+ * 快照条目：只记录字体自身的可移植信息，不含目录、不携带字体文件。
+ * 换电脑 / 字体库路径不同时，靠 key（postScriptName 等）+ 字族样式重新对上号。
+ */
 export interface SnapshotEntry {
-  path: string;
+  /** 跨设备可移植标识（ps:postscriptname 或 fam:字族|样式|字重|斜体|面索引） */
+  key: string;
+  /** 旧版数据里的绝对路径，仅用于升级/导入时反查，新数据不写入 */
+  path?: string;
   family: string;
+  /** 字体样式名，key 失效时作为兜底匹配 */
+  style: string;
   /** 该条目是否为系统安装的字体（应用快照时系统字体不受影响） */
   system: boolean;
 }

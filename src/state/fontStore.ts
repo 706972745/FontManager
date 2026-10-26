@@ -19,6 +19,15 @@ import {
 } from "../lib/ipc";
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
 import { familyActivation, pathsToToggle } from "../lib/familyState";
+import { effectiveCopyrightClass } from "../lib/license";
+import {
+  buildFaceIndex,
+  entryFromFace,
+  entryPaths,
+  faceKey,
+  migrateEntry,
+  missingEntries,
+} from "../lib/snapshotKey";
 import { toast } from "../design/primitives/Toast";
 import { setSoundLevel, type SoundLevel } from "../lib/sound";
 import { applyTheme, type ThemePref } from "../lib/theme";
@@ -39,7 +48,7 @@ export type ViewMode = "grid" | "list" | "waterfall";
 export type MotionPref = "system" | "reduced";
 export type TransparencyPref = "full" | "reduced";
 export type UiScale = "auto" | number;
-export type SortMode = "name" | "styles" | "size" | "glyphs";
+export type SortMode = "name" | "styles" | "size" | "glyphs" | "added";
 /** 快照应用方式：switch = 切换为快照（停用其他）；merge = 合并到当前启用 */
 export type SnapshotApplyMode = "switch" | "merge";
 export type SourceFilter = "all" | "system" | "user";
@@ -75,6 +84,12 @@ export interface Family {
   scripts: string[];
   features: string[];
   glyphCount: number;
+  /** 版权信息（取自首个字面） */
+  license: string | null;
+  /** 版权声明文本（取自首个字面） */
+  copyright: string | null;
+  /** 入库时间（Unix 秒，取所有字面中最早/最大值），0 = 未知 */
+  addedAt: number;
 }
 
 interface FontStore {
@@ -154,6 +169,10 @@ interface FontStore {
   collapsedSections: string[];
   variableOnly: boolean;
   toggleableOnly: boolean;
+  /** 版权筛选（free/paid/timelimited/unknown），空 = 全部 */
+  licenseFilter: string[];
+  /** 用户手动设置的版权状态：family → "free" | "paid" | "timelimited"（缺省 = 按版权信息自动识别） */
+  copyrightStatus: Record<string, string>;
   nav: Nav;
   selectedFamily: string | null;
 
@@ -248,6 +267,9 @@ interface FontStore {
   toggleScriptFilter: (s: string) => void;
   setVariableOnly: (on: boolean) => void;
   setToggleableOnly: (on: boolean) => void;
+  toggleLicenseFilter: (c: string) => void;
+  /** status 为 null / "auto" 时恢复为按版权信息自动识别 */
+  setCopyrightStatus: (family: string, status: string | null) => void;
   exportLibraryData: (dest: string) => Promise<void>;
   importLibraryData: (src: string) => Promise<void>;
   setNav: (n: Nav) => void;
@@ -286,16 +308,12 @@ function persistPrefs(get: () => FontStore) {
       lastImported: s.lastImported,
       restoreOnLaunch: s.restoreOnLaunch,
       lastActivePaths: s.fonts.filter((f) => f.active).map((f) => f.path),
+      copyrightStatus: s.copyrightStatus,
     });
   }, 600);
-}
-
-function entryFromFace(f: FontFace): SnapshotEntry {
-  return { path: f.path, family: f.family, system: f.source === "system" };
-}
-
-/**
+}/**
  * 应用一组快照条目（applySnapshot 与导入后应用共用）。
+ * 条目本身不含路径，先按可移植标识解析到本机字体，再执行启用/停用。
  * 系统安装的字体（system=true）只做记录与标注，无论何种模式都绝不会被停用。
  */
 async function applyEntries(
@@ -303,9 +321,9 @@ async function applyEntries(
   mode: SnapshotApplyMode,
   label: string,
 ): Promise<void> {
-  const paths = [...new Set(entries.map((e) => e.path))];
-  if (paths.length === 0) return;
   const s = useFontStore.getState();
+  const paths = entryPaths(entries, buildFaceIndex(s.fonts));
+  if (paths.length === 0) return;
   const byPath = new Map(s.fonts.map((f) => [f.path, f] as const));
   const snapshotSet = new Set(paths);
   const toActivate = paths.filter((p) => {
@@ -410,6 +428,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   variableOnly: false,
   collapsedSections: [],
   toggleableOnly: false,
+  licenseFilter: [],
+  copyrightStatus: {},
   nav: { kind: "library" },
   selectedFamily: null,
   pendingCollectionFor: null,
@@ -432,7 +452,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
         )
           ? (prefs.viewMode as ViewMode)
           : "grid",
-        sort: (["name", "styles", "size", "glyphs"] as const).includes(prefs.sort as SortMode)
+        sort: (["name", "styles", "size", "glyphs", "added"] as const).includes(prefs.sort as SortMode)
           ? (prefs.sort as SortMode)
           : "name",
         panelWidth:
@@ -462,6 +482,13 @@ export const useFontStore = create<FontStore>((set, get) => ({
         lastActivePaths: Array.isArray(prefs.lastActivePaths)
           ? (prefs.lastActivePaths as unknown[]).filter((n): n is string => typeof n === "string")
           : [],
+        copyrightStatus:
+          prefs.copyrightStatus && typeof prefs.copyrightStatus === "object"
+            ? Object.fromEntries(
+                Object.entries(prefs.copyrightStatus as Record<string, unknown>)
+                  .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+              )
+            : get().copyrightStatus,
       });
       setSoundLevel(get().soundPref);
       hydrateLocalePref(get().localePref);
@@ -579,6 +606,30 @@ export const useFontStore = create<FontStore>((set, get) => ({
         ipc.listTrash(),
       ]);
       set({ fonts, tags, collections, snapshots, favorites, notes, trash, phase: "ready" });
+      // 旧版快照记录的是绝对路径（换电脑/改字体库路径就失效）：
+      // 扫描完手头字体后统一迁移成可移植标识，并回写 state.json
+      const index = buildFaceIndex(fonts);
+      for (const snap of snapshots) {
+        const entries = snap.entries.map((e) => migrateEntry(e, index));
+        const changed = entries.some((e, i) => {
+          const old = snap.entries[i];
+          return (
+            old.path !== undefined ||
+            e.key !== old.key ||
+            e.family !== old.family ||
+            e.style !== old.style ||
+            !!e.system !== !!old.system
+          );
+        });
+        if (!changed) continue;
+        const next = { ...snap, entries };
+        set({ snapshots: get().snapshots.map((s) => (s.name === snap.name ? next : s)) });
+        try {
+          await ipc.saveSnapshot(next);
+        } catch {
+          /* 迁移回写失败不影响本次使用 */
+        }
+      }
       const names = new Set(fonts.map((f) => f.family));
       const keptImported = get().lastImported.filter((n) => names.has(n));
       if (get().charFilter) set({ charMatches: null, charSearching: false });
@@ -946,9 +997,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const entries: SnapshotEntry[] = [];
     for (const f of get().fonts) {
       const wanted = family ? f.family === family && f.deactivatable : f.active;
-      if (!wanted || seen.has(f.path)) continue;
-      seen.add(f.path);
-      entries.push({ path: f.path, family: f.family, system: f.source === "system" });
+      const entry = entryFromFace(f);
+      if (!wanted || seen.has(entry.key)) continue;
+      seen.add(entry.key);
+      entries.push(entry);
     }
     set({ snapshots: [...prev, { name: clean, createdAt: Date.now(), entries }], pendingSnapshotFor: null });
     try {
@@ -1014,11 +1066,15 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // 包含系统字体（system 标注），应用快照时系统字体不受影响
     const familyFaces = get().fonts.filter((f) => f.family === family);
     if (familyFaces.length === 0) return;
-    const inPaths = new Set(snap.entries.map((e) => e.path));
-    const allIn = familyFaces.every((f) => inPaths.has(f.path));
+    const familyKeys = familyFaces.map(faceKey);
+    const inKeys = new Set(snap.entries.map((e) => e.key));
+    const allIn = familyKeys.every((k) => inKeys.has(k));
     const entries: SnapshotEntry[] = allIn
-      ? snap.entries.filter((e) => !familyFaces.some((f) => f.path === e.path))
-      : [...snap.entries, ...familyFaces.filter((f) => !inPaths.has(f.path)).map(entryFromFace)];
+      ? snap.entries.filter((e) => !familyKeys.includes(e.key))
+      : [
+          ...snap.entries,
+          ...familyFaces.filter((_, i) => !inKeys.has(familyKeys[i])).map(entryFromFace),
+        ];
     set({ snapshots: prev.map((s) => (s.name === snapshot ? { ...s, entries } : s)) });
     try {
       const saved = await ipc.saveSnapshot({ ...snap, entries });
@@ -1033,8 +1089,11 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const prev = get().snapshots;
     const snap = prev.find((s) => s.name === snapshot);
     if (!snap) return;
-    const inPaths = new Set(snap.entries.map((e) => e.path));
-    const add = get().fonts.filter((f) => f.active && !inPaths.has(f.path)).map(entryFromFace);
+    const inKeys = new Set(snap.entries.map((e) => e.key));
+    const add = get()
+      .fonts.filter((f) => f.active)
+      .map(entryFromFace)
+      .filter((e) => !inKeys.has(e.key));
     if (add.length === 0) {
       toast.info?.(t("snap.alreadyActive"));
       return;
@@ -1065,8 +1124,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const prev = get().snapshots;
     const snap = prev.find((s) => s.name === name);
     if (!snap) return;
-    const alive = new Set(get().fonts.map((f) => f.path));
-    const entries = snap.entries.filter((e) => alive.has(e.path));
+    const missing = new Set(missingEntries(snap.entries, buildFaceIndex(get().fonts)));
+    const entries = snap.entries.filter((e) => !missing.has(e));
     if (entries.length === snap.entries.length) return;
     set({ snapshots: prev.map((s) => (s.name === name ? { ...s, entries } : s)) });
     try {
@@ -1095,12 +1154,20 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   exportSnapshot: async (name, dest) => {
     const snap = get().snapshots.find((s) => s.name === name);
+    // 导出的条目只保留可移植字段：不含路径、不含字体文件，换电脑可直接导入
+    const entries = (snap?.entries ?? []).map((e) => ({
+      key: e.key,
+      family: e.family,
+      style: e.style,
+      system: !!e.system,
+    }));
     const payload = {
       app: "ZFontManager",
       kind: "snapshots",
-      version: 2,
+      version: 3,
+      portable: true,
       exportedAt: new Date().toISOString(),
-      snapshots: snap ? [snap] : [],
+      snapshots: snap ? [{ name: snap.name, createdAt: snap.createdAt, entries }] : [],
     };
     try {
       await ipc.writeTextFile(dest, JSON.stringify(payload, null, 2));
@@ -1118,7 +1185,20 @@ export const useFontStore = create<FontStore>((set, get) => ({
         toast.error(t("toast.notAnExport"), t("toast.notAnExportSub"));
         return;
       }
-      // v2 格式：snapshots: Snapshot[]；兼容 v1 旧格式：snapshots: Record<string, string[]>
+      // v3/v2 格式：snapshots: Snapshot[]；兼容 v1 旧格式：snapshots: Record<string, string[]>
+      // 旧格式条目只有绝对路径 → 导入时立刻按本机字体迁移为可移植 key
+      const index = buildFaceIndex(get().fonts);
+      const normalize = (e: Partial<SnapshotEntry>): SnapshotEntry =>
+        migrateEntry(
+          {
+            key: typeof e.key === "string" ? e.key : "",
+            path: typeof e.path === "string" ? e.path : undefined,
+            family: typeof e.family === "string" ? e.family : "",
+            style: typeof e.style === "string" ? e.style : "",
+            system: !!e.system,
+          },
+          index,
+        );
       let list: Snapshot[];
       if (Array.isArray(d.snapshots)) {
         list = (d.snapshots as Snapshot[])
@@ -1126,13 +1206,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
           .map((s) => ({
             name: s.name,
             createdAt: typeof s.createdAt === "number" ? s.createdAt : Date.now(),
-            entries: s.entries
-              .filter((e) => e && typeof e.path === "string")
-              .map((e) => ({
-                path: e.path,
-                family: typeof e.family === "string" ? e.family : "",
-                system: !!e.system,
-              })),
+            entries: (s.entries as Partial<SnapshotEntry>[])
+              .filter((e) => e && (typeof e.key === "string" || typeof e.path === "string"))
+              .map(normalize),
           }));
       } else {
         list = Object.entries(d.snapshots as Record<string, unknown>).flatMap(
@@ -1144,7 +1220,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
                     createdAt: Date.now(),
                     entries: value
                       .filter((p): p is string => typeof p === "string")
-                      .map((path) => ({ path, family: "", system: false })),
+                      .map((path) => normalize({ path })),
                   },
                 ]
               : [],
@@ -1184,10 +1260,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
           const entries: SnapshotEntry[] = [];
           for (const snap of imported) {
             for (const e of snap.entries) {
-              if (!seen.has(e.path)) {
-                seen.add(e.path);
-                entries.push(e);
-              }
+              const id = e.key || `${e.family}|${e.style}`;
+              if (seen.has(id)) continue;
+              seen.add(id);
+              entries.push(e);
             }
           }
           await applyEntries(entries, mode, imported.map((s) => s.name).join(", "));
@@ -1567,6 +1643,20 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({ scriptFilter: cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s] });
   },
   setVariableOnly: (variableOnly) => set({ variableOnly }),
+  toggleLicenseFilter: (c) => {
+    const cur = get().licenseFilter;
+    set({ licenseFilter: cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c] });
+  },
+  setCopyrightStatus: (family, status) => {
+    const next = { ...get().copyrightStatus };
+    if (!status || status === "auto") {
+      delete next[family];
+    } else {
+      next[family] = status;
+    }
+    set({ copyrightStatus: next });
+    persistPrefs(get);
+  },
   toggleFormat: (f) => {
     const cur = get().formatFilter;
     set({ formatFilter: cur.includes(f) ? cur.filter((x) => x !== f) : [...cur, f] });
@@ -1749,6 +1839,9 @@ export function computeFamilies(
         scripts: [],
         features: [],
         glyphCount: 0,
+        license: null,
+        copyright: null,
+        addedAt: 0,
       };
       map.set(f.family, fam);
     }
@@ -1756,6 +1849,9 @@ export function computeFamilies(
     if (!fam.formats.includes(f.format)) fam.formats.push(f.format);
     fam.isVariable ||= f.isVariable;
     fam.foundry ??= f.foundry;
+    fam.license ??= f.license;
+    fam.copyright ??= f.copyright;
+    fam.addedAt = Math.max(fam.addedAt, f.addedAt ?? 0);
 
     if (fam.classification === "unknown") fam.classification = f.classification;
     for (const s of f.scripts ?? []) {
@@ -1794,6 +1890,8 @@ export function selectVisibleFamilies(s: {
   charMatches: string[] | null;
   variableOnly: boolean;
   toggleableOnly: boolean;
+  licenseFilter: string[];
+  copyrightStatus: Record<string, string>;
   nav: Nav;
   sort: SortMode;
 }): Family[] {
@@ -1828,6 +1926,11 @@ export function selectVisibleFamilies(s: {
   if (s.toggleableOnly) {
     out = out.filter((f) => f.deactivatable);
   }
+  if (s.licenseFilter.length > 0) {
+    out = out.filter((f) =>
+      s.licenseFilter.includes(effectiveCopyrightClass(f.license, s.copyrightStatus[f.name])),
+    );
+  }
   if (s.nav.kind === "tag") {
     const tag = s.nav.tag;
     out = out.filter((f) => f.tags.includes(tag));
@@ -1839,7 +1942,8 @@ export function selectVisibleFamilies(s: {
   if (s.nav.kind === "snapshot") {
     const snapshotName = s.nav.name;
     const snap = s.snapshots.find((sn) => sn.name === snapshotName);
-    const members = snap?.entries.map((e) => e.path) ?? [];
+    // 条目是可移植标识，需先解析成当前机器上的字体路径
+    const members = entryPaths(snap?.entries ?? [], buildFaceIndex(s.fonts));
     const memberSet = new Set(members);
     out = out.filter((f) => f.faces.some((fc) => memberSet.has(fc.path)));
     const order = new Map(members.map((p, i) => [p, i] as const));
@@ -1876,7 +1980,9 @@ export function selectVisibleFamilies(s: {
         f.tags.some((t) => t.toLowerCase().includes(q)) ||
         f.formats.some((fmt) => fmt.includes(q)) ||
         (f.foundry?.toLowerCase().includes(q) ?? false) ||
-        (s.notes[f.name]?.toLowerCase().includes(q) ?? false),
+        (s.notes[f.name]?.toLowerCase().includes(q) ?? false) ||
+        (f.license?.toLowerCase().includes(q) ?? false) ||
+        (f.copyright?.toLowerCase().includes(q) ?? false),
     );
   }
   switch (s.sort) {
@@ -1888,6 +1994,9 @@ export function selectVisibleFamilies(s: {
       break;
     case "glyphs":
       out.sort((a, b) => b.glyphCount - a.glyphCount || a.name.localeCompare(b.name));
+      break;
+    case "added":
+      out.sort((a, b) => b.addedAt - a.addedAt || a.name.localeCompare(b.name));
       break;
     default:
       out.sort((a, b) => a.name.localeCompare(b.name));
