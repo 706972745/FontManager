@@ -103,9 +103,27 @@ pub fn scan_all(app: &tauri::AppHandle, extra: &[String], managed: &Path) -> Vec
 
     let total = files.len();
     let mut faces = Vec::with_capacity(total);
+    // 字体库里按目录缓存版权判定：目录名 / 同目录的版权信息文件写明的版权，
+    // 一个目录只判一次（要读文件，但比解析字体便宜得多）
+    let mut dir_class: std::collections::HashMap<PathBuf, String> =
+        std::collections::HashMap::new();
     for (done, (path, base_source)) in files.into_iter().enumerate() {
         let source = classify(&path, base_source, managed);
-        faces.extend(parser::parse_font_file(&path, source));
+        let mut parsed = parser::parse_font_file(&path, source);
+        if source == FontSource::Managed {
+            if let Some(dir) = path.parent() {
+                let class = dir_class
+                    .entry(dir.to_path_buf())
+                    .or_insert_with(|| {
+                        crate::copyright::classify_dir(dir).as_str().to_string()
+                    })
+                    .clone();
+                for face in &mut parsed {
+                    face.copyright_class = Some(class.clone());
+                }
+            }
+        }
+        faces.extend(parsed);
         if done % 25 == 0 || done + 1 == total {
             let _ = app.emit("scan:progress", ScanProgress { done: done + 1, total });
         }

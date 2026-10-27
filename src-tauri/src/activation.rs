@@ -36,6 +36,47 @@ pub fn sync(state: &mut AppState, path: &str, active: bool) -> Result<(), String
     result
 }
 
+/**
+ * 批量启停：一次批量只建一次注册表索引、只在末尾广播一次 WM_FONTCHANGE。
+ *
+ * 之前每个字体都要 `user_entries()` 全量枚举 HKCU 字体表（还会随着写入不断变长），
+ * 再各广播一次 WM_FONTCHANGE —— 5000 级批量实测退化成 ~2.5 个/秒，界面整个卡住
+ * （`set_fonts_active` 是同步命令，跑在主线程上）。现在索引 O(1) 复用。
+ */
+pub fn sync_batch(state: &mut AppState, paths: &[String], active: bool) -> Vec<String> {
+    let mut failed = Vec::new();
+    if paths.is_empty() {
+        return failed;
+    }
+    // Windows：索引只建一次；其他平台每写一个字体都要重写 fontconfig，索引无意义
+    #[cfg(target_os = "windows")]
+    let mut cache = crate::registry::RegCache::load();
+    for path in paths {
+        let was_deactivated = state.deactivated.contains(path);
+        if active {
+            state.deactivated.remove(path);
+        } else {
+            state.deactivated.insert(path.clone());
+        }
+        #[cfg(target_os = "windows")]
+        let result = apply_cached(state, path, active, &mut cache);
+        #[cfg(not(target_os = "windows"))]
+        let result = apply(state, path, active);
+        crate::diag::activation(path, active, &result);
+        if let Err(e) = result {
+            if was_deactivated {
+                state.deactivated.insert(path.clone());
+            } else {
+                state.deactivated.remove(path);
+            }
+            failed.push(e);
+        }
+    }
+    #[cfg(target_os = "windows")]
+    crate::registry::broadcast_font_change();
+    failed
+}
+
 pub fn batch_error(failed: &[String], total: usize) -> Result<(), String> {
     match failed {
         [] => Ok(()),
@@ -186,6 +227,20 @@ fn apply(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn apply(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
+    let mut cache = crate::registry::RegCache::load();
+    let result = apply_cached(state, path, active, &mut cache);
+    crate::registry::broadcast_font_change();
+    result
+}
+
+/** 批量路径：同一个 RegCache 复用，写完同步更新索引，广播由调用方统一发一次 */
+#[cfg(target_os = "windows")]
+fn apply_cached(
+    state: &mut AppState,
+    path: &str,
+    active: bool,
+    cache: &mut crate::registry::RegCache,
+) -> Result<(), String> {
     use crate::registry;
 
     if active {
@@ -202,11 +257,11 @@ fn apply(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
             .map(|(k, _)| k.clone());
         let name = match remembered {
             Some(name) => name,
-            None => registry::unique_user_name(&registry::value_name_for(path), path),
+            None => cache.unique_name(&registry::value_name_for(path), path),
         };
-        let existing = registry::user_entries_for(path);
+        let existing = cache.names_for(path);
         if existing.is_empty() {
-            if let Err(e) = registry::set_user_entry(&name, path) {
+            if let Err(e) = cache.set(&name, path) {
                 registry::remove_font_resource(path);
                 return Err(e);
             }
@@ -216,22 +271,21 @@ fn apply(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
         }
         state.registry_backup.remove(&name);
     } else {
-        if registry::is_machine_registered(path) {
+        if cache.is_machine(path) {
             return Err(format!(
                 "this font is installed for all users; deactivating it needs administrator rights: {path}"
             ));
         }
 
-        let names = registry::user_entries_for(path);
+        let names = cache.names_for(path);
         for name in &names {
-            registry::delete_user_entry(name)?;
+            cache.delete(name)?;
         }
         if let Some(first) = names.into_iter().next() {
             state.registry_backup.insert(first, path.to_string());
         }
         registry::remove_font_resource(path);
     }
-    registry::broadcast_font_change();
     Ok(())
 }
 

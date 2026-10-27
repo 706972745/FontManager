@@ -13,7 +13,7 @@
 本分支在 [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) 的基础上进行了中文本地化与功能增强。
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.8.1%20Beta%201-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-0.9.0-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 
@@ -38,11 +38,25 @@
   - 支持导入/导出（导出文件名自动命名为 `ZFontManager_快照名_导出时间.json`），导入时可选仅导入 / 导入并切换 / 导入并合并
   - 可在字体详情面板用开关把整个字族加入/移出快照，也可右键精细控制
 - **启动自动恢复**：每次打开软件自动重新启用上次会话中启用的字体
+- **速览 QuickBar**：一键把窗口收成贴在屏幕边缘的透明细线，悬停即展开，鼠标离开自动收回；
+  贴屏幕顶边时点「最小化」没有系统那段「飞到任务栏」动画，直接收起消失，还原时在原地直接出现
+- **CorelDRAW 支持**：在 Photoshop、Illustrator 之外，新增向 CorelDRAW 的选中文字应用字体
+- **版权信息整理**：安装字体按"字族 + 版权"分文件夹归档；导入时保留 License/版权说明文件；
+  全库按版权内容搜索；导入 zip 一律移动（不留源副本）
 - **黑白灰界面**：全部图标与界面配色统一为黑白灰风格（原版为紫色）
+
+### ⚡ 性能与稳定性（0.9.0 压测验证）
+
+- **批量启停千级字体不卡界面**：一次性启用/停用上千字体的命令移到后台线程，
+  注册表索引每批只建一次、系统广播每批只发一次——修复旧版整体 O(n²) 导致的假死。
+  真机压测：一次性导入 5873 个字体、1639 字族启用 / 2244 字族停用 / 2331 字族恢复启用，
+  全程界面可响应、无崩溃。
+- **COM 宿主常驻预热**：与 Photoshop 等外部程序联动的首次等待从约 5 秒降到约 0.2 秒
+- **单实例**：重复启动会唤起已运行的窗口，不再出现双开
 
 ### ⬇ 安装
 
-到 [Releases](../../releases/latest) 页面下载 `ZFontManager_0.8.1_x64-setup.exe`（Windows 64 位），双击安装即可。已有旧版本数据会完整保留。
+到 [Releases](../../releases/latest) 页面下载 `ZFontManager_0.9.0_x64-setup.exe`（Windows 64 位），双击安装即可。已有旧版本数据会完整保留。
 
 ### 🔨 从源码构建
 
@@ -119,7 +133,7 @@ ZFontManager 一并解决这两个问题：
 - **属于你。** 免费、开源（GPL-3.0）、无账号、无云端、无遥测。一切都在你自己的电脑上完成。
 
 > [!NOTE]
-> ZFontManager 目前为 **0.8.1 Beta 1**（本分支），更新内容见[更新日志](CHANGELOG.md)。日常使用已经非常可靠，如遇到奇怪的问题，欢迎[反馈](../../issues)。
+> ZFontManager 目前为 **0.9.0**（本分支），更新内容见[更新日志](CHANGELOG.md)。日常使用已经非常可靠，如遇到奇怪的问题，欢迎[反馈](../../issues)。
 
 ---
 

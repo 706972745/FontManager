@@ -1,5 +1,14 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
+import { adoptQuickbarDock, DOCK_HEIGHT_HINT, restoreQuickbarDock } from "../lib/useQuickbarDock";
+import {
+  currentMonitor,
+  getCurrentWindow,
+  LogicalSize,
+  PhysicalPosition,
+  PhysicalSize,
+} from "@tauri-apps/api/window";
+import { MORPH_MS, morphWindow } from "../lib/windowMorph";
 import {
   ipc,
   type AdobeApp,
@@ -20,6 +29,8 @@ import {
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
 import { familyActivation, pathsToToggle } from "../lib/familyState";
 import { effectiveCopyrightClass } from "../lib/license";
+import { contextMenuSize } from "../lib/menuMetrics";
+import { parentDir } from "../lib/onlineCoverage";
 import {
   buildFaceIndex,
   entryFromFace,
@@ -88,6 +99,8 @@ export interface Family {
   license: string | null;
   /** 版权声明文本（取自首个字面） */
   copyright: string | null;
+  /** 文件夹备注 / 版权信息文件判定的版权（free/paid/timelimited/unknown），非字体库字体为 null */
+  dirCopyrightClass: string | null;
   /** 入库时间（Unix 秒，取所有字面中最早/最大值），0 = 未知 */
   addedAt: number;
 }
@@ -171,8 +184,19 @@ interface FontStore {
   toggleableOnly: boolean;
   /** 版权筛选（free/paid/timelimited/unknown），空 = 全部 */
   licenseFilter: string[];
+  /** 速览界面：只显示已启用的字体，窗口压缩成一条，贴顶时自动隐藏 */
+  quickbar: boolean;
+  /** 速览界面里是否启用「贴顶自动隐藏」 */
+  quickbarAutoHide: boolean;
+  /**
+   * 速览 ↔ 完整界面切换期间（毫秒级窗口形变）把内容钉在目标尺寸上（逻辑像素），
+   * 这样窗口在形变时内容不会被反复重排，而是被逐步裁切 / 露出来。
+   */
+  morph: { width: number; height: number } | null;
   /** 用户手动设置的版权状态：family → "free" | "paid" | "timelimited"（缺省 = 按版权信息自动识别） */
   copyrightStatus: Record<string, string>;
+  /** 时间限制版权的到期日期：family → "YYYY-MM-DD"（缺省 = 未设置） */
+  copyrightExpiry: Record<string, string>;
   nav: Nav;
   selectedFamily: string | null;
 
@@ -190,7 +214,7 @@ interface FontStore {
   setFontFileActive: (path: string, active: boolean) => Promise<void>;
   uninstallFontFile: (path: string) => Promise<void>;
   installPaths: (paths: string[], mode: InstallMode) => Promise<void>;
-  uninstallFamily: (family: string) => Promise<void>;
+  uninstallFamily: (family: string, opts?: { silent?: boolean; keepMeta?: boolean }) => Promise<void>;
   restoreTrash: (entryId: string) => Promise<void>;
   deleteTrashEntry: (entryId: string) => Promise<void>;
   emptyTrash: () => Promise<void>;
@@ -237,6 +261,8 @@ interface FontStore {
   openOnlineFamily: (id: string) => Promise<void>;
   closeOnlineFamily: () => void;
   installOnlineFamily: (id: string) => Promise<void>;
+  /** 删除字库里的该字族（进回收站）后重新从在线栏目下载 */
+  reinstallOnlineFamily: (id: string) => Promise<void>;
   setMotionPref: (pref: MotionPref) => void;
   setTransparencyPref: (pref: TransparencyPref) => void;
   setCloseToTray: (v: boolean) => void;
@@ -261,6 +287,9 @@ interface FontStore {
   setSampleText: (t: string) => void;
   setSizeIndex: (i: number) => void;
   setViewMode: (m: ViewMode) => void;
+  /** 切换速览界面（会压缩/还原窗口大小与位置） */
+  setQuickbar: (on: boolean) => Promise<void>;
+  setQuickbarAutoHide: (on: boolean) => void;
   setSort: (s: SortMode) => void;
   setSearch: (s: string) => void;
   toggleClassFilter: (c: Classification) => void;
@@ -270,10 +299,233 @@ interface FontStore {
   toggleLicenseFilter: (c: string) => void;
   /** status 为 null / "auto" 时恢复为按版权信息自动识别 */
   setCopyrightStatus: (family: string, status: string | null) => void;
+  /** date 为 null 时清除到期日期 */
+  setCopyrightExpiry: (family: string, date: string | null) => void;
   exportLibraryData: (dest: string) => Promise<void>;
   importLibraryData: (src: string) => Promise<void>;
   setNav: (n: Nav) => void;
   select: (family: string | null) => void;
+}
+
+/** 速览界面窗口尺寸（逻辑像素）：窄竖排面板，高度再翻一倍，靠滚动展示更多字体 */
+const QUICKBAR_WIDTH = 400;
+const QUICKBAR_HEIGHT = 992;
+
+/**
+ * 速览界面里右键菜单必须能被完整放下，窗口最小尺寸由此推导：
+ * 最小宽度 = 菜单宽 × 1.5，最小高度 = 菜单高 × 1.5（留出上下滚动的余量）。
+ */
+const QUICKBAR_MENU_WIDTH_RATIO = 1.5;
+const QUICKBAR_MENU_HEIGHT_RATIO = 1.5;
+/** setMinSize 算的是窗口外框，菜单宽高是 webview 内容尺寸，这里补偿边框与阴影 */
+const QUICKBAR_FRAME_ALLOWANCE = 16;
+/** 与屏幕边缘留出的余量，避免窗口压到任务栏 */
+const QUICKBAR_SCREEN_MARGIN = 64;
+
+/**
+ * 主界面的最小窗口尺寸（逻辑像素），必须与 tauri.conf.json 的 minWidth / minHeight 一致。
+ * 速览界面比这个高度矮得多，进入前要解除最小尺寸限制，退出时再还原，否则 setSize 会被系统夹住。
+ */
+const MAIN_MIN_WIDTH = 900;
+const MAIN_MIN_HEIGHT = 600;
+
+/** 由右键菜单尺寸推导速览窗口的最小尺寸（窗口外框，逻辑像素） */
+function quickbarMinSize(menu: { width: number; height: number }) {
+  return {
+    width: Math.ceil(menu.width * QUICKBAR_MENU_WIDTH_RATIO) + QUICKBAR_FRAME_ALLOWANCE,
+    height: Math.ceil(menu.height * QUICKBAR_MENU_HEIGHT_RATIO) + QUICKBAR_FRAME_ALLOWANCE,
+  };
+}
+
+interface WindowGeometry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  maximized: boolean;
+}
+
+/** 进入速览界面前的主界面窗口几何，退出时还原 */
+let quickbarGeometry: WindowGeometry | null = null;
+
+/** 用户关了动效就直接切，不做窗口形变 */
+function morphDuration(): number {
+  return useFontStore.getState().motionPref === "reduced" ? 0 : MORPH_MS;
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * 旧版本写进 prefs 的默认示例文本：升级后一律换成当前默认句。
+ * （用户自己输入过的内容不会命中这里，原样保留。）
+ */
+const LEGACY_SAMPLE_TEXTS = new Set(["The quick brown fox jumps over the lazy dog"]);
+
+/** 退出速览时「窗口收走 → 换界面」之间留的一小段时间：让消失这一下先完成 */
+const HIDE_SETTLE_MS = 140;
+/** 换好界面后到「展开显示」之间留的一小段时间：给主界面渲染一帧 */
+const SHOW_SETTLE_MS = 150;
+/** 进入速览前旧界面渐隐的时长：和窗口形变衔接成「淡出 → 收起 → 淡入」 */
+const UI_FADE_OUT_MS = 150;
+
+async function enterQuickbar() {
+  const win = getCurrentWindow();
+  try {
+    // 上一次可能停在收起状态（或刚从收起里退出），先还原再改几何
+    await restoreQuickbarDock();
+    // 告诉原生侧进入速览：屏蔽「拖到屏幕顶部就最大化」，改由前端收起窗口
+    await ipc.setQuickbarMode(true).catch((e) => console.warn("[quickbar] 切换速览模式失败", e));
+    const maximized = await win.isMaximized();
+    if (maximized) await win.unmaximize();
+    const [pos, size, scale, monitor] = await Promise.all([
+      win.outerPosition(),
+      win.innerSize(),
+      win.scaleFactor(),
+      currentMonitor(),
+    ]);
+    quickbarGeometry = { x: pos.x, y: pos.y, width: size.width, height: size.height, maximized };
+
+    // 目标尺寸：按设计尺寸（400 × 992），但不小于「放得下右键菜单」的下限，也不超出屏幕可用区
+    const menuMin = quickbarMinSize(contextMenuSize());
+    const availWidth = monitor ? monitor.size.width / scale : QUICKBAR_WIDTH;
+    const availHeight = monitor
+      ? monitor.size.height / scale - QUICKBAR_SCREEN_MARGIN
+      : QUICKBAR_HEIGHT;
+    const targetWidth = Math.min(Math.max(QUICKBAR_WIDTH, menuMin.width), availWidth);
+    const targetHeight = Math.min(Math.max(QUICKBAR_HEIGHT, menuMin.height), availHeight);
+    const width = Math.round(targetWidth * scale);
+    // 展开后的速览高度（物理像素），收起态收进顶部一条时记下来用于还原
+    const fullHeight = Math.round(targetHeight * scale);
+    // 进入速览 = 直接收到屏幕顶部的一条：一次形变到位，不再「先变成完整速览面板」
+    const dockHeight = Math.round(DOCK_HEIGHT_HINT * scale);
+    let x = pos.x;
+    // 顶边对齐到工作区顶（避开任务栏）
+    const y = monitor
+      ? Math.round(monitor.workArea?.position?.y ?? monitor.position.y)
+      : pos.y;
+    if (monitor) {
+      const maxX = monitor.position.x + monitor.size.width - width;
+      x = Math.min(Math.max(x, monitor.position.x), Math.max(monitor.position.x, maxX));
+    }
+
+    // 收起成一条后远小于「放得下右键菜单」的最小尺寸，先解除；展开时再补回来
+    await win.setMinSize(null);
+
+    // 窗口形变：从主界面几何直接收成「屏幕顶部的一条」，期间内容钉在速览尺寸上
+    const ms = morphDuration();
+    // 先让旧界面渐隐再形变：不然完整界面会被越缩越小的窗口现场重排（顶栏、搜索框
+    // 挤成一条），等 React 换装速览内容时又啪地跳变。淡出走合成器线程的 CSS 动画，
+    // 主线程这时正忙着渲染速览内容也卡不住它；旧内容隐掉后再收窗口，跳变就看不见了。
+    if (ms > 0) {
+      document.body.classList.add("ui-fade-out");
+      await sleep(UI_FADE_OUT_MS);
+    }
+    // 先切界面再把窗口收过来：内容一上来就以速览的尺寸渲染（钉住），
+    // 窗口只是逐步裁掉多余的部分，不会看到内容被挤压重排。
+    useFontStore.setState({
+      quickbar: true,
+      morph: ms > 0 ? { width: targetWidth, height: targetHeight } : null,
+    });
+    await morphWindow(
+      { x: pos.x, y: pos.y, width: size.width, height: size.height },
+      { x, y, width, height: dockHeight },
+      ms,
+    );
+    // 窗口已经是顶部一条：把收起态交给 dock，展开时还原成完整的速览尺寸
+    await adoptQuickbarDock(width, fullHeight).catch((e) =>
+      console.warn("[quickbar] 接管收起态失败", e),
+    );
+    // 速览界面置顶在所有窗口之上，回到完整界面时再取消
+    await win.setAlwaysOnTop(true);
+  } catch (e) {
+    // 窗口几何调不动也要让界面切过去（顶多是全尺寸的速览），不能整个功能失效
+    console.warn("[quickbar] 调整窗口几何失败，仅切换界面", e);
+    useFontStore.setState({ quickbar: true });
+  } finally {
+    // 渐隐类只在「完整界面还在场上」时有意义，速览挂载后规则命中不到任何元素；
+    // 但必须摘掉，否则下次回到完整界面会被它瞬间隐身
+    document.body.classList.remove("ui-fade-out");
+    useFontStore.setState({ morph: null });
+  }
+}
+
+/**
+ * 速览状态下按右键菜单的实测尺寸校准窗口最小尺寸（菜单项随上下文变化）。
+ * 只在不会触发窗口 resize 的前提下收紧——取与当前尺寸的较小者，
+ * 否则菜单显示中窗口被 resize 会立刻把菜单关掉。
+ */
+export async function syncQuickbarMinSize(): Promise<void> {
+  if (!useFontStore.getState().quickbar) return;
+  const menuMin = quickbarMinSize(contextMenuSize());
+  const win = getCurrentWindow();
+  try {
+    const [size, scale] = await Promise.all([win.outerSize(), win.scaleFactor()]);
+    await win.setMinSize(
+      new LogicalSize(
+        Math.round(Math.min(menuMin.width, size.width / scale)),
+        Math.round(Math.min(menuMin.height, size.height / scale)),
+      ),
+    );
+  } catch (e) {
+    console.warn("[quickbar] 同步最小尺寸失败", e);
+  }
+}
+
+/**
+ * 退出速览：先把窗口收走，藏起来之后再换界面、还原几何，最后再展开显示出来
+ * ——来回切换时的大跨度变化不需要暴露给用户。
+ */
+async function exitQuickbar() {
+  const win = getCurrentWindow();
+  const geometry = quickbarGeometry;
+  quickbarGeometry = null;
+  try {
+    // 先把窗口收走（用 hide 而不是 minimize：最小化状态下改窗口几何会被系统记在
+    // 「还原位置」之外，一显示又变回速览的大小），藏起来之后换界面、还原几何，
+    // 最后再显示出来——来回切换的大跨度变化用户全程看不到。
+    await win.hide().catch(() => {});
+    await sleep(HIDE_SETTLE_MS);
+
+    // 收起着就先还原展开尺寸，否则 dock 状态残留
+    await restoreQuickbarDock();
+    await ipc.setQuickbarMode(false).catch((e) => console.warn("[quickbar] 还原速览模式失败", e));
+    const scale = await win.scaleFactor().catch(() => 1);
+    if (geometry) {
+      // 窗口此刻是隐藏的，几何直接落位，不做形变
+      await win.setSize(new PhysicalSize(geometry.width, geometry.height)).catch(() => {});
+      await win.setPosition(new PhysicalPosition(geometry.x, geometry.y)).catch(() => {});
+    }
+    // 还原主界面的最小尺寸限制（提前设会被系统直接夹成 900x600）
+    await win.setMinSize(new LogicalSize(MAIN_MIN_WIDTH, MAIN_MIN_HEIGHT));
+    await win.setAlwaysOnTop(false).catch(() => {});
+    // 切回主界面：内容钉在还原后的尺寸上并淡入，显示出来的就是最终布局
+    useFontStore.setState({
+      quickbar: false,
+      morph: geometry
+        ? { width: geometry.width / scale, height: geometry.height / scale }
+        : null,
+    });
+    if (geometry?.maximized) await win.maximize().catch(() => {});
+    // 给主界面渲染一帧的时间，再把它展开显示出来
+    await sleep(SHOW_SETTLE_MS);
+    await win.show().catch(() => {});
+    await win.setFocus().catch(() => {});
+    // 淡入走完再解除内容钉住
+    await sleep(MORPH_MS);
+    useFontStore.setState({ morph: null });
+    return;
+  } catch (e) {
+    console.warn("[quickbar] 还原窗口几何失败", e);
+    useFontStore.setState({ quickbar: false, morph: null });
+    await win.show().catch(() => {});
+    await win.unminimize().catch(() => {});
+  } finally {
+    // 无论几何还原是否成功，回到完整界面都要取消置顶
+    void win
+      .setAlwaysOnTop(false)
+      .catch((e) => console.warn("[quickbar] 取消置顶失败", e));
+    useFontStore.setState({ quickbar: false, morph: null });
+  }
 }
 
 function applyMotionPref(pref: MotionPref) {
@@ -282,6 +534,19 @@ function applyMotionPref(pref: MotionPref) {
 
 function applyTransparencyPref(pref: TransparencyPref) {
   document.documentElement.dataset.transparency = pref;
+}
+
+/**
+ * 版权状态同步改了字族目录名后重扫一次：目录改名 = 字体路径变了，
+ * 不重扫的话列表里还是旧路径（启用/停用会找不到文件）。合并 1 秒内的多次改动。
+ */
+let copyrightRescanTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleCopyrightRescan(get: () => FontStore) {
+  clearTimeout(copyrightRescanTimer);
+  copyrightRescanTimer = setTimeout(() => {
+    copyrightRescanTimer = undefined;
+    void get().rescan();
+  }, 1000);
 }
 
 let prefsTimer: ReturnType<typeof setTimeout> | undefined;
@@ -309,6 +574,7 @@ function persistPrefs(get: () => FontStore) {
       restoreOnLaunch: s.restoreOnLaunch,
       lastActivePaths: s.fonts.filter((f) => f.active).map((f) => f.path),
       copyrightStatus: s.copyrightStatus,
+      copyrightExpiry: s.copyrightExpiry,
     });
   }, 600);
 }/**
@@ -416,6 +682,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
   sizeIndex: 3,
   viewMode: "grid",
   sort: "name",
+  quickbar: false,
+  quickbarAutoHide: true,
+  morph: null,
   search: "",
   classFilter: [],
   scriptFilter: [],
@@ -430,6 +699,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   toggleableOnly: false,
   licenseFilter: [],
   copyrightStatus: {},
+  copyrightExpiry: {},
   nav: { kind: "library" },
   selectedFamily: null,
   pendingCollectionFor: null,
@@ -445,7 +715,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
     try {
       const prefs = (await ipc.getPrefs()) ?? {};
       set({
-        sampleText: typeof prefs.sampleText === "string" ? prefs.sampleText : get().sampleText,
+        // 老版本把默认示例文本也存进了 prefs，升级后要换成新的默认句；
+        // 用户自己改过的（不是那句默认）原样保留。
+        sampleText:
+          typeof prefs.sampleText === "string" && !LEGACY_SAMPLE_TEXTS.has(prefs.sampleText)
+            ? prefs.sampleText
+            : get().sampleText,
         sizeIndex: typeof prefs.sizeIndex === "number" ? prefs.sizeIndex : get().sizeIndex,
         viewMode: (["grid", "list", "waterfall"] as const).includes(
           prefs.viewMode as ViewMode,
@@ -489,6 +764,16 @@ export const useFontStore = create<FontStore>((set, get) => ({
                   .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
               )
             : get().copyrightStatus,
+        copyrightExpiry:
+          prefs.copyrightExpiry && typeof prefs.copyrightExpiry === "object"
+            ? Object.fromEntries(
+                Object.entries(prefs.copyrightExpiry as Record<string, unknown>)
+                  .filter(
+                    (entry): entry is [string, string] =>
+                      typeof entry[1] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry[1]),
+                  ),
+              )
+            : get().copyrightExpiry,
       });
       setSoundLevel(get().soundPref);
       hydrateLocalePref(get().localePref);
@@ -803,7 +1088,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
   },
 
-  uninstallFamily: async (family) => {
+  uninstallFamily: async (family, opts) => {
+    const silent = opts?.silent === true;
+    const keepMeta = opts?.keepMeta === true;
     const faces = get().fonts.filter(
       (f) => f.family === family && f.source !== "system",
     );
@@ -825,16 +1112,19 @@ export const useFontStore = create<FontStore>((set, get) => ({
         lastImported: get().lastImported.filter((f) => f !== family),
       });
 
-      const { tags, favorites, collections } = get();
-      if (tags[family]) void get().setFamilyTags(family, []);
-      if (favorites.includes(family)) void get().toggleFavorite(family);
-      for (const [name, members] of Object.entries(collections)) {
-        if (members.includes(family)) {
-          const next = members.filter((m) => m !== family);
-          set({ collections: { ...get().collections, [name]: next } });
-          void ipc.setCollection(name, next);
+      if (!keepMeta) {
+        const { tags, favorites, collections } = get();
+        if (tags[family]) void get().setFamilyTags(family, []);
+        if (favorites.includes(family)) void get().toggleFavorite(family);
+        for (const [name, members] of Object.entries(collections)) {
+          if (members.includes(family)) {
+            const next = members.filter((m) => m !== family);
+            set({ collections: { ...get().collections, [name]: next } });
+            void ipc.setCollection(name, next);
+          }
         }
       }
+      if (silent) return;
       toast.success(t("toast.movedToTrash", { family }), t("toast.movedToTrashSub"), "trash", {
         label: t("toast.undo"),
         run: () => {
@@ -1249,9 +1539,20 @@ export const useFontStore = create<FontStore>((set, get) => ({
       }
       if (imported.length > 0) {
         if (mode === "none") {
+          // 快照只记字体清单、不含字体文件：把「有多少条在本机真的落地」当场说清楚，
+          // 否则用户会以为「导入了快照 = 字体也装回来了」。
+          const index = buildFaceIndex(get().fonts);
+          let total = 0;
+          let missing = 0;
+          for (const snap of imported) {
+            total += snap.entries.length;
+            missing += missingEntries(snap.entries, index).length;
+          }
           toast.success(
             t("toast.snapshotsImported", { count: imported.length }),
-            undefined,
+            missing > 0
+              ? t("toast.snapshotsImportedPartial", { total, missing })
+              : t("toast.snapshotsImportedAll", { total }),
             "restore",
           );
         } else {
@@ -1368,6 +1669,16 @@ export const useFontStore = create<FontStore>((set, get) => ({
         );
       } else if (outcome === "not-running") {
         toast.error(t("toast.appNotRunning", { app: appName }), t("toast.appNotRunningSub"));
+      } else if (outcome === "not-installed") {
+        toast.error(t("toast.appNotInstalled", { app: appName }), t("toast.appNotInstalledSub", { app: appName }));
+      } else if (outcome === "launch-timeout") {
+        toast.error(t("toast.appLaunchTimeout", { app: appName }), t("toast.appLaunchTimeoutSub", { app: appName }));
+      } else if (outcome === "app-no-response") {
+        // 宿主重连一次仍然超时：CorelDRAW 那一侧真的没应答
+        toast.error(
+          t("toast.appNoResponse", { app: appName }),
+          t("toast.appNoResponseSub", { app: appName }),
+        );
       } else if (outcome === "no-document") {
         toast.error(t("toast.noDocumentInApp", { app: appName }), t("toast.noDocumentInAppSub"));
       } else if (outcome === "font-not-found") {
@@ -1375,6 +1686,25 @@ export const useFontStore = create<FontStore>((set, get) => ({
           t("toast.fontUnknownToApp", { app: appName, family }),
           t("toast.fontUnknownToAppSub"),
         );
+      } else if (outcome === "font-rejected") {
+        // 字体在目标软件的字体列表里，但赋值被它静默拒绝
+        // （最常见：给中文文字套用不含中文字形的西文字体）
+        toast.error(
+          t("toast.fontRejected", { app: appName, family }),
+          t("toast.fontRejectedSub"),
+        );
+      } else if (outcome === "apply-failed") {
+        toast.error(
+          t("toast.applyFailed", { app: appName }),
+          t("toast.applyFailedSub", { app: appName }),
+        );
+      } else if (outcome === "no-text-selected") {
+        toast.error(
+          t("toast.noTextSelected", { app: appName }),
+          t("toast.noTextSelectedSub", { app: appName }),
+        );
+      } else if (outcome.startsWith("ps-error:")) {
+        toast.error(t("toast.couldntApplyIn", { app: appName }), outcome.slice("ps-error:".length).trim());
       } else {
         toast.error(t("toast.couldntApplyIn", { app: appName }), outcome);
       }
@@ -1532,12 +1862,21 @@ export const useFontStore = create<FontStore>((set, get) => ({
       const dupKeyOf = (f: { postscriptName: string | null; family: string; style: string }) =>
         f.postscriptName ?? `${f.family} ${f.style}`;
       const existing = get().fonts.map(dupKeyOf);
+      // 字库里已有的同名字族：许可证也补一份进去（补齐缺失的版权文件）
+      const familyFaces = get().fonts.filter(
+        (f) => f.family === res.family && f.source !== "system",
+      );
+      const licenseDirs = [
+        ...new Set(familyFaces.map((f) => parentDir(f.path)).filter((d) => d.length > 0)),
+      ];
+      const familyExisted = familyFaces.length > 0;
       const result = await ipc.installOnline(
         res.paths,
         existing,
         res.family,
         res.licensePath,
         res.source,
+        licenseDirs,
       );
       if (result.installed.length > 0) {
         set({ fonts: [...get().fonts, ...result.installed], lastImported: [res.family] });
@@ -1545,7 +1884,14 @@ export const useFontStore = create<FontStore>((set, get) => ({
         toast.success(t("toast.installedOne", { name: res.family }), undefined, "install");
       }
       for (const err of result.errors) toast.error(t("toast.installFailed"), err);
-      if (result.duplicates.length > 0) {
+      if (
+        result.installed.length === 0 &&
+        familyExisted &&
+        result.errors.length === 0
+      ) {
+        // 字体本来就有，这次只把版权文件补了进去
+        toast.success(t("toast.licenseAdded"), t("toast.licenseAddedSub"), "install");
+      } else if (result.duplicates.length > 0) {
         set({
           duplicateReport: { names: [...result.duplicates], at: Date.now() },
         });
@@ -1560,6 +1906,27 @@ export const useFontStore = create<FontStore>((set, get) => ({
     } finally {
       set({ onlineDownloading: null, onlineProgress: null });
     }
+  },
+
+  reinstallOnlineFamily: async (id) => {
+    const detail = get().onlineDetail;
+    if (!detail || get().onlineDownloading) return;
+    const family = detail.family;
+    const faces = get().fonts.filter((f) => f.family === family && f.source !== "system");
+    if (faces.length === 0) {
+      // 字库里本来就没有（或是系统字体），直接下载即可
+      await get().installOnlineFamily(id);
+      return;
+    }
+    // 保留标签/收藏/合集：删除时不清元数据，重新入库后仍然有效
+    await get().uninstallFamily(family, { silent: true, keepMeta: true });
+    const leftovers = get().fonts.filter((f) => f.family === family && f.source !== "system");
+    if (leftovers.length > 0) {
+      toast.error(t("toast.redownloadFailed"), t("toast.cantUninstallSystemSub"));
+      return;
+    }
+
+    await get().installOnlineFamily(id);
   },
 
   setMotionPref: (motionPref) => {
@@ -1629,6 +1996,16 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({ viewMode });
     persistPrefs(get);
   },
+  setQuickbar: async (on) => {
+    if (on === get().quickbar) return;
+    try {
+      if (on) await enterQuickbar();
+      else await exitQuickbar();
+    } catch (e) {
+      toast.error(t("toast.quickbarFailed"), String(e));
+    }
+  },
+  setQuickbarAutoHide: (quickbarAutoHide) => set({ quickbarAutoHide }),
   setSort: (sort) => {
     set({ sort });
     persistPrefs(get);
@@ -1655,6 +2032,24 @@ export const useFontStore = create<FontStore>((set, get) => ({
       next[family] = status;
     }
     set({ copyrightStatus: next });
+    persistPrefs(get);
+    // 同步到字体库里的字族目录：目录名后缀（"Lora（免费字体）"）跟着一起改。
+    // 目录改了名，字体路径也变了，所以要重扫一次让列表对上号。
+    void ipc
+      .syncFamilyCopyright(family, status || "auto")
+      .then((renamed) => {
+        if (renamed > 0) scheduleCopyrightRescan(get);
+      })
+      .catch((e) => console.warn("[copyright] 同步字族目录失败", e));
+  },
+  setCopyrightExpiry: (family, date) => {
+    const next = { ...get().copyrightExpiry };
+    if (!date) {
+      delete next[family];
+    } else {
+      next[family] = date;
+    }
+    set({ copyrightExpiry: next });
     persistPrefs(get);
   },
   toggleFormat: (f) => {
@@ -1841,6 +2236,7 @@ export function computeFamilies(
         glyphCount: 0,
         license: null,
         copyright: null,
+        dirCopyrightClass: null,
         addedAt: 0,
       };
       map.set(f.family, fam);
@@ -1851,6 +2247,7 @@ export function computeFamilies(
     fam.foundry ??= f.foundry;
     fam.license ??= f.license;
     fam.copyright ??= f.copyright;
+    fam.dirCopyrightClass ??= f.copyrightClass ?? null;
     fam.addedAt = Math.max(fam.addedAt, f.addedAt ?? 0);
 
     if (fam.classification === "unknown") fam.classification = f.classification;
@@ -1869,6 +2266,28 @@ export function computeFamilies(
     Object.assign(fam, familyActivation(fam.faces));
   }
   return map;
+}
+
+/** 与完整界面列表一致的族排序（主视图与速览界面共用） */
+export function sortFamilies(families: Family[], sort: SortMode): Family[] {
+  const out = [...families];
+  switch (sort) {
+    case "styles":
+      out.sort((a, b) => b.faces.length - a.faces.length || a.name.localeCompare(b.name));
+      break;
+    case "size":
+      out.sort((a, b) => b.totalSize - a.totalSize || a.name.localeCompare(b.name));
+      break;
+    case "glyphs":
+      out.sort((a, b) => b.glyphCount - a.glyphCount || a.name.localeCompare(b.name));
+      break;
+    case "added":
+      out.sort((a, b) => b.addedAt - a.addedAt || a.name.localeCompare(b.name));
+      break;
+    default:
+      out.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return out;
 }
 
 export function selectVisibleFamilies(s: {
@@ -1928,7 +2347,9 @@ export function selectVisibleFamilies(s: {
   }
   if (s.licenseFilter.length > 0) {
     out = out.filter((f) =>
-      s.licenseFilter.includes(effectiveCopyrightClass(f.license, s.copyrightStatus[f.name])),
+      s.licenseFilter.includes(
+        effectiveCopyrightClass(f.license, s.copyrightStatus[f.name], f.dirCopyrightClass),
+      ),
     );
   }
   if (s.nav.kind === "tag") {
@@ -1985,23 +2406,7 @@ export function selectVisibleFamilies(s: {
         (f.copyright?.toLowerCase().includes(q) ?? false),
     );
   }
-  switch (s.sort) {
-    case "styles":
-      out.sort((a, b) => b.faces.length - a.faces.length || a.name.localeCompare(b.name));
-      break;
-    case "size":
-      out.sort((a, b) => b.totalSize - a.totalSize || a.name.localeCompare(b.name));
-      break;
-    case "glyphs":
-      out.sort((a, b) => b.glyphCount - a.glyphCount || a.name.localeCompare(b.name));
-      break;
-    case "added":
-      out.sort((a, b) => b.addedAt - a.addedAt || a.name.localeCompare(b.name));
-      break;
-    default:
-      out.sort((a, b) => a.name.localeCompare(b.name));
-  }
-  return out;
+  return sortFamilies(out, s.sort);
 }
 
 export function allTags(tags: Record<string, string[]>): Map<string, number> {

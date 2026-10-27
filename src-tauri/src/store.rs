@@ -82,7 +82,9 @@ pub struct AppState {
     pub online_fonts_enabled: bool,
 }
 
-pub struct Store(pub Mutex<AppState>);
+/// 包一层 Arc：批量启停要丢到后台线程（`spawn_blocking`）跑，得能拿出一份 'static 的共享状态
+#[derive(Clone)]
+pub struct Store(pub std::sync::Arc<Mutex<AppState>>);
 
 /// 兼容旧版 state.json 中 `snapshots` 为 HashMap<String, Vec<String>> 的格式：
 /// 旧数据迁移为 Vec<Snapshot>（family 置空、system=false、created_at=0）。

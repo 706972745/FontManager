@@ -1,8 +1,9 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Minus, Square, X } from "lucide-react";
+import { Minus, PanelTop, Square, X } from "lucide-react";
 import { useFontStore } from "../state/fontStore";
 import { motion } from "motion/react";
 import { springSoft } from "../design/springs";
+import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { useT } from "../lib/i18n";
 
 function SettingsGlyph({ size = 15 }: { size?: number }) {
@@ -31,13 +32,15 @@ export function Titlebar() {
   const t = useT();
   const win = getCurrentWindow();
   const setSettingsOpen = useFontStore((s) => s.setSettingsOpen);
+  const setQuickbar = useFontStore((s) => s.setQuickbar);
+  const intro = useIntro();
   return (
     <motion.div
       className="titlebar"
       data-tauri-drag-region
-      initial={{ y: -28, opacity: 0 }}
+      initial={intro ? { y: -28, opacity: 0 } : false}
       animate={{ y: 0, opacity: 1 }}
-      transition={springSoft}
+      transition={intro ? springSoft : INTRO_OFF}
     >
       <div className="titlebar-brand" data-tauri-drag-region>
         <img className="brand-mark" src="/icon.png" alt="" draggable={false} />
@@ -46,6 +49,14 @@ export function Titlebar() {
         </span>
       </div>
       <div className="titlebar-controls">
+        <button
+          data-tour="quickbar"
+          aria-label={t("quickbar.enter")}
+          title={t("quickbar.enter")}
+          onClick={() => void setQuickbar(true)}
+        >
+          <PanelTop size={14} strokeWidth={1.5} />
+        </button>
         <button
           data-tour="settings"
           aria-label={t("titlebar.settings")}

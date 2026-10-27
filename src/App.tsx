@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { MotionConfig, motion } from "motion/react";
 import { Clock, Camera, FolderOpen, History, Monitor, Power, PowerOff, SearchX, Star, Tag as TagIcon, Type } from "lucide-react";
 import { useEffect, useMemo } from "react";
@@ -20,13 +21,16 @@ import { SelectionBar } from "./components/SelectionBar";
 import { SettingsOverlay } from "./components/SettingsOverlay";
 import { ShortcutsOverlay } from "./components/ShortcutsOverlay";
 import { CommandPalette } from "./components/CommandPalette";
+import { QuickBar } from "./components/QuickBar";
+import { WarmFooter } from "./components/WarmFooter";
 import { BulkTagPrompt } from "./components/BulkTagPrompt";
 import { DuplicateDialog } from "./components/DuplicateDialog";
 import { Onboarding } from "./components/Onboarding";
 import { ContextMenuHost, openContextMenuAt } from "./design/primitives/ContextMenu";
 import { buildFamilyMenu } from "./lib/menus";
 import { Toaster } from "./design/primitives/Toast";
-import { spring } from "./design/springs";
+import { easeTop, spring } from "./design/springs";
+import { INTRO_OFF, useIntro } from "./lib/useIntro";
 import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
 import { useT } from "./lib/i18n";
 
@@ -47,6 +51,7 @@ function ScanSkeleton() {
 
 function EmptyLibrary({ searching, nav }: { searching: boolean; nav: Nav }) {
   const t = useT();
+  const intro = useIntro();
 
   let icon = <Type size={26} strokeWidth={1.5} />;
   let title = t("empty.library.title");
@@ -95,9 +100,9 @@ function EmptyLibrary({ searching, nav }: { searching: boolean; nav: Nav }) {
   return (
     <motion.div
       className="empty-state"
-      initial={{ opacity: 0, y: 16 }}
+      initial={intro ? { opacity: 0, y: 16 } : false}
       animate={{ opacity: 1, y: 0 }}
-      transition={spring}
+      transition={intro ? spring : INTRO_OFF}
     >
       <span className="empty-tile">{icon}</span>
       <h2>{title}</h2>
@@ -187,6 +192,10 @@ function MainContent() {
 export default function App() {
   const init = useFontStore((s) => s.init);
   const motionPref = useFontStore((s) => s.motionPref);
+  const quickbar = useFontStore((s) => s.quickbar);
+  const morph = useFontStore((s) => s.morph);
+  // 窗口形变期间不要再播放入场动画，否则内容跳动和窗口缩放两套运动会互相打架
+  const intro = useIntro();
 
   useEffect(() => {
     void init().then(() => {
@@ -194,10 +203,32 @@ export default function App() {
     });
   }, [init]);
 
+  // 软件已经开着时用户又点了一次桌面 / 开始菜单图标（原生侧拦下第二个进程并发来这个事件）：
+  // 不管此刻停在速览细线、最小化还是托盘里，都回到已经在开着的那个「完整界面」。
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen("app://activate", async () => {
+      const st = useFontStore.getState();
+      // 速览 → 完整界面走它自己的还原流程（还原窗口几何、取消置顶、再显示出来）
+      if (st.quickbar) await st.setQuickbar(false);
+      const win = getCurrentWindow();
+      await win.unminimize().catch(() => {});
+      await win.show().catch(() => {});
+      await win.setFocus().catch(() => {});
+    })
+      .then((f) => {
+        un = f;
+      })
+      .catch((e) => console.warn("[single-instance] 监听唤起事件失败", e));
+    return () => un?.();
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const inField =
         e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      // 速览界面有自己的一套快捷键，主界面的快捷键在这里一律不生效
+      if (useFontStore.getState().quickbar) return;
       if (e.key === "Escape" && !inField) {
         const st = useFontStore.getState();
         st.setComparePicking(false);
@@ -295,9 +326,33 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    document.body.classList.toggle("is-morphing", morph != null);
+    return () => document.body.classList.remove("is-morphing");
+  }, [morph]);
+
+  if (quickbar) {
+    return (
+      <MotionConfig reducedMotion={motionPref === "reduced" ? "always" : "user"}>
+        <QuickBar />
+        <ContextMenuHost />
+        <Toaster />
+        <ResizeGrips />
+      </MotionConfig>
+    );
+  }
+
   return (
     <MotionConfig reducedMotion={motionPref === "reduced" ? "always" : "user"}>
-      <div className="app-frame">
+      <motion.div
+        // 从速览切回来时把内容钉在主界面尺寸上，窗口只是逐步把它露出来；
+        // morph-fade 让内容随窗口一起浮现，节奏与 Windows 的窗口动画一致
+        className={morph ? "app-frame morph-fade" : "app-frame"}
+        style={morph ? { width: `${morph.width}px`, height: `${morph.height}px` } : undefined}
+        initial={intro ? { opacity: 0 } : false}
+        animate={{ opacity: 1 }}
+        transition={intro ? easeTop : INTRO_OFF}
+      >
         <Titlebar />
         <div className="app-shell">
           <Sidebar />
@@ -306,10 +361,11 @@ export default function App() {
             <main className="app-content">
               <MainContent />
             </main>
+            <WarmFooter />
           </div>
           <DetailPanel />
         </div>
-      </div>
+      </motion.div>
       <DropZone />
       <SelectionBar />
       <CompareOverlay />

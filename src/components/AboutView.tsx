@@ -47,6 +47,9 @@ const LINKS: { key: TKey; sub: string; url: string; icon: React.ReactNode }[] = 
 
 const STACK = ["Tauri v2", "Rust", "React 19", "TypeScript", "Vite", "pnpm"];
 
+/** 本定制版的代码仓库 */
+const CUSTOM_BUILD_URL = "https://github.com/706972745/ZFontManager";
+
 export function AboutView() {
   const t = useT();
   return (
@@ -92,6 +95,19 @@ export function AboutView() {
           </motion.button>
         ))}
       </div>
+
+      <motion.button
+        type="button"
+        className="about-custom"
+        onClick={() => openUrl(CUSTOM_BUILD_URL)}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ ...springSoft, delay: staggerDelay(LINKS.length) }}
+        whileHover={{ y: -1 }}
+        whileTap={{ scale: 0.98 }}
+      >
+        {t("about.customBuild")}
+      </motion.button>
     </motion.div>
   );
 }

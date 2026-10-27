@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, MouseEvent as ReactMouseEvent } from "react";
 import { create } from "zustand";
+import { recordContextMenuSize } from "../../lib/menuMetrics";
 import { springSnappy } from "../springs";
 
 export type MenuItem =
@@ -58,11 +59,16 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const r = el.getBoundingClientRect();
+    // 用 offsetWidth/offsetHeight（不含 transform）量测：入场缩放动画会让
+    // getBoundingClientRect 偏小，导致 clamp 后菜单底部仍超出窗口被裁掉
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
     setPos({
-      x: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
-      y: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)),
+      x: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
     });
+    // 回填实测尺寸：速览界面用它保证窗口最小尺寸放得下菜单
+    recordContextMenuSize(w, h);
   }, [x, y]);
 
   useEffect(() => {

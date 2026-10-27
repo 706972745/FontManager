@@ -1,13 +1,21 @@
 import { AnimatePresence, motion } from "motion/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Download, ExternalLink, Globe, RefreshCw, Search, Settings2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Download, ExternalLink, Globe, RefreshCw, RotateCcw, Search, Settings2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { spring, springSnappy, staggerDelay } from "../design/springs";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { SIZES, useFontStore } from "../state/fontStore";
 import { useT, type TKey } from "../lib/i18n";
 import { usePathFontCss } from "../lib/fontLoader";
-import type { OnlineFamily } from "../lib/ipc";
+import { ipc, type FontFace, type OnlineFamily } from "../lib/ipc";
+import {
+  expectationFromCatalogue,
+  expectationFromFiles,
+  familyCoverage,
+  parentDir,
+  type CoverageState,
+  type FamilyCoverage,
+} from "../lib/onlineCoverage";
 
 const CATEGORIES = ["sans-serif", "serif", "display", "handwriting", "monospace", "icons"] as const;
 const LICENSES = ["OFL-1.1", "Apache-2.0", "UFL-1.0"] as const;
@@ -75,10 +83,128 @@ export function OnlineView() {
     if (enabled && families === null && !loading) void load(false);
   }, [enabled, families, loading, load]);
 
-  const installedNames = useMemo(
-    () => new Set(installedFamilies.map((f) => f.family.toLowerCase())),
-    [installedFamilies],
+  // ── 字库已收录情况（字重是否齐全 + 是否有版权文件）──────────────────
+  const [infoFiles, setInfoFiles] = useState<Record<string, string[]>>({});
+  // 下载结束时即使没有新增字体面（只补了版权文件），也要重新探测目录
+  const [refreshTick, setRefreshTick] = useState(0);
+  const prevDownloading = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevDownloading.current && !downloading) setRefreshTick((n) => n + 1);
+    prevDownloading.current = downloading;
+  }, [downloading]);
+
+  const dirsSignature = useMemo(() => {
+    const dirs = new Set<string>();
+    for (const f of installedFamilies) {
+      if (f.source === "system") continue;
+      const dir = parentDir(f.path);
+      if (dir) dirs.add(dir);
+    }
+    return [...dirs].sort().join("\n");
+  }, [installedFamilies]);
+
+  useEffect(() => {
+    const dirs = dirsSignature ? dirsSignature.split("\n") : [];
+    if (dirs.length === 0) {
+      setInfoFiles({});
+      return;
+    }
+    let alive = true;
+    ipc
+      .infoFiles(dirs)
+      .then((map) => {
+        if (alive) setInfoFiles(map);
+      })
+      .catch(() => {
+        if (alive) setInfoFiles({});
+      });
+    return () => {
+      alive = false;
+    };
+  }, [dirsSignature, refreshTick]);
+
+  const libraryIndex = useMemo(() => {
+    const map = new Map<string, FontFace[]>();
+    for (const f of installedFamilies) {
+      const key = f.family.toLowerCase();
+      const list = map.get(key);
+      if (list) list.push(f);
+      else map.set(key, [f]);
+    }
+    return map;
+  }, [installedFamilies]);
+
+  const licenseDirs = useMemo(() => new Set(Object.keys(infoFiles)), [infoFiles]);
+  const hasLicense = useCallback(
+    (faces: FontFace[]) => faces.some((f) => licenseDirs.has(parentDir(f.path))),
+    [licenseDirs],
   );
+
+  const coverageByFamily = useMemo(() => {
+    const map = new Map<string, FamilyCoverage>();
+    for (const f of families ?? []) {
+      const faces = libraryIndex.get(f.family.toLowerCase()) ?? [];
+      map.set(
+        f.family.toLowerCase(),
+        familyCoverage(
+          faces,
+          expectationFromCatalogue(f.weights, f.styles, { variable: f.variable }),
+          hasLicense(faces),
+        ),
+      );
+    }
+    return map;
+  }, [families, libraryIndex, hasLicense]);
+
+  const libFacesFor = useCallback(
+    (familyName: string) => libraryIndex.get(familyName.toLowerCase()) ?? [],
+    [libraryIndex],
+  );
+
+  const detailCoverage = useMemo<FamilyCoverage | null>(() => {
+    if (!detail) return null;
+    const faces = libFacesFor(detail.family);
+    if (faces.length === 0) return familyCoverage([], [], false);
+    return familyCoverage(faces, expectationFromFiles(detail.files), hasLicense(faces));
+  }, [detail, libFacesFor, hasLicense]);
+
+  // 「删除字族并重新下载」的二次确认（4 秒内再点一次才执行）
+  const reinstall = useFontStore((s) => s.reinstallOnlineFamily);
+  const [armReinstall, setArmReinstall] = useState(false);
+  const armTimer = useRef<number | null>(null);
+  useEffect(() => {
+    setArmReinstall(false);
+    if (armTimer.current) window.clearTimeout(armTimer.current);
+  }, [detail?.id]);
+  useEffect(
+    () => () => {
+      if (armTimer.current) window.clearTimeout(armTimer.current);
+    },
+    [],
+  );
+  const onRedownload = () => {
+    if (!detail) return;
+    if (!armReinstall) {
+      setArmReinstall(true);
+      if (armTimer.current) window.clearTimeout(armTimer.current);
+      armTimer.current = window.setTimeout(() => setArmReinstall(false), 4000);
+      return;
+    }
+    setArmReinstall(false);
+    if (armTimer.current) window.clearTimeout(armTimer.current);
+    void reinstall(detail.id);
+  };
+
+  const coverageNote = (() => {
+    const cov = detailCoverage;
+    if (!cov || cov.state === "none") return "";
+    if (cov.state === "complete") return t("online.completeNote", { count: cov.expected });
+    const parts: string[] = [];
+    if (cov.missing > 0) parts.push(t("online.missingStyles", { count: cov.missing }));
+    if (!cov.hasLicense) parts.push(t("online.missingLicense"));
+    if (parts.length === 0) parts.push(t("online.missingUnknown"));
+    return parts.join(" · ");
+  })();
 
   const visible = useMemo(() => {
     if (!families) return [];
@@ -197,7 +323,7 @@ export function OnlineView() {
               key={f.id}
               f={f}
               index={i}
-              installed={installedNames.has(f.family.toLowerCase())}
+              coverage={coverageByFamily.get(f.family.toLowerCase())?.state ?? "none"}
               onOpen={() => void openFamily(f.id)}
             />
           ))}
@@ -285,27 +411,67 @@ export function OnlineView() {
                   </ul>
 
                   <div className="online-detail-foot">
-                    <span className="online-source detail-mono">
-                      {t("online.sourceLine", { dir: detail.sourceDir, id: detail.id.replace(/-/g, "") })}
-                    </span>
-                    <button
-                      className="online-download"
-                      onClick={() => void install(detail.id)}
-                      disabled={!!downloading}
-                    >
-                      {downloading === detail.id ? (
-                        <>
-                          <RefreshCw size={14} strokeWidth={1.5} className="spin" />
-                          {progress && progress.total > 0
-                            ? t("online.downloadingProgress", { done: progress.done, total: progress.total })
-                            : t("online.downloading")}
-                        </>
-                      ) : (
-                        <>
-                          <Download size={14} strokeWidth={1.5} /> {t("online.addToLibrary")}
-                        </>
+                    <div className="online-foot-info">
+                      <span className="online-source detail-mono">
+                        {t("online.sourceLine", { dir: detail.sourceDir, id: detail.id.replace(/-/g, "") })}
+                      </span>
+                      {coverageNote && (
+                        <span
+                          className={`online-coverage-note${
+                            detailCoverage?.state === "complete" ? " online-coverage-ok" : ""
+                          }`}
+                        >
+                          {coverageNote}
+                        </span>
                       )}
-                    </button>
+                    </div>
+                    <div className="online-foot-actions">
+                      {detailCoverage?.state !== "complete" && (
+                        <button
+                          className="online-download"
+                          onClick={() => void install(detail.id)}
+                          disabled={!!downloading}
+                        >
+                          {downloading === detail.id ? (
+                            <>
+                              <RefreshCw size={14} strokeWidth={1.5} className="spin" />
+                              {progress && progress.total > 0
+                                ? t("online.downloadingProgress", { done: progress.done, total: progress.total })
+                                : t("online.downloading")}
+                            </>
+                          ) : (
+                            <>
+                              <Download size={14} strokeWidth={1.5} />
+                              {detailCoverage?.state === "partial" &&
+                              detailCoverage.expected > 0 &&
+                              detailCoverage.covered === detailCoverage.expected &&
+                              !detailCoverage.hasLicense
+                                ? t("online.fillLicense")
+                                : detailCoverage?.state === "partial" && (detailCoverage.covered ?? 0) > 0
+                                  ? t("online.fillMissing", {
+                                      done: detailCoverage.covered,
+                                      total: detailCoverage.expected,
+                                    })
+                                  : t("online.addToLibrary")}
+                            </>
+                          )}
+                        </button>
+                      )}
+                      {detailCoverage && detailCoverage.state !== "none" && detailCoverage.removable && (
+                        <button
+                          className={`online-redownload${armReinstall ? " online-redownload-armed" : ""}`}
+                          onClick={onRedownload}
+                          disabled={!!downloading}
+                          title={t("online.redownloadHint")}
+                        >
+                          <RotateCcw size={14} strokeWidth={1.5} />
+                          {armReinstall ? t("online.confirmRedownload") : t("online.redownload")}
+                        </button>
+                      )}
+                      {detailCoverage?.state === "complete" && !detailCoverage.removable && (
+                        <span className="online-locked-note">{t("online.systemLocked")}</span>
+                      )}
+                    </div>
                   </div>
                 </>
               )}
@@ -320,12 +486,12 @@ export function OnlineView() {
 function OnlineCard({
   f,
   index,
-  installed,
+  coverage,
   onOpen,
 }: {
   f: OnlineFamily;
   index: number;
-  installed: boolean;
+  coverage: CoverageState;
   onOpen: () => void;
 }) {
   const t = useT();
@@ -350,7 +516,16 @@ function OnlineCard({
         <span className="card-name">{f.family}</span>
         <span className="card-spacer" />
         {f.variable && <span className="badge badge-variable">VAR</span>}
-        {installed && <span className="badge online-badge-have">{t("online.inLibrary")}</span>}
+        {coverage === "complete" && (
+          <span className="badge online-badge-have" title={t("online.inLibraryCompleteHint")}>
+            {t("online.inLibraryComplete")}
+          </span>
+        )}
+        {coverage === "partial" && (
+          <span className="badge online-badge-partial" title={t("online.inLibraryPartialHint")}>
+            {t("online.inLibraryPartial")}
+          </span>
+        )}
       </div>
       <div className="online-card-meta">
         <span>{t(catKey(f.category))}</span>

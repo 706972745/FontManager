@@ -39,6 +39,15 @@ pub enum Classification {
     Unknown,
 }
 
+/// 字体 name 表里的一个本地化字族名（如 en → "Source Han Sans"、zh-Hans → "思源黑体"）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalizedName {
+    /// BCP-47 语言标签（en / zh-Hans / zh-Hant / ja …），识别不出时回退为小写英文语言名
+    pub lang: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FontFace {
@@ -50,10 +59,18 @@ pub struct FontFace {
     pub family: String,
     pub style: String,
     pub postscript_name: Option<String>,
+    /// 该字面的所有本地化字族名（用于「复制英文名 / 复制其他语言名」）
+    #[serde(default)]
+    pub localized_names: Vec<LocalizedName>,
     pub foundry: Option<String>,
     pub license: Option<String>,
     pub license_url: Option<String>,
     pub copyright: Option<String>,
+    /// 按「版权信息文件 > 文件夹备注 > 字体自带信息」判定的版权分类（free/paid/timelimited/unknown）。
+    /// 字体库目录里的字体才有：目录名 / 同目录的版权文件写明的版权，扫描时一并带出来，
+    /// 界面上就能显示文件夹备注的版权，而不只是字体 name 表里的那点信息。
+    #[serde(default)]
+    pub copyright_class: Option<String>,
     pub format: FontFormat,
     pub is_variable: bool,
     pub axes: Vec<VariationAxis>,

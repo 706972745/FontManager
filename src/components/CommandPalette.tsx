@@ -30,6 +30,7 @@ import { springSnappy } from "../design/springs";
 import { familiesFor, useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { LOCALES, useLocalePref, useT, type LocalePref } from "../lib/i18n";
+import { AVAILABLE_ADOBE_APPS } from "../lib/ipc";
 
 const IS_MAC = navigator.platform.toUpperCase().includes("MAC");
 
@@ -177,7 +178,7 @@ export function CommandPalette() {
         }),
       ),
       ...(s.adobeAvailable && s.selectedFamily
-        ? (["photoshop", "illustrator"] as const).map(
+        ? AVAILABLE_ADOBE_APPS.map(
             (app): Cmd => ({
               id: `apply-${app}`,
               label: t("palette.applyInApp", {

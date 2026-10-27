@@ -1,4 +1,14 @@
 
+/**
+ * 速览 ↔ 完整界面的窗口形变过程中，内容是钉在目标尺寸上渲染的，窗口要 0.26s
+ * 才走到同一个尺寸 —— 这期间窗口比内容大的那几帧，多出来的部分画的是浏览器
+ * 的默认画布色（纯白），看着就像窗口边上挂着一条白竖条。把画布底色铺成应用
+ * 底色，这块区域就和内容融成一片了（light 主题下 --canvas 也是浅灰）。
+ */
+html,
+body {
+  background: var(--canvas);
+}
 
 #root {
   animation: app-arrive 240ms ease-out;
@@ -254,11 +264,66 @@
   min-width: 0;
 }
 
+/* 底部预热指示条：只显示正在运行的目标软件，百分比 = 预热进度。
+   纯展示，不响应点击；字号刻意比正文小一档。 */
+.warm-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: auto;
+  padding: 6px 16px 8px;
+  border-top: 1px solid rgba(var(--ink-rgb), 0.05);
+  font-size: var(--fs-10);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+.warm-footer-compact {
+  gap: 10px;
+  padding: 3px 12px 6px;
+}
+.warm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.warm-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.warm-dot.warm-ready {
+  background: var(--accent-a);
+  box-shadow: 0 0 6px var(--accent-glow-soft);
+}
+.warm-dot.warm-probing,
+.warm-dot.warm-idle {
+  background: #e5a13a;
+}
+.warm-dot.warm-failed {
+  background: #f87171;
+}
+.warm-pct {
+  color: var(--text-secondary);
+}
+.warm-pct-bad {
+  color: #f87171;
+}
+
 .topbar {
   display: flex;
   align-items: center;
   --control-h: 36px;
   gap: 8px;
+  /* 窗口变窄（尤其是详情面板占走宽度）时换行，而不是让按钮溢出到右侧面板上。
+     nowrap 会让固定宽度的按钮直接压到详情面板标题上，视觉上就是"重叠"。 */
+  flex-wrap: wrap;
+  row-gap: 8px;
   padding: 10px 16px;
   border-bottom: 1px solid rgba(var(--ink-rgb), 0.05);
   background: rgba(var(--ink-rgb), 0.01);
@@ -658,6 +723,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  overflow: hidden;
 }
 .card-name {
   font-size: var(--fs-14);
@@ -666,14 +733,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 窄卡片时优先压缩字体名，而不是把「N 种样式」挤成竖排 */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .card-spacer {
   flex: 1;
+  min-width: 0;
 }
 .card-expand {
   display: flex;
   align-items: center;
   gap: 4px;
+  /* 禁止逐字换行：中文在 flex 挤压下会一个字一行，压在右侧徽标上 */
+  flex: none;
+  white-space: nowrap;
   font-size: var(--fs-11);
   font-weight: 500;
   color: var(--text-tertiary);
@@ -927,6 +1001,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  /* 详情面板本身也可能被挤窄：标题必须在卡片内省略，不能顶到旁边的控件上 */
+  min-width: 0;
 }
 .detail-title {
   font-size: var(--fs-20);
@@ -934,6 +1010,7 @@
   letter-spacing: -0.005em;
   line-height: 1.15;
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1400,6 +1477,27 @@ h2.detail-title.copy-name {
   border-color: color-mix(in srgb, var(--accent-a) 35%, transparent);
   background: linear-gradient(180deg, rgba(var(--ink-rgb), 0.06), rgba(var(--ink-rgb), 0.03));
 }
+
+/* 关于面板最底部的一行小字：定制版仓库地址 */
+.about-custom {
+  margin-top: 22px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: color var(--t-quick) ease, background var(--t-quick) ease;
+}
+.about-custom:hover {
+  color: var(--text-secondary);
+  background: rgba(var(--ink-rgb), 0.05);
+}
 .about-link-icon {
   display: grid;
   place-items: center;
@@ -1687,12 +1785,32 @@ h2.detail-title.copy-name {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* 菜单项超出窗口高度时可滚动，滚动条要看得见（同 .lang-menu 风格） */
+  scrollbar-width: thin;
   border-radius: 6px;
   padding: 4px;
   transform-origin: top left;
   background:
     linear-gradient(rgba(var(--scrim-rgb), 0.3), rgba(var(--scrim-rgb), 0.3)),
     var(--e3);
+}
+/* 菜单超出窗口高度时内部滚动，滚动条要看得见（同 .lang-menu 风格） */
+.ctx-menu::-webkit-scrollbar {
+  width: 9px;
+}
+.ctx-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ctx-menu::-webkit-scrollbar-thumb {
+  background: rgba(var(--ink-rgb), 0.16);
+  border: 3px solid transparent;
+  border-radius: 5px;
+  background-clip: padding-box;
+}
+.ctx-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--ink-rgb), 0.26);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 .ctx-item {
   display: flex;
@@ -3053,6 +3171,11 @@ h2.detail-title.copy-name {
   border: 1px solid rgba(var(--ink-rgb), 0.12);
   box-shadow: 0 1px 0 rgba(var(--ink-rgb), 0.1);
 }
+/* 「拖到顶部」这类不是按键的操作：写成短语，不按等宽字符排 */
+.kbd-wide {
+  font-family: var(--font-ui);
+  letter-spacing: 0.01em;
+}
 .shortcuts-what {
   font-size: var(--fs-13);
   color: var(--text-secondary);
@@ -3821,6 +3944,11 @@ h2.detail-title.copy-name {
   border-color: color-mix(in srgb, var(--success) 30%, transparent);
   background: color-mix(in srgb, var(--success) 10%, transparent);
 }
+.online-badge-partial {
+  color: var(--text-secondary);
+  border-color: rgba(var(--ink-rgb), 0.16);
+  background: rgba(var(--ink-rgb), 0.06);
+}
 .online-more {
   font-size: var(--fs-11);
   color: var(--text-tertiary);
@@ -3980,7 +4108,65 @@ h2.detail-title.copy-name {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
   padding-top: 4px;
+}
+.online-foot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.online-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.online-coverage-note {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.online-coverage-ok {
+  color: var(--success);
+}
+.online-locked-note {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.online-redownload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  font-size: var(--fs-12);
+  font-weight: 550;
+  color: var(--text-secondary);
+  background: var(--e1);
+  transition: color var(--t-quick) ease, background var(--t-quick) ease, border-color var(--t-quick) ease;
+}
+.online-redownload:hover {
+  color: #f87171;
+  border-color: color-mix(in srgb, #f87171 45%, transparent);
+  background: color-mix(in srgb, #f87171 12%, transparent);
+}
+.online-redownload-armed {
+  color: #f87171;
+  border-color: color-mix(in srgb, #f87171 60%, transparent);
+  background: color-mix(in srgb, #f87171 18%, transparent);
+}
+.online-redownload:disabled {
+  opacity: 0.6;
+}
+:root[data-theme="light"] .online-redownload:hover,
+:root[data-theme="light"] .online-redownload-armed {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.45);
+  background: rgba(220, 38, 38, 0.1);
 }
 .online-source {
   font-size: var(--fs-10);
@@ -4229,6 +4415,18 @@ h2.detail-title.copy-name {
   background: rgba(var(--warn-rgb, 234, 179, 8), 0.18);
   color: var(--text-primary);
 }
+/* 版权到期：红色警示（项目色板为灰度，这里使用显式红色并适配主题） */
+.lic-chip.lic-expired {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #f87171;
+  font-weight: 600;
+}
+:root[data-theme="light"] .lic-chip.lic-expired {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.45);
+  color: #dc2626;
+}
 
 /* ===== 版权状态手动设置（详情面板） ===== */
 .copyright-status-row {
@@ -4256,6 +4454,60 @@ h2.detail-title.copy-name {
   color: var(--text-primary);
   font-weight: 600;
 }
+/* 时间限制版权的到期日期设置 */
+.copyright-expiry-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.copyright-expiry-label {
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  flex: none;
+}
+.copyright-expiry-input {
+  font-size: var(--fs-11);
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--e1);
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  border-radius: 6px;
+  padding: 4px 6px;
+  color-scheme: dark;
+  outline: none;
+}
+.copyright-expiry-input:focus {
+  border-color: rgba(var(--ink-rgb), 0.3);
+}
+:root[data-theme="light"] .copyright-expiry-input {
+  color-scheme: light;
+}
+.copyright-expiry-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  background: var(--e1);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex: none;
+}
+.copyright-expiry-clear:hover {
+  color: var(--text-primary);
+}
+.copyright-expired-note {
+  margin-top: 6px;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: #f87171;
+}
+:root[data-theme="light"] .copyright-expired-note {
+  color: #dc2626;
+}
 .detail-copyright-text {
   font-size: var(--fs-11);
   line-height: 1.6;
@@ -4266,4 +4518,522 @@ h2.detail-title.copy-name {
   border-radius: 6px;
   background: var(--e1);
   border: 1px solid rgba(var(--ink-rgb), 0.06);
+}
+
+/* ─── 速览界面：只显示已启用的字体 ───────────────────────────── */
+.qb-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  border: 1px solid rgba(var(--ink-rgb), 0.08);
+  background: var(--canvas);
+  overflow: hidden;
+  /* 收起成细线时底色要淡成透明（retract 阶段），过渡而不是一帧切过去 */
+  transition:
+    background-color 0.26s linear,
+    border-color 0.26s linear;
+}
+
+.qb-grip {
+  display: grid;
+  place-items: center;
+  height: 12px;
+  flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.qb-grip:active,
+.qb-dockbar:active,
+.qb-head:active {
+  cursor: grabbing;
+}
+/* 自实现拖动期间：整窗都显示抓取光标并禁止选中文本 */
+body.is-dragging,
+body.is-dragging * {
+  cursor: grabbing;
+  user-select: none;
+}
+body.is-dragging input,
+body.is-dragging textarea {
+  pointer-events: none;
+}
+.qb-grip-bar {
+  width: 46px;
+  height: 1px;
+  border-radius: 999px;
+  /* 线从 3px 减到 1px 后靠提高透明度补回存在感，收起态另有 0.32 的加强规则 */
+  background: rgba(var(--ink-rgb), 0.26);
+  /* 收起时这条线要摊成整条细线，和提示行滑走同一拍 */
+  transition:
+    width 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+    height 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 0.26s linear;
+}
+
+/**
+ * 收起态：窗口已经窄成一小段，抓手条要铺满整个窗口宽度，
+ * 横线本身就是这条 5px 的实心线（上下留一点透明余量给鼠标当靶子）。
+ */
+.qb-frame[data-dock-phase="bar"] .qb-grip {
+  height: 100%;
+  width: 100%;
+}
+
+.qb-frame[data-dock-phase="bar"] .qb-grip-bar {
+  width: 100%;
+  /* 细线高度随分辨率微调：约工作区屏高 0.45%（1080p≈5px、2K≈6px、4K≈10px），
+     由 useQuickbarDock 收起时按真实显示器高度算好写进 --dock-line-h；
+     vh 在这里不可用——收起后窗口视口只有 12px，vh 恒等于 0，会永远落到下限 4px */
+  height: var(--dock-line-h, 5px);
+  border-radius: 3px;
+  background: rgba(var(--ink-rgb), 0.38);
+}
+/**
+ * bar 阶段：窗口里只该看得到那条横线。
+ * 窗口本体（tauri transparent: true）是允许透明的，但 html/body 和 .qb-frame
+ * 都还在铺 canvas 底色 + 1px 边框，于是细线被包在一个「胶囊」里，
+ * 看起来就像底下垫了层东西。这里把它们全部让开，多出来的窗口面积就真的只是
+ * 给指针当靶子的透明区域。
+ */
+.qb-frame[data-dock-phase="bar"] {
+  background: transparent;
+  border-color: transparent;
+}
+html:has(.qb-frame[data-dock-phase="bar"]),
+body:has(.qb-frame[data-dock-phase="bar"]),
+/* retract 阶段：窗口底下的 html/body 也要立刻让开。这一层在 .qb-frame 后面，
+   .qb-frame 自己的底色是慢慢淡掉的，所以这里不需要过渡也看不出跳变 */
+html:has(.qb-frame[data-dock-phase="retract"]),
+body:has(.qb-frame[data-dock-phase="retract"]) {
+  background: transparent;
+}
+/**
+ * 贴顶最小化：内容先向上卷走 + 淡出，随后窗口直接消失。
+ * 只在 useQuickbarDock 的 minimizeAtTop 里临时挂到 body 上——目的是让「最小化」
+ * 看起来是「面板收起来」，而不是一根细线突然飞向任务栏。
+ */
+body.qb-minimizing .qb-content {
+  animation: qb-roll-up 0.16s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes qb-roll-up {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.qb-minimizing .qb-content {
+    animation-duration: 1ms;
+  }
+}
+
+/* 整体收起后，抓手条稍微亮一点，提示这里还能拖 / 靠近可展开 */
+.qb-grip[data-collapsed="true"] .qb-grip-bar {
+  background: rgba(var(--ink-rgb), 0.32);
+}
+
+
+/* 速览 ↔ 完整界面切换期间：内容被钉在目标尺寸，别让页面滚起来 */
+body.is-morphing,
+body.is-morphing #root {
+  overflow: hidden;
+}
+
+/**
+ * 切换时内容跟着窗口一起「浮现」，而不是啪地整块换掉——Windows 的窗口动画里
+ * 内容就是随窗口渐显的。这里用 CSS 动画而不是 JS 动画：opacity 动画跑在合成器
+ * 线程上，切进速览时主线程正忙着渲染上千张卡片也卡不住它。
+ * 时长比窗口形变的 300ms 短一截，窗口最后几十毫秒做纯几何收尾时内容已经完全清晰。
+ */
+.morph-fade {
+  animation: morph-fade 240ms cubic-bezier(0.4, 0, 0.2, 1) 20ms both;
+}
+
+/**
+ * 完整界面 → 速览的「淡出」半段：旧界面先隐掉，窗口再收成顶部一条。
+ * 只命中 .app-frame（速览的 .qb-frame 不受影响），所以切换完成后留着也无副作用，
+ * enterQuickbar 结束时仍会统一摘掉，避免下次回完整界面被误隐身。
+ * 同样用合成器线程的 opacity 动画：主线程正忙着渲染速览内容也卡不住淡出。
+ */
+body.ui-fade-out .app-frame {
+  animation: ui-fade-out 150ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes ui-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/**
+ * 进入速览时速览内容的「出生」动画：旧界面渐隐（150ms）后内容挂载、窗口开始收拢，
+ * 这 300ms 里内容必须保持透明——否则会提前亮在还在收拢的窗口里，被"啪地出现又突然
+ * 收走"。延迟 300ms 等窗口收成顶部一条后再淡入，露出的是收起态的提示条。
+ * 挂载即带 morph（钉住速览尺寸）只发生在进入速览这一刻；收起态展开走 dock 还原、
+ * 不重挂组件，退出速览时 QuickBar 已卸载，都不会被这个延迟误伤。
+ */
+.qb-birth {
+  animation: qb-birth 200ms cubic-bezier(0.4, 0, 0.2, 1) 300ms both;
+}
+
+@keyframes qb-birth {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes morph-fade {
+  from {
+    opacity: 0.32;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .morph-fade {
+    animation-duration: 1ms;
+  }
+
+  body.ui-fade-out .app-frame {
+    animation-duration: 1ms;
+  }
+
+  .qb-birth {
+    animation-delay: 0ms;
+    animation-duration: 1ms;
+  }
+}
+
+/**
+ * 速览收起后的那一条：抓手条下面一行提示。
+ * hint 阶段窗口 34px 高，提示行占 20px；收成横线（bar 阶段）后它淡出并压到 0 高。
+ */
+.qb-dockbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 20px;
+  padding: 0 10px;
+  min-width: 0;
+  cursor: grab;
+  touch-action: none;
+  overflow: hidden;
+  /* 时长和 RETRACT_MS 对齐：窗口变矮、底色变透明、这一行往上滑走是同一拍 */
+  transition:
+    height 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* bar 阶段：只剩最上面那条横线，提示行完全收掉 */
+.qb-frame[data-dock-phase="bar"] .qb-dockbar {
+  height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+/**
+ * retract 阶段：提示行向上滑走 + 淡出，窗口高度同时被 animateHeight 收到细线高度。
+ * 原来是「setPhase(bar) → 提示行瞬间消失，窗口再自己变矮」，看起来像被一刀切掉；
+ * 现在整段是连贯的「卷起来」，落定后才切到 bar。
+ */
+.qb-frame[data-dock-phase="retract"] .qb-dockbar {
+  opacity: 0;
+  transform: translateY(-14px);
+  pointer-events: none;
+}
+/* retract 期间这条线就开始摊成最终那条整宽的细线（尺寸用过渡，不是到 bar 才跳过去） */
+.qb-frame[data-dock-phase="retract"] .qb-grip-bar {
+  width: 100%;
+  height: var(--dock-line-h, 5px);
+  border-radius: 3px;
+  background: rgba(var(--ink-rgb), 0.38);
+}
+.qb-dock-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-tertiary);
+  opacity: 0.7;
+}
+.qb-dock-label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/**
+ * 展开状态下的全部内容（标题行 + 工具行 + 列表）。
+ * 收起 / 展开动画由外层 .qb-frame 的行内 height 钉住原始高度，
+ * 窗口高度在变化时内容是「被裁掉 / 露出来」，不会被压扁。
+ */
+.qb-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.qb-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 8px 14px;
+  touch-action: none;
+}
+/* 标题区域内的可交互控件不吃拖动 */
+.qb-head :is(input, button) {
+  touch-action: auto;
+}
+.qb-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: var(--fs-11);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.qb-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: var(--fs-10);
+  letter-spacing: 0;
+  background: var(--e2);
+  color: var(--text-primary);
+}
+
+.qb-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 100px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--e1);
+  border: 1px solid rgba(var(--ink-rgb), 0.06);
+  -webkit-app-region: no-drag;
+}
+.qb-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+  font-family: var(--font-ui);
+}
+.qb-search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.qb-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.qb-btn {
+  display: grid;
+  place-items: center;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  transition: background var(--t-quick) ease, color var(--t-quick) ease;
+}
+.qb-btn:hover {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+.qb-btn-on {
+  background: var(--e1);
+  color: var(--text-primary);
+}
+.qb-btn-close:hover {
+  background: color-mix(in srgb, #ef4444 20%, transparent);
+  color: #f87171;
+}
+
+/* 第二行工具栏：示例文本 + 字号滑条 + 排序（与完整界面顶栏同款） */
+.qb-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 8px 14px;
+  -webkit-app-region: no-drag;
+}
+.qb-tools .topbar-field {
+  height: 28px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+}
+.qb-tools .topbar-size {
+  flex-shrink: 0;
+  gap: 6px;
+}
+.qb-tools .topbar-size input[type="range"] {
+  width: 60px;
+}
+.qb-tools .size-value {
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  min-width: 20px;
+  text-align: right;
+}
+
+.qb-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 10px 12px;
+}
+/* 窄竖排列表：条目样式对齐完整界面右侧详情面板的字体预览 */
+.qb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qb-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--e1);
+  border: 1px solid rgba(var(--ink-rgb), 0.05);
+  color: var(--text-primary);
+  text-align: left;
+  /* 未走 motion 的条目（见 QuickBar 的 ANIMATED_ITEMS）靠这条做悬浮 / 按下反馈 */
+  transition:
+    background var(--t-quick) ease,
+    transform var(--t-quick) ease;
+  /**
+   * 速览可能要渲染上千个字体条目。屏幕外的条目跳过布局与绘制，
+   * 进入速览时才不会把主线程占住几百毫秒、拖慢窗口形变动画。
+   * contain-intrinsic-size 给一个接近实际的占位高度，滚动条才不会跳。
+   */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 104px;
+}
+.qb-item:hover {
+  background: var(--e3);
+  transform: translateY(-1px);
+}
+.qb-item:active {
+  transform: scale(0.99);
+}
+/* 首行：字形样张 + 族名/示例 + 版权徽标 */
+.qb-item-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+/* 大字 specimen，效果同详情面板的 .specimen-glyphs（渐变文字） */
+.qb-item-glyph {
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: center;
+  font-size: 27px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  background: var(--hero-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.qb-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.qb-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  line-height: 1.3;
+}
+/* 预览文本：与完整界面主列表 card-preview 同款（示例文本 + 可调字号），右缘渐隐 */
+.qb-item-sample {
+  display: block;
+  line-height: 1.15;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, black 86%, transparent);
+  mask-image: linear-gradient(90deg, black 86%, transparent);
+}
+.qb-item-meta {
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+}
+/* 版权徽标 + 样式数：靠右贴在首行 */
+.qb-item-aside {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/* 归属徽标行（标签 / 快照 / 分组），复用完整界面的 member-chip */
+.qb-item-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.qb-chip {
+  max-width: 150px;
+}
+/* 版权原文：与详情面板「版权信息」同款小字，最多三行，完整内容见悬停提示 */
+.qb-item-copy {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  font-size: var(--fs-10);
+  line-height: 1.55;
+  color: var(--text-tertiary);
+  word-break: break-word;
+}
+.qb-empty {
+  margin: 26px 0;
+  text-align: center;
+  font-size: var(--fs-13);
+  color: var(--text-tertiary);
 }

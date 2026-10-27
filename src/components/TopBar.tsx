@@ -15,6 +15,7 @@ import {
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState, type CSSProperties } from "react";
 import { springSnappy, springSoft } from "../design/springs";
+import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { SIZES, useFontStore, type SortMode } from "../state/fontStore";
 import type { Classification, FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
@@ -36,7 +37,7 @@ const SOURCE_FILTERS = ["all", "system", "user"] as const;
 
 const COPYRIGHT_FILTERS = ["free", "paid", "timelimited", "unknown"] as const;
 
-function SortMenu() {
+export function SortMenu() {
   const t = useT();
   const sort = useFontStore((s) => s.sort);
   const setSort = useFontStore((s) => s.setSort);
@@ -442,14 +443,15 @@ export function TopBar() {
   const search = useFontStore((s) => s.search);
   const setSearch = useFontStore((s) => s.setSearch);
 
+  const intro = useIntro();
   const fill = (sizeIndex / (SIZES.length - 1)) * 100;
 
   return (
     <motion.header
       className="topbar"
-      initial={{ y: -32, opacity: 0 }}
+      initial={intro ? { y: -32, opacity: 0 } : false}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ ...springSoft, delay: 0.06 }}
+      transition={intro ? { ...springSoft, delay: 0.06 } : INTRO_OFF}
     >
       <div className="topbar-field topbar-search">
         <Search size={14} strokeWidth={1.5} className="field-icon" />

@@ -1,6 +1,6 @@
 #![cfg(target_os = "windows")]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::ptr::null_mut;
 use windows_sys::Win32::Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
@@ -203,25 +203,86 @@ pub fn value_name_for(path: &str) -> String {
     format!("{base} ({flavour})")
 }
 
-pub fn unique_user_name(base: &str, path: &str) -> String {
-    let wanted = normalize(path);
-    let existing = user_entries();
-    let taken = |name: &str| {
-        existing
-            .iter()
-            .any(|(n, p)| n.eq_ignore_ascii_case(name) && normalize(p) != wanted)
-    };
-    if !taken(base) {
-        return base.to_string();
+/**
+ * 一次批量共用的注册表快照。
+ *
+ * 以前每个字体都 `user_entries()` 全量枚举一次（批量越大越慢，整体 O(n²)），
+ * 现在只在批量开头枚举一遍，写入/删除时增量维护索引。
+ */
+pub struct RegCache {
+    /// 归一化路径 -> HKCU 里对应的值名
+    by_path: HashMap<String, Vec<String>>,
+    /// 值名（小写）-> 归一化路径，用于判重
+    by_name: HashMap<String, String>,
+    /// HKLM 里已注册（全体用户）的归一化路径
+    machine: HashSet<String>,
+}
+
+impl RegCache {
+    pub fn load() -> Self {
+        let mut by_path: HashMap<String, Vec<String>> = HashMap::new();
+        let mut by_name: HashMap<String, String> = HashMap::new();
+        for (name, path) in user_entries() {
+            let key = normalize(&path);
+            by_name.insert(name.to_lowercase(), key.clone());
+            by_path.entry(key).or_default().push(name);
+        }
+        let machine = entries(HKEY_LOCAL_MACHINE)
+            .into_iter()
+            .map(|(_, p)| normalize(&p))
+            .collect();
+        Self { by_path, by_name, machine }
     }
-    let (stem, suffix) = match base.rfind(" (") {
-        Some(at) => (&base[..at], &base[at..]),
-        None => (base, ""),
-    };
-    (2..)
-        .map(|n| format!("{stem} ({n}){suffix}"))
-        .find(|candidate| !taken(candidate))
-        .unwrap_or_else(|| base.to_string())
+
+    pub fn names_for(&self, path: &str) -> Vec<String> {
+        self.by_path.get(&normalize(path)).cloned().unwrap_or_default()
+    }
+
+    pub fn is_machine(&self, path: &str) -> bool {
+        self.machine.contains(&normalize(path))
+    }
+
+    pub fn unique_name(&self, base: &str, path: &str) -> String {
+        let wanted = normalize(path);
+        let taken = |name: &str| {
+            self.by_name
+                .get(&name.to_lowercase())
+                .map(|p| p != &wanted)
+                .unwrap_or(false)
+        };
+        if !taken(base) {
+            return base.to_string();
+        }
+        let (stem, suffix) = match base.rfind(" (") {
+            Some(at) => (&base[..at], &base[at..]),
+            None => (base, ""),
+        };
+        (2..)
+            .map(|n| format!("{stem} ({n}){suffix}"))
+            .find(|candidate| !taken(candidate))
+            .unwrap_or_else(|| base.to_string())
+    }
+
+    pub fn set(&mut self, name: &str, path: &str) -> Result<(), String> {
+        set_user_entry(name, path)?;
+        let key = normalize(path);
+        self.by_name.insert(name.to_lowercase(), key.clone());
+        let names = self.by_path.entry(key).or_default();
+        if !names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            names.push(name.to_string());
+        }
+        Ok(())
+    }
+
+    pub fn delete(&mut self, name: &str) -> Result<(), String> {
+        delete_user_entry(name)?;
+        self.by_name.remove(&name.to_lowercase());
+        for names in self.by_path.values_mut() {
+            names.retain(|n| !n.eq_ignore_ascii_case(name));
+        }
+        self.by_path.retain(|_, v| !v.is_empty());
+        Ok(())
+    }
 }
 
 pub fn add_font_resource(path: &str) -> i32 {

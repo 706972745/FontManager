@@ -4,6 +4,589 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-10-27
+
+本版本由 0.8.28 + 0.8.29 的修复汇合而成，并通过了万级字体的导入与千级字体的批量启停压测。
+
+### 变更
+
+- 版本号进入 0.9.0：字库导入、批量启停两条主链路都完成了大容量压测。
+
+### 压测结论（真机）
+
+- **一次性导入 5873 个字体文件（文件夹导入，链接模式）**：全程无崩溃，进程存活、内存稳定。
+- **批量启用 / 停用千级字体（1639 字族/1981 文件启用；2244 字族/约 3232 文件停用）**：
+  无崩溃；修复后**批量期间界面全程可响应**（数百次采样 0 次无响应），侧栏计数实时变化。
+  批量耗时主要花在 GDI 装载与逐个解析字体文件（磁盘 I/O），属固有成本。
+
+## [0.8.29] — 2026-10-27
+
+### 修复
+
+- **一次性启停上千个字体会把界面整个卡住（几千个要二三十分钟）**。压测时发现的：
+  批量启停走的是同步命令，跑在主线程上，而且**每个字体**都要
+  ① `user_entries()` 把 HKCU 字体表全量枚举一遍（批量自己还在往里写，越跑越慢 → 整体 O(n²)）、
+  ② 再 `SendNotifyMessage(HWND_BROADCAST, WM_FONTCHANGE)` 广播一次。
+  实测 5000 级批量只有 ~2.5 个/秒，窗口直接「无响应」。
+  - 批量改为 `async` + `spawn_blocking`，在主线程之外跑，界面不再冻结（`Store` 包一层 `Arc`）。
+  - 新增 `registry::RegCache`：一次批量只枚举一遍注册表，写入/删除时增量维护索引，
+    `names_for` / `is_machine` / `unique_name` 全部 O(1) 复用。
+  - `WM_FONTCHANGE` 只在整批结束后广播一次（`activation::sync_batch`），
+    单个字体启停的路径不变，仍是每改一个广播一次。
+
+## [0.8.28] — 2026-10-27
+
+### 修复
+
+- **速览贴在屏幕顶边时，点「最小化」/ 从任务栏还原的那两段系统动画很难看**。
+  贴顶时窗口只剩一条十几像素高的细线，Windows 会从这个又扁又宽的位置播一段
+  「飞到任务栏」的最小化动画，还原时又从任务栏「放大」回来。
+  现在只有「贴着屏幕顶边」这一条路径改掉（不在顶边仍是系统默认动画）：
+  - **最小化**：先把内容向上卷走并淡出（`.qb-content` 的 `qb-roll-up`，160ms），
+    再把窗口一步压成细线，然后给这个窗口设上 `DWMWA_TRANSITIONS_FORCEDISABLED`
+    并**真最小化**——没有飞行动画，看起来就是「收起来 → 直接消失」。
+  - **还原**：因为最小化前窗口已经是细线，且 DWM 过渡仍关着，所以还原时没有放大动画，
+    那条透明抓手栏**在原地直接出现**；拿到焦点 300ms 后把 DWM 过渡开回去，
+    不影响别的窗口行为。
+  - 新增原生命令 `set_window_transitions`（`window_dock.rs`），逐窗口开关，
+    不碰系统全局的动画设置；`dwmapi` 只用一个函数，直接 extern 声明，
+    没有为此给 `windows-sys` 加 `Win32_Graphics_Dwm` feature。
+
+### 说明
+
+- 0.8.30 / 0.8.31 里对「速览收起 / 展开」的改动全部回退，吸顶收起仍然是原来那套
+  （提示条 → 细线）；这次只加最小化 / 还原这一条路径。
+
+## [0.8.27] — 2026-10-27
+
+### 修复
+
+- **CorelDRAW 预热指示条一直卡在 0%（就是「一直链接不上」）**：常驻 COM 宿主其实每次都在
+  1 秒内就绪，但握手那一步拿宿主回复的 **base64 文本**直接跟 `"ready"` 比较，永不相等，于是
+  每次都要干等满 10 秒判定「握手超时」→ 状态回落成 0%。后果不止是那个百分比：每次应用字体
+  都退化回一次性脚本，用户点一下要等四五秒。现在先解码再比对，宿主复用恢复正常
+  （`%TEMP%\zfontmanager-comhost.log` 里能看到 `spawn: ready in xxxms`）。
+- **已经开着时再点桌面图标，什么也没发生（还会多出一个任务栏图标）**：加入单实例守卫。
+  第二个进程只负责把 `Local\ZFontManager.Activate` 事件拍一下然后退出，已经在跑的那个实例
+  收到后**退出速览 / 还原几何 / 显示并聚焦**，直接回到完整界面。不再出现两个一模一样的图标。
+- **速览界面在任务栏里留着一格**：进入速览时窗口设 `skip_taskbar`，回到完整界面才恢复——
+  速览是常驻悬浮面板，收起来就剩屏幕顶端一根线，不该在任务栏占位。
+- **提示条「速览已收起 · 靠近或按 Alt + ` 展开」是硬消失的**：原来是到点直接切到细线状态
+  （提示行一帧消失，窗口再自己变矮），看起来像被一刀切掉。现在多一个 `retract` 过渡阶段：
+  提示行向上滑走并淡出、底色与边框同时淡成透明、那条线同时从 46px 摊成整宽，260ms 走完
+  才落定成细线。
+
+### 说明
+
+- 本轮改动来自 17:16 那次操作录制（3 条 bug 全部在数据里对上了：握手超时日志连续 20 次、
+  任务栏残留、`500x15@1198,0` 的提示条几何）。
+
+## [0.8.26] — 2026-10-27
+
+### 修复
+
+- **CorelDRAW 应用字体偶发「启动超时」**：宿主在 CorelDRAW 忙过一次之后可能攥着一个卡死的
+  COM 连接，原来会一直等到 25 秒超时再报一句误导性的「启动超时」。现在：APPLY 超时从 25s
+  降到 12s，超时后**丢掉宿主重建并自动重试一次**（实测新连接 0.6 秒就通），两次都超时才报
+  「CorelDRAW 没有响应」，并给出「可能在弹窗/导出/渲染大图」的解释。预热重试从 4 分钟延长到
+  10 分钟，避免开机 10 分钟后才用就又冷启动。`%TEMP%\zfontmanager-comhost.log` 会记录每次
+  握手/预热/应用的耗时，方便下次定位。
+- **窗口变窄时顶部工具栏压到详情面板标题上**：`.topbar` 改为可换行，窄窗口下工具栏自动折成
+  两行，不再溢出到右侧详情面板；详情面板标题补 `min-width: 0`，字体名过长时老老实实省略号。
+- **导入快照后「字体像没导进来」说不清**：导入提示现在会明确给出结果——「共 N 个字体，本机
+  都有」或「共 N 个，其中 M 个本机没有（快照只记清单，不含字体文件）」。
+
+### 新增
+
+- **底部预热指示条**：完整界面与速览界面最下方，只显示当前**正在运行**的 Photoshop /
+  Illustrator / CorelDRAW，用百分比表示预热进度。100% = 在那边替换字体不用等；连不上会标红。
+  纯展示，不响应点击。
+
+## [0.8.25] — 2026-10-27
+
+### 修复
+
+- **在 CorelDRAW 中应用字体太慢（约 5 秒 → 约 0.2 秒）**
+  根因不是脚本本身，而是 CorelDRAW 自动化对象图的「首次访问税」：在同一个进程里实测
+  `ActiveDocument` 首次 0.9 秒、`ActiveSelectionRange` 首次 1.0 秒、
+  `shape.Text.Story` 首次 1.7 秒、`story.Font` 首次 0.9 秒，合计约 4.5 秒；
+  而同一个对象第二次访问只要 20~50 毫秒。0.8.24 虽然已经做到「拿到结果就杀掉子进程」，
+  但每次点击仍然新起一个 PowerShell，于是这份税每次都要重交一遍。
+  现在改为**常驻 COM 宿主**（`src-tauri/src/comhost.rs` + `comhost.ps1`）：一个长期存活的
+  `powershell -Sta` 进程把 CorelDRAW 连接攥在手里，应用启动后在后台完成预热（含对象图预touch），
+  用户真正点下去时只剩热路径。实测：预热后连续应用字体为 **190~230 毫秒**。
+  宿主起不来 / 崩溃 / 管道断开时自动回落到原一次性脚本，功能不会整体失效。
+- **`Get-FailCode` 在字体很多的机器上会拖慢失败路径**：原来把整个 `FontList` 逐个塞进数组
+  再遍历，是 O(n²)；改成哈希表比对并提前短路。安装上万字体时这段本来能耗掉数秒。
+
+### 变更
+
+- CorelDRAW 宿主进程在应用退出时显式结束，不会残留在后台。
+
+## [0.8.24] — 2026-10-27
+
+### Fixed
+
+- **「速览细线最小化后彻底卡死，点它、划过它都不再展开」。** 录制器抓到的确定现场：
+  点任务栏把细线最小化后，Windows 把窗口挪到 `-32000,-32000`，`onMoved` 照样触发，
+  `measure()` 量出来「离屏幕顶边十万八千里」→ 状态机判定「用户把窗口拖走了」→
+  解除吸顶、走展开动画。可最小化时 `setSize` 是无效的，展开尺寸一个字都写不进去，
+  于是状态机停在「未吸顶、已展开」，窗口却还是 15px 细线——`onEngage` 走不到
+  `expand()`（要求已吸顶），`onPointerMove` 也提前 return（要求已吸顶），彻底没入口。
+  现在三道防护：
+  - `measure()` 增加 `isMinimized()` 判定，并把 `-32000` 这类哨兵坐标当「量不到」，
+    最小化途中不再产生假位置；
+  - 「离开顶边」不再只看一帧，等 `SETTLE_MS` 后复测确认，且拖动中不响应；
+  - 新增 `healGeometry()` 自愈：状态说已展开、窗口却不到展开高度的一半时把尺寸补写回去，
+    点一下窗口、切回焦点、拖动结束都会触发，任何来源的状态/几何脱节都能自己爬出来。
+  - `collapse()` 遇到「已经在提示条高度以内」不再静默 return，而是把吸顶状态接回去，
+    避免留下同样的死局。
+- **「细线悬停不再自动展开（必须先点一下）」。** 上一版用「窗口当前有没有焦点」当门控，
+  结果在别的软件里用鼠标划过细线永远不展开，等于把常驻入口废掉。改为时间窗门控
+  `REVEAL_AFTER_BLUR_MS`（失焦 600ms 内不响应，之后照常展开）：既不会「点到别处→
+  立刻收起→马上弹回」，也不用先点一下。
+- **「速览拖动结束后没有被重新判定」。** `useWindowDrag` 松手后不再有 move 事件，
+  吸顶状态机拿不到最后一帧。现在松手会派发 `zfm:window-drag-end`，拖离顶边会正确地
+  解除吸顶、拖回顶边会重新吸住。
+- **「卡片上『N 种样式』在窄窗口里变成竖排、压住右侧徽标」。** 中文标签在 flex 行里
+  没禁止换行，被挤压时按「每个字」折行成一列竖字。`N 种样式` 加 `white-space:nowrap`，
+  卡片标题改走省略号收缩。
+- **「在 CorelDRAW 中应用字体太慢（4~7 秒）」。** 分段计时：工具自身 77ms、挂 COM 32ms、
+  等就绪 951ms、读选中 968ms，脚本本体约 2 秒；剩下 5~7 秒全花在 **PowerShell 退出时
+  释放 CDR 的 COM 对象**上。改为边跑边读 stdout，结果行一出现就结束子进程，不再等它优雅收尾。
+- **「在 CorelDRAW 中应用没反应，提示找不到字体」。** 真机逐项对照确认：CDR 拒绝给
+  **纯中文文字**套**西文字体**（`Story.Font`、`Characters.All.Font`、`Characters.First.Font`
+  三种写法全部静默忽略，也不抛异常），只有含中文字形的字体才写得进去；中英混排则正常。
+  旧代码读回比对失败后一律报「找不到字体」，误导用户。现在区分 `font-not-found` 与
+  `font-rejected`，后者提示「该字体覆盖不到这段文字的字符（常见于给中文文字套西文字体）」。
+
+### Changed
+
+- 新增 9 语言的 `toast.fontRejected` / `toast.fontRejectedSub` 文案。
+
+## [0.8.23] — 2026-10-27
+
+### Fixed
+
+- **速览收成细线后不再是一颗「胶囊」。** 之前窗口虽然只有 12 逻辑像素高，但页面和窗口本体
+  都不透明——`.qb-frame` 还在铺底色 + 1px 边框，细线就被包在一个带边框的圆角矩形里，
+  看起来像底下垫了层东西。现在窗口启用 `transparent: true`，bar 阶段把 html/body 和
+  `.qb-frame` 的底色、边框全部让开，屏幕上只剩那条实心短线；多出来的窗口面积
+  是真正透明的指针靶子。
+- **细线高度随分辨率微调改用真实屏幕高度。** `clamp(4px, 0.45vh, 10px)` 里的 `vh`
+  是**窗口**视口高——收起后窗口只有 12px，`0.45vh` 恒等于 0，永远落到下限 4px。
+  现在收起时按工作区高度算好（约屏高 0.45%，4~10px）写进 `--dock-line-h`。
+- **「速览收起后最小化再恢复，窗口卡住不动」。** 根因：窗口最小化 / 被完全遮挡时
+  WebView2 停发 `requestAnimationFrame`，收起/展开动画永远走不到完成回调，
+  `animating` 就一直是 true，之后所有收起、展开、长回提示全被它拒掉。
+  现在页面不可见时动画直接落到终态；可见时也挂了一道 `setTimeout` 兜底
+  （后台定时器会被钳到 ~1s，够用），保证动画状态一定会释放。
+- **「在 Photoshop 中应用」改为切换选中文字图层的字体，不再动不动就新建。**
+  之前只看 `doc.activeLayer.kind`：用户在图层面板里点中的往往是**编组**，
+  组不算文字图层，结果明明选中了文字却跑去新建。现在：
+  - 编组（含嵌套）递归进去，把里面所有文字图层都换掉；多选图层逐个处理；
+  - PostScript 名认不出时再试一次字族名；
+  - 有选中但里面没有任何文字图层时返回新状态 `no-text-selected`
+    （提示「未选中文字图层」），**不再悄悄新建**；新建只发生在完全没有选中时。
+- **「在 Illustrator 中应用」同样修整。** 编组（GroupItem）递归取里面的文字；
+  `textFonts.getByName` 先试 PostScript 名再试字族名；选中了非文字对象时返回
+  `no-text-selected` 而不是新建文本框。
+
+### Changed
+
+- 新增 9 语言的 `toast.noTextSelected` / `toast.noTextSelectedSub` 文案。
+
+## [0.8.22] — 2026-10-27
+
+### Changed
+
+- **「在 … 中应用」提速。** CorelDRAW 脚本里的读回比对等待从 40ms 缩到 10ms、连接就绪轮询
+  从 400ms 缩到 200ms、整体预算从 180s 收紧到 60s（未运行时脚本现在会立刻返回）。
+- **速览收起后的细线保持原来的宽度和位置。** 之前收成细线时窗口会额外变窄并水平居中，
+  看起来就是「线跑到屏幕中间顶部去了、还变短了」。现在只把高度收下去，
+  宽度、水平位置都和速览展开时一致；细线本身的高度改为随分辨率微调
+  （`clamp(4px, 0.45vh, 10px)`：1080p≈5px、4K≈10px）。
+
+### Fixed
+
+- **用一段时间后突然闪退（渲染进程崩溃）。** 根因是字体预览用的 `FontFace` 对象
+  一旦 `document.fonts.add()` 就常驻渲染进程——每个字体文件动辄几 MB，
+  长时间滚动浏览会把内存慢慢吃满，WebView2 直接崩。现在加了 LRU 淘汰：
+  常驻上限 200 个字体，最久没用的先从 `document.fonts` 里删掉，滚回去看时自动重载。
+- **细线感应事件改为边沿触发。** 原来光标停在感应带里时每 240ms 持续发一次事件，
+  前端会被反复拉进展开/收回循环里空转；现在只在「带外 → 带内」跳变时发一次。
+
+- **「在 CorelDRAW 中应用」改成和 Photoshop / Illustrator 同一条规则：软件没在运行就直接提示
+  「CorelDRAW 未运行」，不再替用户拉起软件。** 原因：CorelDRAW 不注册 Running Object Table，
+  「是否在运行」只能看进程；而机器上常装着多个版本的 CorelDRAW，无版本号的主 ProgID 指向哪个
+  版本不可控——直接按 ProgID 激活会把**旧版** CorelDRAW 拉起来（实测踩中）。运行中的情况下，
+  现在会先读每个 ProgID 的 `CLSID\LocalServer32`，挑「exe 路径 = 正在运行的 CorelDRW.exe」的
+  那个版本再连接，保证挂到用户已经打开的那个实例上。
+
+- **速览收起后只剩一条 5px 的横线。** 原来收成 30px 左右的一条带提示的条带，占地方不说，
+  贴在屏幕顶端时还容易被误点到。现在提示亮完 1 秒后直接收成一条 5px 的实心短线，
+  宽度只有 120px、水平居中，不再横跨整个速览宽度。
+- **细线靠「光标靠近」展开。** 线只有 5px 高，鼠标几乎不可能真的进到窗口里，
+  所以改为由原生侧（`window_dock.rs`）每 90ms 看一眼光标位置：落在窗口正下方
+  22 物理像素的感应带里就通知前端展开。Alt + ` 和直接点击照旧可用。
+
+### Added
+
+- **右键菜单 / 命令面板新增「在 CorelDRAW 中应用」。** 和「在 Photoshop 中应用」用法一致：
+  有选中文本就换字体，没有就在页面上新建一行美术字。CorelDRAW 没有 JavaScript 接口，
+  所以这里由 PowerShell 直接驱动它的 COM 对象模型（`CreateDocument` / `ActiveSelectionRange` /
+  `Layer.CreateArtisticText` / `Text.Story.Font`），字体名同时试「字族名」和「PostScript 名」。
+  CorelDRAW 没运行会自动拉起（最多等 90 秒），没装或启动超时会各自提示。
+  macOS 上没有 CorelDRAW，该条目只在 Windows 显示。
+
+### Fixed
+
+- **「在 CorelDRAW 中应用」点了没反应。** 第一版脚本照着 CorelDRAW 的老文档写的，
+  在 Graphics Suite 2022（v24）上四处都对不上，逐项实测后修正：
+  ① CorelDRAW **不注册 Running Object Table**，即使进程在跑，
+  `Marshal.GetActiveObject` 也永远返回 `MK_E_UNAVAILABLE`，因此脚本上来就判定
+  「没运行」并且什么都不做——现在统一走 `[Type]::GetTypeFromProgID` +
+  `[Activator]::CreateInstance` 激活（已在运行时会直接挂到现有实例上）；
+  ② 建文档没有 `Documents.Add()`，要用 `$app.CreateDocument()`；
+  ③ 换字体不能写 `IVGStructFontProperties.Name`（2022 上连结构体自身的值都不会变），
+  正确入口是 `Shape.Text.Story.Font`，CorelDRAW 认不出的名字会被静默忽略，
+  只能靠赋值后读回来比对来判定成功；
+  ④ `Layer.CreateArtisticText` 只有三参版本，带字体名 / 字号的重载会抛
+  `DISP_E_TYPEMISMATCH`，字号改用 `Text.Story.Size`（单位是点，与文档单位无关）。
+
+### Fixed
+
+- **速览收起一段时间后再展开，偶尔会「卡住」不动。** 三个竞态一起导致：
+  ① 窗口几何操作原来只靠一个 `animating` 标志互斥，`measure()` 之类的异步调用正好落在
+  「标志还没置上、几何已经发出去」的窗口期，两边同时改几何就互相打架——现在加了独立的
+  几何锁，同一时刻只允许一个修改在跑；
+  ② 收成短线时窗口要变窄并居中，展开时却没有把水平位置还原，鼠标可能落在窗口外面，
+  于是永远等不到「拖到顶部收起」，看起来就是再也展不开；
+  ③ 收起态关掉了「可调整大小」（免得双击标题栏把 120px 宽的窗口放大到整屏），
+  展开时必须记得开回来，否则之后拖边改尺寸全部失效。
+
+## [0.8.21] — 2026-10-27
+
+### Changed
+
+- **速览提示条只亮 1 秒就收掉。** 收成顶部一条后那行带快捷键的提示以前要停留 2.6 秒，
+  而且鼠标路过时偶尔会一直挂着不收（「靠近展开」被冷却或没解锁，收起的定时器就没再排上）。
+  现在每次露出来都只亮 1 秒；鼠标路过没展开的话照样准时收成横线，不再赖在屏幕上。
+
+### Added
+
+- **速览界面失焦即收起。** 速览还展开着、贴在屏幕顶部时，鼠标点到别的软件（窗口失去焦点）
+  会立刻收成顶部一条，不再一直摊在那里挡着别的窗口。鼠标移回来照常弹开，不用先点一下。
+- **默认示例文本改为 `Hello IIEOzo`。** 老版本写进设置的旧默认句会在启动时自动换成新默认，
+  自己改过的内容不受影响。
+- **关于面板底部新增一行小字：IIEOzo 定制版 GitHub 地址**，点击跳转到
+  <https://github.com/706972745/ZFontManager>。
+
+## [0.8.20] — 2026-10-27
+
+### Added
+
+- **版权信息改动会同步回字族文件夹。** 在详情面板里把某个字族的版权状态改成
+  免费 / 收费 / 有时间限制（或改回自动识别）时，字体库里对应的字族目录名后缀会跟着
+  改名（`Lora（免费字体）` / `（收费字体）` / 新增的 `（限时字体）` / `（未知版权）`）。
+  改回「自动识别」时按「版权信息文件 > 文件夹备注 > 字体自带信息」重新判定。
+  目录里已启用的字体会先停用、改完名再用新路径重新启用——Windows 的字体注册指向
+  原路径，带着注册改名会让字体失效。
+- **导入时按权重判定版权：版权信息文件 > 文件夹备注的版权信息 > 字体自带版权信息。**
+  以前只看字体 name 表里极少填写的 license 字段，绝大多数字族都被归成「未知版权」。
+  现在先看同目录的 LICENSE / OFL / 版权说明文件正文，再看文件夹名里备注的版权
+  （如 `某某字体（免费字体）`、压缩包名），都认不出来才用字体自带的版权信息。
+
+### Changed
+
+- 扫描字体库时会把「文件夹备注 / 版权信息文件」判定的版权一并带出来，界面上的版权
+  徽标、版权筛选都能用上，而不只是字体自带的那点信息。
+- 手动把版权设成「未知」现在真的显示为未知（以前会被字体自带的版权信息盖掉）。
+
+### Fixed
+
+- 版本号统一：设置页与「关于」里显示的版本改为直接读取 `package.json`，不再手写字面量
+  （之前一直停在 0.8.1 Beta 1）；README 的徽章、下载文件名、版本说明同步到 0.8.20。
+
+## [0.8.19] — 2026-10-26
+
+### Fixed
+
+- **进入速览时旧界面被「挤进」小窗再瞬间跳变。** 点速览按钮后，完整界面的内容还挂在
+  界面上，窗口一边收成顶部一条、旧内容一边被压窄重排（顶栏 / 搜索框挤成一团），等
+  速览内容挂载完成又啪地整块换掉，观感非常卡顿。现在改为三段过渡：旧界面先 150ms
+  渐隐（合成器线程的 CSS 动画，主线程渲染速览内容也卡不住它）→ 窗口再收起 → 速览
+  内容随窗口淡入，全程看不到内容被挤压和跳变。
+- **速览内容在收拢中段提前亮出又被收走。** 进入速览的形变期间速览面板内容原来会立即
+  淡入，结果在还在收拢的窗口里"啪地出现又突然收走"。现在收拢全程内容保持透明，窗口
+  收成顶部一条之后提示条才淡入（`qb-birth` 动画，只在进入速览的挂载时刻生效，不影响
+  收起态展开与退出速览）。
+
+## [0.8.18] — 2026-10-26
+
+### Changed
+- 进入速览不再「先摊成完整面板」：窗口一次形变直接收到屏幕顶端的一条，带快捷键提示行，随后收成横线；靠近 / 点一下 / `Alt` + `` ` `` 展开成完整速览面板。
+- 退出速览改成「收走 → 变换 → 显示」：先把窗口隐藏，换界面与还原几何全部在不可见时完成，再显示出来并让内容淡入——来回切换不再有大跨度的形变过程。
+- 刚收进来的那一条会锁住「鼠标靠近就展开」（点完按钮鼠标往往就压在上面，否则一动立刻弹开），点一下或指针离开一次后解锁。
+
+## [0.8.17] — 2026-10-26
+
+### Changed
+- 速览 ↔ 完整界面切换动画对齐 Windows 窗口动画的观感：
+  - 窗口形变曲线从纯缓出（起步满速、观感「猛地一冲」）换成 Windows 标准加速-减速曲线 `cubic-bezier(0.4, 0, 0.2, 1)`——起步平顺、中段最快、收尾极缓；
+  - 时长 260ms → 300ms，与 Windows 最大化 / 还原 / 贴靠动画同一档；
+  - 内容不再瞬间整块换掉，改为随窗口一起淡入浮现（CSS 合成器动画，不受主线程渲染阻塞影响）；
+  - 原生插值按 deadline 排帧，消除每帧调用开销累积导致的收尾拖沓。
+
+## [0.8.16] — 2026-10-26
+
+### Fixed
+
+- **速览 ↔ 完整界面切换的动效冲突（Conflicting animations during the Quick View
+  morph).** The 260ms window morph used to run while the incoming view was also
+  playing its own entrance animations — the whole view fading in, sidebar
+  sections sliding in from the left, the top bar dropping in from above, the
+  detail panel sliding in from the right, and the first two dozen cards
+  floating up one by one. Window geometry and content motion fighting each
+  other made the transition feel jittery in both directions. A new
+  `useIntro()` hook now suppresses every entrance animation mounted during the
+  morph (initial=false, zero-duration), so the window resize/position tween is
+  the *only* motion on screen and the content appears pinned, revealed by the
+  window as it moves. Regular first-launch and in-view animations are
+  unaffected (the flag is latched at mount time per component).
+
+### Added
+
+- **快捷键面板收录速览快捷键（Quick View shortcuts in the shortcuts panel).**
+  The shortcuts overlay (`?`) gains a "速览界面 / Quick View" section listing
+  `Alt + `` ` `` (collapse to a bar / expand again), `Esc` (leave Quick View,
+  clearing the search field first), and "拖到顶部" (dock the whole panel by
+  dragging the window to the top of the screen). Locales updated for all nine
+  languages.
+
+## [0.8.15] — 2026-10-26
+
+### Fixed
+
+- **速览切换动画中的白色竖条（White sliver during the Quick View morph).**
+  While the window tweens between the full interface and Quick View, the
+  incoming view is pinned to its target size and the window clips down to it;
+  the area the window has not grown/shrunk into yet was painted with the
+  browser's default canvas colour (pure white), which showed up as a bright
+  vertical strip along the window edge — most visibly when collapsing the
+  wide library into the narrow Quick View. `html`/`body` now carry the app
+  canvas colour (`var(--canvas)`), so the not-yet-covered region blends into
+  the window content instead of flashing white.
+
+### Changed
+
+- **抓手线更纤细（Thinner grabber line).** The drag-handle line at the top of
+  Quick View is now 1px tall (was 3px), with its base opacity raised
+  proportionately (0.26) so it stays discoverable in the expanded view; the
+  brighter 0.32 rule used while the panel is docked is unchanged.
+
+## [0.8.14] — 2026-10-26
+
+### Changed
+
+- **速览 ↔ 完整界面的切换改为窗口形变（Morphing transition between Quick View
+  and the full interface).** Switching views used to snap the window to a new
+  size instantly, which felt disjointed. A new `src/lib/windowMorph.ts` tweens
+  size and position together over 260ms with the same easing curve the rest of
+  the UI uses (`easeTop`), while the incoming view is pinned to its target size
+  and clipped — so the window appears to grow/shrink around already-correct
+  content instead of reflowing it frame by frame. Content fades in with the
+  existing `easeTop` transition. Honours the reduced-motion preference (no
+  tween when motion is set to reduced). The interpolation itself runs on a
+  native thread (`src-tauri/src/window_morph.rs`) instead of
+  `requestAnimationFrame`: entering Quick View renders hundreds of font cards,
+  which used to block the main thread long enough for the animation to visibly
+  stall and then jump. With the native driver the window starts moving within
+  ~30ms of the click and completes smoothly.
+- **速览列表渲染减负（Cheaper Quick View rendering).** Three changes keep the
+  main thread free so the window morph stays smooth: entries outside the
+  viewport skip layout and paint via `content-visibility: auto`; only the
+  first ~24 cards (the visible ones) carry a motion entrance animation, the
+  rest use plain elements with CSS hover/press feedback that looks the same;
+  and each entry's `FontFace` is only loaded once it scrolls near the viewport
+  (`useInView`), so a thousand-font library no longer fires a thousand font
+  loads the instant Quick View opens.
+- **收起条分两段，最后只剩一条横线（Collapsed bar shrinks to a hairline).**
+  After rolling up, the quick view stays at 34px for 2.6s showing the hint line
+  (so the `Alt + \`` shortcut stays discoverable), then eases down to a 16px
+  strip that is nothing but the top grip line. Hovering the hairline grows it
+  back to the hint size first — the shortcut is shown again — before rolling it
+  open.
+- **鼠标移开后自动收回（Auto re-collapse when the pointer leaves).** Expanding
+  by hovering and then moving the mouse away without doing anything used to
+  leave the panel open until the window was dragged again. The panel now
+  re-collapses on its own 900ms after the pointer leaves the window — but only
+  if it was opened by hovering and you have not clicked, typed or pressed a key
+  since, so it never rolls up while you are actually using it.
+
+### Fixed
+
+- **窗口每次进出速览都会变大一圈（Window drifted bigger on every view
+  switch).** Exit geometry was captured with `outerSize()` (frame included) but
+  restored with `setSize()` (client area), adding the border width each round
+  trip. Capture and restore now both use the client area.
+
+## [0.8.13] — 2026-10-26
+
+### Changed
+
+- **速览拖到屏幕顶部改为「整个窗口收起」（Quick view now rolls up as a whole
+  when docked to the screen top).** The previous version only folded the header
+  and toolbar; dragging the window to the monitor's work-area top edge (within
+  5px) now shrinks the whole window to a 34px bar that keeps just the drag grip
+  and a one-line hint. Hovering that bar (100ms settle) or pressing `Alt + \``
+  rolls it back down to the size it had before. The 0.2s ease now animates the
+  window height itself, and the content height is pinned during the animation so
+  the panel looks rolled up rather than squashed. A 350ms cooldown keeps the
+  drag from immediately re-opening it.
+- **速览不再被系统最大化（No more maximize-on-drop).** Because the title bar is
+  custom-drawn, Windows treated dragging it to the screen top as a Snap request
+  and blew the quick view up to full screen. A new `set_quickbar_mode` command
+  (`src-tauri/src/window_dock.rs`) subclasses the window while the quick view is
+  active and swallows the `SC_MAXIMIZE` system command and double-click-to-
+  maximize; everything else is forwarded untouched, and the full interface keeps
+  the normal behaviour.
+
+## [0.8.12] — 2026-10-26
+
+### Added
+
+- **速览界面顶部自动隐藏栏（Quick view top-bar auto-hide).** Drag the quick
+  view window to the screen top (within 5px of the monitor's work area) and the
+  header + toolbar slide away with a 0.2s ease (`easeTop`, `design/springs.ts`),
+  leaving only the 12px drag grip so the window stays movable. It stays hidden
+  when the mouse leaves; hovering the top 10px of the window or pressing
+  `Alt + \`` brings it back. Both mouse triggers settle for 100ms before acting,
+  and a 350ms cooldown after collapsing keeps a drag from re-opening the bar
+  instantly. Fullscreen / maximized windows are ignored, and the dock test uses
+  the work area of the monitor the window currently lives on (falling back to the
+  primary monitor), so multi-monitor setups and a top-docked taskbar behave.
+  Controlled by the pin button in the quick view (on by default); the full
+  interface is untouched. Replaces the old “slide the whole window off screen”
+  behaviour.
+
+## [0.8.11] — 2026-10-26
+
+### Changed
+
+- **速览界面右键菜单不再提供新建分组 / 新建快照（No “new group / new snapshot”
+  in the quick view menu).** The quick view is for applying existing groups and
+  snapshots, so those two entries are dropped there; creating them stays in the
+  full window. Empty group / snapshot sections (no existing entries) are hidden
+  instead of leaving a heading with nothing under it.
+
+## [0.8.10] — 2026-10-26
+
+### Added
+
+- **速览界面显示版权 / 分组 / 快照信息（Quick view shows copyright, groups and
+  snapshots).** Every quick-view row now carries the same metadata as the full
+  UI: a copyright chip (免费 / 收费 / 有时间限制 / 未知, manual override first,
+  expiry turns it red), the copyright text below the specimen (clamped to three
+  lines, full text in the hover tooltip), plus the family's tags, snapshot chips
+  and collection (分组) chips rendered with the shared `member-chip` styles.
+
+### Changed
+
+- **速览最小高度提高 50%（Quick view minimum height +50%).** The floor derived
+  from the context menu is now `menu height × 1.5 + 16px` (was `menu height +
+  16px`), so the menu always has scroll room around it instead of exactly
+  fitting.
+
+## [0.8.9] — 2026-10-26
+
+### Changed
+
+- **速览界面再高一倍（Quick view twice as tall).** The quick view panel went
+  from 400 × 496 to **400 × 992** logical pixels, clamped to the usable screen
+  height so it never runs under the taskbar. More families are visible before
+  scrolling.
+
+### Fixed
+
+- **速览界面的最小尺寸不够放右键菜单（Quick view could shrink below the
+  context menu).** The window minimum size is now derived from the context
+  menu's measured size — width ≥ menu width × 1.5, height ≥ menu height, plus a
+  16px allowance for the window frame. `MenuPanel` records its real
+  `offsetWidth` / `offsetHeight` after every render (`lib/menuMetrics.ts`) and
+  pushes the new floor to the window while the quick view is open, so the menu
+  can never be clipped by a resized panel.
+
+## [0.8.8] — 2026-10-26
+
+### Fixed
+
+- **速览界面右键菜单底部被裁（Quick view context menu clipped at the bottom).**
+  The menu's viewport clamping measured its size with `getBoundingClientRect`
+  while the entrance scale animation was still at 0.96, so the measured height
+  was ~4% short and the clamped position left the last menu items hanging past
+  the window edge. Measurement now uses the layout size (`offsetWidth` /
+  `offsetHeight`), and the menu got a visible scrollbar (same style as the
+  language menu) so extra items scroll instead of looking cut off.
+
+### Changed
+
+- **速览界面置顶（Quick view is always on top).** Switching to the quick view
+  now sets the window always-on-top until returning to the full view (requires
+  the newly granted `core:window:allow-set-always-on-top` capability). The
+  flag is cleared on exit even if geometry restore fails.
+
+## [0.8.7] — 2026-10-26
+
+### Added
+
+- **速览界面保留完整界面的预览控制（Quick view now keeps the preview controls).**
+  Three top-bar controls from the main view are now available in the quick
+  view as a second toolbar row:
+  - Sample-text input (Type field) shared with the main view.
+  - Preview size slider (same 8–96 px steps, with fill indicator and px readout).
+  - The sort menu (name / styles / size / glyphs / added), reused directly from
+    the top bar component. Sorting is extracted into a shared `sortFamilies`
+    helper so the quick view list orders exactly like the main list.
+  - Each quick-view card's preview line now renders the shared sample text
+    (falling back to the family name) at the shared preview size, matching the
+    main list's card preview including its fade-in animation.
+
+## [0.8.6] — 2026-10-26
+
+### Changed
+
+- **速览界面重新设计（Quick view redesign).** The quick view panel was too wide
+  and too flat for its purpose:
+  - Window geometry is now a narrow vertical panel — 400 px wide (roughly a
+    third of the previous 720–1240 px band) and 496 px tall (double the
+    previous 248 px).
+  - Entries switched from horizontal chips to a vertical card list. Each card
+    mirrors the full view's detail panel specimen: a large gradient "Aa",
+    the family name rendered in its own font, and a character specimen strip
+    with a fading right edge (same masking as `.specimen-strip`).
+  - Animations now match the detail panel: staggered spring entrance
+    (`staggerDelay` + `spring`), hover lift and press-down scale on each card.
+
+## [0.8.5] — 2026-10-26
+
+### Fixed
+
+- **速览界面打不开（Quick view failed to open).** Clicking the quick-view
+  button showed "无法切换速览界面 — Command plugin:window|set_size not allowed
+  by ACL". Three problems stacked on top of each other:
+  - The window capability file never granted the geometry commands the quick
+    view needs. `core:window:allow-set-size`, `allow-set-position`,
+    `allow-set-min-size`, `allow-maximize` and `allow-unmaximize` are now
+    granted.
+  - The main window declares a 900×600 minimum size, but the quick view is
+    248 px tall — even with the permission granted, `setSize` would have been
+    clamped back to 600. Entering the quick view now lifts the minimum size
+    and it is restored when returning to the main view.
+  - Window-geometry failures no longer abort the switch: the interface now
+    always switches (worst case the quick view fills the old window size)
+    instead of dying with a toast.
+
 ## [0.8.1-beta.1] — 2026-10-25
 
 ### Added

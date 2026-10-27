@@ -39,6 +39,14 @@ const SECTIONS: [TKey, [string[], TKey][]][] = [
     ],
   ],
   [
+    "sc.quickview",
+    [
+      [["Alt", "`"], "sc.quickbarDock"],
+      [["Esc"], "sc.quickbarExit"],
+      [["DragTop"], "sc.quickbarDragDock"],
+    ],
+  ],
+  [
     "sc.help",
     [[["?"], "sc.thisOverlay"]],
   ],
@@ -100,8 +108,12 @@ export function ShortcutsOverlay() {
                       <li key={what} className="shortcuts-row">
                         <span className="shortcuts-keys">
                           {keys.map((k) => (
-                            <kbd key={k} className="kbd">
-                              {k === "Click" ? t("key.click") : k}
+                            <kbd key={k} className={`kbd ${k === "DragTop" ? "kbd-wide" : ""}`}>
+                              {k === "Click"
+                                ? t("key.click")
+                                : k === "DragTop"
+                                  ? t("key.dragTop")
+                                  : k}
                             </kbd>
                           ))}
                         </span>

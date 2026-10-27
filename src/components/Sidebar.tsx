@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { spring, springSoft, staggerDelay } from "../design/springs";
+import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { allTags, familiesFor, useFontStore, type Family, type Nav } from "../state/fontStore";
 import { exportFontList } from "../lib/menus";
 import { t as translate, useT } from "../lib/i18n";
@@ -31,6 +32,7 @@ function NavRow({
   index: number;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
+  const intro = useIntro();
   const current = useFontStore((s) => s.nav);
   const setNav = useFontStore((s) => s.setNav);
   const active = navKey(current) === navKey(nav);
@@ -39,9 +41,9 @@ function NavRow({
       className={`nav-row ${active ? "nav-active" : ""}`}
       onClick={() => setNav(nav)}
       onContextMenu={onContextMenu}
-      initial={{ opacity: 0, x: -12 }}
+      initial={intro ? { opacity: 0, x: -12 } : false}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ ...springSoft, delay: staggerDelay(index) }}
+      transition={intro ? { ...springSoft, delay: staggerDelay(index) } : INTRO_OFF}
       whileTap={{ scale: 0.97 }}
     >
       {active && (
@@ -56,6 +58,7 @@ function NavRow({
 
 function NewCollectionInput({ onDone }: { onDone: () => void }) {
   const t = useT();
+  const intro = useIntro();
   const createCollection = useFontStore((s) => s.createCollection);
   const [name, setName] = useState("");
   const ref = useRef<HTMLInputElement>(null);
@@ -70,9 +73,9 @@ function NewCollectionInput({ onDone }: { onDone: () => void }) {
   return (
     <motion.div
       className="collection-input"
-      initial={{ opacity: 0, y: -6 }}
+      initial={intro ? { opacity: 0, y: -6 } : false}
       animate={{ opacity: 1, y: 0 }}
-      transition={spring}
+      transition={intro ? spring : INTRO_OFF}
     >
       <FolderOpen size={15} strokeWidth={1.5} />
       <input
@@ -167,6 +170,7 @@ function RenameInput({
 
 export function Sidebar() {
   const t = useT();
+  const intro = useIntro();
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
@@ -254,9 +258,9 @@ export function Sidebar() {
   return (
     <motion.aside
       className="sidebar"
-      initial={{ x: -48, opacity: 0 }}
+      initial={intro ? { x: -48, opacity: 0 } : false}
       animate={{ x: 0, opacity: 1 }}
-      transition={springSoft}
+      transition={intro ? springSoft : INTRO_OFF}
     >
       <div className="sidebar-scroll">
         <div className={`sidebar-section ${collapsed.includes("browse") ? "sidebar-collapsed" : ""}`}>
@@ -579,9 +583,9 @@ export function Sidebar() {
         <motion.button
           className="nav-row"
           onClick={() => useFontStore.getState().setHelpOpen(true)}
-          initial={{ opacity: 0, x: -12 }}
+          initial={intro ? { opacity: 0, x: -12 } : false}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ ...springSoft, delay: staggerDelay(i++) }}
+          transition={intro ? { ...springSoft, delay: staggerDelay(i++) } : INTRO_OFF}
           whileTap={{ scale: 0.97 }}
         >
           <span className="nav-icon">

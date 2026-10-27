@@ -2,12 +2,14 @@ import { motion } from "motion/react";
 import { Camera, Download, Eraser, Plus, Repeat, Layers, Trash2 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { springSoft } from "../design/springs";
+import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { useFontStore } from "../state/fontStore";
 import { buildFaceIndex, missingEntries, resolveEntry } from "../lib/snapshotKey";
 import { useT } from "../lib/i18n";
 
 export function SnapshotBar({ name }: { name: string }) {
   const t = useT();
+  const intro = useIntro();
   const snapshots = useFontStore((s) => s.snapshots);
   const fonts = useFontStore((s) => s.fonts);
   const applySnapshot = useFontStore((s) => s.applySnapshot);
@@ -39,9 +41,9 @@ export function SnapshotBar({ name }: { name: string }) {
   return (
     <motion.div
       className="snapshot-bar"
-      initial={{ opacity: 0, y: -8 }}
+      initial={intro ? { opacity: 0, y: -8 } : false}
       animate={{ opacity: 1, y: 0 }}
-      transition={springSoft}
+      transition={intro ? springSoft : INTRO_OFF}
     >
       <span className="snapshot-bar-title">
         <Camera size={15} strokeWidth={1.5} />

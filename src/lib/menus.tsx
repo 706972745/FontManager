@@ -19,9 +19,10 @@ import type { MenuItem } from "../design/primitives/ContextMenu";
 import { toast } from "../design/primitives/Toast";
 import { allTags, familiesFor, useFontStore, type Family } from "../state/fontStore";
 import { entryFromFace, faceKey } from "./snapshotKey";
-import { ipc } from "./ipc";
+import { AVAILABLE_ADOBE_APPS, ipc } from "./ipc";
 import { exportSpecimen } from "./specimen";
-import { t } from "./i18n";
+import { activeLocale, t } from "./i18n";
+import { extraFamilyNames, languageLabel, shortName } from "./fontNames";
 
 export async function exportFamily(family: Family) {
   const dir = await open({
@@ -55,7 +56,7 @@ export async function exportFace(path: string, suggestedName: string) {
   }
 }
 
-function copyText(text: string, what: string) {
+export function copyText(text: string, what: string) {
   navigator.clipboard
     .writeText(text)
     .then(() => toast.success(t("toast.copied", { what }), undefined, "tick"))
@@ -285,7 +286,7 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
     ...(s.adobeAvailable
       ? [
           { kind: "separator" } satisfies MenuItem,
-          ...(["photoshop", "illustrator"] as const).map(
+          ...AVAILABLE_ADOBE_APPS.map(
             (app): MenuItem => ({
               label: t("menu.applyInApp", { app: t(`adobe.${app}`) }),
               icon: <PenTool size={14} strokeWidth={1.5} />,
@@ -294,46 +295,63 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
           ),
         ]
       : []),
-    { kind: "separator" },
-    { kind: "heading", label: t("menu.collections") },
-    ...collectionNames.map(
-      (name): MenuItem => ({
-        kind: "check",
-        label: name,
-        checked: (s.collections[name] ?? []).includes(family.name),
-        action: () => void s.toggleFamilyInCollection(name, family.name),
-      }),
-    ),
-    {
-      label: t("menu.newCollection"),
-      icon: <FolderPlus size={14} strokeWidth={1.5} />,
-      action: () => useFontStore.setState({ pendingCollectionFor: family.name }),
-    },
-    { kind: "separator" },
-    { kind: "heading", label: t("menu.snapshots") },
-    ...s.snapshots
-      .map((sn) => sn.name)
-      .sort((a, b) => a.localeCompare(b))
-      .map(
-        (name): MenuItem => ({
-          kind: "check",
-          label: name,
-          checked: (() => {
-            const familyKeys = family.faces.map(faceKey);
-            if (familyKeys.length === 0) return false;
-            const entryKeys = new Set(
-              s.snapshots.find((sn) => sn.name === name)?.entries.map((e) => e.key) ?? [],
-            );
-            return familyKeys.every((k) => entryKeys.has(k));
-          })(),
-          action: snapshotToggleAction(name, [family.name]),
-        }),
-      ),
-    {
-      label: t("menu.newSnapshot"),
-      icon: <Plus size={14} strokeWidth={1.5} />,
-      action: () => useFontStore.setState({ pendingSnapshotFor: family.name }),
-    },
+    // 速览界面只做“加入/移出”，不提供新建分组、新建快照（新建走完整界面）
+    ...(collectionNames.length > 0 || !s.quickbar
+      ? ([
+          { kind: "separator" },
+          { kind: "heading", label: t("menu.collections") },
+          ...collectionNames.map(
+            (name): MenuItem => ({
+              kind: "check",
+              label: name,
+              checked: (s.collections[name] ?? []).includes(family.name),
+              action: () => void s.toggleFamilyInCollection(name, family.name),
+            }),
+          ),
+          ...(s.quickbar
+            ? []
+            : [
+                {
+                  label: t("menu.newCollection"),
+                  icon: <FolderPlus size={14} strokeWidth={1.5} />,
+                  action: () => useFontStore.setState({ pendingCollectionFor: family.name }),
+                } satisfies MenuItem,
+              ]),
+        ] satisfies MenuItem[])
+      : []),
+    ...(s.snapshots.length > 0 || !s.quickbar
+      ? ([
+          { kind: "separator" },
+          { kind: "heading", label: t("menu.snapshots") },
+          ...s.snapshots
+            .map((sn) => sn.name)
+            .sort((a, b) => a.localeCompare(b))
+            .map(
+              (name): MenuItem => ({
+                kind: "check",
+                label: name,
+                checked: (() => {
+                  const familyKeys = family.faces.map(faceKey);
+                  if (familyKeys.length === 0) return false;
+                  const entryKeys = new Set(
+                    s.snapshots.find((sn) => sn.name === name)?.entries.map((e) => e.key) ?? [],
+                  );
+                  return familyKeys.every((k) => entryKeys.has(k));
+                })(),
+                action: snapshotToggleAction(name, [family.name]),
+              }),
+            ),
+          ...(s.quickbar
+            ? []
+            : [
+                {
+                  label: t("menu.newSnapshot"),
+                  icon: <Plus size={14} strokeWidth={1.5} />,
+                  action: () => useFontStore.setState({ pendingSnapshotFor: family.name }),
+                } satisfies MenuItem,
+              ]),
+        ] satisfies MenuItem[])
+      : []),
     { kind: "separator" },
     {
       label: t("menu.exportFamily"),
@@ -350,6 +368,21 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
       icon: <Copy size={14} strokeWidth={1.5} />,
       action: () => copyText(family.name, t("copy.familyName")),
     },
+    // 其他语言的字体名：有才显示（英文名优先，其余按语言标签排）
+    ...extraFamilyNames(family).map((entry): MenuItem => {
+      const lang = languageLabel(entry.lang, activeLocale());
+      return {
+        label: entry.english
+          ? t("menu.copyEnglishName", { name: shortName(entry.name) })
+          : t("menu.copyOtherName", { lang, name: shortName(entry.name) }),
+        icon: <Copy size={14} strokeWidth={1.5} />,
+        action: () =>
+          copyText(
+            entry.name,
+            entry.english ? t("copy.englishName") : t("copy.otherName", { lang }),
+          ),
+      };
+    }),
     {
       label: t("menu.copyFilePath"),
       icon: <Copy size={14} strokeWidth={1.5} />,

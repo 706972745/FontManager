@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { spring, staggerDelay } from "../design/springs";
 import { FamilyCard } from "./FamilyCard";
+import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import type { Family } from "../state/fontStore";
 import { SIZES, useFontStore } from "../state/fontStore";
 
@@ -27,7 +28,9 @@ export function FontGrid({ families }: { families: Family[] }) {
     if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "auto" });
   }, [selectedFamily]);
 
-  const arriving = Date.now() - mountedAt.current < 1200;
+  // 窗口形变期间不播卡片入场动画：内容必须是静止的，动的东西只有窗口
+  const intro = useIntro();
+  const arriving = intro && Date.now() - mountedAt.current < 1200;
 
   return (
     <div ref={parentRef} className="grid-scroll">
@@ -50,12 +53,11 @@ export function FontGrid({ families }: { families: Family[] }) {
             }}
           >
             <motion.div
-              initial={{ opacity: 0, y: 16 }}
+              initial={intro ? { opacity: 0, y: 16 } : false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{
-                ...spring,
-                delay: arriving ? staggerDelay(item.index) : 0,
-              }}
+              transition={intro
+                ? { ...spring, delay: arriving ? staggerDelay(item.index) : 0 }
+                : INTRO_OFF}
             >
               <FamilyCard family={families[item.index]} />
             </motion.div>

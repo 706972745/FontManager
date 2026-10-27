@@ -1,6 +1,8 @@
 mod activation;
 mod adobe;
 mod affinity;
+#[cfg(target_os = "windows")]
+mod comhost;
 mod copyright;
 mod diag;
 mod font_types;
@@ -8,11 +10,18 @@ mod installer;
 mod net;
 mod online;
 mod parser;
+#[cfg(target_os = "windows")]
+mod procs;
 mod registry;
 mod scanner;
+mod single_instance;
 mod sound;
+#[cfg(target_os = "windows")]
+mod warm;
 mod store;
 mod watcher;
+mod window_dock;
+mod window_morph;
 
 use font_types::{FontFace, FontSource, TrashEntry};
 use std::collections::HashMap;
@@ -106,18 +115,23 @@ fn set_font_active(store: State<Store>, path: String, active: bool) -> Result<()
 }
 
 #[tauri::command]
-fn set_fonts_active(store: State<Store>, paths: Vec<String>, active: bool) -> Result<(), String> {
-    let mut state = store.0.lock().map_err(|e| e.to_string())?;
-
-    let mut failed = Vec::new();
-    for path in &paths {
-        if let Err(e) = activation::sync(&mut state, path, active) {
-            failed.push(e);
-        }
-    }
-    store::save(&state)?;
-    diag::batch(active, paths.len(), failed.len());
-    activation::batch_error(&failed, paths.len())
+/**
+ * 批量启停放在后台线程：同步命令跑在主线程上，几千个字体时界面会整个「无响应」
+ * （GDI 装载 + 注册表写入，实测 5000 级要二三十分钟）。
+ */
+async fn set_fonts_active(store: State<'_, Store>, paths: Vec<String>, active: bool) -> Result<(), String> {
+    let total = paths.len();
+    let store = store.inner().clone();
+    let failed = tauri::async_runtime::spawn_blocking(move || {
+        let mut state = store.0.lock().map_err(|e| e.to_string())?;
+        let failed = activation::sync_batch(&mut state, &paths, active);
+        store::save(&state)?;
+        Ok::<Vec<String>, String>(failed)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    diag::batch(active, total, failed.len());
+    activation::batch_error(&failed, total)
 }
 
 #[tauri::command]
@@ -184,6 +198,7 @@ async fn install_online_family(
     family: String,
     license_path: Option<String>,
     source: String,
+    license_dirs: Option<Vec<String>>,
 ) -> Result<installer::InstallResult, String> {
     let library_dir = {
         let state = store.0.lock().map_err(|e| e.to_string())?;
@@ -192,6 +207,7 @@ async fn install_online_family(
     let library = scanner::effective_managed_dir(library_dir.as_deref());
     let known: std::collections::HashSet<String> = existing.into_iter().collect();
     let scope_app = app.clone();
+    let extra_dirs = license_dirs.unwrap_or_default();
     let mut result = tauri::async_runtime::spawn_blocking(move || {
         installer::install_online(
             &app,
@@ -201,6 +217,7 @@ async fn install_online_family(
             license_path.as_deref(),
             &source,
             &library,
+            &extra_dirs,
         )
     })
     .await
@@ -260,6 +277,23 @@ async fn affinity_connection() -> Result<affinity::AffinityConnection, String> {
     Ok(affinity::connection().await)
 }
 
+/// 底部预热指示条：三个目标软件各自「现在热不热」。
+/// 只读快照，真正的探测在后台线程里做，这里不会被 COM 拖住。
+#[tauri::command]
+fn app_warm_state() -> Vec<serde_json::Value> {
+    #[cfg(target_os = "windows")]
+    {
+        warm::snapshot()
+            .into_iter()
+            .filter_map(|w| serde_json::to_value(w).ok())
+            .collect()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Vec::new()
+    }
+}
+
 #[tauri::command]
 fn affinity_link() -> Option<affinity::AffinityConnection> {
     affinity::last_link()
@@ -284,6 +318,187 @@ fn affinity_session_activate(
     diag::batch(true, total, failed.len());
     affinity::note_activated(activated.clone());
     activation::batch_error(&failed, total).map(|()| activated)
+}
+
+/**
+ * 把应用里改过的版权状态同步回字体库目录：目录名后缀跟着改（"Lora（免费字体）"）。
+ * status 为 auto 时按「版权信息文件 > 文件夹备注 > 字体自带信息」重新判定；
+ * 返回实际改名的目录数量。
+ *
+ * 目录里已启用的字体必须先停用再改名：Windows 的字体注册指向原文件路径，
+ * 带着注册改名会让字体失效（注册表里留着一条指向不存在文件的记录）。
+ */
+#[tauri::command]
+fn sync_family_copyright(
+    store: State<'_, Store>,
+    family: String,
+    status: String,
+) -> Result<usize, String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    let library = scanner::effective_managed_dir(state.active_library_dir());
+    let dirs = copyright::family_dirs_for(&library, &family);
+    let mut renamed = 0usize;
+    let mut first_error: Option<String> = None;
+    for dir in dirs {
+        let class = copyright::class_from_status(&status)
+            .unwrap_or_else(|| copyright::classify_dir(&dir));
+        let target = dir
+            .parent()
+            .unwrap_or(library.as_path())
+            .join(copyright::family_dir_name(&family, class));
+        if target == dir {
+            continue;
+        }
+        match rename_family_dir(&mut state, &dir, &target) {
+            Ok(()) => renamed += 1,
+            Err(e) => {
+                crate::diag::log(&format!(
+                    "copyright: 改名失败 {} → {}：{e}",
+                    dir.display(),
+                    target.display()
+                ));
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+    if renamed > 0 {
+        installer::refresh_system_font_cache();
+        store::save(&state)?;
+    }
+    match (renamed, first_error) {
+        (0, Some(e)) => Err(e),
+        (n, _) => Ok(n),
+    }
+}
+
+/// 把字族目录整体搬到新名字（含所有字体与版权信息文件），返回 旧路径 → 新路径
+fn move_dir_contents(dir: &std::path::Path, target: &std::path::Path) -> Result<Vec<(String, String)>, String> {
+    use std::fs;
+    fs::create_dir_all(target).map_err(|e| e.to_string())?;
+    let mut moved = Vec::new();
+    let mut stack: Vec<(std::path::PathBuf, std::path::PathBuf)> =
+        vec![(dir.to_path_buf(), target.to_path_buf())];
+    while let Some((src_dir, dst_dir)) = stack.pop() {
+        let entries = fs::read_dir(&src_dir).map_err(|e| e.to_string())?;
+        for entry in entries.filter_map(|e| e.ok()) {
+            let src = entry.path();
+            let name = entry.file_name();
+            if src.is_dir() {
+                stack.push((src, dst_dir.join(&name)));
+                continue;
+            }
+            let mut dst = dst_dir.join(&name);
+            let mut n = 1;
+            while dst.exists() {
+                dst = dst_dir.join(format!("{n}-{}", name.to_string_lossy()));
+                n += 1;
+            }
+            fs::rename(&src, &dst).map_err(|e| e.to_string())?;
+            moved.push((
+                src.to_string_lossy().into_owned(),
+                dst.to_string_lossy().into_owned(),
+            ));
+        }
+    }
+    // 目录里已经没有文件了，清掉空壳（有残留文件说明搬漏了，保留不动）
+    let leftover = fs::read_dir(dir).map(|r| r.filter_map(|e| e.ok()).count()).unwrap_or(0);
+    if leftover == 0 {
+        let _ = fs::remove_dir_all(dir);
+    }
+    Ok(moved)
+}
+
+/// 这个路径对应的字体当前是不是启用状态。
+/// Windows 上启用 = 注册表里有它（字体库里"没被停用"不等于已注册，刚复制进去的字体就没注册），
+/// 只有真的注册过才需要在改名前后停用 / 重新启用。
+fn is_activated(state: &crate::store::AppState, path: &str) -> bool {
+    if state.deactivated.contains(path) || state.parked.contains_key(path) {
+        return false;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        !crate::registry::user_entries_for(path).is_empty()
+            || crate::registry::is_machine_registered(path)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = state;
+        true
+    }
+}
+
+/// 改字族目录名：先停用该目录里已启用的字体 → 搬文件 → 用新路径重新启用，
+/// 同时把 state 里按路径记录的信息（停用集合 / 入库时间 / 注册表备份）改到新路径。
+fn rename_family_dir(
+    state: &mut crate::store::AppState,
+    dir: &std::path::Path,
+    target: &std::path::Path,
+) -> Result<(), String> {
+    let active: Vec<String> = {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            if let Ok(entries) = std::fs::read_dir(&d) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        stack.push(p);
+                        continue;
+                    }
+                    if !crate::parser::is_font_file(&p) {
+                        continue;
+                    }
+                    let key = p.to_string_lossy().into_owned();
+                    if is_activated(state, &key) {
+                        out.push(key);
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    };
+    for p in &active {
+        let _ = activation::sync(state, p, false);
+    }
+    match move_dir_contents(dir, target) {
+        Ok(moved) => {
+            for (old, new) in &moved {
+                if let Some(ts) = state.added.remove(old) {
+                    state.added.insert(new.clone(), ts);
+                }
+                if state.deactivated.remove(old) {
+                    state.deactivated.insert(new.clone());
+                }
+                if let Some(v) = state.parked.remove(old) {
+                    state.parked.insert(new.clone(), v);
+                }
+                for (_name, path) in state.registry_backup.iter_mut() {
+                    if path == old {
+                        *path = new.clone();
+                    }
+                }
+            }
+            // 用新路径恢复原来的启用状态
+            let renames: std::collections::HashMap<&str, &str> = moved
+                .iter()
+                .map(|(o, n)| (o.as_str(), n.as_str()))
+                .collect();
+            for old in &active {
+                if let Some(new) = renames.get(old.as_str()) {
+                    let _ = activation::sync(state, new, true);
+                }
+            }
+            Ok(())
+        }
+        Err(e) => {
+            // 搬失败了就把字体恢复成原来的启用状态，别让用户的字体凭空消失
+            for p in &active {
+                let _ = activation::sync(state, p, true);
+            }
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
@@ -338,6 +553,34 @@ fn online_clear_staging(id: String) {
 #[tauri::command]
 fn online_hosts() -> Vec<String> {
     net::ALLOWED_HOSTS.iter().map(|h| h.to_string()).collect()
+}
+
+/// 列出给定目录里的版权信息类文件（非递归）。
+/// 在线栏目判断"字库是否已完整收录"时需要知道字族目录是否带版权文件。
+#[tauri::command]
+fn info_files(dirs: Vec<String>) -> HashMap<String, Vec<String>> {
+    let mut out: HashMap<String, Vec<String>> = HashMap::new();
+    for dir in dirs {
+        let path = std::path::Path::new(&dir);
+        let Ok(entries) = std::fs::read_dir(path) else {
+            continue;
+        };
+        let mut names: Vec<String> = Vec::new();
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            if !p.is_file() || !installer::is_info_file(&p) {
+                continue;
+            }
+            if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                names.push(name.to_string());
+            }
+        }
+        if !names.is_empty() {
+            names.sort();
+            out.insert(dir, names);
+        }
+    }
+    out
 }
 
 #[tauri::command]
@@ -969,6 +1212,13 @@ async fn apply_font_in_app(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 已经有一个实例在跑：把它正开着的那个窗口（哪怕正收在屏幕顶端一根细线里）
+    // 叫回完整界面，然后自己退出。没有这一步时从桌面图标再点一次会起第二个进程，
+    // 任务栏里出现两个一模一样的图标，用户要的「打开已经开着的软件」却没反应。
+    if !single_instance::acquire() {
+        return;
+    }
+
     let mut state = store::load();
     diag::session_start();
     activation::reconcile(&mut state);
@@ -991,9 +1241,11 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .manage(Store(std::sync::Mutex::new(state)))
+        .manage(Store(std::sync::Arc::new(std::sync::Mutex::new(state))))
         .manage(watcher::WatchHandle(std::sync::Mutex::new(None)))
         .setup(move |app| {
+            // 首实例：等「再点一次图标」的信号，收到就通知前端把完整界面叫出来
+            single_instance::watch(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 fit_window(&window, ui_scale_pref);
             }
@@ -1031,6 +1283,28 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(2));
                 });
             }
+            // CorelDRAW 的 COM 首次连接要 4~5 秒（详见 comhost.rs），放在后台点火，
+            // 这样用户第一次点「在 CorelDRAW 中应用」时只剩几十毫秒的实际操作。
+            // CorelDRAW 没开时 Attach 会立刻返回 not-running（宿主进程仍然留着复用），
+            // 所以多试几轮几乎没有成本——原来只试 4 分钟，用户 10 分钟后才用就必然冷启动。
+            #[cfg(target_os = "windows")]
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                for _ in 0..40 {
+                    if matches!(comhost::warm().as_deref(), Ok("ok")) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(15));
+                }
+            });
+
+            // 底部预热指示器的心跳：只做进程探测（几毫秒），真正连 COM 的探针
+            // 由 warm 模块自己在后台线程里发起，这里不会被拖慢。
+            #[cfg(target_os = "windows")]
+            std::thread::spawn(|| loop {
+                warm::tick();
+                std::thread::sleep(std::time::Duration::from_millis(400));
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1045,6 +1319,7 @@ pub fn run() {
             uninstall_font,
             list_trash,
             affinity_connection,
+            app_warm_state,
             affinity_link,
             affinity_session_activate,
             online_catalogue,
@@ -1053,6 +1328,7 @@ pub fn run() {
             online_preview,
             online_clear_staging,
             online_hosts,
+            info_files,
             restore_from_trash,
             delete_trash_entry,
             empty_trash,
@@ -1072,6 +1348,7 @@ pub fn run() {
             read_text_file,
             write_binary_file,
             get_features,
+            sync_family_copyright,
             get_favorites,
             set_favorite,
             get_notes,
@@ -1087,13 +1364,20 @@ pub fn run() {
             default_library_dir,
             open_url,
             adobe_available,
-            apply_font_in_app
+            apply_font_in_app,
+            window_dock::set_quickbar_mode,
+            window_dock::set_dock_sensor,
+            window_dock::set_window_transitions,
+            window_morph::morph_window
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 revert_session_activations(app);
+                // 常驻 COM 宿主是独立进程，必须显式收掉，否则会留在后台
+                #[cfg(target_os = "windows")]
+                comhost::shutdown();
             }
         });
 }

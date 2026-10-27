@@ -7,11 +7,12 @@ import { useFontCss } from "../lib/fontLoader";
 import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
-import { effectiveCopyrightClass } from "../lib/license";
+import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
 import { playStar } from "../lib/sound";
 import type { FontFace } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
+import { INTRO_OFF, useIntro } from "../lib/useIntro";
 
 export function FormatBadge({ format, isVariable }: { format: string; isVariable: boolean }) {
   if (isVariable) return <span className="badge badge-variable">VAR</span>;
@@ -32,13 +33,14 @@ function FacePreview({
   synthesize: boolean;
 }) {
   const t = useT();
+  const intro = useIntro();
   const { fontFamily, failed } = useFontCss(face);
   return (
     <motion.div
       className="face-row"
-      initial={{ opacity: 0, y: 8 }}
+      initial={intro ? { opacity: 0, y: 8 } : false}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ ...spring, delay: staggerDelay(index) }}
+      transition={intro ? { ...spring, delay: staggerDelay(index) } : INTRO_OFF}
     >
       <span className="face-style">{face.style}</span>
       <AnimatePresence mode="wait">
@@ -53,9 +55,9 @@ function FacePreview({
 
               fontWeight: synthesize ? face.weight : undefined,
             }}
-            initial={{ opacity: 0, y: 4 }}
+            initial={intro ? { opacity: 0, y: 4 } : false}
             animate={{ opacity: 1, y: 0 }}
-            transition={spring}
+            transition={intro ? spring : INTRO_OFF}
           >
             {text}
           </motion.span>
@@ -77,6 +79,7 @@ function FacePreview({
 
 export const FamilyCard = memo(function FamilyCard({ family }: { family: Family }) {
   const t = useT();
+  const intro = useIntro();
   const sampleText = useFontStore((s) => s.sampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
   const setFamilyActive = useFontStore((s) => s.setFamilyActive);
@@ -88,14 +91,26 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const hasDormantConflict = useFontStore((s) => conflictsFor(s.fonts).has(family.name));
   const { inSnapshots, inCollections } = useFamilyMembership(family.name);
   const copyrightOverride = useFontStore((s) => s.copyrightStatus[family.name]);
+  const copyrightExpiry = useFontStore((s) => s.copyrightExpiry[family.name]);
   const [expanded, setExpanded] = useState(false);
 
   const size = SIZES[sizeIndex];
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   const { fontFamily, failed } = useFontCss(lead);
   const text = sampleText.trim() || family.name;
-  const licCls = effectiveCopyrightClass(lead.license ?? null, copyrightOverride);
+  // 权重：手动设置 > 字体自带版权信息 > 文件夹备注 / 版权信息文件判定的版权
+  const licCls = effectiveCopyrightClass(
+    lead.license ?? null,
+    copyrightOverride,
+    lead.copyrightClass ?? null,
+  );
+  const licExpired = licCls === "timelimited" && copyrightExpired(copyrightExpiry);
   const licKey = `copyright.${licCls}` as TKey;
+  const licTitle = licExpired
+    ? `${t("copyright.expiryDate")}: ${copyrightExpiry} — ${t("copyright.expired")}`
+    : licCls === "timelimited" && copyrightExpiry
+      ? `${t("copyright.expiryDate")}: ${copyrightExpiry}`
+      : t("detail.copyright");
 
   return (
     <motion.article
@@ -156,7 +171,10 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
           </motion.button>
         )}
         <span className="card-spacer" />
-        <span className={`lic-chip lic-${licCls}`} title={t("detail.copyright")}>
+        <span
+          className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`}
+          title={licTitle}
+        >
           {t(licKey)}
         </span>
         {hasActiveConflict ? (
@@ -242,9 +260,9 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
                 fontSize: size,
                 fontStyle: lead.italic ? "italic" : "normal",
               }}
-              initial={{ opacity: 0, y: 5 }}
+              initial={intro ? { opacity: 0, y: 5 } : false}
               animate={{ opacity: 1, y: 0 }}
-              transition={spring}
+              transition={intro ? spring : INTRO_OFF}
             >
               {text}
             </motion.p>

@@ -82,10 +82,93 @@ pub struct StagedFile {
     pub is_zip: bool,
     /// 在压缩包/拖入文件夹内的相对目录（空 = 根目录），用于把许可证与对应字体归到同一字族
     pub rel: PathBuf,
+    /// 文件夹备注的版权信息：文件所在文件夹的名字（zip 用压缩包名）。
+    /// 文件夹名里写明版权时（"Lora（免费字体）"）按它分类，权重低于版权信息文件、
+    /// 高于字体自带的版权信息。
+    pub folder_note: Option<String>,
+}
+
+impl StagedFile {
+    fn new(path: PathBuf, is_font: bool, is_zip: bool, rel: PathBuf, note: Option<String>) -> Self {
+        StagedFile {
+            path,
+            is_font,
+            is_zip,
+            rel,
+            folder_note: note,
+        }
+    }
+}
+
+/// 取「文件夹备注的版权信息」：文件所在文件夹的名字；zip 来源用压缩包名（解压后是平铺的临时目录，没有意义）
+fn folder_note_for(path: &Path, is_zip: bool, zip_stem: Option<&str>) -> Option<String> {
+    if is_zip {
+        return zip_stem.map(|s| s.to_string());
+    }
+    path.parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
+}
+
+/**
+ * 导入时判定一个字族的版权分类，三级权重：
+ *   1. 版权信息文件（同目录 / 唯一的一份 LICENSE、OFL、版权说明…的正文）
+ *   2. 文件夹备注的版权信息（文件夹名里写明的版权）
+ *   3. 字体自带的版权信息（name 表 license → copyright）
+ * 权重高的那一级识别出结果就用它，识别不出才往下一级走。
+ */
+fn resolve_class(
+    staged: &StagedFile,
+    faces: &[FontFace],
+    infos_by_rel: &std::collections::HashMap<PathBuf, Vec<PathBuf>>,
+    all_infos: &[PathBuf],
+) -> copyright::CopyrightClass {
+    // 1. 版权信息文件：优先与字体同目录的那些；跨目录时只有「整批就一份」才敢采信
+    let mut candidates: Vec<PathBuf> = infos_by_rel.get(&staged.rel).cloned().unwrap_or_default();
+    if candidates.is_empty() && all_infos.len() == 1 {
+        candidates = all_infos.to_vec();
+    }
+    for p in candidates {
+        if let Some(text) = read_text_snippet(&p, 64 * 1024) {
+            let class = copyright::classify(Some(&text));
+            if class != copyright::CopyrightClass::Unknown {
+                return class;
+            }
+        }
+    }
+    // 2. 文件夹备注的版权信息
+    if let Some(note) = staged.folder_note.as_deref() {
+        let class = copyright::classify_folder_name(note);
+        if class != copyright::CopyrightClass::Unknown {
+            return class;
+        }
+    }
+    // 3. 字体自带的版权信息
+    for f in faces {
+        let class = copyright::classify(f.license.as_deref());
+        if class != copyright::CopyrightClass::Unknown {
+            return class;
+        }
+        let class = copyright::classify(f.copyright.as_deref());
+        if class != copyright::CopyrightClass::Unknown {
+            return class;
+        }
+    }
+    copyright::CopyrightClass::Unknown
+}
+
+/// 读一小段文本用于版权分类（许可证文件可能很大）
+fn read_text_snippet(path: &Path, limit: usize) -> Option<String> {
+    use std::io::Read;
+    let mut file = fs::File::open(path).ok()?;
+    let mut buf = Vec::new();
+    file.by_ref().take(limit as u64).read_to_end(&mut buf).ok()?;
+    String::from_utf8(buf).ok()
 }
 
 /// 判断是否为值得保留的版权信息类文件（许可证、版权声明、说明文档等）
-fn is_info_file(name: &Path) -> bool {
+pub(crate) fn is_info_file(name: &Path) -> bool {
     let Some(fname) = name.file_name().and_then(|f| f.to_str()) else {
         return false;
     };
@@ -114,20 +197,11 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
                 .ok()
                 .and_then(|r| r.parent().map(|pp| pp.to_path_buf()))
                 .unwrap_or_default();
+            let note = folder_note_for(p, false, None);
             if parser::is_font_file(p) {
-                out.push(StagedFile {
-                    path: p.to_path_buf(),
-                    is_font: true,
-                    is_zip: false,
-                    rel,
-                });
+                out.push(StagedFile::new(p.to_path_buf(), true, false, rel, note));
             } else if is_info_file(p) {
-                out.push(StagedFile {
-                    path: p.to_path_buf(),
-                    is_font: false,
-                    is_zip: false,
-                    rel,
-                });
+                out.push(StagedFile::new(p.to_path_buf(), false, false, rel, note));
             }
         }
         return Ok(out);
@@ -140,6 +214,8 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
         let file = fs::File::open(path).map_err(|e| e.to_string())?;
         let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
         fs::create_dir_all(staging).map_err(|e| e.to_string())?;
+        // 解压后是平铺的临时目录，文件夹备注只能看压缩包自己的名字
+        let zip_note = path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string());
         let mut out = Vec::new();
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
@@ -153,25 +229,24 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
             let dest = unique_dest(staging, &file_name);
             let mut out_file = fs::File::create(&dest).map_err(|e| e.to_string())?;
             std::io::copy(&mut entry, &mut out_file).map_err(|e| e.to_string())?;
-            out.push(StagedFile {
-                path: dest,
+            out.push(StagedFile::new(
+                dest,
                 is_font,
-                is_zip: true,
-                rel: name
-                    .parent()
-                    .map(|pp| pp.to_path_buf())
-                    .unwrap_or_default(),
-            });
+                true,
+                name.parent().map(|pp| pp.to_path_buf()).unwrap_or_default(),
+                zip_note.clone(),
+            ));
         }
         return Ok(out);
     }
     if parser::is_font_file(path) {
-        return Ok(vec![StagedFile {
-            path: path.to_path_buf(),
-            is_font: true,
-            is_zip: false,
-            rel: PathBuf::new(),
-        }]);
+        return Ok(vec![StagedFile::new(
+            path.to_path_buf(),
+            true,
+            false,
+            PathBuf::new(),
+            folder_note_for(path, false, None),
+        )]);
     }
     Err(format!("not a font file: {}", path.display()))
 }
@@ -206,6 +281,17 @@ pub fn install(
     let fonts: Vec<StagedFile> = files.into_iter().filter(|f| f.is_font).collect();
     let total = fonts.len();
 
+    // 版权信息文件按相对目录归好类，供「版权信息文件 > 文件夹备注 > 字体自带」的权重判断
+    let mut infos_by_rel: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+    for info in &infos {
+        infos_by_rel
+            .entry(info.rel.clone())
+            .or_default()
+            .push(info.path.clone());
+    }
+    let all_infos: Vec<PathBuf> = infos.iter().map(|i| i.path.clone()).collect();
+
     if mode == InstallMode::Move || any_zip {
         if let Err(e) = fs::create_dir_all(library) {
             result.errors.push(e.to_string());
@@ -219,7 +305,7 @@ pub fn install(
     let mut all_family_dirs: Vec<PathBuf> = Vec::new();
 
     for (i, staged) in fonts.into_iter().enumerate() {
-        let src = staged.path;
+        let src = staged.path.clone();
         let src_faces = parser::parse_font_file(&src, FontSource::Managed);
         let src_keys: Vec<String> = src_faces.iter().map(dup_key).collect();
         if !src_keys.is_empty() && src_keys.iter().all(|k| known.contains(k)) {
@@ -290,12 +376,22 @@ pub fn install(
             InstallMode::Move => {
                 let file_name = src.file_name().map(|f| f.to_owned()).unwrap_or_default();
                 // 按字族归档：<库目录>/<家族名（版权后缀）>/；解析失败时退回库根目录
-                let target_dir = match src_faces.first() {
-                    Some(f0) => {
-                        let class = copyright::classify(f0.license.as_deref());
+                // 目录后缀按「版权信息文件 > 文件夹备注 > 字体自带信息」三级权重判定
+                let class = if src_faces.is_empty() {
+                    None
+                } else {
+                    Some(resolve_class(
+                        &staged,
+                        &src_faces,
+                        &infos_by_rel,
+                        &all_infos,
+                    ))
+                };
+                let target_dir = match (src_faces.first(), class) {
+                    (Some(f0), Some(class)) => {
                         library.join(copyright::family_dir_name(&f0.family, class))
                     }
-                    None => library.to_path_buf(),
+                    _ => library.to_path_buf(),
                 };
                 let created = fs::create_dir_all(&target_dir).map_err(|e| e.to_string());
                 if let Err(e) = created {
@@ -333,6 +429,10 @@ pub fn install(
                         let mut faces = parser::parse_font_file(&dest, FontSource::Managed);
                         for face in &mut faces {
                             face.active = false;
+                            // 判定结果带到前端：文件夹备注 / 版权信息文件定的版权也能在界面上看到
+                            if let Some(class) = class {
+                                face.copyright_class = Some(class.as_str().to_string());
+                            }
                             known.insert(dup_key(face));
                         }
                         // 记录字族目录，供版权信息文件归档
@@ -396,6 +496,7 @@ pub fn install(
 /// 在线下载字体的安装：
 /// 目标结构 <库目录>/在线栏目/<来源缩写>/<家族名（版权后缀）>/，
 /// 字体文件移入该目录，许可证文件复制一份进去，最后清掉本次下载的 staging 目录。
+/// `license_dirs`：字库里已有的同名字族目录，许可证也会补一份到这些目录（补齐缺失的版权文件）。
 pub fn install_online(
     app: &tauri::AppHandle,
     paths: Vec<String>,
@@ -404,6 +505,7 @@ pub fn install_online(
     license_path: Option<&str>,
     source: &str,
     library: &Path,
+    license_dirs: &[String],
 ) -> InstallResult {
     let mut result = InstallResult::default();
     let mut known: HashSet<String> = existing.clone();
@@ -474,6 +576,13 @@ pub fn install_online(
     if let Some(lp) = license_path {
         if let Some(name) = Path::new(lp).file_name() {
             let _ = fs::copy(lp, dir.join(name));
+            // 字库中已有的同名字族目录也补一份，避免"字重齐全但没有版权文件"
+            for extra in license_dirs {
+                let p = Path::new(extra);
+                if p.is_dir() && p != dir.as_path() {
+                    let _ = fs::copy(lp, p.join(name));
+                }
+            }
         }
     }
     // 清掉本次下载的 staging 目录
@@ -658,7 +767,7 @@ fn remove_sidecar(trashed_path: &str) {
     let _ = fs::remove_file(meta);
 }
 
-fn refresh_system_font_cache() {
+pub(crate) fn refresh_system_font_cache() {
     #[cfg(target_os = "linux")]
     {
         if let Ok(mut child) = std::process::Command::new("fc-cache").spawn() {
@@ -727,6 +836,54 @@ mod tests {
             Some("OFL.txt")
         );
         assert_eq!(info.rel, PathBuf::from("Fonts"));
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// 导入时版权来源的权重：版权信息文件 > 文件夹备注 > 字体自带信息
+    #[test]
+    fn copyright_source_priority() {
+        let tmp = std::env::temp_dir().join(format!("zfm-lic-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let license = tmp.join("LICENSE.txt");
+        fs::write(&license, b"This font is licensed under the SIL Open Font License").unwrap();
+
+        let staged = StagedFile::new(
+            tmp.join("Font-Regular.ttf"),
+            true,
+            false,
+            PathBuf::new(),
+            Some("某某字体（收费字体）".to_string()),
+        );
+
+        // 1. 同目录有版权信息文件：按文件正文判定（免费），文件夹备注的"收费"不生效
+        let mut by_rel: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
+            std::collections::HashMap::new();
+        by_rel.insert(PathBuf::new(), vec![license.clone()]);
+        assert_eq!(
+            resolve_class(&staged, &[], &by_rel, &[license]),
+            copyright::CopyrightClass::Free
+        );
+
+        // 2. 没有版权信息文件时，用文件夹备注的版权（收费）
+        assert_eq!(
+            resolve_class(&staged, &[], &std::collections::HashMap::new(), &[]),
+            copyright::CopyrightClass::Paid
+        );
+
+        // 3. 两者都没有 → 未知（这里没有真实字体可解析，元数据一级也认不出来）
+        let plain = StagedFile::new(
+            tmp.join("Font-Regular.ttf"),
+            true,
+            false,
+            PathBuf::new(),
+            Some("字体合集".to_string()),
+        );
+        assert_eq!(
+            resolve_class(&plain, &[], &std::collections::HashMap::new(), &[]),
+            copyright::CopyrightClass::Unknown
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }

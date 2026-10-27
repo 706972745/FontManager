@@ -10,9 +10,10 @@ import { toast } from "../design/primitives/Toast";
 import { FormatBadge } from "./FamilyCard";
 import { exportFace, exportFamily } from "../lib/menus";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { classifyLicense } from "../lib/license";
+import { classifyLicense, copyrightExpired } from "../lib/license";
 import { faceKey } from "../lib/snapshotKey";
 import { playStar, playTag } from "../lib/sound";
+import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 
 function copyName(text: string, what: string) {
@@ -341,7 +342,10 @@ const COPYRIGHT_STATUS_OPTIONS = ["auto", "free", "paid", "timelimited"] as cons
 function CopyrightStatusSection({ family }: { family: string }) {
   const t = useT();
   const status = useFontStore((s) => s.copyrightStatus[family] ?? "auto");
+  const expiry = useFontStore((s) => s.copyrightExpiry[family]);
   const setCopyrightStatus = useFontStore((s) => s.setCopyrightStatus);
+  const setCopyrightExpiry = useFontStore((s) => s.setCopyrightExpiry);
+  const expired = status === "timelimited" && copyrightExpired(expiry);
   return (
     <motion.section
       variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
@@ -360,6 +364,32 @@ function CopyrightStatusSection({ family }: { family: string }) {
           </button>
         ))}
       </div>
+      {status === "timelimited" && (
+        <div className="copyright-expiry-row">
+          <label className="copyright-expiry-label" htmlFor={`copyright-expiry-${family}`}>
+            {t("copyright.expiryDate")}
+          </label>
+          <input
+            id={`copyright-expiry-${family}`}
+            type="date"
+            className="copyright-expiry-input"
+            value={expiry ?? ""}
+            onChange={(e) => setCopyrightExpiry(family, e.target.value || null)}
+            aria-label={t("copyright.expiryDate")}
+          />
+          {expiry && (
+            <button
+              className="copyright-expiry-clear"
+              onClick={() => setCopyrightExpiry(family, null)}
+              aria-label={t("copyright.clearExpiry")}
+              title={t("copyright.clearExpiry")}
+            >
+              <X size={12} strokeWidth={1.5} />
+            </button>
+          )}
+        </div>
+      )}
+      {expired && <div className="copyright-expired-note">{t("copyright.expired")}</div>}
     </motion.section>
   );
 }
@@ -529,6 +559,7 @@ function ConflictFileCard({ path }: { path: string }) {
 
 export function DetailPanel() {
   const t = useT();
+  const intro = useIntro();
   const selectedFamily = useFontStore((s) => s.selectedFamily);
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
@@ -636,10 +667,10 @@ export function DetailPanel() {
         <motion.aside
           className="detail glass-e3"
           style={{ width: panelWidth }}
-          initial={{ x: panelWidth, opacity: 0 }}
+          initial={intro ? { x: panelWidth, opacity: 0 } : false}
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: panelWidth, opacity: 0 }}
-          transition={springSoft}
+          transition={intro ? springSoft : INTRO_OFF}
         >
           <div
             className="detail-resize"

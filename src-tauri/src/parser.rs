@@ -1,4 +1,4 @@
-use crate::font_types::{Classification, FontFace, FontFormat, FontSource, VariationAxis};
+use crate::font_types::{Classification, FontFace, FontFormat, FontSource, LocalizedName, VariationAxis};
 use std::fs;
 use std::path::Path;
 
@@ -40,6 +40,131 @@ fn name_string(face: &ttf_parser::Face, id: u16) -> Option<String> {
         .into_iter()
         .filter(|n| n.name_id == id)
         .find_map(|n| n.to_string())
+}
+
+/// 常见的 name 表主语言 → BCP-47 语言标签。
+fn iso_language(primary: &str) -> Option<&'static str> {
+    Some(match primary {
+        "Afrikaans" => "af",
+        "Albanian" => "sq",
+        "Arabic" => "ar",
+        "Armenian" => "hy",
+        "Azeri (Cyrillic)" | "Azeri (Latin)" => "az",
+        "Basque" => "eu",
+        "Belarusian" => "be",
+        "Bengali" => "bn",
+        "Bosnian (Cyrillic)" | "Bosnian (Latin)" => "bs",
+        "Bulgarian" => "bg",
+        "Burmese" => "my",
+        "Catalan" => "ca",
+        "Croatian" => "hr",
+        "Czech" => "cs",
+        "Danish" => "da",
+        "Dutch" => "nl",
+        "English" => "en",
+        "Estonian" => "et",
+        "Faroese" => "fo",
+        "Filipino" | "Tagalog" => "tl",
+        "Finnish" => "fi",
+        "French" => "fr",
+        "Galician" => "gl",
+        "Georgian" => "ka",
+        "German" => "de",
+        "Greek" => "el",
+        "Gujarati" => "gu",
+        "Hebrew" => "he",
+        "Hindi" => "hi",
+        "Hungarian" => "hu",
+        "Icelandic" => "is",
+        "Indonesian" => "id",
+        "Irish" => "ga",
+        "Italian" => "it",
+        "Japanese" => "ja",
+        "Kannada" => "kn",
+        "Kazakh" => "kk",
+        "Khmer" => "km",
+        "Korean" => "ko",
+        "Lao" => "lo",
+        "Latvian" => "lv",
+        "Lithuanian" => "lt",
+        "Macedonian" => "mk",
+        "Malay" => "ms",
+        "Malayalam" => "ml",
+        "Maltese" => "mt",
+        "Mongolian" => "mn",
+        "Nepali" => "ne",
+        "Norwegian" => "no",
+        "Persian" => "fa",
+        "Polish" => "pl",
+        "Portuguese" => "pt",
+        "Punjabi" => "pa",
+        "Romanian" => "ro",
+        "Russian" => "ru",
+        "Serbian (Cyrillic)" | "Serbian (Latin)" => "sr",
+        "Sinhala" => "si",
+        "Slovak" => "sk",
+        "Slovenian" => "sl",
+        "Spanish" => "es",
+        "Swahili" => "sw",
+        "Swedish" => "sv",
+        "Tamil" => "ta",
+        "Tatar" => "tt",
+        "Telugu" => "te",
+        "Thai" => "th",
+        "Turkish" => "tr",
+        "Ukrainian" => "uk",
+        "Urdu" => "ur",
+        "Uzbek (Cyrillic)" | "Uzbek (Latin)" => "uz",
+        "Vietnamese" => "vi",
+        "Welsh" => "cy",
+        _ => return None,
+    })
+}
+
+fn lang_tag(name: &ttf_parser::name::Name) -> String {
+    let primary = name.language().primary_language();
+    if primary == "Chinese" {
+        // 用 language id 区分简繁：台湾 / 香港 / 澳门 → 繁体
+        return match name.language_id {
+            0x0404 | 0x0C04 | 0x1404 => "zh-Hant".to_string(),
+            _ => "zh-Hans".to_string(),
+        };
+    }
+    match iso_language(primary) {
+        Some(code) => code.to_string(),
+        None if primary == "Unknown" => "und".to_string(),
+        None => primary.to_ascii_lowercase(),
+    }
+}
+
+/// 收集 name 表里所有语言的字族名（nameID 16 优先，缺失时退到 nameID 1）。
+/// 同一字符串只保留第一次出现（通常英文记录排在最前）。
+fn localized_family_names(face: &ttf_parser::Face) -> Vec<LocalizedName> {
+    let mut typographic: Vec<LocalizedName> = Vec::new();
+    let mut legacy: Vec<LocalizedName> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    for name in face.names() {
+        let target = match name.name_id {
+            ttf_parser::name_id::TYPOGRAPHIC_FAMILY => &mut typographic,
+            ttf_parser::name_id::FAMILY => &mut legacy,
+            _ => continue,
+        };
+        let Some(value) = name.to_string() else { continue };
+        let value = value.trim().to_string();
+        if value.is_empty() || seen.contains(&value) {
+            continue;
+        }
+        seen.push(value.clone());
+        target.push(LocalizedName {
+            lang: lang_tag(&name),
+            name: value,
+        });
+    }
+    if typographic.is_empty() {
+        legacy
+    } else {
+        typographic
+    }
 }
 
 const SCRIPT_PROBES: &[(&str, &[u32])] = &[
@@ -179,6 +304,7 @@ fn parse_face(
     let classification = classify(&face, &family);
     let scripts = script_coverage(&face);
     let features = layout_features(&face);
+    let localized_names = localized_family_names(&face);
     let path_str = path.to_string_lossy().into_owned();
     Some(FontFace {
         id: format!("{}#{}", path_str, index),
@@ -188,10 +314,12 @@ fn parse_face(
         family,
         style,
         postscript_name,
+        localized_names,
         foundry,
         license,
         license_url,
         copyright,
+        copyright_class: None,
         format,
         is_variable: face.is_variable(),
         axes,
@@ -233,10 +361,12 @@ pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
             family: fallback_family(path),
             style: "Regular".to_string(),
             postscript_name: None,
+            localized_names: Vec::new(),
             foundry: None,
             license: None,
             license_url: None,
             copyright: None,
+            copyright_class: None,
             format,
             is_variable: false,
             axes: Vec::new(),
@@ -292,5 +422,80 @@ mod tests {
         assert!(!is_font_file(Path::new("/tmp/readme.txt")));
         assert!(is_font_file(Path::new("/tmp/Inter.ttf")));
         assert!(is_font_file(Path::new("/tmp/Inter.WOFF2")));
+    }
+
+    #[test]
+    fn maps_primary_languages_to_tags() {
+        assert_eq!(iso_language("English"), Some("en"));
+        assert_eq!(iso_language("Japanese"), Some("ja"));
+        assert_eq!(iso_language("Russian"), Some("ru"));
+        assert_eq!(iso_language("Portuguese"), Some("pt"));
+        assert_eq!(iso_language("Klingon"), None);
+    }
+
+    /// 压测：把 `ZFM_BULK_DIR` 指向的目录里所有字体逐个解析一遍。
+    /// 批量导入最怕的就是某个畸形字体让解析 panic（整个应用跟着崩），
+    /// 这里用真实字体库把解析层先扫一遍：有 panic 会直接中断测试，没 panic 就输出统计。
+    ///
+    /// 跑法：`ZFM_BULK_DIR=<目录> cargo test --offline bulk_parse -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bulk_parse_real_folder() {
+        let dir = match std::env::var("ZFM_BULK_DIR") {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let start = std::time::Instant::now();
+        let mut files = 0usize;
+        let mut faces = 0usize;
+        let mut empty = Vec::new();
+        let mut slowest = (std::time::Duration::ZERO, String::new());
+        for entry in walkdir::WalkDir::new(&dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path().to_path_buf();
+            if !path.is_file() || !is_font_file(&path) {
+                continue;
+            }
+            files += 1;
+            let t0 = std::time::Instant::now();
+            let parsed = parse_font_file(&path, FontSource::Managed);
+            let cost = t0.elapsed();
+            if cost > slowest.0 {
+                slowest = (cost, path.display().to_string());
+            }
+            if parsed.is_empty() {
+                empty.push(path.display().to_string());
+            }
+            faces += parsed.len();
+            if files % 500 == 0 {
+                println!("  ... 已解析 {} 个文件 / {} 个字面", files, faces);
+            }
+        }
+        println!(
+            "解析完成：{} 个文件 / {} 个字面 / 空结果 {} 个 / 耗时 {:?}",
+            files,
+            faces,
+            empty.len(),
+            start.elapsed()
+        );
+        println!("最慢的一个：{:?} -> {}", slowest.0, slowest.1);
+        for e in empty.iter().take(10) {
+            println!("  空结果: {}", e);
+        }
+        // 需要一份「字族 + 样式」清单时：ZFM_BULK_DUMP=<输出文件>
+        if let Ok(dump) = std::env::var("ZFM_BULK_DUMP") {
+            let mut out = String::new();
+            for entry in walkdir::WalkDir::new(&dir).into_iter().filter_map(|e| e.ok()) {
+                let path = entry.path().to_path_buf();
+                if !path.is_file() || !is_font_file(&path) {
+                    continue;
+                }
+                for f in parse_font_file(&path, FontSource::Managed) {
+                    out.push_str(&format!("{}\t{}\t{}\n", f.family, f.style, f.path));
+                }
+            }
+            let _ = std::fs::write(&dump, out);
+            println!("已导出字族清单 -> {}", dump);
+        }
+        assert!(files > 0, "目录里没找到字体文件");
     }
 }

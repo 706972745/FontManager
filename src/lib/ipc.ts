@@ -11,6 +11,13 @@ export interface VariationAxis {
   max: number;
 }
 
+/** name 表里的一个本地化字族名 */
+export interface LocalizedFontName {
+  /** BCP-47 语言标签（en / zh-Hans / ja …），识别不出时为英文语言名 */
+  lang: string;
+  name: string;
+}
+
 export interface FontFace {
   id: string;
   path: string;
@@ -20,10 +27,17 @@ export interface FontFace {
   family: string;
   style: string;
   postscriptName: string | null;
+  /** name 表里的多语言字族名（en / zh-Hans / ja …），可能为空 */
+  localizedNames?: LocalizedFontName[];
   foundry: string | null;
   license: string | null;
   licenseUrl: string | null;
   copyright: string | null;
+  /**
+   * 按「版权信息文件 > 文件夹备注 > 字体自带信息」判定的版权分类
+   * （free / paid / timelimited / unknown）。字体库目录里的字体才有。
+   */
+  copyrightClass?: string | null;
   format: FontFormat;
   isVariable: boolean;
   axes: VariationAxis[];
@@ -92,7 +106,29 @@ export interface InstallProgress {
   error: string | null;
 }
 
-export type AdobeApp = "photoshop" | "illustrator";
+export type AdobeApp = "photoshop" | "illustrator" | "coreldraw";
+
+/** 右键菜单 / 命令面板里「在 … 中应用」的目标软件（新增目标只改这一处） */
+export const ADOBE_APPS: readonly AdobeApp[] = ["photoshop", "illustrator", "coreldraw"];
+
+/** CorelDRAW 只有 Windows 版后端（走 COM），其它平台不展示该条目 */
+const IS_WINDOWS = !/mac|iphone|ipad|linux|android/i.test(navigator.platform);
+
+/** 当前平台实际可用的目标（菜单 / 命令面板只遍历这个） */
+export const AVAILABLE_ADOBE_APPS: readonly AdobeApp[] = ADOBE_APPS.filter(
+  (app) => app !== "coreldraw" || IS_WINDOWS,
+);
+
+/** 目标软件的预热进度（底部指示条用）：百分比到 100 表示随时可以立刻应用字体 */
+export interface AppWarm {
+  id: AdobeApp;
+  running: boolean;
+  percent: number;
+  /** managed / idle / probing / ready / failed / not-running */
+  state: string;
+  /** 接一次测量的耗时（毫秒），0 表示还没测过 */
+  ms: number;
+}
 
 export interface AppSettings {
   extraDirs: string[];
@@ -174,6 +210,12 @@ export type InstallMode = "link" | "move";
 export const ipc = {
   getSettings: () => invoke<AppSettings>("get_settings"),
   setSettings: (settings: AppSettings) => invoke<void>("set_settings", { settings }),
+  /** 进入 / 退出速览界面：原生侧借此屏蔽「拖到屏幕顶部就最大化」 */
+  setQuickbarMode: (mode: boolean) => invoke<void>("set_quickbar_mode", { mode }),
+  /** 收成细线后开启原生侧的光标靠近感应（细线太窄，光靠鼠标进窗口几乎碰不到） */
+  setDockSensor: (active: boolean) => invoke<void>("set_dock_sensor", { active }),
+  setWindowTransitions: (disabled: boolean) =>
+    invoke<void>("set_window_transitions", { disabled }),
   defaultLibraryDir: () => invoke<string>("default_library_dir"),
   affinityConnection: () => invoke<AffinityConnection>("affinity_connection"),
   affinitySessionActivate: (paths: string[]) =>
@@ -184,6 +226,8 @@ export const ipc = {
   onlinePreview: (id: string) => invoke<string>("online_preview", { id }),
   onlineClearStaging: (id: string) => invoke<void>("online_clear_staging", { id }),
   onlineHosts: () => invoke<string[]>("online_hosts"),
+  /** 列出各目录下的版权信息类文件（用于判断字族是否带版权文件） */
+  infoFiles: (dirs: string[]) => invoke<Record<string, string[]>>("info_files", { dirs }),
   scanFonts: () => invoke<FontFace[]>("scan_fonts"),
   setFontActive: (path: string, active: boolean) =>
     invoke<void>("set_font_active", { path, active }),
@@ -199,6 +243,7 @@ export const ipc = {
     family: string,
     licensePath: string | null,
     source: string,
+    licenseDirs: string[] = [],
   ) =>
     invoke<InstallResult>("install_online_family", {
       paths,
@@ -206,6 +251,7 @@ export const ipc = {
       family,
       licensePath,
       source,
+      licenseDirs,
     }),
   uninstallFont: (path: string, family: string) =>
     invoke<TrashEntry>("uninstall_font", { path, family }),
@@ -224,6 +270,13 @@ export const ipc = {
     invoke<number[]>("get_charset", { path, faceIndex }),
   getFeatures: (path: string, faceIndex: number) =>
     invoke<string[]>("get_features", { path, faceIndex }),
+  /**
+   * 把界面上改过的版权状态同步回字体库里的字族目录（目录名后缀跟着改）。
+   * status 传 "auto" 时按「版权信息文件 > 文件夹备注 > 字体自带信息」重新判定。
+   * 返回实际改名的目录数（系统字体等不在字体库里时为 0）。
+   */
+  syncFamilyCopyright: (family: string, status: string) =>
+    invoke<number>("sync_family_copyright", { family, status }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
   writeBinaryFile: (path: string, data: number[]) =>
     invoke<void>("write_binary_file", { path, data }),
@@ -247,6 +300,7 @@ export const ipc = {
   adobeAvailable: () => invoke<boolean>("adobe_available"),
   applyFontInApp: (app: AdobeApp, postscriptName: string, label: string) =>
     invoke<string>("apply_font_in_app", { app, postscriptName, label }),
+  appWarmState: () => invoke<AppWarm[]>("app_warm_state"),
   affinityLink: () => invoke<AffinityConnection | null>("affinity_link"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
   getAutostart: () => invoke<boolean>("get_autostart"),
