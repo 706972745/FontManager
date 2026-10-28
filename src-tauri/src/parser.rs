@@ -391,6 +391,29 @@ pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
         .collect()
 }
 
+/// 这个字面里到底有没有中文字形（用来提前告诉用户「应用了也不会有中文」）。
+///
+/// 只看 4 个常用汉字，命中 2 个就算有——单个字可能是某个符号集的巧合，
+/// 要求 2 个能避免「西文字体里恰好有个形状」这种误判；反之也不会因为
+/// 一个生僻字缺失就冤枉一款中文字体。
+///
+/// 不去读缓存里的 scripts：那里 `cjk` 的探针要求「汉字 + 假名」同时存在，
+/// 纯中文（没有假名）的字体拿不到这个标记，用它判断会大量误报。
+pub fn face_has_cjk(path: &Path, face_index: u32) -> bool {
+    const PROBES: [char; 4] = ['中', '国', '文', '一'];
+    let Ok(data) = fs::read(path) else {
+        return false;
+    };
+    let Ok(face) = ttf_parser::Face::parse(&data, face_index) else {
+        return false;
+    };
+    let hits = PROBES
+        .iter()
+        .filter(|c| face.glyph_index(**c).is_some())
+        .count();
+    hits >= 2
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -212,6 +212,17 @@ export const ipc = {
   setSettings: (settings: AppSettings) => invoke<void>("set_settings", { settings }),
   /** 进入 / 退出速览界面：原生侧借此屏蔽「拖到屏幕顶部就最大化」 */
   setQuickbarMode: (mode: boolean) => invoke<void>("set_quickbar_mode", { mode }),
+  /** 把速览窗口强行提到前台并给键盘焦点（热键叫出面板后调用） */
+  focusQuickbar: () => invoke<void>("focus_quickbar"),
+  /** 重新注册系统级快捷键（设置里改键后调用）；注册失败会 reject */
+  setQuickbarHotkey: (hotkey: {
+    vk: number;
+    ctrl: boolean;
+    alt: boolean;
+    shift: boolean;
+    meta: boolean;
+    label?: string;
+  }) => invoke<void>("set_quickbar_hotkey", { hotkey }),
   /** 收成细线后开启原生侧的光标靠近感应（细线太窄，光靠鼠标进窗口几乎碰不到） */
   setDockSensor: (active: boolean) => invoke<void>("set_dock_sensor", { active }),
   setWindowTransitions: (disabled: boolean) =>
@@ -275,8 +286,16 @@ export const ipc = {
    * status 传 "auto" 时按「版权信息文件 > 文件夹备注 > 字体自带信息」重新判定。
    * 返回实际改名的目录数（系统字体等不在字体库里时为 0）。
    */
+  /** 改版权并同步库目录名；失败原因会放在 errors 里带回来（不再只写日志） */
   syncFamilyCopyright: (family: string, status: string) =>
-    invoke<number>("sync_family_copyright", { family, status }),
+    invoke<{
+      renamed: number;
+      errors: string[];
+      reactivateFailed: string[];
+    }>("sync_family_copyright", { family, status }),
+  /** 批量问「这些字面有没有中文字形」，返回同序布尔数组 */
+  fontCjk: (probes: [string, number][]) =>
+    invoke<boolean[]>("font_cjk", { probes }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
   writeBinaryFile: (path: string, data: number[]) =>
     invoke<void>("write_binary_file", { path, data }),
@@ -298,8 +317,25 @@ export const ipc = {
   exportFonts: (paths: string[], destDir: string) =>
     invoke<number>("export_fonts", { paths, destDir }),
   adobeAvailable: () => invoke<boolean>("adobe_available"),
-  applyFontInApp: (app: AdobeApp, postscriptName: string, label: string) =>
-    invoke<string>("apply_font_in_app", { app, postscriptName, label }),
+  /**
+   * 把字体应用到目标软件。
+   * aliases 是「本地化族名」的候选串（如「思源宋体 CN」「思源宋体 CN Bold」）：
+   * CorelDRAW 对中文字体一律用中文名登记，只给英文名会成片地找不到。
+   */
+  applyFontInApp: (
+    app: AdobeApp,
+    postscriptName: string,
+    label: string,
+    familyName: string,
+    aliases?: string[],
+  ) =>
+    invoke<string>("apply_font_in_app", {
+      app,
+      postscriptName,
+      label,
+      familyName,
+      aliases: aliases ?? [],
+    }),
   appWarmState: () => invoke<AppWarm[]>("app_warm_state"),
   affinityLink: () => invoke<AffinityConnection | null>("affinity_link"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),

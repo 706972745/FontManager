@@ -1,4 +1,7 @@
-//! 版权分类：把版权信息分为 免费 / 收费 / 限时 / 未知 四类。
+//! 版权分类：把版权信息分为 商用免费 / 个人免费 / 收费 / 限时 / 未知 五类。
+//!
+//! 「免费」原来只有一个格子，但免费字体里「可以商用」和「只准个人用」差别巨大
+//! （后者拿去接单会侵权），所以拆成 FreeCommercial（商用免费）与 FreePersonal（个人免费）。
 //! 用于安装时给字族目录名加后缀（如 "Lora（免费字体）"），
 //! 与前端 src/lib/license.ts 的分类标记保持一致。
 //!
@@ -11,7 +14,10 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CopyrightClass {
-    Free,
+    /// 商用免费：允许商业使用（OFL / Apache / MIT / 公有领域 / 明确写「可商用」）
+    FreeCommercial,
+    /// 个人免费：免费，但授权只覆盖个人 / 非商业用途
+    FreePersonal,
     Paid,
     Timelimited,
     Unknown,
@@ -20,7 +26,8 @@ pub enum CopyrightClass {
 impl CopyrightClass {
     pub fn as_str(self) -> &'static str {
         match self {
-            CopyrightClass::Free => "free",
+            CopyrightClass::FreeCommercial => "free_commercial",
+            CopyrightClass::FreePersonal => "free_personal",
             CopyrightClass::Paid => "paid",
             CopyrightClass::Timelimited => "timelimited",
             CopyrightClass::Unknown => "unknown",
@@ -48,7 +55,16 @@ const OPEN_MARKERS: &[&str] = &[
     "可商用",
     "公有领域",
     "免费商用",
+    "商用免费",
 ];
+
+/// 「个人免费」的特征串（小写）。
+///
+/// 注意：这一类**只认明确写着「个人免费」的备注**。旧版本里 "personal use only" /
+/// "non-commercial" / 「仅限个人」/「不可商用」这些都判成收费，用户反馈要求保持原判法
+/// （这些条款意味着商用要买授权，按收费管理更稳妥），所以它们留在 PAID_MARKERS 里。
+/// 「个人免费」主要用于：用户在详情面板手动选它，或目录名里明确写着「（个人免费）」。
+const PERSONAL_MARKERS: &[&str] = &["个人免费", "免费供个人", "个人版免费"];
 
 /// 限制性/收费许可的特征串（小写）
 const PAID_MARKERS: &[&str] = &[
@@ -92,6 +108,11 @@ pub fn classify(text: Option<&str>) -> CopyrightClass {
         return CopyrightClass::Unknown;
     };
     let t = text.to_lowercase();
+    // 只认「个人免费」字样（其余「仅限个人 / personal use only」按旧版判收费）；
+    // 「不可商用」里含「可商用」，所以收费必须先于商用免费判定。
+    if PERSONAL_MARKERS.iter().any(|m| t.contains(m)) {
+        return CopyrightClass::FreePersonal;
+    }
     if PAID_MARKERS.iter().any(|m| t.contains(m)) {
         return CopyrightClass::Paid;
     }
@@ -99,7 +120,7 @@ pub fn classify(text: Option<&str>) -> CopyrightClass {
         return CopyrightClass::Timelimited;
     }
     if OPEN_MARKERS.iter().any(|m| t.contains(m)) {
-        return CopyrightClass::Free;
+        return CopyrightClass::FreeCommercial;
     }
     CopyrightClass::Unknown
 }
@@ -107,7 +128,12 @@ pub fn classify(text: Option<&str>) -> CopyrightClass {
 /// 前端「版权状态」下拉里的值 → 版权分类；auto / 无法识别时返回 None（表示按来源重新判定）
 pub fn class_from_status(status: &str) -> Option<CopyrightClass> {
     match status.trim().to_lowercase().as_str() {
-        "free" => Some(CopyrightClass::Free),
+        // "free" 是旧版存下来的值：那时候免费不分商用/个人，按「商用免费」处理，
+        // 用户可以在详情面板里改成「个人免费」（我们不会替他把权限调窄）。
+        "free" | "free_commercial" | "freecommercial" | "commercial" => {
+            Some(CopyrightClass::FreeCommercial)
+        }
+        "free_personal" | "freepersonal" | "personal" => Some(CopyrightClass::FreePersonal),
         "paid" => Some(CopyrightClass::Paid),
         "timelimited" | "time_limited" | "timeLimited" => Some(CopyrightClass::Timelimited),
         "unknown" => Some(CopyrightClass::Unknown),
@@ -117,7 +143,8 @@ pub fn class_from_status(status: &str) -> Option<CopyrightClass> {
 
 fn suffix(class: CopyrightClass) -> &'static str {
     match class {
-        CopyrightClass::Free => "免费字体",
+        CopyrightClass::FreeCommercial => "商用免费",
+        CopyrightClass::FreePersonal => "个人免费",
         CopyrightClass::Paid => "收费字体",
         CopyrightClass::Timelimited => "限时字体",
         CopyrightClass::Unknown => "未知版权",
@@ -144,7 +171,8 @@ pub fn family_dir_name(family: &str, class: CopyrightClass) -> String {
 /// 目录名里的版权后缀 → 分类（识别我们自己写的「（免费字体）」这类后缀）
 fn suffix_class(name: &str) -> Option<CopyrightClass> {
     for class in [
-        CopyrightClass::Free,
+        CopyrightClass::FreeCommercial,
+        CopyrightClass::FreePersonal,
         CopyrightClass::Paid,
         CopyrightClass::Timelimited,
         CopyrightClass::Unknown,
@@ -152,6 +180,11 @@ fn suffix_class(name: &str) -> Option<CopyrightClass> {
         if name.contains(&format!("（{}）", suffix(class))) {
             return Some(class);
         }
+    }
+    // 旧版本只分「免费」，历史目录名是「（免费字体）」：按商用免费读回来，
+    // 不然升级之后一整片老目录会突然变「未知版权」。
+    if name.contains("（免费字体）") {
+        return Some(CopyrightClass::FreeCommercial);
     }
     None
 }
@@ -271,9 +304,26 @@ mod tests {
 
     #[test]
     fn classifies_licenses() {
-        assert_eq!(classify(Some("This Font is licensed under the SIL Open Font License")), CopyrightClass::Free);
-        assert_eq!(classify(Some("OFL.txt")), CopyrightClass::Free);
-        assert_eq!(classify(Some("Personal use only, may not be redistributed")), CopyrightClass::Paid);
+        assert_eq!(
+            classify(Some("This Font is licensed under the SIL Open Font License")),
+            CopyrightClass::FreeCommercial
+        );
+        assert_eq!(classify(Some("OFL.txt")), CopyrightClass::FreeCommercial);
+        // 分类口径与旧版一致：personal use only / 不可商用 → 收费；个人免费只认「个人免费」字样
+        assert_eq!(
+            classify(Some("Free for personal use only. Commercial license required.")),
+            CopyrightClass::Paid
+        );
+        assert_eq!(classify(Some("仅供个人使用，商用请购买授权")), CopyrightClass::Paid);
+        assert_eq!(classify(Some("不可商用")), CopyrightClass::Paid);
+        assert_eq!(classify(Some("收费字体，购买授权后使用")), CopyrightClass::Paid);
+        assert_eq!(classify(Some("免费商用，可商用")), CopyrightClass::FreeCommercial);
+        assert_eq!(classify(Some("个人免费")), CopyrightClass::FreePersonal);
+        // 「personal use only」即使同时写了「不可再分发」，仍按收费（旧版口径）
+        assert_eq!(
+            classify(Some("Personal use only, may not be redistributed")),
+            CopyrightClass::Paid
+        );
         assert_eq!(classify(Some("Some custom text")), CopyrightClass::Unknown);
         assert_eq!(classify(None), CopyrightClass::Unknown);
     }
@@ -281,8 +331,8 @@ mod tests {
     #[test]
     fn builds_dir_names() {
         assert_eq!(
-            family_dir_name("Lora", CopyrightClass::Free),
-            "Lora（免费字体）"
+            family_dir_name("Lora", CopyrightClass::FreeCommercial),
+            "Lora（商用免费）"
         );
         assert_eq!(
             family_dir_name("A/B|Font", CopyrightClass::Unknown),
@@ -296,7 +346,18 @@ mod tests {
 
     #[test]
     fn maps_manual_status() {
-        assert_eq!(class_from_status("free"), Some(CopyrightClass::Free));
+        assert_eq!(
+            class_from_status("free"),
+            Some(CopyrightClass::FreeCommercial)
+        );
+        assert_eq!(
+            class_from_status("free_personal"),
+            Some(CopyrightClass::FreePersonal)
+        );
+        assert_eq!(
+            class_from_status("free_commercial"),
+            Some(CopyrightClass::FreeCommercial)
+        );
         assert_eq!(class_from_status("paid"), Some(CopyrightClass::Paid));
         assert_eq!(class_from_status("timelimited"), Some(CopyrightClass::Timelimited));
         assert_eq!(class_from_status("unknown"), Some(CopyrightClass::Unknown));
@@ -306,7 +367,19 @@ mod tests {
 
     #[test]
     fn reads_folder_notes() {
-        assert_eq!(classify_folder_name("Lora（免费字体）"), CopyrightClass::Free);
+        assert_eq!(
+            classify_folder_name("Lora（商用免费）"),
+            CopyrightClass::FreeCommercial
+        );
+        assert_eq!(
+            classify_folder_name("Lora（个人免费）"),
+            CopyrightClass::FreePersonal
+        );
+        // 历史目录名
+        assert_eq!(
+            classify_folder_name("Lora（免费字体）"),
+            CopyrightClass::FreeCommercial
+        );
         assert_eq!(classify_folder_name("某某字体（收费字体）"), CopyrightClass::Paid);
         assert_eq!(classify_folder_name("某某字体（限时字体）"), CopyrightClass::Timelimited);
         assert_eq!(classify_folder_name("字体合集"), CopyrightClass::Unknown);

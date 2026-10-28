@@ -1,20 +1,33 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { motion } from "motion/react";
-import { Camera, Folder, Minimize2, Pin, PinOff, Search, Type, X } from "lucide-react";
+import {
+  Camera,
+  ChevronRight,
+  Folder,
+  Minimize2,
+  PenTool,
+  Pin,
+  PinOff,
+  Search,
+  Type,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { openContextMenu } from "../design/primitives/ContextMenu";
+import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
 import { easeTop, staggerDelay, spring } from "../design/springs";
 import { useFontCss } from "../lib/fontLoader";
 import { useT, type TKey } from "../lib/i18n";
 import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
-import { buildFamilyMenu, copyText } from "../lib/menus";
+import { buildFaceMenu, buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
-import { TOP_BAR_HOTKEY, minimizeQuickbar, useQuickbarDock } from "../lib/useQuickbarDock";
+import { minimizeQuickbar, useQuickbarDock } from "../lib/useQuickbarDock";
 import { useInView } from "../lib/useInView";
 import { useWindowDrag } from "../lib/useWindowDrag";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { WarmFooter } from "./WarmFooter";
+import { LoadProgress } from "./LoadProgress";
 import {
   familiesFor,
   sortFamilies,
@@ -43,9 +56,13 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const size = SIZES[sizeIndex];
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   // 首屏这几张立刻加载字体；其余等滚动到附近再说，避免上千个 FontFace 一起加载
-  const [itemRef, inView] = useInView<HTMLButtonElement>();
-  const { fontFamily } = useFontCss(index < ANIMATED_ITEMS || inView ? lead : null);
-  const fontStyle = lead.italic ? "italic" : "normal";
+  const [itemRef, inView] = useInView<HTMLDivElement>();
+  /** 鼠标正悬停的字重行：卡片预览临时用它渲染，移开恢复 Regular（与完整界面一致） */
+  const [hoverFaceId, setHoverFaceId] = useState<string | null>(null);
+  const previewFace = family.faces.find((f) => f.id === hoverFaceId) ?? lead;
+  const { fontFamily } = useFontCss(index < ANIMATED_ITEMS || inView ? previewFace : null);
+  const fontStyle = previewFace.italic ? "italic" : "normal";
+  const previewWeight = previewFace === lead ? undefined : previewFace.weight;
   // 与完整界面主列表一致：优先用户输入的示例文本，否则用族名
   const text = sampleText.trim() || family.name;
 
@@ -69,7 +86,10 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   // 窗口形变期间一律不动：此时只有窗口自己在变大变小，内容再逐个入场会显得抖
   const intro = useIntro();
   const animated = intro && index < ANIMATED_ITEMS;
-  const Item = animated ? motion.button : "button";
+  /** 展开这一族的字重列表（默认只显示字族，和完整界面一个思路） */
+  const [expanded, setExpanded] = useState(false);
+  // 展开字重后里面还有按钮，<button> 不能嵌套 <button>，所以根节点用 div + role
+  const Item = animated ? motion.div : "div";
   // 超出动画范围的卡片用 CSS 过渡做悬浮/按下反馈，观感一致但没有 motion 的初始化开销
   const plainProps = animated
     ? {
@@ -84,7 +104,8 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   return (
     <Item
       ref={itemRef}
-      type="button"
+      role="button"
+      tabIndex={0}
       className="qb-item"
       title={t("quickbar.copyHint", { name: family.name })}
       onClick={() => copyText(family.name, t("copy.familyName"))}
@@ -92,16 +113,27 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       {...plainProps}
     >
       <span className="qb-item-head">
-        <span className="qb-item-glyph" style={fontFamily ? { fontFamily, fontStyle } : undefined} aria-hidden="true">
+        <span
+          className="qb-item-glyph"
+          style={fontFamily ? { fontFamily, fontStyle, fontWeight: previewWeight } : undefined}
+          aria-hidden="true"
+        >
           Aa
         </span>
         <span className="qb-item-info">
-          <span className="qb-item-name" style={fontFamily ? { fontFamily, fontStyle } : undefined}>
+          <span
+            className="qb-item-name"
+            style={fontFamily ? { fontFamily, fontStyle, fontWeight: previewWeight } : undefined}
+          >
             {family.name}
           </span>
           <motion.span
             className="qb-item-sample"
-            style={fontFamily ? { fontFamily, fontStyle, fontSize: size } : { fontSize: size }}
+            style={
+              fontFamily
+                ? { fontFamily, fontStyle, fontWeight: previewWeight, fontSize: size }
+                : { fontSize: size }
+            }
             initial={animated ? { opacity: 0, y: 5 } : false}
             animate={animated ? { opacity: 1, y: 0 } : undefined}
             transition={animated ? spring : undefined}
@@ -114,7 +146,31 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
             {t(`copyright.${licCls}` as TKey)}
           </span>
           {family.faces.length > 1 && (
-            <span className="qb-item-meta tabular">{family.faces.length}</span>
+            <button
+              type="button"
+              className="qb-item-meta qb-item-expand tabular"
+              aria-expanded={expanded}
+              aria-label={
+                expanded
+                  ? t("card.collapseStyles")
+                  : t("card.expandStyles")
+              }
+              title={t("card.stylesCount", { count: family.faces.length })}
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((v) => !v);
+              }}
+            >
+              <ChevronRight
+                size={11}
+                strokeWidth={2}
+                style={{
+                  transform: expanded ? "rotate(90deg)" : undefined,
+                  transition: "transform 140ms ease",
+                }}
+              />
+              {family.faces.length}
+            </button>
           )}
         </span>
       </span>
@@ -142,6 +198,49 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       )}
 
       {copyright && <span className="qb-item-copy">{copyright}</span>}
+
+      {expanded && family.faces.length > 0 && (
+        <div className="qb-faces" onClick={(e) => e.stopPropagation()}>
+          {family.faces.map((face) => {
+            // style 为空时退回 PostScript 名，不然整行只有一个空白按钮
+            const styleLabel = face.style?.trim() || face.postscriptName || "Regular";
+            const fullName = `${family.name} ${styleLabel}`.trim();
+            return (
+              <div
+                key={face.id}
+                className="qb-face"
+                onMouseEnter={() => setHoverFaceId(face.id)}
+                onMouseLeave={() => setHoverFaceId(null)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openContextMenu(e, buildFaceMenu(family, face));
+                }}
+              >
+                <span
+                  className="qb-face-name"
+                  title={t("quickbar.previewFaceHint", { name: fullName })}
+                >
+                  {styleLabel}
+                </span>
+                <button
+                  type="button"
+                  className="qb-face-apply"
+                  aria-label={t("menu.faceActions", { name: styleLabel })}
+                  title={t("menu.faceActions", { name: styleLabel })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const r = e.currentTarget.getBoundingClientRect();
+                    openContextMenuAt(r.left, r.bottom + 4, buildFaceMenu(family, face));
+                  }}
+                >
+                  <PenTool size={11} strokeWidth={1.75} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </Item>
   );
 }
@@ -166,11 +265,22 @@ export function QuickBar() {
 
   // 拖到屏幕顶部时整个速览窗口收起成一条（contentHeight 用于动画期间钉住内容高度）
   const { docked, contentHeight, phase, bar } = useQuickbarDock(autoHide);
-  const dockHint = t("quickbar.topbarHint", { hotkey: TOP_BAR_HOTKEY });
+  // 提示里显示的按键跟着设置走（用户可能把它改成了 Ctrl+Alt+Q 之类）
+  const hotkeyLabel = useFontStore((s) => s.quickbarHotkey.label);
+  const dockHint = t("quickbar.topbarHint", { hotkey: hotkeyLabel });
   // 自实现拖动：绕开系统标题栏拖动带来的「拖到顶部就最大化」
   const dragWindow = useWindowDrag();
   // 进入速览的那一下窗口正在形变，列表不要再做逐个入场的动作
   const intro = useIntro();
+
+  // 速览界面不接收拖放导入：拖放事件是窗口级的，这里挂一个空监听把它吃掉。
+  // 速览是查名字 / 复制的浮层，把字体文件拖进来就开始装字体完全是意外行为。
+  useEffect(() => {
+    const promise = getCurrentWebview().onDragDropEvent(() => {});
+    return () => {
+      void promise.then((un) => un()).catch(() => {});
+    };
+  }, []);
 
   // 右键菜单实测尺寸变化时，同步窗口最小尺寸（宽度 ≥ 菜单宽 × 1.5，高度 ≥ 菜单高）
   useEffect(() => subscribeContextMenuSize(() => void syncQuickbarMinSize()), []);
@@ -246,7 +356,7 @@ export function QuickBar() {
         <div className="qb-dockbar" onPointerDown={dragWindow} title={dockHint}>
           <span className="qb-dock-dot" aria-hidden="true" />
           <span className="qb-dock-label">
-            {t("quickbar.collapsedHint", { hotkey: TOP_BAR_HOTKEY })}
+            {t("quickbar.collapsedHint", { hotkey: hotkeyLabel })}
           </span>
         </div>
       ) : (
@@ -359,6 +469,7 @@ export function QuickBar() {
               </div>
             )}
           </div>
+          <LoadProgress compact />
           <WarmFooter compact />
         </div>
       )}

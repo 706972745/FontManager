@@ -86,7 +86,16 @@ pub fn all_dirs(extra: &[String]) -> Vec<(PathBuf, FontSource)> {
     dirs_list
 }
 
-pub fn scan_all(app: &tauri::AppHandle, extra: &[String], managed: &Path) -> Vec<FontFace> {
+/// 每批推送多少个字面（face）给前端。
+/// 太小会刷爆 IPC，太大又失去「边读边出现」的观感；120 个大约 30~60ms 一批。
+const BATCH_FACES: usize = 120;
+
+pub fn scan_all(
+    app: &tauri::AppHandle,
+    extra: &[String],
+    managed: &Path,
+    cache: &mut crate::fontcache::FontCache,
+) -> Vec<FontFace> {
     let files: Vec<(PathBuf, FontSource)> = all_dirs(extra)
         .into_iter()
         .flat_map(|(dir, source)| {
@@ -107,9 +116,32 @@ pub fn scan_all(app: &tauri::AppHandle, extra: &[String], managed: &Path) -> Vec
     // 一个目录只判一次（要读文件，但比解析字体便宜得多）
     let mut dir_class: std::collections::HashMap<PathBuf, String> =
         std::collections::HashMap::new();
+    // 解析结果缓存由调用方持有：链接字体那一段也用同一个实例，最后统一落盘
+    // 边扫边推：已解析好的字体分批发给前端，界面就能「读到多少显示多少」，
+    // 而不是等全部扫完（几千个字体时要好几秒）才一次性出现。
+    let mut batch: Vec<FontFace> = Vec::with_capacity(BATCH_FACES);
+    // 先把 0% 报出去：界面立刻能显示进度条，而不是空等第一帧解析完
+    let _ = app.emit("scan:progress", ScanProgress { done: 0, total });
     for (done, (path, base_source)) in files.into_iter().enumerate() {
         let source = classify(&path, base_source, managed);
-        let mut parsed = parser::parse_font_file(&path, source);
+        let key = path.to_string_lossy().to_string();
+        // 修改时间 + 大小作为「这个文件有没有变过」的判据，比读一遍文件便宜得多
+        let meta = std::fs::metadata(&path).ok();
+        let mtime = meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+        let mut parsed = match cache.get(&key, mtime, size, source) {
+            Some(hit) => hit,
+            None => {
+                let fresh = parser::parse_font_file(&path, source);
+                cache.put(&key, mtime, size, source, &fresh);
+                fresh
+            }
+        };
         if source == FontSource::Managed {
             if let Some(dir) = path.parent() {
                 let class = dir_class
@@ -123,10 +155,19 @@ pub fn scan_all(app: &tauri::AppHandle, extra: &[String], managed: &Path) -> Vec
                 }
             }
         }
+        batch.extend(parsed.iter().cloned());
         faces.extend(parsed);
+        // 攒够一批就发出去（最后一批在循环结束后补发）
+        if batch.len() >= BATCH_FACES {
+            let _ = app.emit("scan:batch", &batch);
+            batch.clear();
+        }
         if done % 25 == 0 || done + 1 == total {
             let _ = app.emit("scan:progress", ScanProgress { done: done + 1, total });
         }
+    }
+    if !batch.is_empty() {
+        let _ = app.emit("scan:batch", &batch);
     }
 
     faces.sort_by(|a, b| a.id.cmp(&b.id));

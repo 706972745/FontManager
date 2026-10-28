@@ -27,6 +27,7 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { useT } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { APP_LICENSE, APP_VERSION } from "../lib/version";
+import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 
 const IS_LINUX = navigator.platform.toUpperCase().includes("LINUX");
 
@@ -63,6 +64,12 @@ export function SettingsOverlay() {
   const setStartMinimized = useFontStore((s) => s.setStartMinimized);
   const restoreOnLaunch = useFontStore((s) => s.restoreOnLaunch);
   const setRestoreOnLaunch = useFontStore((s) => s.setRestoreOnLaunch);
+  const quickbarHotkey = useFontStore((s) => s.quickbarHotkey);
+  const setQuickbarHotkey = useFontStore((s) => s.setQuickbarHotkey);
+  const quickbarHotkeyOpens = useFontStore((s) => s.quickbarHotkeyOpens);
+  const setQuickbarHotkeyOpens = useFontStore((s) => s.setQuickbarHotkeyOpens);
+  /** 正在录制新快捷键：这段时间拦截所有按键，别让它们落到页面别处 */
+  const [recording, setRecording] = useState(false);
   const [autostart, setAutostart] = useState(false);
   const affinityConnection = useFontStore((s) => s.affinityConnection);
   const refreshAffinityConnection = useFontStore((s) => s.refreshAffinityConnection);
@@ -94,6 +101,26 @@ export function SettingsOverlay() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [openState, setSettingsOpen]);
+
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      // 录制期间所有按键都归我们：既别触发页面快捷键，也别触发「Esc 关闭设置」
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.key === "Escape") {
+        setRecording(false);
+        return;
+      }
+      const spec = hotkeyFromEvent(e);
+      // 只按了修饰键（Ctrl / Alt / Shift / Win）：等用户接着按主键
+      if (!spec) return;
+      setRecording(false);
+      void setQuickbarHotkey(spec);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recording, setQuickbarHotkey]);
 
   const addFolder = async () => {
     const dir = await open({ directory: true, title: t("settings.addFolderTitle") });
@@ -276,6 +303,45 @@ export function SettingsOverlay() {
                   on={restoreOnLaunch}
                   onChange={(on) => setRestoreOnLaunch(on)}
                   label={t("settings.restoreOnLaunch")}
+                />
+              </div>
+
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">{t("settings.quickbarHotkey")}</div>
+                  <div className="settings-sub">{t("settings.quickbarHotkeySub")}</div>
+                </div>
+                <div className="hotkey-edit">
+                  <button
+                    type="button"
+                    className={`hotkey-field ${recording ? "hotkey-field-recording" : ""}`}
+                    onClick={() => setRecording((v) => !v)}
+                    aria-label={t("settings.quickbarHotkey")}
+                  >
+                    {recording ? t("settings.quickbarHotkeyRecording") : quickbarHotkey.label}
+                  </button>
+                  {quickbarHotkey.label !== DEFAULT_HOTKEY.label && !recording && (
+                    <button
+                      type="button"
+                      className="hotkey-reset"
+                      onClick={() => void setQuickbarHotkey(DEFAULT_HOTKEY)}
+                      title={t("settings.quickbarHotkeyReset")}
+                    >
+                      {t("settings.quickbarHotkeyReset")}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">{t("settings.quickbarHotkeyOpens")}</div>
+                  <div className="settings-sub">{t("settings.quickbarHotkeyOpensSub")}</div>
+                </div>
+                <PillToggle
+                  on={quickbarHotkeyOpens}
+                  onChange={(on) => setQuickbarHotkeyOpens(on)}
+                  label={t("settings.quickbarHotkeyOpens")}
                 />
               </div>
             </section>

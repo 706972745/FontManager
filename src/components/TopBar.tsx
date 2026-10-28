@@ -13,10 +13,11 @@ import {
   X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
-import { SIZES, useFontStore, type SortMode } from "../state/fontStore";
+import { familiesFor, SIZES, useFontStore, type SortMode } from "../state/fontStore";
+import { useFontCss } from "../lib/fontLoader";
 import type { Classification, FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
 
@@ -35,7 +36,7 @@ const FORMAT_FILTERS = ["otf", "ttf", "woff", "woff2"] as const;
 const FEATURE_FILTERS = ["swsh", "salt", "dlig", "smcp", "onum", "frac"] as const;
 const SOURCE_FILTERS = ["all", "system", "user"] as const;
 
-const COPYRIGHT_FILTERS = ["free", "paid", "timelimited", "unknown"] as const;
+const COPYRIGHT_FILTERS = ["free_commercial", "free_personal", "paid", "timelimited", "unknown"] as const;
 
 export function SortMenu() {
   const t = useT();
@@ -435,6 +436,34 @@ function CompareButton() {
 export function TopBar() {
   const t = useT();
   const sampleText = useFontStore((s) => s.sampleText);
+  /**
+   * 顶栏这个「Hello」框用真实字体渲染。
+   *
+   * 它比卡片先挂载，字体也就最先开始加载——用户一进来就能看到「字体已经在出来了」，
+   * 比盯着几行灰骨架屏等整库要好受得多（卡片随后按虚拟滚动一个个补上）。
+   */
+  const selectedFamily = useFontStore((s) => s.selectedFamily);
+  const allFonts = useFontStore((s) => s.fonts);
+  const allTags = useFontStore((s) => s.tags);
+  const sampleFace = useMemo(() => {
+    if (allFonts.length === 0) return null;
+    // 只有带拉丁字形的字体才拿来渲染「Hello」：符号字体 / 纯中文手写体会把
+    // 这几个字母画成方块或乱码，反而比用界面字体更难看。
+    const hasLatin = (f: { scripts: string[] }) =>
+      f.scripts.some((sc) => sc.toLowerCase().startsWith("latn"));
+    const fam = selectedFamily ? familiesFor(allFonts, allTags).get(selectedFamily) : null;
+    const fromFamily =
+      fam?.faces.find((f) => f.style === "Regular" && hasLatin(f)) ??
+      fam?.faces.find(hasLatin) ??
+      null;
+    if (fromFamily) return fromFamily;
+    return (
+      allFonts.find((f) => f.style === "Regular" && hasLatin(f)) ??
+      allFonts.find(hasLatin) ??
+      null
+    );
+  }, [selectedFamily, allFonts, allTags]);
+  const { fontFamily: sampleFont } = useFontCss(sampleFace);
   const setSampleText = useFontStore((s) => s.setSampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
   const setSizeIndex = useFontStore((s) => s.setSizeIndex);
@@ -482,6 +511,7 @@ export function TopBar() {
           placeholder={t("top.samplePlaceholder")}
           aria-label={t("top.sampleAria")}
           spellCheck={false}
+          style={sampleFont ? { fontFamily: sampleFont } : undefined}
         />
       </div>
 

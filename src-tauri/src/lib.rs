@@ -6,6 +6,7 @@ mod comhost;
 mod copyright;
 mod diag;
 mod font_types;
+mod fontcache;
 mod installer;
 mod net;
 mod online;
@@ -26,7 +27,7 @@ mod window_morph;
 use font_types::{FontFace, FontSource, TrashEntry};
 use std::collections::HashMap;
 use store::Store;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 /// 读取文件时间（Unix 秒）。birth=true 时优先取创建时间（入库时间兜底），否则取修改时间。
 fn file_time(path: &str, birth: bool) -> Option<u64> {
@@ -51,21 +52,68 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
         )
     };
     let managed = scanner::effective_managed_dir(library_dir.as_deref());
-    let mut faces = tauri::async_runtime::spawn_blocking({
+    // 注册表探测（列出系统已注册的所有字体路径）跟扫描互不依赖，没必要排队：
+    // 扫描几千个文件要好几秒，探测也要几百毫秒，串行做的话「进度条 100%」到
+    // 「字体真正可用」之间就会多出一段干等。这里开一条线程先跑着，扫完再收。
+    let probe_handle = std::thread::spawn(activation::probe);
+    let t_scan = std::time::Instant::now();
+    // 缓存跟着扫描一起在后台线程里创建并带回来：链接字体那一段要继续用它
+    let (mut faces, mut cache) = tauri::async_runtime::spawn_blocking({
         let app = app.clone();
-        move || scanner::scan_all(&app, &extra, &managed)
+        move || {
+            let mut cache = crate::fontcache::FontCache::load();
+            let faces = scanner::scan_all(&app, &extra, &managed, &mut cache);
+            (faces, cache)
+        }
     })
     .await
     .map_err(|e| e.to_string())?;
+    eprintln!("[scan] 解析耗时 {:?}", t_scan.elapsed());
 
+    // 链接进库的字体（导入时选「链接」而非复制）往往有几千个，而且全部躺在扫描目录之外：
+    // 原来这里逐个重新解析，进度条显示 100% 之后还要干等十几秒才轮到它们。
+    // 现在同样走解析缓存，并且边解析边推给界面。
+    let t_linked = std::time::Instant::now();
     let mut linked_faces = Vec::new();
+    let mut linked_batch: Vec<FontFace> = Vec::new();
     for path in &linked {
         let p = std::path::Path::new(path);
         if !p.is_file() {
             continue;
         }
-        linked_faces.extend(parser::parse_font_file(p, FontSource::Managed));
+        let meta = std::fs::metadata(p).ok();
+        let mtime = meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+        let parsed = match cache.get(path, mtime, size, FontSource::Managed) {
+            Some(hit) => hit,
+            None => {
+                let fresh = parser::parse_font_file(p, FontSource::Managed);
+                cache.put(path, mtime, size, FontSource::Managed, &fresh);
+                fresh
+            }
+        };
+        linked_batch.extend(parsed.iter().cloned());
+        linked_faces.extend(parsed);
+        if linked_batch.len() >= 240 {
+            let _ = app.emit("scan:batch", &linked_batch);
+            linked_batch.clear();
+        }
     }
+    if !linked_batch.is_empty() {
+        let _ = app.emit("scan:batch", &linked_batch);
+    }
+    eprintln!(
+        "[scan] 链接字体 {} 个，耗时 {:?}",
+        linked.len(),
+        t_linked.elapsed()
+    );
+    // 这一轮没见到的路径（删掉的字体 / 换掉的目录）从缓存里清掉，落盘放后台线程
+    cache.finish();
     if !linked_faces.is_empty() {
         let ids: std::collections::HashSet<&str> =
             linked_faces.iter().map(|f| f.id.as_str()).collect();
@@ -74,7 +122,10 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
     }
 
     diag::index_library(&faces);
-    let probe = activation::probe();
+    let t_probe = std::time::Instant::now();
+    // 并行探测的结果在这里收口；线程意外挂了就退回去自己再探一次
+    let probe = probe_handle.join().unwrap_or_else(|_| activation::probe());
+    eprintln!("[scan] 等注册表探测 {:?}", t_probe.elapsed());
     let store: State<Store> = app.state();
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
     let before = state.linked.len();
@@ -95,6 +146,7 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
         })
         .collect();
 
+    eprintln!("[scan] 全部就绪 {:?}（{} 个字面）", t_scan.elapsed(), faces.len());
     for (orig, parked) in &state.parked {
         for mut f in parser::parse_font_file(std::path::Path::new(parked), FontSource::User) {
             f.id = format!("{}#{}", orig, f.face_index);
@@ -320,25 +372,40 @@ fn affinity_session_activate(
     activation::batch_error(&failed, total).map(|()| activated)
 }
 
+/** 改版权后的结果：成功改了几个目录、哪些目录没改成、哪些字体改名后没能重新启用。 */
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CopyrightSyncResult {
+    renamed: usize,
+    /// 没改成的目录（人话描述，直接给 toast 用）
+    errors: Vec<String>,
+    /// 目录改好了但字体没能重新启用（路径列表）：这些字体在界面上会显示为未启用
+    reactivate_failed: Vec<String>,
+}
+
 /**
- * 把应用里改过的版权状态同步回字体库目录：目录名后缀跟着改（"Lora（免费字体）"）。
+ * 把应用里改过的版权状态同步回字体库目录：目录名后缀跟着改（"Lora（商用免费）"）。
  * status 为 auto 时按「版权信息文件 > 文件夹备注 > 字体自带信息」重新判定；
  * 返回实际改名的目录数量。
  *
  * 目录里已启用的字体必须先停用再改名：Windows 的字体注册指向原文件路径，
  * 带着注册改名会让字体失效（注册表里留着一条指向不存在文件的记录）。
+ *
+ * 改名失败必须回报给前端：以前只写日志，用户看到的是「改了版权，字体全不见了」，
+ * 却不知道是改名没成功（原因通常是文件被 Photoshop / 预览缓存占着）。
  */
 #[tauri::command]
 fn sync_family_copyright(
     store: State<'_, Store>,
     family: String,
     status: String,
-) -> Result<usize, String> {
+) -> Result<CopyrightSyncResult, String> {
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
     let library = scanner::effective_managed_dir(state.active_library_dir());
     let dirs = copyright::family_dirs_for(&library, &family);
     let mut renamed = 0usize;
-    let mut first_error: Option<String> = None;
+    let mut errors: Vec<String> = Vec::new();
+    let mut reactivate_failed: Vec<String> = Vec::new();
     for dir in dirs {
         let class = copyright::class_from_status(&status)
             .unwrap_or_else(|| copyright::classify_dir(&dir));
@@ -350,14 +417,17 @@ fn sync_family_copyright(
             continue;
         }
         match rename_family_dir(&mut state, &dir, &target) {
-            Ok(()) => renamed += 1,
+            Ok(failed) => {
+                renamed += 1;
+                reactivate_failed.extend(failed);
+            }
             Err(e) => {
                 crate::diag::log(&format!(
                     "copyright: 改名失败 {} → {}：{e}",
                     dir.display(),
                     target.display()
                 ));
-                first_error.get_or_insert(e);
+                errors.push(e);
             }
         }
     }
@@ -365,47 +435,135 @@ fn sync_family_copyright(
         installer::refresh_system_font_cache();
         store::save(&state)?;
     }
-    match (renamed, first_error) {
-        (0, Some(e)) => Err(e),
-        (n, _) => Ok(n),
-    }
+    Ok(CopyrightSyncResult {
+        renamed,
+        errors,
+        reactivate_failed,
+    })
 }
 
-/// 把字族目录整体搬到新名字（含所有字体与版权信息文件），返回 旧路径 → 新路径
-fn move_dir_contents(dir: &std::path::Path, target: &std::path::Path) -> Result<Vec<(String, String)>, String> {
+/** 一次问一批字面「有没有中文字形」。
+ *
+ * 用途：字体里没汉字时，应用到 PS / AI / CDR 之后中文会原样不变或变成方块，
+ * 用户容易以为是软件坏了。界面在展开字重、打开详情、以及真正应用前会先问一下，
+ * 没有汉字就明确提示一句，而不是让用户对着没反应的文档猜。
+ *
+ * 入参是 (路径, 字面序号) 的数组，返回同序的布尔数组。
+ */
+#[tauri::command]
+async fn font_cjk(
+    probes: Vec<(String, u32)>,
+) -> Result<Vec<bool>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        probes
+            .into_iter()
+            .map(|(path, index)| parser::face_has_cjk(std::path::Path::new(&path), index))
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// 把字族目录整体搬到新名字（含所有字体与版权信息文件），返回 旧路径 → 新路径。
+///
+/// 优先用「整目录改名」：同一分区上这是一步原子操作，要么整个目录换了名字，
+/// 要么一个文件都没动。以前的实现是逐个文件 `fs::rename`，只要有一个字体被
+/// PS / 预览缓存 / 杀软占着，就会搬到一半报错 —— 字族被劈成「旧目录一半、新目录一半」，
+/// 这才是「改完版权之后有些字体找不到」的真正来源。
+fn move_dir_contents(
+    dir: &std::path::Path,
+    target: &std::path::Path,
+) -> Result<Vec<(String, String)>, String> {
     use std::fs;
-    fs::create_dir_all(target).map_err(|e| e.to_string())?;
-    let mut moved = Vec::new();
-    let mut stack: Vec<(std::path::PathBuf, std::path::PathBuf)> =
-        vec![(dir.to_path_buf(), target.to_path_buf())];
-    while let Some((src_dir, dst_dir)) = stack.pop() {
-        let entries = fs::read_dir(&src_dir).map_err(|e| e.to_string())?;
-        for entry in entries.filter_map(|e| e.ok()) {
-            let src = entry.path();
-            let name = entry.file_name();
-            if src.is_dir() {
-                stack.push((src, dst_dir.join(&name)));
-                continue;
-            }
-            let mut dst = dst_dir.join(&name);
-            let mut n = 1;
-            while dst.exists() {
-                dst = dst_dir.join(format!("{n}-{}", name.to_string_lossy()));
-                n += 1;
-            }
-            fs::rename(&src, &dst).map_err(|e| e.to_string())?;
-            moved.push((
-                src.to_string_lossy().into_owned(),
-                dst.to_string_lossy().into_owned(),
-            ));
-        }
+
+    // 目标不存在时先试整目录改名（最快最安全）
+    if !target.exists() && fs::rename(dir, target).is_ok() {
+        let mut moved = Vec::new();
+        collect_dir_pairs(dir, target, &mut moved);
+        return Ok(moved);
     }
+
+    // 目标已存在（同名目录合并）或整目录改不动：退化成逐个文件搬，但失败就整批回滚
+    fs::create_dir_all(target).map_err(|e| format!("创建目录失败：{e}"))?;
+    let mut moved: Vec<(String, String)> = Vec::new();
+    let attempt = (|| -> Result<(), String> {
+        let mut stack: Vec<(std::path::PathBuf, std::path::PathBuf)> =
+            vec![(dir.to_path_buf(), target.to_path_buf())];
+        while let Some((src_dir, dst_dir)) = stack.pop() {
+            let entries = fs::read_dir(&src_dir).map_err(|e| e.to_string())?;
+            for entry in entries.filter_map(|e| e.ok()) {
+                let src = entry.path();
+                let name = entry.file_name();
+                if src.is_dir() {
+                    let sub = dst_dir.join(&name);
+                    fs::create_dir_all(&sub).map_err(|e| e.to_string())?;
+                    stack.push((src, sub));
+                    continue;
+                }
+                let mut dst = dst_dir.join(&name);
+                let mut n = 1;
+                while dst.exists() {
+                    dst = dst_dir.join(format!("{n}-{}", name.to_string_lossy()));
+                    n += 1;
+                }
+                fs::rename(&src, &dst)
+                    .map_err(|e| format!("{}：{e}", src.display()))?;
+                moved.push((
+                    src.to_string_lossy().into_owned(),
+                    dst.to_string_lossy().into_owned(),
+                ));
+            }
+        }
+        Ok(())
+    })();
+    if let Err(e) = attempt {
+        // 已经搬过去的搬回来：宁可这次改名不成功（目录名保持旧的样子），
+        // 也不要留下一个半新半旧的字族
+        for (old, new) in moved.iter().rev() {
+            let _ = fs::rename(new, old);
+        }
+        // 清掉刚建出来、现在已经空了的目录
+        let _ = fs::remove_dir(target);
+        return Err(e);
+    }
+
     // 目录里已经没有文件了，清掉空壳（有残留文件说明搬漏了，保留不动）
-    let leftover = fs::read_dir(dir).map(|r| r.filter_map(|e| e.ok()).count()).unwrap_or(0);
+    let leftover = fs::read_dir(dir)
+        .map(|r| r.filter_map(|e| e.ok()).count())
+        .unwrap_or(0);
     if leftover == 0 {
         let _ = fs::remove_dir_all(dir);
     }
     Ok(moved)
+}
+
+/// 整目录改名成功后，把新目录里的文件列成「旧路径 → 新路径」。
+/// 目录已经整体搬过去了，旧路径按相同的相对路径从旧根拼出来。
+fn collect_dir_pairs(
+    old_root: &std::path::Path,
+    new_root: &std::path::Path,
+    out: &mut Vec<(String, String)>,
+) {
+    let mut stack = vec![new_root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let Ok(rel) = path.strip_prefix(new_root) else {
+                continue;
+            };
+            out.push((
+                old_root.join(rel).to_string_lossy().into_owned(),
+                path.to_string_lossy().into_owned(),
+            ));
+        }
+    }
 }
 
 /// 这个路径对应的字体当前是不是启用状态。
@@ -428,12 +586,15 @@ fn is_activated(state: &crate::store::AppState, path: &str) -> bool {
 }
 
 /// 改字族目录名：先停用该目录里已启用的字体 → 搬文件 → 用新路径重新启用，
-/// 同时把 state 里按路径记录的信息（停用集合 / 入库时间 / 注册表备份）改到新路径。
+/// 同时把 state 里按路径记录的信息（停用集合 / 入库时间 / 链接集合 / 注册表备份）改到新路径。
+///
+/// 返回「改好了但没能重新启用」的字体路径：这些字体在界面上是未启用状态，
+/// 必须回报给用户，否则又是一次「字体凭空消失」。
 fn rename_family_dir(
     state: &mut crate::store::AppState,
     dir: &std::path::Path,
     target: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     let active: Vec<String> = {
         let mut out = Vec::new();
         let mut stack = vec![dir.to_path_buf()];
@@ -473,6 +634,10 @@ fn rename_family_dir(
                 if let Some(v) = state.parked.remove(old) {
                     state.parked.insert(new.clone(), v);
                 }
+                // 链接字体（外部目录单独挂进来的）也按路径记着，不跟着改就会变成悬空项
+                if state.linked.remove(old) {
+                    state.linked.insert(new.clone());
+                }
                 for (_name, path) in state.registry_backup.iter_mut() {
                     if path == old {
                         *path = new.clone();
@@ -484,12 +649,26 @@ fn rename_family_dir(
                 .iter()
                 .map(|(o, n)| (o.as_str(), n.as_str()))
                 .collect();
+            let mut failed = Vec::new();
             for old in &active {
-                if let Some(new) = renames.get(old.as_str()) {
-                    let _ = activation::sync(state, new, true);
+                let Some(new) = renames.get(old.as_str()) else {
+                    continue;
+                };
+                // 刚搬完的文件可能还被系统字体缓存放着，重试几次再算失败
+                let mut ok = false;
+                for attempt in 0..3 {
+                    if activation::sync(state, new, true).is_ok() {
+                        ok = true;
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(120 * (attempt + 1)));
+                }
+                if !ok {
+                    crate::diag::log(&format!("copyright: 改名后没能重新启用 {new}"));
+                    failed.push(new.to_string());
                 }
             }
-            Ok(())
+            Ok(failed)
         }
         Err(e) => {
             // 搬失败了就把字体恢复成原来的启用状态，别让用户的字体凭空消失
@@ -1203,11 +1382,31 @@ async fn apply_font_in_app(
     app: String,
     postscript_name: String,
     label: String,
+    family_name: String,
+    aliases: Option<Vec<String>>,
 ) -> Result<String, String> {
+    let aliases = aliases.unwrap_or_default();
     let target = adobe::Target::parse(&app)?;
-    tauri::async_runtime::spawn_blocking(move || adobe::apply(target, &postscript_name, &label))
-        .await
-        .map_err(|e| e.to_string())?
+    let warm_id = match target {
+        adobe::Target::Photoshop => Some("photoshop"),
+        adobe::Target::Illustrator => Some("illustrator"),
+        adobe::Target::CorelDraw => None,
+    };
+    // family_name 是 PostScript 名认不出时的回退名（真正的字族名）；
+    // label 只用于提示文案（字重级时是「族名 字重」）。
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        adobe::apply(target, &postscript_name, &label, &family_name, &aliases)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    // 成功应用之后让预热心跳安静一会儿：否则它紧接着去探测，很容易和应用时的
+    // COM 调用撞在一起超时，底部那条预热状态就「刷新」一下甚至变红。
+    if let Some(id) = warm_id {
+        if outcome.starts_with("applied:") || outcome == "created" {
+            warm::note_activity(id);
+        }
+    }
+    Ok(outcome)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1229,7 +1428,19 @@ pub fn run() {
         .get("uiScale")
         .and_then(|v| v.as_f64())
         .map(|s| s.clamp(0.5, 2.0));
+    // 速览快捷键：默认 Alt + `，用户可以在设置里改（存 prefs.quickbarHotkey）
+    let quickbar_hotkey = state
+        .prefs
+        .get("quickbarHotkey")
+        .and_then(|v| serde_json::from_value::<window_dock::HotkeySpec>(v.clone()).ok())
+        .unwrap_or_default();
     let extra_dirs = state.extra_dirs.clone();
+    // 「启动时最小化到托盘」：是的话就别急着把窗口亮出来
+    let start_minimized = state
+        .prefs
+        .get("startMinimized")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let library_dir = state.active_library_dir().map(|s| s.to_owned());
     let linked_dirs: Vec<String> = state.linked.iter().cloned().collect();
 
@@ -1246,8 +1457,17 @@ pub fn run() {
         .setup(move |app| {
             // 首实例：等「再点一次图标」的信号，收到就通知前端把完整界面叫出来
             single_instance::watch(app.handle().clone());
+            // 系统级 Alt + `：注册成全局热键，任何软件在前台时都能把速览拉下来
+            window_dock::start_hotkey_listener(app.handle().clone(), quickbar_hotkey);
             if let Some(window) = app.get_webview_window("main") {
                 fit_window(&window, ui_scale_pref);
+                // 立刻把窗口亮出来，再等前端把字库扫完。
+                // 原来是「前端 init 全部完成才 show」——几千个字体的扫描要好几秒，
+                // 这段时间用户对着空桌面，看不到任何反馈。现在窗口一出来就是骨架屏 +
+                // 底部百分比进度条（components/LoadProgress.tsx），扫完自动换成字体库。
+                if !start_minimized {
+                    let _ = window.show();
+                }
             }
             let tray_ok = build_tray(app.handle()).is_ok();
             if let Some(window) = app.get_webview_window("main") {
@@ -1349,6 +1569,7 @@ pub fn run() {
             write_binary_file,
             get_features,
             sync_family_copyright,
+            font_cjk,
             get_favorites,
             set_favorite,
             get_notes,
@@ -1367,6 +1588,8 @@ pub fn run() {
             apply_font_in_app,
             window_dock::set_quickbar_mode,
             window_dock::set_dock_sensor,
+            window_dock::set_quickbar_hotkey,
+            window_dock::focus_quickbar,
             window_dock::set_window_transitions,
             window_morph::morph_window
         ])

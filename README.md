@@ -14,7 +14,7 @@
 This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) with Chinese localization and new features. **[🇨🇳 完整中文文档请看这里 →](README.zh-CN.md)**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.9.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-0.9.3-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 
@@ -37,12 +37,14 @@ This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZF
   - Import/export (export filename auto-generated as `ZFontManager_<snapshot>_<timestamp>.json`); importing offers import-only / import & switch / import & merge
   - Per-family toggles in the detail panel, plus fine-grained right-click control
 - **Restore on launch** — automatically re-activates the fonts you had enabled in your last session
-- **QuickBar peek** — collapse the window into a transparent hairline docked at a screen edge; hover to expand, leave to retract. When docked at the **top edge**, clicking Minimize skips the system "fly to taskbar" animation — the window simply rolls up and vanishes, and restoring shows the hairline in place
+- **QuickBar peek** — collapse the window into a transparent hairline docked at a screen edge; hover to expand, leave to retract. **Alt + ` is a system-wide hotkey** (Win32 `RegisterHotKey`), so the panel drops down even while another app has focus — and it's **rebindable** in Settings (record any combo, reset to default), with a toggle for whether the shortcut jumps to QuickBar from the main window When docked at the **top edge**, clicking Minimize skips the system "fly to taskbar" animation — the window simply rolls up and vanishes, and restoring shows the hairline in place
 - **CorelDRAW support** — apply fonts to selected text in CorelDRAW, in addition to Photoshop and Illustrator
 - **Copyright-aware organization** — installed fonts are filed into per-family folders suffixed with the copyright holder; License/copyright files are preserved on import; search the whole library by copyright text; zip imports always move files
 - **Monochrome theme** — all icons and accent colors desaturated to black/white/gray (upstream is purple)
 
-### ⚡ Performance & stability (verified by stress tests in 0.9.0)
+### ⚡ Performance & stability (verified by stress tests in 0.9.0/0.9.1)
+
+- **Cold start is fast and honest** — parsed font metadata is cached by path+mtime+size, so only new/changed files are re-parsed on later launches; the window now appears within ~1.5 s with a skeleton screen and a **live progress bar with a percentage** (bottom of both the main window and QuickBar) instead of leaving you staring at an empty desktop
 
 - **Bulk enable/disable of thousands of fonts no longer freezes the UI** — batch commands now run off the main thread, the registry index is built once per batch, and `WM_FONTCHANGE` is broadcast once per batch (previously O(n²) with a broadcast per font). Real-machine stress tests: one-shot import of 5,873 font files; 1,639 families enabled, 2,244 families disabled, 2,331 families re-enabled — UI responsive throughout, zero crashes.
 - **Warm resident COM host** — first round-trip with Photoshop and friends drops from ~5 s to ~0.2 s

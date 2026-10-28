@@ -23,14 +23,16 @@ import { ShortcutsOverlay } from "./components/ShortcutsOverlay";
 import { CommandPalette } from "./components/CommandPalette";
 import { QuickBar } from "./components/QuickBar";
 import { WarmFooter } from "./components/WarmFooter";
+import { LoadProgress } from "./components/LoadProgress";
 import { BulkTagPrompt } from "./components/BulkTagPrompt";
 import { DuplicateDialog } from "./components/DuplicateDialog";
 import { Onboarding } from "./components/Onboarding";
 import { ContextMenuHost, openContextMenuAt } from "./design/primitives/ContextMenu";
 import { buildFamilyMenu } from "./lib/menus";
-import { Toaster } from "./design/primitives/Toast";
+import { Toaster, toast } from "./design/primitives/Toast";
 import { easeTop, spring } from "./design/springs";
 import { INTRO_OFF, useIntro } from "./lib/useIntro";
+import { expandQuickbarPanel } from "./lib/useQuickbarDock";
 import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
 import { useT } from "./lib/i18n";
 
@@ -116,6 +118,8 @@ function MainContent() {
   const nav = useFontStore((s) => s.nav);
   const viewMode = useFontStore((s) => s.viewMode);
   const fonts = useFontStore((s) => s.fonts);
+  // 扫描途中陆续到达的字体：有就先铺出来，别让用户对着骨架屏等整库
+  const scanFonts = useFontStore((s) => s.scanFonts);
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
   const snapshots = useFontStore((s) => s.snapshots);
@@ -137,14 +141,17 @@ function MainContent() {
   const licenseFilter = useFontStore((s) => s.licenseFilter);
   const copyrightStatus = useFontStore((s) => s.copyrightStatus);
 
+  // 扫描中就用「已经读到的那些」先渲染；扫完 fonts 会被权威结果整体替换
+  const displayFonts = phase === "scanning" && scanFonts.length > 0 ? scanFonts : fonts;
+
   const families = useMemo(
     () =>
       selectVisibleFamilies({
-        fonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search,
+        fonts: displayFonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search,
         classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
         variableOnly, toggleableOnly, licenseFilter, copyrightStatus, nav, sort,
       }),
-    [fonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus, nav, sort],
+    [displayFonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus, nav, sort],
   );
 
   useEffect(() => {
@@ -154,7 +161,8 @@ function MainContent() {
   if (nav.kind === "trash") return <TrashView />;
   if (nav.kind === "about") return <AboutView />;
   if (nav.kind === "online") return <OnlineView />;
-  if (phase === "scanning") return <ScanSkeleton />;
+  // 一个字体都还没读到才显示骨架屏；已经开始出结果就直接上列表（底部进度条还在）
+  if (phase === "scanning" && scanFonts.length === 0) return <ScanSkeleton />;
   const body =
     families.length === 0 ? (
       <EmptyLibrary
@@ -190,6 +198,7 @@ function MainContent() {
 }
 
 export default function App() {
+  const t = useT();
   const init = useFontStore((s) => s.init);
   const motionPref = useFontStore((s) => s.motionPref);
   const quickbar = useFontStore((s) => s.quickbar);
@@ -222,6 +231,45 @@ export default function App() {
       .catch((e) => console.warn("[single-instance] 监听唤起事件失败", e));
     return () => un?.();
   }, []);
+
+  // 系统级 Alt+`：即使软件在后台、鼠标在别的软件里，也能把速览面板叫出来。
+  // 停在完整界面时按它 = 切进速览，并立刻把面板展开（默认进入是收成顶部一条）。
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen("quickbar://hotkey", async () => {
+      const st = useFontStore.getState();
+      if (st.quickbar) return; // 已经在速览里：交给速览自己的监听处理展开 / 收起
+      // 设置里关掉「在完整界面按快捷键唤出速览」时就什么都不做——
+      // 有些用户把这个键注册给了别的软件，只想在速览里用它来展开/收起
+      if (!st.quickbarHotkeyOpens) return;
+      // 可能被最小化在任务栏里 / 藏在托盘：先进速览前把窗口捞回来，
+      // 否则进速览那一步的改尺寸会被系统吞掉（最小化状态下改几何无效）
+      const win = getCurrentWindow();
+      await win.unminimize().catch(() => {});
+      await win.show().catch(() => {});
+      await st.setQuickbar(true);
+      await expandQuickbarPanel().catch(() => {});
+    })
+      .then((f) => {
+        un = f;
+      })
+      .catch((e) => console.warn("[hotkey] 监听全局快捷键失败", e));
+    return () => un?.();
+  }, []);
+
+  // 系统级热键注册失败（多半是撞了别的软件 / 输入法）：明确告诉用户，
+  // 否则「按了没反应」根本无从排查。payload 是被占用的那组键。
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen<string>("quickbar://hotkey-error", (e) => {
+      toast.error(t("toast.hotkeyFailed"), String(e.payload ?? ""));
+    })
+      .then((f) => {
+        un = f;
+      })
+      .catch(() => {});
+    return () => un?.();
+  }, [t]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -361,6 +409,7 @@ export default function App() {
             <main className="app-content">
               <MainContent />
             </main>
+            <LoadProgress />
             <WarmFooter />
           </div>
           <DetailPanel />

@@ -28,6 +28,8 @@ import {
 } from "../lib/ipc";
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
 import { familyActivation, pathsToToggle } from "../lib/familyState";
+import { DEFAULT_HOTKEY, normalizeHotkey, type HotkeySpec } from "../lib/hotkey";
+import { cjkKnown } from "../lib/cjk";
 import { effectiveCopyrightClass } from "../lib/license";
 import { contextMenuSize } from "../lib/menuMetrics";
 import { parentDir } from "../lib/onlineCoverage";
@@ -108,6 +110,11 @@ export interface Family {
 interface FontStore {
   phase: "scanning" | "ready" | "error";
   scanProgress: ScanProgress;
+  /**
+   * 扫描途中陆续到达的字体（原生侧每解析一批就推过来）。
+   * 只用于「边读边显示」，扫描结束会被权威结果整体覆盖。
+   */
+  scanFonts: FontFace[];
   fonts: FontFace[];
   tags: Record<string, string[]>;
   collections: Record<string, string[]>;
@@ -188,12 +195,19 @@ interface FontStore {
   quickbar: boolean;
   /** 速览界面里是否启用「贴顶自动隐藏」 */
   quickbarAutoHide: boolean;
+  /** 唤出速览的全局快捷键（可在设置里改，默认 Alt + `） */
+  quickbarHotkey: HotkeySpec;
+  /**
+   * 停在完整界面时按快捷键，是否「直接切进速览并自动展开」。
+   * 关掉之后快捷键只在速览里生效（展开 / 收起），不会把用户从完整界面拽走。
+   */
+  quickbarHotkeyOpens: boolean;
   /**
    * 速览 ↔ 完整界面切换期间（毫秒级窗口形变）把内容钉在目标尺寸上（逻辑像素），
    * 这样窗口在形变时内容不会被反复重排，而是被逐步裁切 / 露出来。
    */
   morph: { width: number; height: number } | null;
-  /** 用户手动设置的版权状态：family → "free" | "paid" | "timelimited"（缺省 = 按版权信息自动识别） */
+  /** 用户手动设置的版权状态：family → "free_commercial" | "free_personal" | "paid" | "timelimited"（缺省 = 自动识别） */
   copyrightStatus: Record<string, string>;
   /** 时间限制版权的到期日期：family → "YYYY-MM-DD"（缺省 = 未设置） */
   copyrightExpiry: Record<string, string>;
@@ -240,6 +254,8 @@ interface FontStore {
   setFamilyNote: (family: string, note: string) => Promise<void>;
   setFamiliesActiveBulk: (families: string[], active: boolean) => Promise<void>;
   applyFamilyInApp: (family: string, app: AdobeApp) => Promise<void>;
+  /** 单独应用某个字重（faceId = FontFace.id） */
+  applyFaceInApp: (family: string, faceId: string, app: AdobeApp) => Promise<void>;
   setPanelWidth: (w: number) => void;
   selectWith: (family: string, mode: "single" | "toggle" | "range", order: string[]) => void;
   selectAll: () => void;
@@ -290,6 +306,9 @@ interface FontStore {
   /** 切换速览界面（会压缩/还原窗口大小与位置） */
   setQuickbar: (on: boolean) => Promise<void>;
   setQuickbarAutoHide: (on: boolean) => void;
+  /** 改快捷键：本地立即生效并重新注册系统级热键 */
+  setQuickbarHotkey: (hk: HotkeySpec) => Promise<void>;
+  setQuickbarHotkeyOpens: (on: boolean) => void;
   setSort: (s: SortMode) => void;
   setSearch: (s: string) => void;
   toggleClassFilter: (c: Classification) => void;
@@ -347,6 +366,15 @@ interface WindowGeometry {
 
 /** 进入速览界面前的主界面窗口几何，退出时还原 */
 let quickbarGeometry: WindowGeometry | null = null;
+
+/**
+ * 速览 ↔ 完整界面的切换是否正在跑。
+ * 两个方向的过渡都是几百毫秒的多段异步操作（形变 / 藏窗口 / 摆几何 / 再显示），
+ * 期间的第二次调用如果各跑一套，窗口会被两套流程抢着改几何，最后停在错误的尺寸上。
+ */
+let quickbarBusy = false;
+/** 过渡进行中用户最后一次表达的意图；跑完按它决定要不要再走一趟 */
+let quickbarWant: boolean | null = null;
 
 /** 用户关了动效就直接切，不做窗口形变 */
 function morphDuration(): number {
@@ -431,6 +459,11 @@ async function enterQuickbar() {
       { x, y, width, height: dockHeight },
       ms,
     );
+    // 形变是逐帧动画，窗口被别的程序挡住 / 刚被隐藏过时，个别帧的 setSize/setPosition
+    // 会被系统吞掉，最后停在「半路」的几何上：宽度已经是速览的、位置还留在主界面。
+    // 所以动画结束后显式落一次终态，保证 dock 状态机接管时的窗口真的贴着顶边。
+    await win.setSize(new PhysicalSize(width, dockHeight)).catch(() => {});
+    await win.setPosition(new PhysicalPosition(x, y)).catch(() => {});
     // 窗口已经是顶部一条：把收起态交给 dock，展开时还原成完整的速览尺寸
     await adoptQuickbarDock(width, fullHeight).catch((e) =>
       console.warn("[quickbar] 接管收起态失败", e),
@@ -513,6 +546,24 @@ async function exitQuickbar() {
     // 淡入走完再解除内容钉住
     await sleep(MORPH_MS);
     useFontStore.setState({ morph: null });
+    // 显示之后读回一次几何：窗口隐藏期间的 setSize/setPosition 有可能被系统吞掉，
+    // 结果就是「人已经回到完整界面了，窗口还留着速览的尺寸」——快速来回切换时最容易撞上。
+    // 这里做一次读回校验，不对就补写。
+    if (geometry && !geometry.maximized) {
+      try {
+        const [size, pos] = await Promise.all([win.innerSize(), win.outerPosition()]);
+        const off =
+          (pos.x !== geometry.x || pos.y !== geometry.y) ||
+          Math.abs(size.width - geometry.width) > 8 ||
+          Math.abs(size.height - geometry.height) > 8;
+        if (off) {
+          await win.setSize(new PhysicalSize(geometry.width, geometry.height)).catch(() => {});
+          await win.setPosition(new PhysicalPosition(geometry.x, geometry.y)).catch(() => {});
+        }
+      } catch {
+        /* 读不到几何就算了，用户再点一次切速览会重新记录 */
+      }
+    }
     return;
   } catch (e) {
     console.warn("[quickbar] 还原窗口几何失败", e);
@@ -575,6 +626,8 @@ function persistPrefs(get: () => FontStore) {
       lastActivePaths: s.fonts.filter((f) => f.active).map((f) => f.path),
       copyrightStatus: s.copyrightStatus,
       copyrightExpiry: s.copyrightExpiry,
+      quickbarHotkey: s.quickbarHotkey,
+      quickbarHotkeyOpens: s.quickbarHotkeyOpens,
     });
   }, 600);
 }/**
@@ -627,9 +680,106 @@ async function applyEntries(
   }
 }
 
+/**
+ * 把「应用字体」的各种返回值翻译成提示。
+ * 字族级和字重级应用走的是同一套后端命令，结果文案也要一致，
+ * 所以抽出来共用（label 是被应用的那个字体名：字族名或「字族 字重」）。
+ */
+function reportApplyOutcome(outcome: string, family: string, app: AdobeApp) {
+  const appName = t(`adobe.${app}`);
+      if (outcome.startsWith("applied:")) {
+  const count = Number(outcome.slice("applied:".length)) || 1;
+  toast.success(
+    t("toast.appliedInApp", { family, app: appName }),
+    t("toast.appliedLayers", { count }),
+    "success",
+  );
+      } else if (outcome === "created") {
+  toast.success(
+    t("toast.createdInApp", { app: appName }),
+    t("toast.createdInAppSub", { family }),
+    "success",
+  );
+      } else if (outcome === "not-running") {
+  toast.error(t("toast.appNotRunning", { app: appName }), t("toast.appNotRunningSub"));
+      } else if (outcome === "not-installed") {
+  toast.error(t("toast.appNotInstalled", { app: appName }), t("toast.appNotInstalledSub", { app: appName }));
+      } else if (outcome === "launch-timeout") {
+  toast.error(t("toast.appLaunchTimeout", { app: appName }), t("toast.appLaunchTimeoutSub", { app: appName }));
+      } else if (outcome === "app-no-response") {
+  // 宿主重连一次仍然超时：CorelDRAW 那一侧真的没应答
+  toast.error(
+    t("toast.appNoResponse", { app: appName }),
+    t("toast.appNoResponseSub", { app: appName }),
+  );
+      } else if (outcome === "no-document") {
+  toast.error(t("toast.noDocumentInApp", { app: appName }), t("toast.noDocumentInAppSub"));
+      } else if (outcome === "font-not-found") {
+  toast.error(
+    t("toast.fontUnknownToApp", { app: appName, family }),
+    t("toast.fontUnknownToAppSub"),
+  );
+      } else if (outcome === "font-rejected") {
+  // 字体在目标软件的字体列表里，但赋值被它静默拒绝
+  // （最常见：给中文文字套用不含中文字形的西文字体）
+  toast.error(
+    t("toast.fontRejected", { app: appName, family }),
+    t("toast.fontRejectedSub"),
+  );
+      } else if (outcome === "apply-failed") {
+  toast.error(
+    t("toast.applyFailed", { app: appName }),
+    t("toast.applyFailedSub", { app: appName }),
+  );
+      } else if (outcome === "no-text-selected") {
+  toast.error(
+    t("toast.noTextSelected", { app: appName }),
+    t("toast.noTextSelectedSub", { app: appName }),
+  );
+      } else if (outcome.startsWith("ps-error:")) {
+  toast.error(t("toast.couldntApplyIn", { app: appName }), outcome.slice("ps-error:".length).trim());
+      } else {
+  toast.error(t("toast.couldntApplyIn", { app: appName }), outcome);
+      }
+}
+
+/**
+ * 本地化族名的候选串（给「应用到 PS / AI / CDR」用）。
+ *
+ * 中文字体在字体文件里通常同时写了英文名（Source Han Serif CN）和本地化名（思源宋体 CN），
+ * 而 CorelDRAW 一律按本地化名登记字体 —— 只报英文名会成片地 font-not-found。
+ * 这里把每个本地化名原样和「本地化名 + 字重」都带上，后端按顺序逐个试。
+ */
+function localizedAliases(face: FontFace): string[] {
+  const out: string[] = [];
+  const style = face.style?.trim();
+  for (const loc of face.localizedNames ?? []) {
+    const name = (loc.name ?? "").trim();
+    if (!name || out.includes(name)) continue;
+    out.push(name);
+    if (style && !out.includes(`${name} ${style}`)) out.push(`${name} ${style}`);
+  }
+  return out;
+}
+
+/**
+ * 字体里没有汉字时提醒一句。
+ *
+ * 不提醒的后果很具体：用户给中文段落套一款西文字体，PS/AI/CDR 全都「成功」了，
+ * 但画面一点没变（或变成方块），于是判定「应用字体这个功能坏了」。
+ * 这里在真正应用前问一下后端，没有汉字就明说，再照常应用。
+ */
+async function warnIfNoCjk(face: { path: string; faceIndex: number }, name: string) {
+  const has = await cjkKnown(face);
+  if (!has) {
+    toast.info(t("toast.noCjkGlyphs", { name }), t("toast.noCjkGlyphsSub"));
+  }
+}
+
 export const useFontStore = create<FontStore>((set, get) => ({
   phase: "scanning",
   scanProgress: { done: 0, total: 0 },
+  scanFonts: [],
   fonts: [],
   tags: {},
   collections: {},
@@ -684,6 +834,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   sort: "name",
   quickbar: false,
   quickbarAutoHide: true,
+  quickbarHotkey: DEFAULT_HOTKEY,
+  quickbarHotkeyOpens: true,
   morph: null,
   search: "",
   classFilter: [],
@@ -711,6 +863,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
     initStarted = true;
     await listen<ScanProgress>("scan:progress", (e) => {
       set({ scanProgress: e.payload });
+    });
+    // 边扫边显示：原生侧每解析一批就推一批过来，界面立刻能铺卡片，
+    // 不用等整库扫完（几千个字体要好几秒）才「啪」地一次性出现。
+    await listen<FontFace[]>("scan:batch", (e) => {
+      const cur = get().scanFonts;
+      set({ scanFonts: cur.concat(e.payload) });
     });
     try {
       const prefs = (await ipc.getPrefs()) ?? {};
@@ -774,9 +932,15 @@ export const useFontStore = create<FontStore>((set, get) => ({
                   ),
               )
             : get().copyrightExpiry,
+        quickbarHotkey: normalizeHotkey(prefs.quickbarHotkey),
+        quickbarHotkeyOpens: prefs.quickbarHotkeyOpens !== false,
       });
       setSoundLevel(get().soundPref);
       hydrateLocalePref(get().localePref);
+      // 把偏好里的快捷键再同步给原生侧一次：
+      // 启动时原生已经按偏好注册过，但这一趟同时也覆盖「上次注册被占用、
+      // 用户后来把占用方关了」的情况，并保证前后端配置不会因为某次写入失败而错位。
+      void ipc.setQuickbarHotkey(get().quickbarHotkey).catch(() => {});
     } catch {
     }
     applyTheme(get().themePref);
@@ -850,6 +1014,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
     await listen<OnlineProgress>("online:progress", (e) => {
       set({ onlineProgress: e.payload });
     });
+    // 字库扫描（几千个字体）要好几秒甚至十几秒。原来窗口是「扫描完成之后才显示」，
+    // 这段时间用户对着空桌面干等，什么反馈都没有。先把窗口亮出来——里面是骨架屏 +
+    // 底部百分比进度条，扫完自然换成字体库（见 components/LoadProgress.tsx）。
     await get().rescan();
     await get().restoreLastActivation();
   },
@@ -870,7 +1037,13 @@ export const useFontStore = create<FontStore>((set, get) => ({
     if (missing.length === 0) return;
     try {
       await ipc.setFontsActive(missing, true);
-      await get().rescan();
+      // 原来这里会整库 rescan：注册表刚写完又要重扫一遍、重判一遍激活，
+      // 界面就会在「读取 100%」之后再闪一次骨架屏，看起来像卡住了。
+      // 注册表已经落好了，本地把对应字面标成激活即可，剩下的交给下次扫描。
+      const revived = new Set(missing);
+      set({
+        fonts: get().fonts.map((f) => (revived.has(f.path) ? { ...f, active: true } : f)),
+      });
       persistPrefs(get);
       toast.success(t("toast.restoredLast", { count: missing.length }), undefined, "activate");
     } catch (e) {
@@ -879,7 +1052,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   rescan: async () => {
-    set({ phase: "scanning" });
+    set({ phase: "scanning", scanFonts: [] });
     try {
       const [fonts, tags, collections, snapshots, favorites, notes, trash] = await Promise.all([
         ipc.scanFonts(),
@@ -890,7 +1063,18 @@ export const useFontStore = create<FontStore>((set, get) => ({
         ipc.getNotes(),
         ipc.listTrash(),
       ]);
-      set({ fonts, tags, collections, snapshots, favorites, notes, trash, phase: "ready" });
+      set({
+        fonts,
+        tags,
+        collections,
+        snapshots,
+        favorites,
+        notes,
+        trash,
+        phase: "ready",
+        // 权威结果已到位，临时列表可以丢了（否则会多占一份内存）
+        scanFonts: [],
+      });
       // 旧版快照记录的是绝对路径（换电脑/改字体库路径就失效）：
       // 扫描完手头字体后统一迁移成可移植标识，并回写 state.json
       const index = buildFaceIndex(fonts);
@@ -1646,6 +1830,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
       return;
     }
 
+    // 应用前先说清楚「这个字重里没有汉字」，免得用户对着没变化的文档猜
+    await warnIfNoCjk(lead, family);
+
     if (!fam.active) {
       if (!fam.deactivatable) return;
       await get().activateFamilySession(family);
@@ -1653,61 +1840,52 @@ export const useFontStore = create<FontStore>((set, get) => ({
       await new Promise((r) => setTimeout(r, 600));
     }
     try {
-      const outcome = await ipc.applyFontInApp(app, lead.postscriptName, family);
-      if (outcome.startsWith("applied:")) {
-        const count = Number(outcome.slice("applied:".length)) || 1;
-        toast.success(
-          t("toast.appliedInApp", { family, app: appName }),
-          t("toast.appliedLayers", { count }),
-          "success",
-        );
-      } else if (outcome === "created") {
-        toast.success(
-          t("toast.createdInApp", { app: appName }),
-          t("toast.createdInAppSub", { family }),
-          "success",
-        );
-      } else if (outcome === "not-running") {
-        toast.error(t("toast.appNotRunning", { app: appName }), t("toast.appNotRunningSub"));
-      } else if (outcome === "not-installed") {
-        toast.error(t("toast.appNotInstalled", { app: appName }), t("toast.appNotInstalledSub", { app: appName }));
-      } else if (outcome === "launch-timeout") {
-        toast.error(t("toast.appLaunchTimeout", { app: appName }), t("toast.appLaunchTimeoutSub", { app: appName }));
-      } else if (outcome === "app-no-response") {
-        // 宿主重连一次仍然超时：CorelDRAW 那一侧真的没应答
-        toast.error(
-          t("toast.appNoResponse", { app: appName }),
-          t("toast.appNoResponseSub", { app: appName }),
-        );
-      } else if (outcome === "no-document") {
-        toast.error(t("toast.noDocumentInApp", { app: appName }), t("toast.noDocumentInAppSub"));
-      } else if (outcome === "font-not-found") {
-        toast.error(
-          t("toast.fontUnknownToApp", { app: appName, family }),
-          t("toast.fontUnknownToAppSub"),
-        );
-      } else if (outcome === "font-rejected") {
-        // 字体在目标软件的字体列表里，但赋值被它静默拒绝
-        // （最常见：给中文文字套用不含中文字形的西文字体）
-        toast.error(
-          t("toast.fontRejected", { app: appName, family }),
-          t("toast.fontRejectedSub"),
-        );
-      } else if (outcome === "apply-failed") {
-        toast.error(
-          t("toast.applyFailed", { app: appName }),
-          t("toast.applyFailedSub", { app: appName }),
-        );
-      } else if (outcome === "no-text-selected") {
-        toast.error(
-          t("toast.noTextSelected", { app: appName }),
-          t("toast.noTextSelectedSub", { app: appName }),
-        );
-      } else if (outcome.startsWith("ps-error:")) {
-        toast.error(t("toast.couldntApplyIn", { app: appName }), outcome.slice("ps-error:".length).trim());
-      } else {
-        toast.error(t("toast.couldntApplyIn", { app: appName }), outcome);
-      }
+      const outcome = await ipc.applyFontInApp(
+        app,
+        lead.postscriptName,
+        family,
+        family,
+        localizedAliases(lead),
+      );
+      reportApplyOutcome(outcome, family, app);
+    } catch (e) {
+      toast.error(t("toast.couldntApplyIn", { app: appName }), String(e));
+    }
+  },
+
+  /**
+   * 把某个「字重」单独应用到目标软件。
+   * 一个字体族里每个字重都是独立的 PostScript 名（如 SourceHanSansSC-Bold），
+   * 以前只能整族套用，想给选中文字单独换粗体做不到。
+   */
+  applyFaceInApp: async (family, faceId, app) => {
+    const appName = t(`adobe.${app}`);
+    const fam = familiesFor(get().fonts, get().tags).get(family);
+    const face = fam?.faces.find((f) => f.id === faceId);
+    if (!fam || !face) return;
+    const label = `${family} ${face.style}`.trim();
+    if (!face.postscriptName) {
+      toast.error(t("toast.noPostScriptName"), t("toast.noPostScriptNameSub", { app: appName }));
+      return;
+    }
+    // 字重里没有汉字时先提醒（仍然会应用，只是让用户知道中文不会变）
+    await warnIfNoCjk(face, label);
+
+    if (!fam.active) {
+      if (!fam.deactivatable) return;
+      await get().activateFamilySession(family);
+      if (!familiesFor(get().fonts, get().tags).get(family)?.active) return;
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    try {
+      const outcome = await ipc.applyFontInApp(
+        app,
+        face.postscriptName,
+        label,
+        family,
+        localizedAliases(face),
+      );
+      reportApplyOutcome(outcome, label, app);
     } catch (e) {
       toast.error(t("toast.couldntApplyIn", { app: appName }), String(e));
     }
@@ -1997,15 +2175,44 @@ export const useFontStore = create<FontStore>((set, get) => ({
     persistPrefs(get);
   },
   setQuickbar: async (on) => {
-    if (on === get().quickbar) return;
+    // 两个方向的切换都是「多段异步改几何 + 换界面」：形变 → 藏窗口 → 换装 → 摆几何 →
+    // 再显示出来，全程好几百毫秒。原来只靠「on 和当前状态不等就开跑」来挡重复调用，
+    // 但状态是在流程中段才翻的（进速览在形变前翻、退速览在显示前翻），
+    // 于是「连着点两下 / 快捷键连按」就能让两套流程同时跑：
+    // 一套收窗口、一套摆几何，最后窗口停在半截尺寸，看起来就是「界面展开了但显示不对」。
+    // 现在串行化：同一时刻只有一个流程在跑，期间的新请求只记「最终想去哪」，跑完再补。
+    quickbarWant = on;
+    if (quickbarBusy) return;
+    quickbarBusy = true;
     try {
-      if (on) await enterQuickbar();
-      else await exitQuickbar();
+      while (quickbarWant !== null && quickbarWant !== get().quickbar) {
+        const target = quickbarWant;
+        quickbarWant = null;
+        if (target) await enterQuickbar();
+        else await exitQuickbar();
+      }
     } catch (e) {
       toast.error(t("toast.quickbarFailed"), String(e));
+    } finally {
+      quickbarBusy = false;
+      quickbarWant = null;
     }
   },
   setQuickbarAutoHide: (quickbarAutoHide) => set({ quickbarAutoHide }),
+  setQuickbarHotkey: async (quickbarHotkey) => {
+    set({ quickbarHotkey });
+    persistPrefs(get);
+    try {
+      await ipc.setQuickbarHotkey(quickbarHotkey);
+    } catch (e) {
+      // 原生注册失败（被别人占用）也要让用户知道，否则「按了没反应」无从排查
+      toast.error(t("toast.hotkeyFailed"), String(e));
+    }
+  },
+  setQuickbarHotkeyOpens: (quickbarHotkeyOpens) => {
+    set({ quickbarHotkeyOpens });
+    persistPrefs(get);
+  },
   setSort: (sort) => {
     set({ sort });
     persistPrefs(get);
@@ -2037,10 +2244,30 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // 目录改了名，字体路径也变了，所以要重扫一次让列表对上号。
     void ipc
       .syncFamilyCopyright(family, status || "auto")
-      .then((renamed) => {
-        if (renamed > 0) scheduleCopyrightRescan(get);
+      .then((res) => {
+        if (res.renamed > 0) {
+          scheduleCopyrightRescan(get);
+          toast.success(t("toast.copyrightRenamed", { count: String(res.renamed) }));
+        }
+        // 目录没改成：以前只写日志，用户只觉得「字体不见了」，现在直接说清楚
+        if (res.errors.length > 0) {
+          toast.error(t("toast.copyrightFailed"), `${res.errors[0]}\n${t("toast.copyrightFailedSub")}`);
+        }
+        if (res.reactivateFailed.length > 0) {
+          const list = res.reactivateFailed
+            .slice(0, 3)
+            .map((p) => p.split(/[\\/]/).pop() ?? p)
+            .join("、");
+          toast.error(
+            t("toast.copyrightFailed"),
+            t("toast.copyrightReactivateSub", { list }),
+          );
+        }
       })
-      .catch((e) => console.warn("[copyright] 同步字族目录失败", e));
+      .catch((e) => {
+        console.warn("[copyright] 同步字族目录失败", e);
+        toast.error(t("toast.copyrightFailed"), String(e));
+      });
   },
   setCopyrightExpiry: (family, date) => {
     const next = { ...get().copyrightExpiry };

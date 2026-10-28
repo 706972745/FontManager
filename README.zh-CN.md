@@ -13,7 +13,7 @@
 本分支在 [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) 的基础上进行了中文本地化与功能增强。
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.9.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-0.9.3-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 
@@ -38,14 +38,16 @@
   - 支持导入/导出（导出文件名自动命名为 `ZFontManager_快照名_导出时间.json`），导入时可选仅导入 / 导入并切换 / 导入并合并
   - 可在字体详情面板用开关把整个字族加入/移出快照，也可右键精细控制
 - **启动自动恢复**：每次打开软件自动重新启用上次会话中启用的字体
-- **速览 QuickBar**：一键把窗口收成贴在屏幕边缘的透明细线，悬停即展开，鼠标离开自动收回；
+- **速览 QuickBar**：一键把窗口收成贴在屏幕边缘的透明细线，悬停即展开，鼠标离开自动收回；**Alt + ` 是系统级热键**（Win32 `RegisterHotKey`），别的软件在前台时也能直接唤出速览；**快捷键可在设置里重新录制**（含「恢复默认」），并有一个开关控制「完整界面按快捷键是否跳转到速览」；
   贴屏幕顶边时点「最小化」没有系统那段「飞到任务栏」动画，直接收起消失，还原时在原地直接出现
 - **CorelDRAW 支持**：在 Photoshop、Illustrator 之外，新增向 CorelDRAW 的选中文字应用字体
 - **版权信息整理**：安装字体按"字族 + 版权"分文件夹归档；导入时保留 License/版权说明文件；
   全库按版权内容搜索；导入 zip 一律移动（不留源副本）
 - **黑白灰界面**：全部图标与界面配色统一为黑白灰风格（原版为紫色）
 
-### ⚡ 性能与稳定性（0.9.0 压测验证）
+### ⚡ 性能与稳定性（0.9.0 / 0.9.1 压测验证）
+
+- **冷启动又快又有反馈**：字体解析结果按「路径 + 修改时间 + 大小」缓存，之后只解析新增/改动的文件；窗口约 1.5 秒内就出来，骨架屏 + **底部百分比进度条**（完整界面与速览都有），不再对着空桌面干等
 
 - **批量启停千级字体不卡界面**：一次性启用/停用上千字体的命令移到后台线程，
   注册表索引每批只建一次、系统广播每批只发一次——修复旧版整体 O(n²) 导致的假死。

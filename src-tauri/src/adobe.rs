@@ -38,11 +38,70 @@ fn js_string(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
 }
 
-fn photoshop_script(postscript: &str, label: &str) -> String {
+/**
+ * 目标软件里可能登记的名字。
+ *
+ * 字体文件里写的 PostScript 名，和 PS / AI / CorelDRAW 实际列出来的名字
+ * 经常只差一个分隔符：文件里叫 `D3 Euronism`，软件里叫 `D3-Euronism`；
+ * 反之 `Graverplate Regular` / `Graverplate-Regular` 也有。
+ * 全库比对过一遍：352 个「激活了但名字对不上」的字面里，有 85 个是这种写法差异，
+ * 多试几个变体就能救回来。剩下的多半是目标软件根本没加载（需要重启软件）。
+ */
+fn font_candidates(postscript: &str, family: &str, label: &str, aliases: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let push = |out: &mut Vec<String>, v: &str| {
+        let v = v.trim();
+        if v.is_empty() {
+            return;
+        }
+        if !out.iter().any(|x: &String| x.eq_ignore_ascii_case(v)) {
+            out.push(v.to_string());
+        }
+    };
+    if !postscript.is_empty() {
+        push(&mut out, postscript);
+        push(&mut out, &postscript.replace(' ', "-"));
+        push(&mut out, &postscript.replace('-', " "));
+        push(&mut out, &postscript.replace([' ', '-'], ""));
+    }
+    push(&mut out, family);
+    push(&mut out, &family.replace(' ', "-"));
+    push(&mut out, label);
+    // 本地化族名（「思源宋体 CN」这类）：CorelDRAW 的中文字体就是按中文名登记的，
+    // PS / AI 在中文系统上也常按本地化名匹配。放在最后，只在前面的名字都不认时才用，
+    // 免得把西文字体误配到同名的中文变体上。
+    for alias in aliases {
+        push(&mut out, alias);
+    }
+    out
+}
+
+fn js_array(items: &[String]) -> String {
+    let body: Vec<String> = items
+        .iter()
+        .map(|s| {
+            format!(
+                "\"{}\"",
+                s.replace('\\', "\\\\").replace('"', "\\\"")
+            )
+        })
+        .collect();
+    format!("[{}]", body.join(", "))
+}
+
+fn photoshop_script(postscript: &str, _label: &str, family_name: &str, aliases: &[String]) -> String {
     format!(
         r#"(function () {{
-  var font = {ps};
-  var family = {label};
+  var family = {family};
+  var cands = {cands};
+  var font = cands[0];
+  // 软件登记的名字可能和字体文件里不一样（空格 / 连字符最常见），挨个试
+  for (var ci = 0; ci < cands.length; ci++) {{
+    try {{
+      var ff = app.fonts.getByName(cands[ci]);
+      if (ff) {{ font = ff.postscriptName || cands[ci]; break; }}
+    }} catch (e0) {{}}
+  }}
   if (app.documents.length === 0) {{ return "no-document"; }}
   var doc = app.activeDocument;
 
@@ -141,22 +200,25 @@ fn photoshop_script(postscript: &str, label: &str) -> String {
   }}
   return "created";
 }})();"#,
-        ps = js_string(postscript),
-        label = js_string(label),
+        family = js_string(family_name),
+        cands = js_array(&font_candidates(postscript, family_name, _label, aliases)),
     )
 }
 
-fn illustrator_script(postscript: &str, label: &str) -> String {
+fn illustrator_script(postscript: &str, _label: &str, family_name: &str, aliases: &[String]) -> String {
     format!(
         r#"(function () {{
-  var name = {ps};
-  var family = {label};
+  var family = {family};
+  var cands = {cands};
+  var name = cands[0];
   if (app.documents.length === 0) {{ return "no-document"; }}
   var doc = app.activeDocument;
   var font = null;
-  // PostScript 名认不出时再试字族名——部分字体在 textFonts 里按族名登记
-  try {{ font = app.textFonts.getByName(name); }} catch (e) {{}}
-  if (!font) {{ try {{ font = app.textFonts.getByName(family); }} catch (e) {{}} }}
+  // 名字变体逐个试：文件里叫 D3 Euronism、软件里叫 D3-Euronism 这种情况很常见
+  for (var ci = 0; ci < cands.length; ci++) {{
+    try {{ font = app.textFonts.getByName(cands[ci]); }} catch (e0) {{}}
+    if (font) {{ name = cands[ci]; break; }}
+  }}
   if (!font) {{ return "font-not-found"; }}
 
   var applied = 0;
@@ -197,15 +259,21 @@ fn illustrator_script(postscript: &str, label: &str) -> String {
   }}
   return "created";
 }})();"#,
-        ps = js_string(postscript),
-        label = js_string(label),
+        family = js_string(family_name),
+        cands = js_array(&font_candidates(postscript, family_name, _label, aliases)),
     )
 }
 
-fn script_for(target: Target, postscript: &str, label: &str) -> String {
+fn script_for(
+    target: Target,
+    postscript: &str,
+    label: &str,
+    family_name: &str,
+    aliases: &[String],
+) -> String {
     match target {
-        Target::Photoshop => photoshop_script(postscript, label),
-        Target::Illustrator => illustrator_script(postscript, label),
+        Target::Photoshop => photoshop_script(postscript, label, family_name, aliases),
+        Target::Illustrator => illustrator_script(postscript, label, family_name, aliases),
         // CorelDRAW 不走 JavaScript，脚本由 Windows 分支直接生成
         Target::CorelDraw => String::new(),
     }
@@ -383,8 +451,8 @@ Write-Output (Get-FailCode)
 "#;
 
 #[cfg(target_os = "windows")]
-fn coreldraw_script(label: &str, postscript: &str) -> String {
-    let fonts = corel_font_names(label, postscript)
+fn coreldraw_script(family_name: &str, postscript: &str, label: &str, aliases: &[String]) -> String {
+    let fonts = corel_font_names(family_name, postscript, label, aliases)
         .iter()
         .map(|n| ps_quote(n))
         .collect::<Vec<_>>()
@@ -396,10 +464,24 @@ fn coreldraw_script(label: &str, postscript: &str) -> String {
 
 /// 候选字体名：先显示名，再 PostScript 名（CorelDRAW 认哪个用哪个）
 #[cfg(target_os = "windows")]
-fn corel_font_names(label: &str, postscript: &str) -> Vec<String> {
+fn corel_font_names(family_name: &str, postscript: &str, label: &str, aliases: &[String]) -> Vec<String> {
     let mut fonts = vec![label.to_string()];
     if !postscript.is_empty() && postscript != label {
         fonts.push(postscript.to_string());
+    }
+    // 字族名：PS / AI / CorelDRAW 里很多字体就是以族名登记的，
+    // 而字重级调用时 label 是「族名 字重」这种组合串，用它回退必然找不到。
+    if !family_name.is_empty() && family_name != label && family_name != postscript {
+        fonts.push(family_name.to_string());
+    }
+    // 本地化名：CorelDRAW 对中文字体一律用中文名登记（「思源宋体 CN Light」），
+    // 只试英文族名会成片地 font-not-found（实测库里 5751 个已激活字面里有 1084 个失败，
+    // 其中一多半就是这一条）。
+    for alias in aliases {
+        let a = alias.trim();
+        if !a.is_empty() && !fonts.iter().any(|x| x.eq_ignore_ascii_case(a)) {
+            fonts.push(a.to_string());
+        }
     }
     fonts
 }
@@ -415,7 +497,13 @@ fn finish(out: std::process::Output) -> Result<String, String> {
 }
 
 #[cfg(target_os = "windows")]
-pub fn apply(target: Target, postscript: &str, label: &str) -> Result<String, String> {
+pub fn apply(
+    target: Target,
+    postscript: &str,
+    label: &str,
+    family_name: &str,
+    aliases: &[String],
+) -> Result<String, String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -424,7 +512,7 @@ pub fn apply(target: Target, postscript: &str, label: &str) -> Result<String, St
     // 宿主出任何问题（起不来 / 超时 / 崩了）都回落到下面的一次性脚本，
     // 保证功能不会因为这一层而整体不可用。
     if target.is_corel() {
-        let names = corel_font_names(label, postscript);
+        let names = corel_font_names(family_name, postscript, label, aliases);
         match crate::comhost::apply(label, &names) {
             Ok(outcome) => return Ok(outcome),
             // 超时不要直接报给用户：宿主可能只是攥着一个已经卡住的连接（CorelDRAW
@@ -450,7 +538,7 @@ pub fn apply(target: Target, postscript: &str, label: &str) -> Result<String, St
     // CorelDRAW 没有脚本入口，整段 PowerShell 自己驱动 COM；Photoshop / Illustrator
     // 则把 JSX 落盘后交给 DoJavaScript 执行。
     let (ps, script_path) = if target.is_corel() {
-        (coreldraw_script(label, postscript), None)
+        (coreldraw_script(family_name, postscript, label, aliases), None)
     } else {
         let prog_id = match target {
             Target::Photoshop => "Photoshop.Application",
@@ -459,7 +547,8 @@ pub fn apply(target: Target, postscript: &str, label: &str) -> Result<String, St
         };
         let path = std::env::temp_dir()
             .join(format!("zfontmanager-apply-{}.jsx", std::process::id()));
-        std::fs::write(&path, script_for(target, postscript, label)).map_err(|e| e.to_string())?;
+        std::fs::write(&path, script_for(target, postscript, label, family_name, aliases))
+            .map_err(|e| e.to_string())?;
         let path_literal = path.to_string_lossy().replace('\'', "''");
         (format!(
             "$ErrorActionPreference = 'Stop'\n\
@@ -698,7 +787,12 @@ pub fn probe(target: Target) -> Result<(bool, u32), String> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn apply(target: Target, postscript: &str, label: &str) -> Result<String, String> {
+pub fn apply(
+    target: Target,
+    postscript: &str,
+    label: &str,
+    family_name: &str,
+) -> Result<String, String> {
     let bundle = match target {
         Target::Photoshop => "com.adobe.Photoshop",
         Target::Illustrator => "com.adobe.illustrator",
@@ -727,7 +821,7 @@ pub fn apply(target: Target, postscript: &str, label: &str) -> Result<String, St
             &format!(r#"tell application id "{bundle}" to do javascript (item 1 of argv)"#),
             "-e",
             "end run",
-            &script_for(target, postscript, label),
+            &script_for(target, postscript, label, family_name),
         ])
         .output()
         .map_err(|e| e.to_string())?;
@@ -735,7 +829,12 @@ pub fn apply(target: Target, postscript: &str, label: &str) -> Result<String, St
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub fn apply(_target: Target, _postscript: &str, _label: &str) -> Result<String, String> {
+pub fn apply(
+    _target: Target,
+    _postscript: &str,
+    _label: &str,
+    _family_name: &str,
+) -> Result<String, String> {
     Err("Photoshop and Illustrator integration is only available on Windows and macOS".into())
 }
 
@@ -745,10 +844,10 @@ mod tests {
 
     #[test]
     fn scripts_embed_names_safely() {
-        let ps = photoshop_script("My\"Font-Bold", "Fam \\ ily");
+        let ps = photoshop_script("My\"Font-Bold", "My Font-Bold", "Fam \\ ily", &[]);
         assert!(ps.contains(r#"var font = "My\"Font-Bold";"#));
         assert!(ps.contains(r#"var family = "Fam \\ ily";"#));
-        let ai = illustrator_script("Inter-Regular", "Inter");
+        let ai = illustrator_script("Inter-Regular", "Inter Regular", "Inter", &[]);
         assert!(ai.contains(r#"app.textFonts.getByName(name)"#));
         assert!(ai.contains(r#"var name = "Inter-Regular";"#));
         assert!(ai.contains(r#"var family = "Inter";"#));
@@ -762,12 +861,12 @@ mod tests {
 
     #[test]
     fn ps_script_handles_failures_gracefully() {
-        let ps = photoshop_script("SomeFont-Regular", "Fam");
+        let ps = photoshop_script("SomeFont-Regular", "SomeFont Regular", "Fam", &[]);
         assert!(ps.contains("catch (e)"));
         assert!(ps.contains("apply-failed"));
         assert!(ps.contains("DocumentMode.BITMAP"));
         assert!(ps.contains("font-not-found"));
-        let ai = illustrator_script("SomeFont-Regular", "Fam");
+        let ai = illustrator_script("SomeFont-Regular", "SomeFont Regular", "Fam", &[]);
         assert!(ai.contains("apply-failed"));
         assert!(ai.contains("frame.remove()"));
     }
@@ -789,19 +888,19 @@ mod tests {
             ("photoshop.jsx", Target::Photoshop),
             ("illustrator.jsx", Target::Illustrator),
         ] {
-            let body = script_for(target, "ArialMT", "Arial");
+            let body = script_for(target, "ArialMT", "Arial", "Arial", &[]);
             std::fs::write(dir.join(name), body).expect("write jsx");
         }
-        std::fs::write(dir.join("photoshop.font-not-found.jsx"), photoshop_script("NoSuchFont-XYZ", "NoSuchFont"))
+        std::fs::write(dir.join("photoshop.font-not-found.jsx"), photoshop_script("NoSuchFont-XYZ", "NoSuchFont", "NoSuchFont", &[]))
             .expect("write jsx");
-        std::fs::write(dir.join("illustrator.font-not-found.jsx"), illustrator_script("NoSuchFont-XYZ", "NoSuchFont"))
+        std::fs::write(dir.join("illustrator.font-not-found.jsx"), illustrator_script("NoSuchFont-XYZ", "NoSuchFont", "NoSuchFont", &[]))
             .expect("write jsx");
     }
 
     #[cfg(target_os = "windows")]
     #[test]
     fn coreldraw_script_embeds_names_safely() {
-        let s = coreldraw_script("Bob's Font", "BobsFont-Regular");
+        let s = coreldraw_script("Bob's Font", "BobsFont-Regular", "Bob's Font Regular", &[]);
         assert!(s.contains("'Bob''s Font'"), "单引号必须转义");
         assert!(s.contains("'BobsFont-Regular'"));
         assert!(!s.contains("{FONTS}"), "占位符要替换掉");
@@ -833,7 +932,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn coreldraw_script_deduplicates_identical_names() {
-        let s = coreldraw_script("Inter", "Inter");
+        let s = coreldraw_script("Inter", "Inter", "Inter", &[]);
         assert_eq!(s.matches("'Inter'").count(), 2, "名字数组 + 新建文本各用一次");
     }
 

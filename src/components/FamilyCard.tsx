@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Camera, ChevronRight, Folder, Lock, Star } from "lucide-react";
+import { AlertTriangle, Camera, ChevronRight, Folder, Lock, MoreHorizontal, Star } from "lucide-react";
 import { memo, useState } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
 import { useFontCss } from "../lib/fontLoader";
-import { buildFamilyMenu } from "../lib/menus";
-import { openContextMenu } from "../design/primitives/ContextMenu";
+import { buildFaceMenu, buildFamilyMenu } from "../lib/menus";
+import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
+import { useCjkFlag } from "../lib/cjk";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
 import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
@@ -20,29 +21,51 @@ export function FormatBadge({ format, isVariable }: { format: string; isVariable
 }
 
 function FacePreview({
+  family,
   face,
   text,
   size,
   index,
   synthesize,
+  onHover,
 }: {
+  /** 字族：字重菜单里要带上字族名（显示与复制都用得上） */
+  family: Family;
   face: FontFace;
   text: string;
   size: number;
   index: number;
   synthesize: boolean;
+  /** 鼠标进入 / 离开这一行：卡片大预览临时切到这个字重，离开恢复 Regular */
+  onHover: (faceId: string | null) => void;
 }) {
   const t = useT();
   const intro = useIntro();
   const { fontFamily, failed } = useFontCss(face);
+  // 这个字重里有没有汉字：没有的话应用后中文不会变，得提前说清楚
+  const hasCjk = useCjkFlag(face);
+  // 少数老字体的 name 表里 style 是空的，直接渲染会是一行空白（看着像坏了）
+  const styleLabel = face.style?.trim() || face.postscriptName || "Regular";
   return (
     <motion.div
       className="face-row"
+      // 交互都是被动的：悬停高亮 + 大预览临时切到这个字重（移开恢复），
+      // 右击弹该字重自己的菜单。「点一下切换主预览」这层交互用户反馈不要（0.9.2-6）。
+      onMouseEnter={() => onHover(face.id)}
+      onMouseLeave={() => onHover(null)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openContextMenu(e, buildFaceMenu(family, face));
+      }}
       initial={intro ? { opacity: 0, y: 8 } : false}
       animate={{ opacity: 1, y: 0 }}
       transition={intro ? { ...spring, delay: staggerDelay(index) } : INTRO_OFF}
     >
-      <span className="face-style">{face.style}</span>
+      <span className="face-marker" aria-hidden="true" />
+      <span className="face-style">
+        <span className="face-style-name">{styleLabel}</span>
+      </span>
       <AnimatePresence mode="wait">
         {fontFamily ? (
           <motion.span
@@ -73,6 +96,27 @@ function FacePreview({
           />
         )}
       </AnimatePresence>
+      <span className="face-tail">
+        {hasCjk === false && (
+          <span className="cjk-chip" title={t("card.noCjkTitle")}>
+            {t("card.noCjk")}
+          </span>
+        )}
+        {/* 每个字重单独一份操作：应用到 PS / AI / CDR、复制字体全名 / PostScript 名 */}
+        <button
+          type="button"
+          className="face-actions"
+          aria-label={t("menu.faceActions", { name: styleLabel })}
+          title={t("menu.faceActions", { name: styleLabel })}
+          onClick={(e) => {
+            e.stopPropagation();
+            const r = e.currentTarget.getBoundingClientRect();
+            openContextMenuAt(r.left, r.bottom + 4, buildFaceMenu(family, face));
+          }}
+        >
+          <MoreHorizontal size={14} strokeWidth={1.75} />
+        </button>
+      </span>
     </motion.div>
   );
 }
@@ -93,10 +137,13 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const copyrightOverride = useFontStore((s) => s.copyrightStatus[family.name]);
   const copyrightExpiry = useFontStore((s) => s.copyrightExpiry[family.name]);
   const [expanded, setExpanded] = useState(false);
+  /** 鼠标正悬停的字重行：大预览临时用它渲染，移开恢复 Regular（不持久，纯跟随鼠标） */
+  const [hoverFaceId, setHoverFaceId] = useState<string | null>(null);
 
   const size = SIZES[sizeIndex];
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
-  const { fontFamily, failed } = useFontCss(lead);
+  const previewFace = family.faces.find((f) => f.id === hoverFaceId) ?? lead;
+  const { fontFamily, failed } = useFontCss(previewFace);
   const text = sampleText.trim() || family.name;
   // 权重：手动设置 > 字体自带版权信息 > 文件夹备注 / 版权信息文件判定的版权
   const licCls = effectiveCopyrightClass(
@@ -258,7 +305,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
               style={{
                 fontFamily,
                 fontSize: size,
-                fontStyle: lead.italic ? "italic" : "normal",
+                fontStyle: previewFace.italic ? "italic" : "normal",
+                fontWeight: previewFace === lead ? undefined : previewFace.weight,
               }}
               initial={intro ? { opacity: 0, y: 5 } : false}
               animate={{ opacity: 1, y: 0 }}
@@ -293,11 +341,13 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
             {family.faces.map((face, i) => (
               <FacePreview
                 key={face.id}
+                family={family}
                 face={face}
                 text={text}
                 size={size}
                 index={i}
                 synthesize={family.faces.filter((f) => f.path === face.path).length > 1}
+                onHover={setHoverFaceId}
               />
             ))}
           </motion.div>

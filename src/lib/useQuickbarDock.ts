@@ -2,12 +2,14 @@ import {
   LogicalPosition,
   PhysicalSize,
   currentMonitor,
+  cursorPosition,
   getCurrentWindow,
   primaryMonitor,
 } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
-import { syncQuickbarMinSize } from "../state/fontStore";
+import { syncQuickbarMinSize, useFontStore } from "../state/fontStore";
+import { matchesHotkey } from "./hotkey";
 import { ipc } from "./ipc";
 
 /** 窗口顶边离屏幕工作区顶边多近算「吸顶」（逻辑像素） */
@@ -51,10 +53,16 @@ export const DOCK_BAR_LINE = 5;
 const HINT_HOLD_MS = 1000;
 /** 鼠标移出窗口后，静置多久自动收回（毫秒） */
 const RECALL_IDLE_MS = 900;
-/** 快捷键 Alt + `（物理键位 Backquote，Shift 按下时 key 为 ~，两个都认） */
-const HOTKEY_CODE = "Backquote";
-
-/** 快捷键展示文案，供界面提示复用 */
+/**
+ * 热键呼出后的观察期（毫秒）：面板弹出来先给用户看一眼，
+ * 这段时间内鼠标没进面板就自动收起——避免「按了一下键，屏幕顶上一直摊着一块」。
+ * 鼠标进来了就转成正常模式：之后按「移出静置自动收起」的规则走。
+ */
+const HOTKEY_HOLD_MS = 1000;
+/**
+ * 快捷键文案不再写死：用户可以在设置里改成别的组合（见 lib/hotkey.ts），
+ * 这里保留一个默认值给「还没读到偏好」的极短窗口用。
+ */
 export const TOP_BAR_HOTKEY = "Alt + `";
 
 /**
@@ -81,8 +89,23 @@ export interface QuickbarDockState {
 /** 原生侧「光标落到细线感应带里」的事件（见 src-tauri/src/window_dock.rs） */
 const DOCK_NEAR_EVENT = "quickbar://dock-near";
 
+/** 原生侧「系统级 Alt+` 被按下」的事件（RegisterHotKey，跟焦点无关） */
+const GLOBAL_HOTKEY_EVENT = "quickbar://hotkey";
+
 /** 当前激活的「立即还原」句柄：一个进程里同时只有一个速览界面 */
 let activeRestore: (() => Promise<void>) | null = null;
+
+/** 当前激活的「立刻展开成完整面板」句柄（全局热键从完整界面切进来时用） */
+let activeExpand: (() => Promise<void>) | null = null;
+
+/**
+ * 立刻把速览面板展开（如果正收成顶部一条）。
+ * 全局 Alt+` 从「完整界面」切进速览时用：进入动作本身是把窗口收成一条，
+ * 用户按快捷键的意图显然是「把面板叫出来」，所以要紧接着展开。
+ */
+export async function expandQuickbarPanel(): Promise<void> {
+  await activeExpand?.();
+}
 
 /** 当前激活的「接管收起态」句柄：进入速览时窗口已经收成顶部一条，由它接上状态机 */
 let activeAdoptDock: ((widthPhys: number, heightPhys: number) => Promise<void>) | null = null;
@@ -156,6 +179,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     let revealTimer: ReturnType<typeof setTimeout> | undefined;
     let recallTimer: ReturnType<typeof setTimeout> | undefined;
     let hintTimer: ReturnType<typeof setTimeout> | undefined;
+    /** 热键呼出后的观察期定时器 */
+    let hotkeyHoldTimer: ReturnType<typeof setTimeout> | undefined;
     let raf: number | undefined;
     /** 动画兜底完成定时器：最小化时 rAF 停发，靠它把动画收尾（见 animateHeight） */
     let finishTimer: ReturnType<typeof setTimeout> | undefined;
@@ -206,6 +231,57 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     const clearRecall = () => {
       if (recallTimer) clearTimeout(recallTimer);
       recallTimer = undefined;
+    };
+    const clearHotkeyHold = () => {
+      if (hotkeyHoldTimer) clearTimeout(hotkeyHoldTimer);
+      hotkeyHoldTimer = undefined;
+    };
+
+    /** 光标此刻是否落在窗口矩形里（热键呼出时鼠标往往不动，只能主动问系统） */
+    const cursorInsideWindow = async (): Promise<boolean> => {
+      try {
+        const [pos, origin, size] = await Promise.all([
+          cursorPosition(),
+          win.outerPosition(),
+          win.outerSize(),
+        ]);
+        return (
+          pos.x >= origin.x &&
+          pos.x <= origin.x + size.width &&
+          pos.y >= origin.y &&
+          pos.y <= origin.y + size.height
+        );
+      } catch {
+        // 拿不到光标位置就保守当「在里面」，宁可多留一会儿也不要误收起
+        return true;
+      }
+    };
+
+    /**
+     * 热键呼出后的观察期：1 秒内鼠标没进面板 → 收起；
+     * 进来了就转成 hover 展开（之后移出静置再收，和正常路径一致）。
+     */
+    const armHotkeyHold = () => {
+      clearHotkeyHold();
+      hotkeyHoldTimer = setTimeout(() => {
+        hotkeyHoldTimer = undefined;
+        void (async () => {
+          // 注意：这里要判断「还是展开态」——展开后 dockedRef 已经是 false，
+          // 写成 !dockedRef 会直接把整段逻辑 return 掉（第一版就踩了这个坑）。
+          if (!alive || dockedRef.current || animating || mutating) return;
+          // 用户可能在这 1 秒里已经退出速览（Esc / 返回按钮）：那这个观察期就作废，
+          // 否则会把刚回到的「完整界面」也收成顶栏（真的会收，别问怎么知道的）。
+          if (!useFontStore.getState().quickbar) return;
+          if (await cursorInsideWindow()) {
+            // 鼠标在面板里：转成正常 hover 展开，之后移出静置再收
+            hoverExpanded = true;
+            return;
+          }
+          if (!alive || dockedRef.current) return;
+          hoverExpanded = false;
+          void collapse();
+        })();
+      }, HOTKEY_HOLD_MS);
     };
 
     const stopAnim = () => {
@@ -508,6 +584,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     const markEngaged = () => {
       hoverExpanded = false;
       clearRecall();
+      clearHotkeyHold();
     };
 
     /** 立即回到展开状态（退出速览 / 关闭开关时用，不带动画） */
@@ -544,6 +621,21 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       }
     };
     activeRestore = restoreNow;
+    activeExpand = async () => {
+      markEngaged();
+      if (!dockedRef.current) return;
+      // 收在顶上那条线、或正被最小化：先保证窗口是「能改几何」的状态
+      await win.unminimize().catch(() => {});
+      await expand();
+      void win.show().catch(() => {});
+      // 热键唤出的面板必须真的拿到键盘焦点：Windows 会拒绝后台进程抢前台，
+      // 仅靠 setFocus 经常失败，于是「面板弹出来了，打字/ESC 全落到别的软件」。
+      void ipc.focusQuickbar().catch(() => {
+        void win.setFocus().catch(() => {});
+      });
+      // 热键叫出来的面板：给 1 秒观察期，鼠标没进来就收回去
+      armHotkeyHold();
+    };
 
     /**
      * 接管「已经收成一条」的窗口（进入速览时由按钮触发）：
@@ -757,6 +849,11 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     const onPointerMove = () => {
       pointerInside = true;
       clearRecall();
+      if (hotkeyHoldTimer) {
+        // 观察期内鼠标进来了：这次展开改成「hover 展开」，之后离开静置才收
+        clearHotkeyHold();
+        hoverExpanded = true;
+      }
       if (!dockedRef.current) return;
       if (animating || !hoverArmed || Date.now() - blurredAt < REVEAL_AFTER_BLUR_MS) return;
       if (phaseRef.current === "bar") {
@@ -811,15 +908,40 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       void healGeometry();
     };
 
-    // Alt + ` 收起 / 展开
+    // 配置的快捷键收起 / 展开（界面内：有焦点时原生热键不会把按键送进来，这里是兜底）
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return;
-      if (e.code !== HOTKEY_CODE && e.key !== "`" && e.key !== "~") return;
+      if (e.repeat) return;
+      if (!matchesHotkey(e, useFontStore.getState().quickbarHotkey)) return;
       e.preventDefault();
       markEngaged();
       if (animating) return;
       if (dockedRef.current) void expand();
       else void collapse();
+    };
+
+    /**
+     * 系统级 Alt+`（原生 RegisterHotKey 发来的事件）。
+     * 这时窗口通常没有焦点——用户可能正在别的软件里，所以展开之后要主动抢焦点，
+     * 否则面板弹出来了却收不到键盘输入。
+     */
+    const onGlobalHotkey = () => {
+      if (!alive || animating || mutating) return;
+      markEngaged();
+      if (dockedRef.current) {
+        void (async () => {
+          // 可能正被最小化在任务栏里：先捞回来，否则后面的改尺寸全被系统吞掉
+          await win.unminimize().catch(() => {});
+          await expand();
+          if (!alive) return;
+          void win.show().catch(() => {});
+          void ipc.focusQuickbar().catch(() => {
+            void win.setFocus().catch(() => {});
+          });
+          armHotkeyHold();
+        })();
+      } else {
+        void collapse();
+      }
     };
 
     document.addEventListener("pointermove", onPointerMove, true);
@@ -863,6 +985,16 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       .catch(() => {
         /* 拿不到感应事件时，鼠标直接压到窗口上仍然能展开 */
       });
+    // 系统级 Alt+`：原生侧注册的全局热键，任何软件在前台都能把这条线拉下来
+    let unlistenHotkey: (() => void) | undefined;
+    void listen(GLOBAL_HOTKEY_EVENT, () => onGlobalHotkey())
+      .then((un) => {
+        if (alive) unlistenHotkey = un;
+        else un();
+      })
+      .catch(() => {
+        /* 监听不上就只剩界面内快捷键，不影响其他行为 */
+      });
     void evaluate();
     activeMinimize = minimizeAtTop;
 
@@ -872,6 +1004,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       clearSettle();
       clearReveal();
       clearRecall();
+      clearHotkeyHold();
       if (hintTimer) clearTimeout(hintTimer);
       document.removeEventListener("pointermove", onPointerMove, true);
       document.documentElement.removeEventListener("pointerleave", onPointerLeave);
@@ -882,8 +1015,10 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       unlisten?.();
       unlistenFocus?.();
       unlistenNear?.();
+      unlistenHotkey?.();
       void ipc.setDockSensor(false).catch(() => {});
       if (activeRestore === restoreNow) activeRestore = null;
+      if (activeExpand) activeExpand = null;
       if (activeAdoptDock === adoptDock) activeAdoptDock = null;
       if (activeMinimize === minimizeAtTop) activeMinimize = null;
       if (transitionsOff) {

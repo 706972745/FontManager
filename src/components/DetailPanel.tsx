@@ -1,16 +1,17 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, Plus, RotateCcw, Scale, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { spring, springSoft } from "../design/springs";
 import { useFontCss, formatBytes, pathBasename } from "../lib/fontLoader";
-import { familiesFor, conflictsFor, useFontStore } from "../state/fontStore";
+import { familiesFor, conflictsFor, useFontStore, type Family } from "../state/fontStore";
 import { ipc, type FontFace, type VariationAxis } from "../lib/ipc";
 import { toast } from "../design/primitives/Toast";
 import { FormatBadge } from "./FamilyCard";
-import { exportFace, exportFamily } from "../lib/menus";
+import { buildFaceMenu, exportFace, exportFamily } from "../lib/menus";
+import { openContextMenuAt } from "../design/primitives/ContextMenu";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { classifyLicense, copyrightExpired } from "../lib/license";
+import { classifyLicense, copyrightExpired, normalizeCopyright } from "../lib/license";
 import { faceKey } from "../lib/snapshotKey";
 import { playStar, playTag } from "../lib/sound";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
@@ -28,12 +29,15 @@ const WATERFALL = [14, 20, 28, 40, 56];
 function StyleRow({
   face,
   family,
+  familyData,
   selected,
   onSelect,
   synthesize,
 }: {
   face: FontFace;
   family: string;
+  /** 完整的字族对象：字重菜单要拿它算显示名 */
+  familyData: Family;
   selected: boolean;
   onSelect: () => void;
   synthesize: boolean;
@@ -76,6 +80,29 @@ function StyleRow({
         whileTap={{ scale: 0.9 }}
       >
         <Download size={13} strokeWidth={1.5} />
+      </motion.span>
+      {/* 字重自己的操作菜单：单独应用到 PS / AI / CDR、复制字体名 / PostScript 名 */}
+      <motion.span
+        role="button"
+        tabIndex={0}
+        className="style-export"
+        aria-label={t("menu.faceActions", { name: face.style })}
+        title={t("menu.faceActions", { name: face.style })}
+        onClick={(e) => {
+          e.stopPropagation();
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          openContextMenuAt(r.left, r.bottom + 4, buildFaceMenu(familyData, face));
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.stopPropagation();
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            openContextMenuAt(r.left, r.bottom + 4, buildFaceMenu(familyData, face));
+          }
+        }}
+        whileTap={{ scale: 0.9 }}
+      >
+        <MoreHorizontal size={13} strokeWidth={1.75} />
       </motion.span>
     </motion.button>
   );
@@ -336,12 +363,14 @@ function NoteEditor({ family }: { family: string }) {
   );
 }
 
-const COPYRIGHT_STATUS_OPTIONS = ["auto", "free", "paid", "timelimited"] as const;
+const COPYRIGHT_STATUS_OPTIONS = ["auto", "free_commercial", "free_personal", "paid", "timelimited"] as const;
 
-/** 版权状态手动设置：默认"自动"（根据版权信息识别），也可手动指定免费/收费/时间限制 */
+/** 版权状态手动设置：默认"自动"（根据版权信息识别），也可手动指定商用免费 / 个人免费 / 收费 / 时间限制 */
 function CopyrightStatusSection({ family }: { family: string }) {
   const t = useT();
-  const status = useFontStore((s) => s.copyrightStatus[family] ?? "auto");
+  // 老版本存的是 "free"：显示时归一到「商用免费」，不然一排按钮都不亮
+  const raw = useFontStore((s) => s.copyrightStatus[family]);
+  const status = raw ? (normalizeCopyright(raw) ?? "auto") : "auto";
   const expiry = useFontStore((s) => s.copyrightExpiry[family]);
   const setCopyrightStatus = useFontStore((s) => s.setCopyrightStatus);
   const setCopyrightExpiry = useFontStore((s) => s.setCopyrightExpiry);
@@ -962,6 +991,7 @@ export function DetailPanel() {
                     key={face.id}
                     face={face}
                     family={family.name}
+                    familyData={family}
                     selected={lead?.id === face.id}
                     onSelect={() => setStyleId(face.id)}
                     synthesize={family.faces.filter((f) => f.path === face.path).length > 1}

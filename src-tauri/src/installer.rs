@@ -863,7 +863,7 @@ mod tests {
         by_rel.insert(PathBuf::new(), vec![license.clone()]);
         assert_eq!(
             resolve_class(&staged, &[], &by_rel, &[license]),
-            copyright::CopyrightClass::Free
+            copyright::CopyrightClass::FreeCommercial
         );
 
         // 2. 没有版权信息文件时，用文件夹备注的版权（收费）

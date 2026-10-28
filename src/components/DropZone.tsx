@@ -40,6 +40,12 @@ export function DropZone() {
 
   useEffect(() => {
     const unlistenDrop = getCurrentWebview().onDragDropEvent((event) => {
+      // 速览界面不接拖放导入：速览只是「查字体名」的浮层，误拖进去一个字体文件
+      // 就开始往字体库里装东西，用户根本没预期。这里直接忽略整段拖放。
+      if (useFontStore.getState().quickbar) {
+        setDragging(false);
+        return;
+      }
       if (event.payload.type === "over" || event.payload.type === "enter") {
         setDragging(true);
         setSide(sideAt(event.payload.position));

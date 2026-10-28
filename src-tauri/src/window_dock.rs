@@ -9,7 +9,8 @@
 //! 另外提供「光标靠近感应」：收起态只有几个像素高，光靠鼠标进窗口几乎碰不到，
 //! 这里轮询光标位置，一旦落在窗口正下方的感应带里就通知前端展开。
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::sync::Mutex;
 use tauri::{Emitter, WebviewWindow};
 
 /// 当前是否处于速览界面（前端在进入 / 退出速览时同步）
@@ -38,10 +39,13 @@ mod platform {
     use super::{PREV_PROC, QUICKBAR_MODE, SENSOR_BAND_PX};
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, DefWindowProcW, GetCursorPos, GetWindowLongPtrW, GetWindowRect,
+        BringWindowToTop, CallWindowProcW, DefWindowProcW, GetCursorPos, GetForegroundWindow,
+        GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, SetForegroundWindow,
         SetWindowLongPtrW, GWLP_WNDPROC, WNDPROC,
     };
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 
     // dwmapi 只需要这一个函数，直接 extern 声明，不给 windows-sys 加 `Win32_Graphics_Dwm`
     #[link(name = "dwmapi")]
@@ -59,6 +63,30 @@ mod platform {
     /// WM_SYSCOMMAND 的最大化命令；wParam 低 4 位是系统内部数据，判断时要先掩掉
     const SC_MAXIMIZE: usize = 0xF030;
     const SYS_COMMAND_MASK: usize = 0xFFF0;
+
+    /// 强行把窗口提到前台并给键盘焦点。
+    ///
+    /// Windows 有「前台窗口锁」：后台进程调用 SetForegroundWindow 通常会被直接拒绝。
+    /// 用全局热键把速览叫出来时这一点很致命——面板弹出来了，但键盘焦点还在别的软件上，
+    /// 用户接着敲 Esc / 打字全部落到别人那里（看起来就是「展开了但按键没反应」）。
+    /// AttachThreadInput 把当前线程和前台窗口线程的输入队列临时挂在一起，
+    /// 这样 SetForegroundWindow 才会被接受。
+    pub unsafe fn force_foreground(hwnd: HWND) {
+        let fg = GetForegroundWindow();
+        let fg_tid = if fg.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(fg, std::ptr::null_mut())
+        };
+        let me = GetCurrentThreadId();
+        let attached = fg_tid != 0 && fg_tid != me && AttachThreadInput(me, fg_tid, 1) != 0;
+        SetForegroundWindow(hwnd);
+        BringWindowToTop(hwnd);
+        SetFocus(hwnd);
+        if attached {
+            AttachThreadInput(me, fg_tid, 0);
+        }
+    }
 
     unsafe extern "system" fn quickbar_wnd_proc(
         hwnd: HWND,
@@ -221,6 +249,225 @@ pub fn set_dock_sensor(window: WebviewWindow, active: bool) {
         }
         start_sensor(window);
     }
+}
+
+/// 系统级快捷键被按下时发给前端的事件名（前端据此展开 / 收起速览）
+pub const HOTKEY_EVENT: &str = "quickbar://hotkey";
+/// 改键后注册失败（被别人占用）时发给前端的事件名，payload 是给人看的错误文案
+pub const HOTKEY_ERROR_EVENT: &str = "quickbar://hotkey-error";
+
+/// 让热键线程重新注册的消息（WM_APP 段，只要不和窗口自己用的消息撞就行）
+#[cfg(windows)]
+const WM_RELOAD_HOTKEY: u32 = 0x8000 + 0x21;
+
+/// 用户配置的快捷键：虚拟键码 + 修饰键（与前端 lib/hotkey.ts 一一对应）
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeySpec {
+    pub vk: u32,
+    #[serde(default)]
+    pub ctrl: bool,
+    #[serde(default)]
+    pub alt: bool,
+    #[serde(default)]
+    pub shift: bool,
+    #[serde(default)]
+    pub meta: bool,
+}
+
+impl Default for HotkeySpec {
+    fn default() -> Self {
+        Self {
+            // VK_OEM_3 = 键盘左上角那个 ` / ~
+            vk: 0xC0,
+            ctrl: false,
+            alt: true,
+            shift: false,
+            meta: false,
+        }
+    }
+}
+
+impl HotkeySpec {
+    /// 给人看的名字，只用在日志里
+    fn describe(&self) -> String {
+        let mut s = String::new();
+        if self.ctrl {
+            s.push_str("Ctrl+");
+        }
+        if self.alt {
+            s.push_str("Alt+");
+        }
+        if self.shift {
+            s.push_str("Shift+");
+        }
+        if self.meta {
+            s.push_str("Win+");
+        }
+        s.push_str(&format!("VK({:#04X})", self.vk));
+        s
+    }
+}
+
+/// 当前想要的快捷键；热键线程每次重新注册都读这里
+static HOTKEY_SPEC: Mutex<Option<HotkeySpec>> = Mutex::new(None);
+/// 热键线程 id（用 PostThreadMessage 叫它重新注册）
+static HOTKEY_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+/// 给热键线程回传事件用的 AppHandle
+static HOTKEY_APP: Mutex<Option<tauri::AppHandle>> = Mutex::new(None);
+
+/// 注册「系统级」快捷键。
+///
+/// 原来这个快捷键只挂在页面的 keydown 上：只有本软件有焦点时才生效，
+/// 窗口收成顶上一条之后、或者用户在别的软件里时，按键根本到不了我们的页面。
+/// `RegisterHotKey` 是 Win32 的全局热键，无论谁有焦点都会把 `WM_HOTKEY`
+/// 投递给注册它的线程。
+///
+/// 单独开一个线程做消息泵：`RegisterHotKey(hwnd = null)` 的消息发到
+/// 「注册所在线程」的队列里，必须自己跑 `GetMessage` 循环捞出来。
+/// 也正因为注册绑线程，改键不能在前端命令线程里做——只能 PostThreadMessage
+/// 叫醒这个线程，让它在自己的消息循环里重新注册。
+pub fn start_hotkey_listener(app: tauri::AppHandle, spec: HotkeySpec) {
+    if let Ok(mut s) = HOTKEY_SPEC.lock() {
+        *s = Some(spec);
+    }
+    if let Ok(mut a) = HOTKEY_APP.lock() {
+        *a = Some(app);
+    }
+    #[cfg(windows)]
+    {
+        std::thread::Builder::new()
+            .name("zfm-global-hotkey".into())
+            .spawn(move || unsafe {
+                use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+                use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+                    RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT,
+                    MOD_WIN,
+                };
+                use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
+
+                // 本进程内唯一的热键 id，取值随意，只要不和其他线程的 id 撞
+                const HOTKEY_ID: i32 = 0x5A46;
+                HOTKEY_THREAD_ID.store(GetCurrentThreadId(), Ordering::SeqCst);
+
+                let register = |spec: &HotkeySpec| -> bool {
+                    let mut mods = MOD_NOREPEAT;
+                    if spec.ctrl {
+                        mods |= MOD_CONTROL;
+                    }
+                    if spec.alt {
+                        mods |= MOD_ALT;
+                    }
+                    if spec.shift {
+                        mods |= MOD_SHIFT;
+                    }
+                    if spec.meta {
+                        mods |= MOD_WIN;
+                    }
+                    UnregisterHotKey(std::ptr::null_mut(), HOTKEY_ID);
+                    RegisterHotKey(std::ptr::null_mut(), HOTKEY_ID, mods as u32, spec.vk) != 0
+                };
+
+                let current = HOTKEY_SPEC
+                    .lock()
+                    .ok()
+                    .and_then(|g| *g)
+                    .unwrap_or_default();
+                if !register(&current) {
+                    // 被别的软件占了（常见于输入法 / 录屏工具）：不致命，
+                    // 界面内的同一组按键仍然可用，设置里还可以改成别的
+                    eprintln!("[hotkey] {} 注册失败（可能已被其他程序占用）", current.describe());
+                    if let Ok(a) = HOTKEY_APP.lock() {
+                        if let Some(app) = a.as_ref() {
+                            let _ = app.emit(HOTKEY_ERROR_EVENT, current.describe());
+                        }
+                    }
+                } else {
+                    eprintln!("[hotkey] {} 已注册为系统级热键", current.describe());
+                }
+
+                let mut msg: MSG = std::mem::zeroed();
+                loop {
+                    let r = GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0);
+                    if r <= 0 {
+                        break;
+                    }
+                    if msg.message == WM_RELOAD_HOTKEY {
+                        // 设置里改了键：按最新的配置重新注册
+                        let want = HOTKEY_SPEC
+                            .lock()
+                            .ok()
+                            .and_then(|g| *g)
+                            .unwrap_or_default();
+                        if register(&want) {
+                            eprintln!("[hotkey] 已切换为 {}", want.describe());
+                        } else {
+                            eprintln!("[hotkey] {} 注册失败（可能已被其他程序占用）", want.describe());
+                            if let Ok(a) = HOTKEY_APP.lock() {
+                                if let Some(app) = a.as_ref() {
+                                    let _ = app.emit(HOTKEY_ERROR_EVENT, want.describe());
+                                }
+                            }
+                        }
+                    } else if msg.message == WM_HOTKEY && msg.wParam == HOTKEY_ID as usize {
+                        if let Ok(a) = HOTKEY_APP.lock() {
+                            if let Some(app) = a.as_ref() {
+                                let _ = app.emit(HOTKEY_EVENT, ());
+                            }
+                        }
+                    }
+                }
+                UnregisterHotKey(std::ptr::null_mut(), HOTKEY_ID);
+            })
+            .ok();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+    }
+}
+
+/// 设置里改键后调用：更新目标配置并叫醒热键线程重新注册。
+/// 注册结果通过 `quickbar://hotkey-error` 事件回传（成功则不出声）。
+#[tauri::command]
+pub fn set_quickbar_hotkey(hotkey: HotkeySpec) -> Result<(), String> {
+    if hotkey.vk == 0 {
+        return Err("快捷键不能为空".into());
+    }
+    if let Ok(mut s) = HOTKEY_SPEC.lock() {
+        *s = Some(hotkey);
+    }
+    #[cfg(windows)]
+    {
+        let tid = HOTKEY_THREAD_ID.load(Ordering::SeqCst);
+        if tid == 0 {
+            return Err("热键线程尚未就绪，请稍后再试".into());
+        }
+        let ok = unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::PostThreadMessageW(
+                tid,
+                WM_RELOAD_HOTKEY,
+                0,
+                0,
+            )
+        };
+        if ok == 0 {
+            return Err("通知热键线程失败".into());
+        }
+    }
+    Ok(())
+}
+
+/// 把速览窗口强行提到前台并给键盘焦点（全局热键叫出面板后调用）。
+#[tauri::command]
+#[allow(unused_variables)]
+pub fn focus_quickbar(window: WebviewWindow) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        unsafe { platform::force_foreground(hwnd.0 as *mut std::ffi::c_void) };
+    }
+    Ok(())
 }
 
 /// 关掉 / 恢复这个窗口的 DWM 过渡（最小化、还原、最大化时系统播的那几个动画）。

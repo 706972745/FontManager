@@ -19,7 +19,7 @@ import type { MenuItem } from "../design/primitives/ContextMenu";
 import { toast } from "../design/primitives/Toast";
 import { allTags, familiesFor, useFontStore, type Family } from "../state/fontStore";
 import { entryFromFace, faceKey } from "./snapshotKey";
-import { AVAILABLE_ADOBE_APPS, ipc } from "./ipc";
+import { AVAILABLE_ADOBE_APPS, ipc, type FontFace } from "./ipc";
 import { exportSpecimen } from "./specimen";
 import { activeLocale, t } from "./i18n";
 import { extraFamilyNames, languageLabel, shortName } from "./fontNames";
@@ -248,6 +248,70 @@ function buildBulkMenu(names: string[]): MenuItem[] {
       },
     },
   ];
+}
+
+/**
+ * 单个「字重」的操作菜单。
+ *
+ * 字族级菜单只能整族套用（用的还是 Regular 那一个 PostScript 名），
+ * 想给选中的文字单独换 Bold / Light 就做不到。这里给每个字重一份自己的菜单：
+ * 应用走 applyFaceInApp（带该字重的 PostScript 名），复制也分成「字体全名」和「PostScript 名」。
+ */
+export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
+  const s = useFontStore.getState();
+  // 少数字体本身没写 family/style（或写成了空格），拼出来会是空串：
+  // 这时退回 PostScript 名、再退回文件名，菜单至少有个能认的标题。
+  const fullName =
+    `${family.name} ${face.style}`.trim() ||
+    face.postscriptName ||
+    face.path.split(/[\\/]/).pop() ||
+    "—";
+  const items: MenuItem[] = [{ kind: "heading", label: fullName }];
+
+  if (s.adobeAvailable) {
+    items.push(
+      ...AVAILABLE_ADOBE_APPS.map(
+        (app): MenuItem => ({
+          label: t("menu.applyInApp", { app: t(`adobe.${app}`) }),
+          icon: <PenTool size={14} strokeWidth={1.5} />,
+          disabled: !face.postscriptName,
+          action: () => void s.applyFaceInApp(family.name, face.id, app),
+        }),
+      ),
+      { kind: "separator" },
+    );
+  }
+
+  items.push(
+    {
+      label: t("menu.copyFaceName", { name: fullName }),
+      icon: <Copy size={14} strokeWidth={1.5} />,
+      action: () => copyText(fullName, t("copy.faceName")),
+    },
+    ...(face.postscriptName
+      ? [
+          {
+            label: t("menu.copyPostScriptName", { name: face.postscriptName }),
+            icon: <Copy size={14} strokeWidth={1.5} />,
+            action: () => copyText(face.postscriptName!, t("copy.postScriptName")),
+          } satisfies MenuItem,
+        ]
+      : []),
+    {
+      label: t("menu.copyFilePath"),
+      icon: <Copy size={14} strokeWidth={1.5} />,
+      action: () => copyText(face.path, t("copy.filePath")),
+    },
+    {
+      label: t("menu.showInFileManager"),
+      icon: <FolderOpen size={14} strokeWidth={1.5} />,
+      action: () =>
+        revealItemInDir(face.path).catch((e) =>
+          toast.error(t("toast.couldntOpenFileManager"), String(e)),
+        ),
+    },
+  );
+  return items;
 }
 
 export function buildFamilyMenu(family: Family): MenuItem[] {

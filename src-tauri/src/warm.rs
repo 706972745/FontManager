@@ -128,6 +128,23 @@ pub fn tick() {
     maybe_probe("illustrator", Target::Illustrator, ai);
 }
 
+/// 刚刚跟目标软件打过一次真实的 COM 交道（应用字体成功）。
+///
+/// 心跳探测的「新鲜期」是 90 秒，但应用字体本身就要占用一次外部进程 + COM，
+/// 两边撞在一起时探测容易超时 → 底部预热条先跳到「探测中」再变红，看起来像被我们弄坏了。
+/// 这里把这次操作算作「刚刚探测过」，让心跳安静一个新鲜期；顺便把失败态清掉
+/// ——既然应用成功，说明对象模型是通的。
+pub fn note_activity(id: &'static str) {
+    let now = Instant::now();
+    let Ok(mut guard) = slots().lock() else { return };
+    let slot = guard.entry(id).or_default();
+    slot.checked = Some(now);
+    if matches!(slot.state, State::Failed) {
+        slot.state = State::Ready;
+        slot.percent = 100;
+    }
+}
+
 fn maybe_probe(id: &'static str, target: Target, running: bool) {
     let now = Instant::now();
     let start = {
