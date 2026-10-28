@@ -80,6 +80,12 @@ pub struct AppState {
     pub affinity_deactivate_on_quit: bool,
 
     pub online_fonts_enabled: bool,
+
+    /// raw.githubusercontent.com 在本机是否探明不可达。
+    /// 记住它是为了跳过每次启动后的第一轮 10 秒超时（用户会以为「点了没反应」）；
+    /// 镜像全部失败时还会回头再试原始地址，网络恢复后这个标记会被清掉。
+    #[serde(default)]
+    pub raw_unreachable: bool,
 }
 
 /// 包一层 Arc：批量启停要丢到后台线程（`spawn_blocking`）跑，得能拿出一份 'static 的共享状态

@@ -11,6 +11,8 @@ mod installer;
 mod net;
 mod online;
 mod parser;
+mod preview_font;
+mod webfonts;
 #[cfg(target_os = "windows")]
 mod procs;
 mod registry;
@@ -23,8 +25,10 @@ mod store;
 mod watcher;
 mod window_dock;
 mod window_morph;
+#[cfg(target_os = "windows")]
+mod window_round;
 
-use font_types::{FontFace, FontSource, TrashEntry};
+use font_types::{CharsetStats, FontFace, FontSource, TrashEntry};
 use std::collections::HashMap;
 use store::Store;
 use tauri::{Emitter, Manager, State};
@@ -464,6 +468,95 @@ async fn font_cjk(
     .map_err(|e| e.to_string())
 }
 
+/** 汉字覆盖的三档结论（"none" / "sparse" / "full"）。
+ *
+ * 比 `font_cjk` 多一档：卡片上要说清「一个汉字都没有」和「只有几百个字、排不了正文」
+ * 是两回事。同族版本提示也用它——只有 full 的兄弟版本才值得推荐过去。
+ */
+#[tauri::command]
+async fn font_han_coverage(
+    probes: Vec<(String, u32)>,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        probes
+            .into_iter()
+            .map(|(path, index)| {
+                parser::face_han_coverage(std::path::Path::new(&path), index)
+                    .as_str()
+                    .to_string()
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/** 精确统计字符集构成（详情面板用）。
+ *
+ * 和扫描时用的抽样判定分开：这里要枚举全部码位，单个 8MB 中文字体要 2~5ms，
+ * 5000 个字面全做会让启动慢十几秒。只在打开详情面板时对当前这个字面调一次。
+ */
+#[tauri::command]
+async fn font_charset(probes: Vec<(String, u32)>) -> Result<Vec<CharsetStats>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        probes
+            .into_iter()
+            .map(|(path, index)| parser::face_charset_stats(std::path::Path::new(&path), index))
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/** 备用预览字体：浏览器打不开这个字面时，让后端修一份能加载的副本。
+ *
+ * 两类字体在 WebView2 里必定加载失败，卡片上就只剩「这种格式暂时无法预览」：
+ * `.ttc` 字体集合（OTS 拒收 ttcf 容器）和 cmap 只有旧编码子表的老字体
+ * （Big5 / GBK / ShiftJIS，OTS 报 no supported subtables）。详见 preview_font。
+ *
+ * 返回缓存文件的绝对路径；浏览器本来就能打开、或修不出来时返回 null。
+ * 只有加载失败才会调到这儿，正常字体不受影响。
+ */
+#[tauri::command]
+async fn font_preview_file(
+    app: tauri::AppHandle,
+    path: String,
+    face_index: u32,
+) -> Result<Option<String>, String> {
+    let scope = app.asset_protocol_scope();
+    tauri::async_runtime::spawn_blocking(move || {
+        preview_font::ensure_preview_font(std::path::Path::new(&path), face_index).map(|p| {
+            // 单独放行这一份（目录级放行在启动时做过，这里兜住运行期新建的文件）
+            let _ = scope.allow_file(&p);
+            p.to_string_lossy().into_owned()
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/** 逐字符查字形覆盖：问一批字面「`chars` 里每个字符有没有字形」。
+ *
+ * 顶栏示例文字会先判出用到哪些书写系统（汉字 / 假名 / 拉丁 …），把各系统的探针
+ * 拼成一条串发过来；返回同序的布尔矩阵，前端据此在卡片和字重行上标
+ * 「无中文 / 无日文 …」。
+ */
+#[tauri::command]
+async fn font_coverage(
+    probes: Vec<(String, u32)>,
+    chars: String,
+) -> Result<Vec<Vec<bool>>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let list: Vec<char> = chars.chars().collect();
+        probes
+            .into_iter()
+            .map(|(path, index)| parser::face_glyph_hits(std::path::Path::new(&path), index, &list))
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// 把字族目录整体搬到新名字（含所有字体与版权信息文件），返回 旧路径 → 新路径。
 ///
 /// 优先用「整目录改名」：同一分区上这是一步原子操作，要么整个目录换了名字，
@@ -703,12 +796,14 @@ async fn online_download(
     app: tauri::AppHandle,
     store: State<'_, Store>,
     id: String,
+    files: Option<Vec<String>>,
+    license: Option<bool>,
 ) -> Result<online::DownloadResult, String> {
     let client = {
         let state = store.0.lock().map_err(|e| e.to_string())?;
         net::client(&state)?
     };
-    online::github::download(&app, &client, &id).await
+    online::github::download(&app, &client, &id, files.as_deref(), license.unwrap_or(true)).await
 }
 
 #[tauri::command]
@@ -732,6 +827,76 @@ fn online_clear_staging(id: String) {
 #[tauri::command]
 fn online_hosts() -> Vec<String> {
     net::ALLOWED_HOSTS.iter().map(|h| h.to_string()).collect()
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LicenseSaved {
+    family: String,
+    file_name: String,
+    license_name: String,
+    license_url: String,
+    /// 匹配依据（命中的 PostScript 名），让用户能核对为什么算同一款字体
+    postscript: String,
+    written: Vec<String>,
+}
+
+/// 按字体身份（族名 + PostScript 名双严格）到上游反查许可证，命中后写进字体目录。
+/// 任何一个条件对不上都返回 None，绝不猜。
+#[tauri::command]
+async fn font_license_fetch(
+    store: State<'_, Store>,
+    family: String,
+    postscripts: Vec<String>,
+    dirs: Vec<String>,
+) -> Result<Option<LicenseSaved>, String> {
+    let client = {
+        let state = store.0.lock().map_err(|e| e.to_string())?;
+        net::client(&state)?
+    };
+    // 先用在线目录做快速否定：目录里压根没有这个族名，就不必去上游挨个试 6 次
+    // （商业字体点「搜索」应该立刻得到「没找到」，而不是等半分钟）
+    let want = family.trim().to_lowercase();
+    let listed = match online::fontsource::read_cache() {
+        Some(cat) if !cat.families.is_empty() => Some(cat.families),
+        _ => online::fontsource::catalogue(&client, false)
+            .await
+            .ok()
+            .map(|c| c.families),
+    };
+    if let Some(families) = &listed {
+        if !families.iter().any(|f| f.family.trim().to_lowercase() == want) {
+            crate::diag::log(&format!("license: {family} 不在在线目录里 → 直接判定没搜到"));
+            return Ok(None);
+        }
+    }
+    let Some(hit) = online::github::search_license(&client, &family, &postscripts).await? else {
+        return Ok(None);
+    };
+    let mut written: Vec<String> = Vec::new();
+    for dir in &dirs {
+        let path = std::path::Path::new(dir);
+        if path.is_dir() && std::fs::write(path.join(&hit.file_name), &hit.text).is_ok() {
+            written.push(dir.clone());
+        }
+    }
+    if written.is_empty() {
+        return Err("no writable font directory".to_string());
+    }
+    crate::diag::log(&format!(
+        "license: {} 命中（族名一致 + PostScript {}），写入 {} 个目录",
+        hit.family,
+        hit.postscript,
+        written.len()
+    ));
+    Ok(Some(LicenseSaved {
+        family: hit.family,
+        file_name: hit.file_name,
+        license_name: hit.license_name,
+        license_url: hit.license_url,
+        postscript: hit.postscript,
+        written,
+    }))
 }
 
 /// 列出给定目录里的版权信息类文件（非递归）。
@@ -1443,6 +1608,9 @@ pub fn run() {
         .unwrap_or(false);
     let library_dir = state.active_library_dir().map(|s| s.to_owned());
     let linked_dirs: Vec<String> = state.linked.iter().cloned().collect();
+    // 上次运行学到「raw.githubusercontent.com 在本机不通」的话，这次直接走镜像，
+    // 不用让用户在第一次下载/搜索版权时先等 10 秒超时
+    net::seed_raw_unreachable(state.raw_unreachable);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -1455,12 +1623,37 @@ pub fn run() {
         .manage(Store(std::sync::Arc::new(std::sync::Mutex::new(state))))
         .manage(watcher::WatchHandle(std::sync::Mutex::new(None)))
         .setup(move |app| {
+            // 网络层学到的「原始地址不可达」要跨重启记住：每次翻转才写盘一次，开销可忽略
+            {
+                let handle = app.handle().clone();
+                net::set_persist_hook(Box::new(move |unreachable| {
+                    let handle = handle.clone();
+                    std::thread::spawn(move || {
+                        let Some(store) = handle.try_state::<Store>() else { return };
+                        let Ok(mut st) = store.0.lock() else { return };
+                        if st.raw_unreachable != unreachable {
+                            st.raw_unreachable = unreachable;
+                            let _ = store::save(&st);
+                        }
+                    });
+                }));
+            }
             // 首实例：等「再点一次图标」的信号，收到就通知前端把完整界面叫出来
             single_instance::watch(app.handle().clone());
             // 系统级 Alt + `：注册成全局热键，任何软件在前台时都能把速览拉下来
             window_dock::start_hotkey_listener(app.handle().clone(), quickbar_hotkey);
             if let Some(window) = app.get_webview_window("main") {
                 fit_window(&window, ui_scale_pref);
+                // 四角裁成系统窗口那种圆角（Win11 生效；Win10 上无副作用）。
+                // 速览收起成一根线时窗口只有十几像素高，会由 watch_height 自动切回直角，
+                // 不然 DWM 的固定半径会把抓手线两头切掉。
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(hwnd) = window.hwnd() {
+                        window_round::round_corners(hwnd.0 as *mut std::ffi::c_void);
+                    }
+                    window_round::watch_height(window.clone());
+                }
                 // 立刻把窗口亮出来，再等前端把字库扫完。
                 // 原来是「前端 init 全部完成才 show」——几千个字体的扫描要好几秒，
                 // 这段时间用户对着空桌面，看不到任何反馈。现在窗口一出来就是骨架屏 +
@@ -1492,6 +1685,11 @@ pub fn run() {
                 if let Some(parent) = std::path::Path::new(path).parent() {
                     allow_dir(app.handle(), parent);
                 }
+            }
+            // 预览修复缓存也要能被 asset 协议读到：它不在字体库目录里，
+            // 配置里的 $APPDATA 指向的是带应用标识的目录，覆盖不到这里
+            if let Some(dir) = preview_font::cache_root() {
+                allow_dir(app.handle(), &dir);
             }
             if watch_enabled {
                 let _ = apply_watch(app.handle(), true, &extra_dirs);
@@ -1549,6 +1747,7 @@ pub fn run() {
             online_clear_staging,
             online_hosts,
             info_files,
+            font_license_fetch,
             restore_from_trash,
             delete_trash_entry,
             empty_trash,
@@ -1570,6 +1769,10 @@ pub fn run() {
             get_features,
             sync_family_copyright,
             font_cjk,
+            font_han_coverage,
+            font_charset,
+            font_coverage,
+            font_preview_file,
             get_favorites,
             set_favorite,
             get_notes,

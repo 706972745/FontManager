@@ -167,6 +167,10 @@ fn localized_family_names(face: &ttf_parser::Face) -> Vec<LocalizedName> {
     }
 }
 
+/// 书写系统的探针码位。命中「全部」才算支持。
+///
+/// `han` 单独用下面的 [`han_coverage`] 判定，不进这张表——汉字字数差异太大，
+/// 两三个探针既可能冤枉字体也可能放过「只嵌了几十个字」的半成品。
 const SCRIPT_PROBES: &[(&str, &[u32])] = &[
     ("latin", &[0x0041, 0x007A]),
     ("cyrillic", &[0x0410, 0x044F]),
@@ -175,13 +179,76 @@ const SCRIPT_PROBES: &[(&str, &[u32])] = &[
     ("hebrew", &[0x05D0, 0x05EA]),
     ("devanagari", &[0x0915, 0x093E]),
     ("thai", &[0x0E01, 0x0E32]),
-    ("cjk", &[0x4E00, 0x3042]),
+    ("kana", &[0x3042, 0x30A2]),
     ("korean", &[0xAC00, 0xD55C]),
     ("vietnamese", &[0x1EA1, 0x01B0]),
 ];
 
+/// 汉字覆盖判定用的分层抽样字表。
+///
+/// 为什么不是像别的书写系统那样用两三个字：
+/// ① 那样判不出「只有几十个汉字」的字体——图标字体、只做标题字的展示字体、
+///    日文字体的汉字子集都会命中几个常用字，被打上「有中文」的标记，
+///    用户拿它排中文正文才发现一片豆腐块，比没有标记更糟；
+/// ② 也不能随便抓一堆字——生僻字在正常中文字体里也可能没有。
+///
+/// 选字标准：**简繁同形**（简体字体和繁体字体都必然收录，不会因为一款繁体字体
+/// 缺简体字形被误判）、**高频**、并且沿 U+4E00–U+9AD4 整段分散（不能只做前几个字
+/// 就蒙混过关）。正常的中文字体（GB2312 6763 字以上）应该接近百分之百命中。
+pub const HAN_SAMPLE: &str = "一七三上下不世中主久之也事二五些交京人今代以位低作使供保信候做\
+光全共兵再出分切列到制前力加化十半南印原友反取受名向合和品商四在地外大天女好子字安定家小\
+山工年平心手文日月木水永火生田甲白目石立老金";
+
+/// 汉字覆盖的三档结论。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HanCoverage {
+    /// 一个汉字都没有——西文 / 阿拉伯文等专用字体，应用到排版软件里中文不会变
+    None,
+    /// 有汉字但明显不全（只有几百字），能排标题、不能排正文
+    Sparse,
+    /// 覆盖了抽样表的大部分，正常中文字体
+    Full,
+}
+
+impl HanCoverage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HanCoverage::None => "none",
+            HanCoverage::Sparse => "sparse",
+            HanCoverage::Full => "full",
+        }
+    }
+}
+
+/// 抽样命中的比例达到这个值就算「完整支持中文」。
+///
+/// 留 40% 余量：真中文字体在抽样表上通常是 100%，但个别字体可能缺「些」「候」
+/// 这类字，不该因此被判成半成品；而只嵌了几十个汉字的字体，抽样命中率一般在
+/// 20% 以下，离 60% 很远，分档不会糊在一起。
+const HAN_FULL_RATIO_NUM: usize = 6;
+const HAN_FULL_RATIO_DEN: usize = 10;
+
+pub fn han_coverage(face: &ttf_parser::Face) -> HanCoverage {
+    let mut hits = 0usize;
+    let mut total = 0usize;
+    for ch in HAN_SAMPLE.chars() {
+        total += 1;
+        if face.glyph_index(ch).is_some() {
+            hits += 1;
+        }
+    }
+    if hits == 0 {
+        HanCoverage::None
+    } else if hits * HAN_FULL_RATIO_DEN >= total * HAN_FULL_RATIO_NUM {
+        HanCoverage::Full
+    } else {
+        HanCoverage::Sparse
+    }
+}
+
 fn script_coverage(face: &ttf_parser::Face) -> Vec<String> {
-    SCRIPT_PROBES
+    let han = han_coverage(face);
+    let mut out: Vec<String> = SCRIPT_PROBES
         .iter()
         .filter(|(_, probes)| {
             probes
@@ -189,7 +256,13 @@ fn script_coverage(face: &ttf_parser::Face) -> Vec<String> {
                 .all(|&cp| char::from_u32(cp).and_then(|c| face.glyph_index(c)).is_some())
         })
         .map(|(name, _)| (*name).to_string())
-        .collect()
+        .collect();
+    // 半成品中文字体不标「支持中文」：它能画出几个字，但拿它排正文必然缺字，
+    // 标上去等于骗用户。卡片上会另外显示「汉字不全」。
+    if han == HanCoverage::Full {
+        out.insert(0, "han".to_string());
+    }
+    out
 }
 
 fn classify(face: &ttf_parser::Face, family: &str) -> Classification {
@@ -393,25 +466,105 @@ pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
 
 /// 这个字面里到底有没有中文字形（用来提前告诉用户「应用了也不会有中文」）。
 ///
-/// 只看 4 个常用汉字，命中 2 个就算有——单个字可能是某个符号集的巧合，
-/// 要求 2 个能避免「西文字体里恰好有个形状」这种误判；反之也不会因为
-/// 一个生僻字缺失就冤枉一款中文字体。
+/// 判定口径见 [`han_coverage`]：沿 U+4E00–U+9AD4 抽样 97 个简繁同形高频字，
+/// 命中比例够高才算支持。旧版只看「中国文一」命中 2 个，只要嵌了几十个汉字的
+/// 半成品字体也会被判成「有中文」——用户应用后排版才发现缺字。
 ///
-/// 不去读缓存里的 scripts：那里 `cjk` 的探针要求「汉字 + 假名」同时存在，
-/// 纯中文（没有假名）的字体拿不到这个标记，用它判断会大量误报。
-pub fn face_has_cjk(path: &Path, face_index: u32) -> bool {
-    const PROBES: [char; 4] = ['中', '国', '文', '一'];
+/// 不去读缓存里的 scripts 拿不到这个结论的原因：缓存里脚本是「按书写系统标全有」
+/// 的粗粒度结论，判不了「有但不全」这档，卡片上的分档提示需要更细的数据。
+pub fn face_han_coverage(path: &Path, face_index: u32) -> HanCoverage {
     let Ok(data) = fs::read(path) else {
-        return false;
+        return HanCoverage::None;
     };
     let Ok(face) = ttf_parser::Face::parse(&data, face_index) else {
-        return false;
+        return HanCoverage::None;
     };
-    let hits = PROBES
+    han_coverage(&face)
+}
+
+/// 有没有汉字（Sparse 也算有：它确实能画出几个字，不该说「一个都没有」）。
+pub fn face_has_cjk(path: &Path, face_index: u32) -> bool {
+    face_han_coverage(path, face_index) != HanCoverage::None
+}
+
+/// 精确统计一个字面的字符集构成：cmap 里有多少码位、其中汉字 / 假名 / 谚文 / 拉丁各多少。
+///
+/// 用途：卡片上「无中文」是个结论，用户没法核对，会怀疑判断错了（HarmonyOS Sans
+/// 就是典型——它真的有 0 个汉字，但用户以为自己装的是一套中文）。详情面板给出
+/// 「共 866 字符 · 汉字 0」这样的硬数据，判断立刻变得可验证。
+///
+/// **只在打开详情面板时调用，不参与扫描**：全量枚举码位比抽样贵两个数量级，
+/// 放进扫描会让 5000 多个字面的启动时间多出十几秒。
+pub fn face_charset_stats(path: &Path, face_index: u32) -> crate::font_types::CharsetStats {
+    use crate::font_types::CharsetStats;
+    let empty = CharsetStats::default();
+    let Ok(data) = fs::read(path) else {
+        return empty;
+    };
+    let Ok(face) = ttf_parser::Face::parse(&data, face_index) else {
+        return empty;
+    };
+    let Some(cmap) = face.tables().cmap else {
+        return empty;
+    };
+
+    // 同一批码位可能同时出现在多个 unicode 子表里，先去重
+    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut stats = CharsetStats::default();
+    for subtable in cmap.subtables {
+        if !subtable.is_unicode() {
+            continue;
+        }
+        subtable.codepoints(|cp| {
+            if !seen.insert(cp) {
+                return;
+            }
+            // 控制字符、代理区、私用区不算「字符集」的一部分
+            if cp < 0x20 || (0x7F..=0x9F).contains(&cp) {
+                return;
+            }
+            if (0xD800..=0xDFFF).contains(&cp) || (0xE000..=0xF8FF).contains(&cp) {
+                return;
+            }
+            stats.total += 1;
+            match cp {
+                0x3400..=0x4DBF
+                | 0x4E00..=0x9FFF
+                | 0xF900..=0xFAFF
+                | 0x20000..=0x2FA1F
+                | 0x30000..=0x3134F => stats.han += 1,
+                0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9D => stats.kana += 1,
+                0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF => {
+                    stats.hangul += 1
+                }
+                0x0041..=0x005A
+                | 0x0061..=0x007A
+                | 0x00C0..=0x024F
+                | 0x1E00..=0x1EFF
+                | 0xFB00..=0xFB06 => stats.latin += 1,
+                _ => stats.symbols += 1,
+            }
+        });
+    }
+    stats
+}
+
+/// 逐字符问「这个字面里有没有它的字形」，返回与 `chars` 等长的布尔数组。
+///
+/// 给「示例文字是哪种语言、这款字体能不能显示」用：前端把每个书写系统的探针字符
+/// 拼成一条串一次问完，比按书写系统分多次调用省掉反复打开字体文件的开销。
+/// 读不到 / 解析失败一律返回全 false（调用方会当成「缺字」，但这种字体本来就画不出字）。
+pub fn face_glyph_hits(path: &Path, face_index: u32, chars: &[char]) -> Vec<bool> {
+    let Ok(data) = fs::read(path) else {
+        return vec![false; chars.len()];
+    };
+    let Ok(face) = ttf_parser::Face::parse(&data, face_index) else {
+        return vec![false; chars.len()];
+    };
+    chars
         .iter()
-        .filter(|c| face.glyph_index(**c).is_some())
-        .count();
-    hits >= 2
+        .map(|c| face.glyph_index(*c).is_some())
+        .collect()
 }
 
 #[cfg(test)]

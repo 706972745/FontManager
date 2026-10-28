@@ -43,6 +43,9 @@ const NEVER_ALONE = new Set([
   91, 92, // Win
 ]);
 
+/** 修饰键自身的 VK：Shift / Ctrl / Alt / Win（左右都算） */
+const MODIFIER_VKS = new Set([16, 17, 18, 91, 92, 93]);
+
 /**
  * 把一个 keydown 事件读成快捷键。返回 null 表示这个组合不能当快捷键：
  * - 只按了修饰键本身；
@@ -51,8 +54,11 @@ const NEVER_ALONE = new Set([
 export function hotkeyFromEvent(e: KeyboardEvent): HotkeySpec | null {
   const vk = e.keyCode;
   if (!vk) return null;
-  // 单独的修饰键：等用户接着按主键，别急着确定
-  if ([16, 17, 18, 91, 92, 93].includes(vk) && !e.ctrlKey && !e.altKey && !e.metaKey) return null;
+  // 修饰键本身一律先等着，别急着确定。
+  // 注意不能写成「按了 Ctrl 但 ctrlKey 为 false 才算单独修饰键」：按下 Ctrl 的那一刻
+  // ctrlKey 已经是 true，于是 Ctrl 键自己的 keydown 会被当成一个完整组合采纳，
+  // 录出来是「Ctrl + Control」这种没有主键的东西——用户想录 Ctrl+Shift+K 必然踩到。
+  if (MODIFIER_VKS.has(vk)) return null;
 
   const ctrl = e.ctrlKey;
   const alt = e.altKey;

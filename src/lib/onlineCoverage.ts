@@ -55,6 +55,28 @@ function satisfies(face: FontFace, exp: ExpectedFace): boolean {
   return coversWeight(face, exp.weight);
 }
 
+/**
+ * 在线字族里「字库还没有」的文件 —— 补全缺失时只下这些，已有的字重不重复下载。
+ * 判定口径与 familyCoverage 一致（斜体 + 字重 + PostScript 名，可变字体看 wght 轴）。
+ */
+export function filesToDownload(
+  files: { filename: string; style: string; weight: number; postScriptName?: string | null }[],
+  faces: FontFace[],
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const f of files) {
+    const name = f.filename;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const weight = Number.isFinite(f.weight) && f.weight > 0 ? Math.round(f.weight) : 400;
+    const exp: ExpectedFace = { style: f.style, weight, postScriptName: f.postScriptName ?? undefined };
+    if (faces.some((face) => satisfies(face, exp))) continue;
+    out.push(name);
+  }
+  return out;
+}
+
 /** 由在线详情里的文件列表生成期望样式集合（按 斜体+字重 去重） */
 export function expectationFromFiles(
   files: { style: string; weight: number; postScriptName?: string | null }[],

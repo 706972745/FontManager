@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Folder,
   Minimize2,
-  PenTool,
   Pin,
   PinOff,
   Search,
@@ -14,13 +13,16 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
+import { openContextMenu } from "../design/primitives/ContextMenu";
 import { easeTop, staggerDelay, spring } from "../design/springs";
 import { useFontCss } from "../lib/fontLoader";
+import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
+import { ScriptChip } from "./ScriptChip";
+import { FaceLine, faceLineFontSize } from "./FaceLine";
 import { useT, type TKey } from "../lib/i18n";
 import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
-import { buildFaceMenu, buildFamilyMenu, copyText } from "../lib/menus";
+import { buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
 import { minimizeQuickbar, useQuickbarDock } from "../lib/useQuickbarDock";
 import { useInView } from "../lib/useInView";
@@ -36,6 +38,7 @@ import {
   useFontStore,
   type Family,
 } from "../state/fontStore";
+import type { FontFace } from "../lib/ipc";
 import { SortMenu } from "./TopBar";
 
 /**
@@ -44,6 +47,28 @@ import { SortMenu } from "./TopBar";
  * 占住几百毫秒，窗口形变动画就被拖出可见的停顿；屏幕外的卡片本来也看不到动画。
  */
 const ANIMATED_ITEMS = 24;
+
+/**
+ * 速览里的一行字重。
+ *
+ * 实现全在 FaceLine（完整界面展开后的字重行用的是同一个组件，样式与交互天然一致）。
+ * 这里保留一层包装只是为了在 map 里少写几个 prop。
+ */
+function QuickFaceRow({
+  family,
+  face,
+  probeText,
+  onHover,
+}: {
+  family: Family;
+  face: FontFace;
+  /** 用户输入的示例文字（空串 = 不标注） */
+  probeText: string;
+  onHover: (faceId: string | null) => void;
+}) {
+  // 和完整界面展开后的字重行是同一个组件（0.9.3-5 起两处完全一致）
+  return <FaceLine family={family} face={face} probeText={probeText} onHover={onHover} />;
+}
 
 function QuickItem({ family, index }: { family: Family; index: number }) {
   const t = useT();
@@ -65,6 +90,9 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const previewWeight = previewFace === lead ? undefined : previewFace.weight;
   // 与完整界面主列表一致：优先用户输入的示例文本，否则用族名
   const text = sampleText.trim() || family.name;
+  // 缺语言文字的判定只看用户真正输入的示例文字（没输入就不标）
+  const probeText = sampleText.trim();
+  const scriptStatus = useScriptStatus(lead, probeText);
 
   // 权重：手动设置 > 字体自带版权信息 > 文件夹备注 / 版权信息文件判定的版权
   const licCls = effectiveCopyrightClass(
@@ -127,19 +155,26 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
           >
             {family.name}
           </span>
-          <motion.span
-            className="qb-item-sample"
-            style={
-              fontFamily
-                ? { fontFamily, fontStyle, fontWeight: previewWeight, fontSize: size }
-                : { fontSize: size }
-            }
-            initial={animated ? { opacity: 0, y: 5 } : false}
-            animate={animated ? { opacity: 1, y: 0 } : undefined}
-            transition={animated ? spring : undefined}
-          >
-            {text}
-          </motion.span>
+          {/* 画不出示例文字的语言时，这一行直接换成「无中文」这类标注（与完整界面一致） */}
+          {hasScriptNote(scriptStatus) ? (
+            <span className="qb-item-noscript" style={{ minHeight: size * 1.15 }}>
+              <ScriptChip status={scriptStatus} />
+            </span>
+          ) : (
+            <motion.span
+              className="qb-item-sample"
+              style={
+                fontFamily
+                  ? { fontFamily, fontStyle, fontWeight: previewWeight, fontSize: size }
+                  : { fontSize: size }
+              }
+              initial={animated ? { opacity: 0, y: 5 } : false}
+              animate={animated ? { opacity: 1, y: 0 } : undefined}
+              transition={animated ? spring : undefined}
+            >
+              {text}
+            </motion.span>
+          )}
         </span>
         <span className="qb-item-aside">
           <span className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`} title={licTitle}>
@@ -200,45 +235,21 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       {copyright && <span className="qb-item-copy">{copyright}</span>}
 
       {expanded && family.faces.length > 0 && (
-        <div className="qb-faces" onClick={(e) => e.stopPropagation()}>
-          {family.faces.map((face) => {
-            // style 为空时退回 PostScript 名，不然整行只有一个空白按钮
-            const styleLabel = face.style?.trim() || face.postscriptName || "Regular";
-            const fullName = `${family.name} ${styleLabel}`.trim();
-            return (
-              <div
-                key={face.id}
-                className="qb-face"
-                onMouseEnter={() => setHoverFaceId(face.id)}
-                onMouseLeave={() => setHoverFaceId(null)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  openContextMenu(e, buildFaceMenu(family, face));
-                }}
-              >
-                <span
-                  className="qb-face-name"
-                  title={t("quickbar.previewFaceHint", { name: fullName })}
-                >
-                  {styleLabel}
-                </span>
-                <button
-                  type="button"
-                  className="qb-face-apply"
-                  aria-label={t("menu.faceActions", { name: styleLabel })}
-                  title={t("menu.faceActions", { name: styleLabel })}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const r = e.currentTarget.getBoundingClientRect();
-                    openContextMenuAt(r.left, r.bottom + 4, buildFaceMenu(family, face));
-                  }}
-                >
-                  <PenTool size={11} strokeWidth={1.75} />
-                </button>
-              </div>
-            );
-          })}
+        <div
+          className="qb-faces"
+          /* 字重名的大小跟着上面的示例字号走（速览面板只有卡片一半宽，取 1/8） */
+          style={{ "--face-line-size": faceLineFontSize(size, 8) } as CSSProperties}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {family.faces.map((face) => (
+            <QuickFaceRow
+              key={face.id}
+              family={family}
+              face={face}
+              probeText={probeText}
+              onHover={setHoverFaceId}
+            />
+          ))}
         </div>
       )}
     </Item>
@@ -265,6 +276,32 @@ export function QuickBar() {
 
   // 拖到屏幕顶部时整个速览窗口收起成一条（contentHeight 用于动画期间钉住内容高度）
   const { docked, contentHeight, phase, bar } = useQuickbarDock(autoHide);
+
+  /**
+   * 内容可见性门控。
+   *
+   * 旧实现是 qb-birth 固定时长动画（挂载 300ms 延迟 + 200ms 淡入），但进入速览的
+   * 真正耗时不是固定的：adoptQuickbarDock 里有一段等 QuickBar 挂载的轮询（最长 600ms），
+   * 首屏上千张卡片的渲染还会堵住主线程，IPC 往返全部顺延。动画一放完（fill 结束
+   * opacity 回到 1），dock 却还没接管——morph 已清、docked 未置位，这个空档渲染的是
+   * 完整 qb-content，顶栏（已启用 N / 搜索框 / 完整界面按钮）就会在 34px 的窗口条里
+   * 闪现（0.9.3-14 修的用户报告 bug）。
+   *
+   * 改成事件门控：dock 接管（docked=true）后才淡入；几何失败走「仅切换界面」分支时
+   * morph 已清但 docked 永远不会来，用兜底计时器放行，保证功能不失效。
+   */
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => {
+    if (revealed) return;
+    if (docked) {
+      setRevealed(true);
+      return;
+    }
+    if (!morph) {
+      const t = window.setTimeout(() => setRevealed(true), 350);
+      return () => window.clearTimeout(t);
+    }
+  }, [docked, morph, revealed]);
   // 提示里显示的按键跟着设置走（用户可能把它改成了 Ctrl+Alt+Q 之类）
   const hotkeyLabel = useFontStore((s) => s.quickbarHotkey.label);
   const dockHint = t("quickbar.topbarHint", { hotkey: hotkeyLabel });
@@ -332,14 +369,12 @@ export function QuickBar() {
 
   return (
     <motion.div
-      // 进入速览（窗口收成顶部一条）时不能让内容立刻淡入：窗口还在收拢中段，
-      // 内容提前亮出来会被"啪地出现又突然收走"。用 qb-birth 延迟到收拢完成后淡入。
-      className={morph ? "qb-frame qb-birth" : "qb-frame"}
+      className="qb-frame"
       data-docked={docked ? "true" : undefined}
       data-dock-phase={docked ? phase : undefined}
       style={frameStyle}
       initial={intro ? { opacity: 0 } : false}
-      animate={{ opacity: 1 }}
+      animate={{ opacity: revealed ? 1 : 0 }}
       transition={intro ? easeTop : INTRO_OFF}
     >
       {/* 抓手条：无论收起还是展开都保留，窗口始终能拖动 */}

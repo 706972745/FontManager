@@ -12,6 +12,7 @@ import {
   expectationFromCatalogue,
   expectationFromFiles,
   familyCoverage,
+  filesToDownload,
   parentDir,
   type CoverageState,
   type FamilyCoverage,
@@ -167,6 +168,17 @@ export function OnlineView() {
     if (faces.length === 0) return familyCoverage([], [], false);
     return familyCoverage(faces, expectationFromFiles(detail.files), hasLicense(faces));
   }, [detail, libFacesFor, hasLicense]);
+
+  // 按下「补充版权文件 / 补全缺失 / 加入字库」时算出真正要下什么：
+  // 已有的字重一个都不重下；只缺版权文件时一个字体文件都不下。
+  const onInstall = () => {
+    if (!detail || !detailCoverage) return;
+    const files =
+      detailCoverage.expected === 0
+        ? null // 在线信息不足，无法判断缺哪些 → 全套下载
+        : filesToDownload(detail.files, libFacesFor(detail.family));
+    void install(detail.id, { files, license: !detailCoverage.hasLicense });
+  };
 
   // 「删除字族并重新下载」的二次确认（4 秒内再点一次才执行）
   const reinstall = useFontStore((s) => s.reinstallOnlineFamily);
@@ -429,7 +441,7 @@ export function OnlineView() {
                       {detailCoverage?.state !== "complete" && (
                         <button
                           className="online-download"
-                          onClick={() => void install(detail.id)}
+                          onClick={onInstall}
                           disabled={!!downloading}
                         >
                           {downloading === detail.id ? (

@@ -1,12 +1,15 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Camera, ChevronRight, Folder, Lock, MoreHorizontal, Star } from "lucide-react";
-import { memo, useState } from "react";
+import { AlertTriangle, Camera, ChevronRight, Folder, Lock, Star } from "lucide-react";
+import { memo, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
-import { spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
+import { spring, springSnappy, springSoft } from "../design/springs";
 import { useFontCss } from "../lib/fontLoader";
-import { buildFaceMenu, buildFamilyMenu } from "../lib/menus";
-import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
-import { useCjkFlag } from "../lib/cjk";
+import { buildFamilyMenu } from "../lib/menus";
+import { openContextMenu } from "../design/primitives/ContextMenu";
+import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
+import { useCjkSibling } from "../lib/cjkSiblings";
+import { ScriptChip } from "./ScriptChip";
+import { FaceLine, faceLineFontSize } from "./FaceLine";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
 import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
@@ -20,104 +23,32 @@ export function FormatBadge({ format, isVariable }: { format: string; isVariable
   return <span className={`badge badge-${format}`}>{format.toUpperCase()}</span>;
 }
 
+/** 卡片展开后的字重行：和速览界面共用 FaceLine，两处长得一模一样 */
 function FacePreview({
   family,
   face,
-  text,
-  size,
+  probeText,
   index,
-  synthesize,
   onHover,
 }: {
   /** 字族：字重菜单里要带上字族名（显示与复制都用得上） */
   family: Family;
   face: FontFace;
-  text: string;
-  size: number;
+  /** 用来判断「缺哪种语言文字」的原始示例文字（空串 = 用户没输入，不标注） */
+  probeText: string;
   index: number;
-  synthesize: boolean;
   /** 鼠标进入 / 离开这一行：卡片大预览临时切到这个字重，离开恢复 Regular */
   onHover: (faceId: string | null) => void;
 }) {
-  const t = useT();
-  const intro = useIntro();
-  const { fontFamily, failed } = useFontCss(face);
-  // 这个字重里有没有汉字：没有的话应用后中文不会变，得提前说清楚
-  const hasCjk = useCjkFlag(face);
-  // 少数老字体的 name 表里 style 是空的，直接渲染会是一行空白（看着像坏了）
-  const styleLabel = face.style?.trim() || face.postscriptName || "Regular";
   return (
-    <motion.div
-      className="face-row"
-      // 交互都是被动的：悬停高亮 + 大预览临时切到这个字重（移开恢复），
-      // 右击弹该字重自己的菜单。「点一下切换主预览」这层交互用户反馈不要（0.9.2-6）。
-      onMouseEnter={() => onHover(face.id)}
-      onMouseLeave={() => onHover(null)}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        openContextMenu(e, buildFaceMenu(family, face));
-      }}
-      initial={intro ? { opacity: 0, y: 8 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      transition={intro ? { ...spring, delay: staggerDelay(index) } : INTRO_OFF}
-    >
-      <span className="face-marker" aria-hidden="true" />
-      <span className="face-style">
-        <span className="face-style-name">{styleLabel}</span>
-      </span>
-      <AnimatePresence mode="wait">
-        {fontFamily ? (
-          <motion.span
-            key="real"
-            className="face-sample"
-            style={{
-              fontFamily,
-              fontSize: Math.min(size, 32),
-              fontStyle: face.italic ? "italic" : "normal",
-
-              fontWeight: synthesize ? face.weight : undefined,
-            }}
-            initial={intro ? { opacity: 0, y: 4 } : false}
-            animate={{ opacity: 1, y: 0 }}
-            transition={intro ? spring : INTRO_OFF}
-          >
-            {text}
-          </motion.span>
-        ) : failed ? (
-          <span key="failed" className="face-sample face-failed">
-            {t("card.previewUnavailable")}
-          </span>
-        ) : (
-          <motion.span
-            key="skeleton"
-            className="skeleton face-skeleton"
-            exit={{ opacity: 0, transition: { duration: 0.1 } }}
-          />
-        )}
-      </AnimatePresence>
-      <span className="face-tail">
-        {hasCjk === false && (
-          <span className="cjk-chip" title={t("card.noCjkTitle")}>
-            {t("card.noCjk")}
-          </span>
-        )}
-        {/* 每个字重单独一份操作：应用到 PS / AI / CDR、复制字体全名 / PostScript 名 */}
-        <button
-          type="button"
-          className="face-actions"
-          aria-label={t("menu.faceActions", { name: styleLabel })}
-          title={t("menu.faceActions", { name: styleLabel })}
-          onClick={(e) => {
-            e.stopPropagation();
-            const r = e.currentTarget.getBoundingClientRect();
-            openContextMenuAt(r.left, r.bottom + 4, buildFaceMenu(family, face));
-          }}
-        >
-          <MoreHorizontal size={14} strokeWidth={1.75} />
-        </button>
-      </span>
-    </motion.div>
+    <FaceLine
+      family={family}
+      face={face}
+      probeText={probeText}
+      onHover={onHover}
+      animate
+      index={index}
+    />
   );
 }
 
@@ -142,6 +73,14 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
 
   const size = SIZES[sizeIndex];
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
+  // 示例文字用到哪些语言文字、这款字体画不画得出（用户没输入时不标注）
+  const probeText = sampleText.trim();
+  const scriptStatus = useScriptStatus(lead, probeText);
+  // 整族一个汉字都没有时，去同名前缀的兄弟家族里找有没有中文版（鸿蒙那种拆包字体）。
+  // 只有真的缺中文才查，中文家族根本不会走到这里。
+  const needsCjkSibling = !!scriptStatus?.missing.includes("han");
+  const cjkSibling = useCjkSibling(family.name, needsCjkSibling);
+  const scriptHint = cjkSibling ? t("card.seeCjkVersion", { family: cjkSibling }) : null;
   const previewFace = family.faces.find((f) => f.id === hoverFaceId) ?? lead;
   const { fontFamily, failed } = useFontCss(previewFace);
   const text = sampleText.trim() || family.name;
@@ -299,21 +238,35 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
       <div className="card-preview" style={{ minHeight: size * 1.35 }}>
         <AnimatePresence mode="wait">
           {fontFamily ? (
-            <motion.p
-              key="real"
-              className="preview-text"
-              style={{
-                fontFamily,
-                fontSize: size,
-                fontStyle: previewFace.italic ? "italic" : "normal",
-                fontWeight: previewFace === lead ? undefined : previewFace.weight,
-              }}
-              initial={intro ? { opacity: 0, y: 5 } : false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={intro ? spring : INTRO_OFF}
-            >
-              {text}
-            </motion.p>
+            hasScriptNote(scriptStatus) ? (
+              /* 画不出示例文字的语言：这一格直接换成「无中文」这类标注（0.9.3-5）
+                 缺中文时若同族另有中文版，补一句「中文见 XXX」指路（0.9.3-7） */
+              <motion.p
+                key="noscript"
+                className="preview-text preview-script"
+                initial={intro ? { opacity: 0, y: 5 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={intro ? spring : INTRO_OFF}
+              >
+                <ScriptChip status={scriptStatus} hint={scriptHint} />
+              </motion.p>
+            ) : (
+              <motion.p
+                key="real"
+                className="preview-text"
+                style={{
+                  fontFamily,
+                  fontSize: size,
+                  fontStyle: previewFace.italic ? "italic" : "normal",
+                  fontWeight: previewFace === lead ? undefined : previewFace.weight,
+                }}
+                initial={intro ? { opacity: 0, y: 5 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={intro ? spring : INTRO_OFF}
+              >
+                {text}
+              </motion.p>
+            )
           ) : failed ? (
             <p key="failed" className="preview-text preview-failed">
               {t("card.noPreview")}
@@ -333,6 +286,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
         {expanded && (
           <motion.div
             className="card-styles"
+            /* 字重名的大小跟着上面的示例字号走（完整界面取 1/4） */
+            style={{ "--face-line-size": faceLineFontSize(size, 4) } as CSSProperties}
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0, transition: { ...springSnappy } }}
@@ -343,10 +298,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
                 key={face.id}
                 family={family}
                 face={face}
-                text={text}
-                size={size}
+                probeText={probeText}
                 index={i}
-                synthesize={family.faces.filter((f) => f.path === face.path).length > 1}
                 onHover={setHoverFaceId}
               />
             ))}

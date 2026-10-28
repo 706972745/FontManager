@@ -737,8 +737,14 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         // 最小化 / 刚恢复的那一帧可能还留着 -32000 这种哨兵值
         if (pos.y < -1000 || pos.x < -1000) return null;
         const monitor = current ?? primary;
-        const edge = monitor?.workArea?.position?.y ?? monitor?.position?.y;
-        if (edge === undefined) return null;
+        // 单位必须统一成逻辑像素：`outerPosition()` 和 `Monitor.workArea.position`
+        // 返回的都是物理像素（见 @tauri-apps/api 的 Monitor 定义），下面 `top` 已经除以
+        // scale，edge 若原样保留就是「物理 - 逻辑」，在任务栏置顶 / 多屏纵向排列
+        // （workArea.y ≠ 0）时会把 near 判定直接顶出容差，吸顶彻底失效。
+        // 本机单屏、任务栏在底部时 workArea.y = 0，恰好看不出问题。
+        const edgePhys = monitor?.workArea?.position?.y ?? monitor?.position?.y;
+        if (edgePhys === undefined) return null;
+        const edge = edgePhys / scale;
         const top = pos.y / scale;
         const near = top - edge <= DOCK_TOLERANCE && top - edge >= -DOCK_TOLERANCE * 3;
         return { near, edge, x: Math.round(pos.x / scale) };

@@ -96,7 +96,7 @@ pub fn scan_all(
     managed: &Path,
     cache: &mut crate::fontcache::FontCache,
 ) -> Vec<FontFace> {
-    let files: Vec<(PathBuf, FontSource)> = all_dirs(extra)
+    let all_files: Vec<(PathBuf, FontSource)> = all_dirs(extra)
         .into_iter()
         .flat_map(|(dir, source)| {
             WalkDir::new(dir)
@@ -107,6 +107,41 @@ pub fn scan_all(
                 .map(move |e| (e.into_path(), source))
                 .filter(|(p, _)| parser::is_font_file(p))
                 .collect::<Vec<_>>()
+        })
+        .collect();
+
+    // WOFF/WOFF2 快速判重（纯路径判断，零读取开销）：同目录同名的 ttf/otf 已在列，
+    // 而 Windows 加载不了 woff——不为它建 face，省得出现「永远无法启用」的死面。
+    // 内容级判重与解包在导入层做（见 webfonts 模块注释），这里只挡扫描。
+    let native_stems: std::collections::HashSet<(PathBuf, String)> = all_files
+        .iter()
+        .filter_map(|(p, _)| {
+            let ext = p.extension()?.to_str()?.to_ascii_lowercase();
+            if !matches!(ext.as_str(), "ttf" | "otf") {
+                return None;
+            }
+            Some((
+                p.parent()?.to_path_buf(),
+                p.file_stem()?.to_str()?.to_lowercase(),
+            ))
+        })
+        .collect();
+    let files: Vec<(PathBuf, FontSource)> = all_files
+        .into_iter()
+        .filter(|(p, _)| {
+            let ext = match p.extension().and_then(|e| e.to_str()) {
+                Some(e) => e.to_ascii_lowercase(),
+                None => return true,
+            };
+            if !matches!(ext.as_str(), "woff" | "woff2") {
+                return true;
+            }
+            let is_twin = p
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| Some((p.parent()?.to_path_buf(), s.to_lowercase())))
+                .is_some_and(|k| native_stems.contains(&k));
+            !is_twin
         })
         .collect();
 

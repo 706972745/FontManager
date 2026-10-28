@@ -16,7 +16,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 /// 缓存格式版本：字段结构变了就加一，老缓存自动作废（不兼容就重新解析，绝不会出错）
-const CACHE_VERSION: u32 = 1;
+///
+/// v2：`scripts` 里原来的 `cjk`（要求汉字 + 假名同时存在）拆成 `han` / `kana`，
+/// 并改成按汉字抽样覆盖率判定。老缓存里纯中文字体根本没有 `cjk` 标记，
+/// 无法就地迁移，只能作废重解析——代价是升级后第一次启动要重扫一遍字体库。
+const CACHE_VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -58,7 +58,8 @@ pub struct FamilyDetail {
 pub struct DownloadResult {
     pub family: String,
     pub paths: Vec<String>,
-    pub license_path: String,
+    /// 本次是否落了许可证文件（只补字重时可能是 None）
+    pub license_path: Option<String>,
     /// 来源缩写（如 "google-fonts"），用作库目录下的子文件夹名
     pub source: String,
 }

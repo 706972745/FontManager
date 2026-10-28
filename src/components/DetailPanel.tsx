@@ -1,11 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Star, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Star, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
-import { spring, springSoft } from "../design/springs";
+import { easeTop, spring } from "../design/springs";
 import { useFontCss, formatBytes, pathBasename } from "../lib/fontLoader";
 import { familiesFor, conflictsFor, useFontStore, type Family } from "../state/fontStore";
-import { ipc, type FontFace, type VariationAxis } from "../lib/ipc";
+import { ipc, type CharsetStats, type FontFace, type VariationAxis } from "../lib/ipc";
 import { toast } from "../design/primitives/Toast";
 import { FormatBadge } from "./FamilyCard";
 import { buildFaceMenu, exportFace, exportFamily } from "../lib/menus";
@@ -13,6 +13,7 @@ import { openContextMenuAt } from "../design/primitives/ContextMenu";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { classifyLicense, copyrightExpired, normalizeCopyright } from "../lib/license";
 import { faceKey } from "../lib/snapshotKey";
+import { parentDir } from "../lib/onlineCoverage";
 import { playStar, playTag } from "../lib/sound";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { t as translate, useT, type TKey } from "../lib/i18n";
@@ -205,6 +206,9 @@ const SCRIPT_KEYS = new Map<string, TKey>(
       "hebrew",
       "devanagari",
       "thai",
+      // 0.9.3-7 起汉字和假名分开标（原来合成一个 cjk，纯中文字体根本拿不到标记）
+      "han",
+      "kana",
       "cjk",
       "korean",
       "vietnamese",
@@ -600,16 +604,20 @@ export function DetailPanel() {
   const panelWidth = useFontStore((s) => s.panelWidth);
   const setPanelWidth = useFontStore((s) => s.setPanelWidth);
   const dragging = useRef(false);
+  /** 正在拖左边缘调宽：此时宽度必须实时跟手，不能再走弹簧（会拖出「粘手」感） */
+  const [resizing, setResizing] = useState(false);
 
   const onResizeDown = useCallback(
     (e: React.PointerEvent) => {
       dragging.current = true;
+      setResizing(true);
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       const onMove = (ev: PointerEvent) => {
         if (dragging.current) setPanelWidth(window.innerWidth - ev.clientX);
       };
       const onUp = () => {
         dragging.current = false;
+        setResizing(false);
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
       };
@@ -646,6 +654,92 @@ export function DetailPanel() {
     null;
   const { fontFamily } = useFontCss(lead);
   const text = sampleText.trim() || family?.name || "";
+
+  /* 字符集构成：cmap 里到底有多少字符、其中汉字几个。
+   *
+   * 卡片上「无中文」是个结论，用户没法核对（鸿蒙基础版就是典型：它真有 0 个汉字，
+   * 但用户以为自己装的是一套中文）。这里给出「共 866 字符 · 汉字 0」这种硬数据，
+   * 判断立刻变得可验证。
+   *
+   * 要枚举全部码位，单个 8MB 中文字体 2~5ms，只对当前打开的这个字面调一次，
+   * 不参与扫描。 */
+  const [charset, setCharset] = useState<CharsetStats | null>(null);
+  useEffect(() => {
+    setCharset(null);
+    if (!lead || lead.format === "woff" || lead.format === "woff2") return;
+    let stale = false;
+    ipc
+      .fontCharset([[lead.path, lead.faceIndex]])
+      .then((res) => {
+        if (!stale) setCharset(res[0] ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead?.id]);
+
+  /* 版权文件：字族目录里有没有 LICENSE / OFL 这类文件。
+   * 只认非系统字面所在的目录 —— C:\Windows\Fonts 不该被我们塞 txt。 */
+  const writableDirs = family
+    ? [...new Set(family.faces.filter((f) => f.source !== "system").map((f) => parentDir(f.path)))]
+        .filter((d) => d.length > 0)
+        .sort()
+    : [];
+  const dirsKey = writableDirs.join("\n");
+  const [licenseFiles, setLicenseFiles] = useState<string[] | null>(null);
+  const [licenseSearching, setLicenseSearching] = useState(false);
+  useEffect(() => {
+    setLicenseFiles(null);
+    if (!dirsKey) {
+      setLicenseFiles([]);
+      return;
+    }
+    let stale = false;
+    ipc
+      .infoFiles(dirsKey.split("\n"))
+      .then((map) => {
+        if (stale) return;
+        setLicenseFiles([...new Set(Object.values(map).flat())].sort());
+      })
+      .catch(() => {
+        if (!stale) setLicenseFiles([]);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [dirsKey]);
+
+  const searchLicense = async () => {
+    if (!family || licenseSearching || writableDirs.length === 0) return;
+    setLicenseSearching(true);
+    try {
+      const postscripts = [
+        ...new Set(family.faces.map((f) => f.postscriptName).filter((p): p is string => !!p)),
+      ];
+      const hit = await ipc.fontLicenseFetch(family.name, postscripts, writableDirs);
+      if (!hit) {
+        toast.info(t("toast.licenseNotFound"), t("toast.licenseNotFoundSub"));
+        return;
+      }
+      toast.success(
+        t("toast.licenseFound", { file: hit.fileName }),
+        t("toast.licenseFoundSub", { family: hit.family, ps: hit.postscript }),
+        "install",
+      );
+      const map = await ipc.infoFiles(writableDirs);
+      setLicenseFiles([...new Set(Object.values(map).flat())].sort());
+    } catch (e) {
+      const raw = String(e);
+      toast.error(
+        t("toast.licenseFetchFailed"),
+        /switched off/i.test(raw) ? t("toast.licenseNeedsOnline") : raw,
+      );
+    } finally {
+      setLicenseSearching(false);
+    }
+  };
 
   useEffect(() => {
     setFeatures([]);
@@ -695,11 +789,15 @@ export function DetailPanel() {
       {family && lead && (
         <motion.aside
           className="detail glass-e3"
-          style={{ width: panelWidth }}
-          initial={intro ? { x: panelWidth, opacity: 0 } : false}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: panelWidth, opacity: 0 }}
-          transition={intro ? springSoft : INTRO_OFF}
+          /* 宽度参与动画：0 → panelWidth 与主区域的收缩是同一帧、同一条曲线，
+             不再是「左边一帧跳完、右边慢慢滑 300ms」。内容宽度单独锁在 --panel-w
+             上，展开过程中只被裁出来、不重排换行。 */
+          style={{ "--panel-w": `${panelWidth}px` } as CSSProperties}
+          initial={intro ? { width: 0, opacity: 0 } : false}
+          animate={{ width: panelWidth, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
+          /* 宽度变化用固定缓动而不是弹簧：布局动画上的回弹会让人看见列表「退半步再回来」 */
+          transition={resizing ? { duration: 0 } : intro ? easeTop : INTRO_OFF}
         >
           <div
             className="detail-resize"
@@ -717,7 +815,9 @@ export function DetailPanel() {
             className="detail-inner"
             initial="hidden"
             animate="show"
-            variants={{ show: { transition: { staggerChildren: 0.04, delayChildren: 0.06 } } }}
+            /* 内容跟着外壳一起到位：原来 0.04 × N + 0.06 的延迟会让最后一块比面板
+               晚 0.5 秒才出现，看起来像「壳先到、字后爬」。压到今天一条 300ms 的节奏里。 */
+            variants={{ show: { transition: { staggerChildren: 0.012, delayChildren: 0 } } }}
           >
             <motion.header
               className="detail-head"
@@ -922,6 +1022,17 @@ export function DetailPanel() {
                     <dd className="tabular">{family.glyphCount.toLocaleString()}</dd>
                   </>
                 )}
+                {charset && charset.total > 0 && (
+                  <>
+                    <dt>{t("detail.charset")}</dt>
+                    <dd className="tabular">
+                      {t("detail.charsetValue", {
+                        total: charset.total.toLocaleString(),
+                        han: charset.han.toLocaleString(),
+                      })}
+                    </dd>
+                  </>
+                )}
                 <dt>{t("detail.fileSize")}</dt>
                 <dd className="tabular">{formatBytes(family.totalSize)}</dd>
                 {family.foundry && (
@@ -946,6 +1057,29 @@ export function DetailPanel() {
                     </dd>
                   </>
                 )}
+                <dt>{t("detail.licenseFile")}</dt>
+                <dd className="license-file-cell">
+                  {licenseFiles === null ? (
+                    <span className="license-file-pending">…</span>
+                  ) : licenseFiles.length > 0 ? (
+                    <span className="license-file-names detail-mono">{licenseFiles.join(", ")}</span>
+                  ) : writableDirs.length === 0 ? (
+                    <span className="license-file-missing">{t("detail.licenseFileSystem")}</span>
+                  ) : (
+                    <span className="license-file-actions">
+                      <span className="license-file-missing">{t("detail.licenseFileNone")}</span>
+                      <button
+                        className="license-file-search"
+                        onClick={() => void searchLicense()}
+                        disabled={licenseSearching}
+                        title={t("detail.licenseSearchHint")}
+                      >
+                        <Search size={11} strokeWidth={1.5} />
+                        {licenseSearching ? t("detail.licenseSearching") : t("detail.licenseSearch")}
+                      </button>
+                    </span>
+                  )}
+                </dd>
                 <dt>{t("detail.location")}</dt>
                 <dd className="detail-path">
                   <button

@@ -865,6 +865,7 @@ body {
   padding-top: 14px;
   display: flex;
   align-items: center;
+  gap: 8px;
   overflow: hidden;
 }
 .preview-text {
@@ -872,10 +873,15 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
 }
-.preview-failed,
-.face-failed {
+/* 这一格被「无中文」这类标注替换掉时：垂直居中，胶囊按预览行字号略放大一点 */
+.preview-script {
+  display: flex;
+  align-items: center;
+}
+.preview-failed {
   font-size: var(--fs-13);
   color: var(--text-tertiary);
   font-style: italic;
@@ -889,34 +895,9 @@ body {
 .card-styles {
   overflow: hidden;
   margin-top: 10px;
+  padding-top: 4px;
   border-top: 1px solid rgba(var(--ink-rgb), 0.05);
 }
-.face-row {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  padding: 9px 0;
-}
-.face-row + .face-row {
-  border-top: 1px solid rgba(var(--ink-rgb), 0.03);
-}
-.face-style {
-  font-size: var(--fs-11);
-  font-weight: 500;
-  color: var(--text-tertiary);
-}
-.face-sample {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.3;
-}
-.face-skeleton {
-  display: inline-block;
-  width: 40%;
-  height: 14px;
-}
-
 .list-wrap {
   display: flex;
   flex-direction: column;
@@ -1042,13 +1023,25 @@ body {
   -webkit-backdrop-filter: blur(32px) saturate(140%) brightness(1.05);
   box-shadow: -24px 0 48px rgba(0, 0, 0, 0.2);
   z-index: 3;
-  overflow-y: auto;
+  /* 宽度本身参与动画（0 → panelWidth），展开途中把还没露出来的内容裁掉。
+     滚动挪到 .detail-inner：外层裁剪、内层滚动，两层各管一件事。 */
+  overflow: hidden;
 }
 .detail-inner {
   display: flex;
   flex-direction: column;
   gap: 18px;
   padding: 20px 18px;
+  /* 定宽 = 面板的目标宽度：宽度逐帧变化时内容不跟着重排换行，
+     只是从右边被「揭开」。值由 DetailPanel 写在 --panel-w 上。 */
+  width: var(--panel-w, 348px);
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* 定高容器里 flex 子项默认会被压扁，一块一块禁掉 */
+.detail-inner > * {
+  flex-shrink: 0;
 }
 .detail-head {
   display: flex;
@@ -1221,6 +1214,51 @@ h2.detail-title.copy-name {
 }
 .detail-path {
   line-height: 1.3;
+}
+
+/* 版权文件行：文件名已有时只列名字；缺了才给「搜索」按钮 */
+.license-file-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.license-file-cell .license-file-names {
+  color: var(--text-secondary);
+}
+.license-file-missing {
+  color: var(--text-tertiary);
+}
+.license-file-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.license-file-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink-rgb), 0.1);
+  background: var(--e2);
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  transition: color var(--t-quick) ease, border-color var(--t-quick) ease,
+    background var(--t-quick) ease;
+}
+.license-file-search:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: rgba(var(--ink-rgb), 0.18);
+}
+.license-file-search:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.license-file-search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .tag-editor {
@@ -4526,23 +4564,23 @@ h2.detail-title.copy-name {
   background: rgba(var(--ink-rgb), 0.14);
   color: var(--text-primary);
 }
-/* 卡片/字重行上的「无中文字形」提示 */
-.cjk-chip {
+/* 缺字提示：顶替示例文字的位置，样式跟「这种格式暂时无法预览」一致——
+   灰色小字、无边框（0.9.3-3 用户要求） */
+.script-note {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  color: #fbbf24;
-  font-size: var(--fs-10);
-  line-height: 1;
+  font-size: var(--fs-13);
+  line-height: 1.2;
+  color: var(--text-tertiary);
+  font-style: italic;
   white-space: nowrap;
 }
-:root[data-theme="light"] .cjk-chip {
-  border-color: rgba(180, 83, 9, 0.35);
-  color: #b45309;
+/* 同族版本指路（「无中文 · 中文见 HarmonyOS Sans SC」）：再淡一档，
+   不让它看起来像第二条同等重要的结论 */
+.script-hint {
+  margin-left: 0.45em;
+  opacity: 0.75;
 }
 .lic-chip.lic-restrictive {
   background: rgba(var(--ink-rgb), 0.14);
@@ -4817,24 +4855,12 @@ body.ui-fade-out .app-frame {
 }
 
 /**
- * 进入速览时速览内容的「出生」动画：旧界面渐隐（150ms）后内容挂载、窗口开始收拢，
- * 这 300ms 里内容必须保持透明——否则会提前亮在还在收拢的窗口里，被"啪地出现又突然
- * 收走"。延迟 300ms 等窗口收成顶部一条后再淡入，露出的是收起态的提示条。
- * 挂载即带 morph（钉住速览尺寸）只发生在进入速览这一刻；收起态展开走 dock 还原、
- * 不重挂组件，退出速览时 QuickBar 已卸载，都不会被这个延迟误伤。
+ * 进入速览时速览内容的淡入曾用 qb-birth 固定时长动画（挂载 300ms 延迟 + 200ms 淡入），
+ * 但 adoptQuickbarDock 有等挂载的轮询（最长 600ms）+ 首屏渲染堵主线程，实际接管时刻
+ * 不固定；动画放完 dock 还没接管，顶栏就在细线窗口里闪现（0.9.3-14 用户报告）。
+ * 现在改为事件门控：QuickBar 里 revealed 状态经 motion 的 opacity 直接控制，
+ * dock 接管（docked=true）后才淡入——这里不再需要任何 CSS。
  */
-.qb-birth {
-  animation: qb-birth 200ms cubic-bezier(0.4, 0, 0.2, 1) 300ms both;
-}
-
-@keyframes qb-birth {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
 
 @keyframes morph-fade {
   from {
@@ -4853,11 +4879,6 @@ body.ui-fade-out .app-frame {
   body.ui-fade-out .app-frame {
     animation-duration: 1ms;
   }
-
-  .qb-birth {
-    animation-delay: 0ms;
-    animation-duration: 1ms;
-  }
 }
 
 /**
@@ -4867,6 +4888,9 @@ body.ui-fade-out .app-frame {
 .qb-dockbar {
   display: flex;
   align-items: center;
+  /* 提示条宽度跟着速览窗口走（远宽于文字），整组「圆点 + 文案」居中放，
+     否则文案贴在最左边、右边空出一大片 */
+  justify-content: center;
   gap: 7px;
   height: 20px;
   padding: 0 10px;
@@ -4913,7 +4937,9 @@ body.ui-fade-out .app-frame {
   opacity: 0.7;
 }
 .qb-dock-label {
-  flex: 1;
+  /* 不占满剩余宽度（那样 justify-content 就没效果了），按内容宽度参与居中；
+     文案比窗口还长时（俄语等）才允许收缩并出省略号 */
+  flex: 0 1 auto;
   min-width: 0;
   font-size: var(--fs-10);
   color: var(--text-tertiary);
@@ -5139,6 +5165,11 @@ body.ui-fade-out .app-frame {
   -webkit-mask-image: linear-gradient(90deg, black 86%, transparent);
   mask-image: linear-gradient(90deg, black 86%, transparent);
 }
+/* 速览里「无中文」替换示例文字：靠左、垂直居中，并顶住原来那一行的高度 */
+.qb-item-noscript {
+  display: flex;
+  align-items: center;
+}
 .qb-item-meta {
   font-size: var(--fs-10);
   color: var(--text-tertiary);
@@ -5179,40 +5210,6 @@ body.ui-fade-out .app-frame {
   color: var(--text-tertiary);
 }
 
-/* 字重行尾部：可能带一个「无中文」小标签 + 操作按钮 */
-.face-tail {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.face-tail .face-actions {
-  margin-left: 0;
-}
-
-/* 字重行尾的操作按钮（完整界面展开字重后出现） */
-.face-actions {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
-}
-.face-actions:hover {
-  color: var(--text-primary);
-  border-color: rgba(var(--ink-rgb), 0.12);
-  background: rgba(var(--ink-rgb), 0.04);
-}
-
 /* 速览卡片：字重数量徽标变成可点开的按钮 */
 .qb-item-expand {
   display: inline-flex;
@@ -5231,7 +5228,7 @@ body.ui-fade-out .app-frame {
   border-color: rgba(var(--ink-rgb), 0.12);
 }
 
-/* 速览卡片里展开的字重列表 */
+/* 速览卡片里展开的字重列表（行本身是 .face-line） */
 .qb-faces {
   display: flex;
   flex-direction: column;
@@ -5240,7 +5237,7 @@ body.ui-fade-out .app-frame {
   padding: 4px 0 0;
   border-top: 1px solid rgba(var(--ink-rgb), 0.05);
 }
-.qb-face {
+.face-line {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -5248,12 +5245,12 @@ body.ui-fade-out .app-frame {
   box-shadow: inset 2px 0 0 transparent;
   transition: background 120ms ease, box-shadow 120ms ease;
 }
-/* 悬停就有左侧竖条 + 底色，和完整界面的字重行一致 */
-.qb-face:hover {
+/* 悬停就有左侧竖条 + 底色：完整界面和速览共用这一套（0.9.3-5 起两处完全一致） */
+.face-line:hover {
   background: rgba(var(--ink-rgb), 0.06);
   box-shadow: inset 2px 0 0 rgba(var(--ink-rgb), 0.32);
 }
-.qb-face-name {
+.face-line-name {
   flex: 1;
   min-width: 0;
   padding: 3px 6px;
@@ -5261,22 +5258,27 @@ body.ui-fade-out .app-frame {
   border-radius: 5px;
   background: none;
   color: var(--text-secondary);
-  font-size: var(--fs-11);
+  /* 大小跟着上面示例文字的字号走：完整界面 1/4、速览 1/8，由父容器写 --face-line-size。
+     没写的场合（比如别处复用）退回原来的 11px。 */
+  font-size: var(--face-line-size, var(--fs-11));
+  line-height: 1.3;
   text-align: left;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.qb-face-name:hover {
+.face-line-name:hover {
   color: var(--text-primary);
 }
-.qb-face-apply {
+.face-line-apply {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  /* 跟着字重名一起缩放：11px 文字时 21px（和原来的 22px 一样），24px 文字时 34px，
+     否则字放大了按钮还是一颗小点，看着像漏了缩放。 */
+  width: calc(var(--face-line-size, var(--fs-11)) + 10px);
+  height: calc(var(--face-line-size, var(--fs-11)) + 10px);
   flex-shrink: 0;
   border: 1px solid transparent;
   border-radius: 5px;
@@ -5284,58 +5286,12 @@ body.ui-fade-out .app-frame {
   color: var(--text-tertiary);
   cursor: pointer;
 }
-.qb-face-apply:hover {
+.face-line-apply svg {
+  width: calc(var(--face-line-size, var(--fs-11)) * 0.9);
+  height: calc(var(--face-line-size, var(--fs-11)) * 0.9);
+}
+.face-line-apply:hover {
   color: var(--text-primary);
   border-color: rgba(var(--ink-rgb), 0.12);
-}
-
-/* 字重选中态：左侧竖条 + 底色，一眼看出「现在预览的是这个字重」 */
-.face-row {
-  position: relative;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background 120ms ease;
-}
-/* 悬停就有反馈：左侧竖条亮起来 + 底色加深（不用先点一下才知道这一行能点） */
-.face-row {
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background 120ms ease;
-}
-.face-row:hover {
-  background: rgba(var(--ink-rgb), 0.055);
-}
-.face-row:hover .face-sample {
-  color: var(--text-primary);
-}
-.face-row:hover .face-actions {
-  color: var(--text-secondary);
-}
-.face-marker {
-  width: 2px;
-  align-self: stretch;
-  border-radius: 2px;
-  background: transparent;
-  flex-shrink: 0;
-  transition: background 120ms ease;
-}
-/* 悬停才亮起竖条（0.9.2-6 起字重行不再有「点击选中」这层交互） */
-.face-row:hover .face-marker {
-  background: rgba(var(--ink-rgb), 0.32);
-}
-.face-style {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  /* 原来是固定 112px：字重名一长就换行，还把「预览中」标签挤成两列 */
-  min-width: 112px;
-  max-width: 260px;
-  flex-shrink: 0;
-}
-.face-style-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 

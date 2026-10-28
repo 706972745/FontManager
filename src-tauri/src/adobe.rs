@@ -845,11 +845,12 @@ mod tests {
     #[test]
     fn scripts_embed_names_safely() {
         let ps = photoshop_script("My\"Font-Bold", "My Font-Bold", "Fam \\ ily", &[]);
-        assert!(ps.contains(r#"var font = "My\"Font-Bold";"#));
+        // 0.9.3 起脚本改为候选数组逐个试（var cands = [...]），名字经 js_string 转义嵌入
+        assert!(ps.contains(r#"var cands = ["My\"Font-Bold""#));
         assert!(ps.contains(r#"var family = "Fam \\ ily";"#));
         let ai = illustrator_script("Inter-Regular", "Inter Regular", "Inter", &[]);
-        assert!(ai.contains(r#"app.textFonts.getByName(name)"#));
-        assert!(ai.contains(r#"var name = "Inter-Regular";"#));
+        assert!(ai.contains(r#"app.textFonts.getByName(cands[ci])"#));
+        assert!(ai.contains(r#"var cands = ["Inter-Regular""#));
         assert!(ai.contains(r#"var family = "Inter";"#));
         // 选中了非文字图层要报 no-text-selected，不能再悄悄新建
         assert!(ps.contains("no-text-selected"));

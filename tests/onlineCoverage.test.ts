@@ -4,6 +4,7 @@ import {
   expectationFromCatalogue,
   expectationFromFiles,
   familyCoverage,
+  filesToDownload,
   parentDir,
 } from "../src/lib/onlineCoverage.ts";
 import type { FontFace } from "../src/lib/ipc.ts";
@@ -166,6 +167,44 @@ test("系统字体不可删除", () => {
   );
   assert.equal(cov.state, "partial");
   assert.equal(cov.removable, false);
+});
+
+test("补全缺失时只挑字库里还没有的文件", () => {
+  const files = [
+    { filename: "Lora-Regular.ttf", style: "normal", weight: 400, postScriptName: "Lora-Regular" },
+    { filename: "Lora-Bold.ttf", style: "normal", weight: 700, postScriptName: "Lora-Bold" },
+    { filename: "Lora-Italic.ttf", style: "italic", weight: 400, postScriptName: "Lora-Italic" },
+  ];
+  const faces = [
+    face("Lora", { style: "Regular", weight: 400, postscriptName: "Lora-Regular" }),
+    face("Lora", { style: "Italic", weight: 400, italic: true, postscriptName: "Lora-Italic" }),
+  ];
+  assert.deepEqual(filesToDownload(files, faces), ["Lora-Bold.ttf"]);
+});
+
+test("字库里一个都没有时全部要下", () => {
+  const files = [
+    { filename: "A.ttf", style: "normal", weight: 400 },
+    { filename: "B.ttf", style: "normal", weight: 700 },
+  ];
+  assert.deepEqual(filesToDownload(files, []), ["A.ttf", "B.ttf"]);
+});
+
+test("可变字体已覆盖字重轴时不再补下静态文件", () => {
+  const files = [
+    { filename: "Lora[wght].ttf", style: "normal", weight: 400 },
+    { filename: "Lora-Italic[wght].ttf", style: "italic", weight: 400 },
+  ];
+  const faces = [face("Lora", { style: "Regular", weight: 400, variable: true, axes: [WGHT] })];
+  assert.deepEqual(filesToDownload(files, faces), ["Lora-Italic[wght].ttf"]);
+});
+
+test("同一文件名只下一次", () => {
+  const files = [
+    { filename: "Lora.ttc", style: "normal", weight: 400 },
+    { filename: "Lora.ttc", style: "normal", weight: 700 },
+  ];
+  assert.deepEqual(filesToDownload(files, []), ["Lora.ttc"]);
 });
 
 test("parentDir 同时支持正反斜杠", () => {

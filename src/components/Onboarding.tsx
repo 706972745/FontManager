@@ -34,6 +34,11 @@ const STEPS: TourStep[] = [
     body: "tour.search.body",
   },
   {
+    target: '[data-tour="filters"]',
+    title: "tour.scripts.title",
+    body: "tour.scripts.body",
+  },
+  {
     target: ".view-toggle",
     title: "tour.views.title",
     body: "tour.views.body",
@@ -46,9 +51,32 @@ const STEPS: TourStep[] = [
     onEnter: () => useFontStore.setState({ viewMode: "grid" }),
   },
   {
+    target: ".family-card",
+    title: "tour.weights.title",
+    body: "tour.weights.body",
+    onEnter: () => useFontStore.setState({ viewMode: "grid" }),
+  },
+  {
+    target: ".family-card",
+    title: "tour.hints.title",
+    body: "tour.hints.body",
+    onEnter: () => useFontStore.setState({ viewMode: "grid" }),
+  },
+  {
     target: ".detail",
     title: "tour.inspector.title",
     body: "tour.inspector.body",
+    onEnter: () => {
+      const st = useFontStore.getState();
+      if (!st.selectedFamily && st.visibleOrder.length > 0) {
+        st.select(st.visibleOrder[0]);
+      }
+    },
+  },
+  {
+    target: ".detail",
+    title: "tour.resize.title",
+    body: "tour.resize.body",
     onEnter: () => {
       const st = useFontStore.getState();
       if (!st.selectedFamily && st.visibleOrder.length > 0) {

@@ -20,6 +20,7 @@ import {
   type InstallMode,
   type OnlineFamily,
   type OnlineFamilyDetail,
+  type OnlineInstallScope,
   type OnlineProgress,
   type ScanProgress,
   type Snapshot,
@@ -54,6 +55,27 @@ import {
 } from "../lib/i18n";
 
 export const SIZES = [8, 14, 18, 24, 32, 48, 64, 96] as const;
+
+/**
+ * 导入后看看新落盘的目录里有没有版权文件（LICENSE / OFL 这类），缺了就提醒一次。
+ * 只是提醒：不挡导入、不改任何东西。系统字体目录不参与。
+ */
+async function warnMissingLicenses(faces: FontFace[]) {
+  const dirs = [
+    ...new Set(
+      faces.filter((f) => f.source !== "system").map((f) => parentDir(f.path)),
+    ),
+  ].filter((d) => d.length > 0);
+  if (dirs.length === 0) return;
+  try {
+    const map = await ipc.infoFiles(dirs);
+    const missing = dirs.filter((d) => !map[d] || map[d].length === 0);
+    if (missing.length === 0) return;
+    toast.info(t("toast.importNoLicense"), t("toast.importNoLicenseSub"));
+  } catch {
+    // 读不到目录就安静跳过，别为了提醒再弹一个错误
+  }
+}
 
 let initStarted = false;
 
@@ -276,7 +298,11 @@ interface FontStore {
   setOnlineVariableOnly: (on: boolean) => void;
   openOnlineFamily: (id: string) => Promise<void>;
   closeOnlineFamily: () => void;
-  installOnlineFamily: (id: string) => Promise<void>;
+  /**
+   * 把在线字族装进字库。
+   * scope 不传 = 全部文件 + 许可证；传了则只下 files 里的文件、按 license 决定要不要版权文件。
+   */
+  installOnlineFamily: (id: string, scope?: OnlineInstallScope) => Promise<void>;
   /** 删除字库里的该字族（进回收站）后重新从在线栏目下载 */
   reinstallOnlineFamily: (id: string) => Promise<void>;
   setMotionPref: (pref: MotionPref) => void;
@@ -1253,8 +1279,13 @@ export const useFontStore = create<FontStore>((set, get) => ({
           undefined,
           "install",
         );
+        void warnMissingLicenses(result.installed);
       }
       for (const err of result.errors) toast.error(t("toast.installFailed"), err);
+      // WOFF 判重：同字体已有 ttf/otf（或 woff2 不受支持）被跳过的个数
+      if (result.webfontsSkipped) {
+        toast.info(t("toast.webfontsSkipped", { count: result.webfontsSkipped }));
+      }
       if (
         result.installed.length === 0 &&
         result.errors.length === 0 &&
@@ -2031,18 +2062,23 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({ onlineDetail: null, onlinePreviewPath: null });
   },
 
-  installOnlineFamily: async (id) => {
+  installOnlineFamily: async (id, scope) => {
     if (get().onlineDownloading) return;
+    // 只补版权文件时一个字体都不下；没传 scope 就是整套重下
+    const files = scope ? scope.files : null;
+    const wantLicense = scope ? scope.license : true;
+    if (files !== null && files.length === 0 && !wantLicense) return;
     set({ onlineDownloading: id, onlineProgress: null });
     try {
-      const res = await ipc.onlineDownload(id);
+      const res = await ipc.onlineDownload(id, files, wantLicense);
       // 安装到 <库目录>/在线栏目/<来源>/<家族（版权后缀）>/，含许可证文件
       const dupKeyOf = (f: { postscriptName: string | null; family: string; style: string }) =>
         f.postscriptName ?? `${f.family} ${f.style}`;
       const existing = get().fonts.map(dupKeyOf);
       // 字库里已有的同名字族：许可证也补一份进去（补齐缺失的版权文件）
+      const familyKey = res.family.toLowerCase();
       const familyFaces = get().fonts.filter(
-        (f) => f.family === res.family && f.source !== "system",
+        (f) => f.family.toLowerCase() === familyKey && f.source !== "system",
       );
       const licenseDirs = [
         ...new Set(familyFaces.map((f) => parentDir(f.path)).filter((d) => d.length > 0)),
@@ -2090,21 +2126,24 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const detail = get().onlineDetail;
     if (!detail || get().onlineDownloading) return;
     const family = detail.family;
-    const faces = get().fonts.filter((f) => f.family === family && f.source !== "system");
+    const sameFamily = (f: { family: string; source: string }) =>
+      f.family.toLowerCase() === family.toLowerCase() && f.source !== "system";
+    const faces = get().fonts.filter(sameFamily);
     if (faces.length === 0) {
       // 字库里本来就没有（或是系统字体），直接下载即可
-      await get().installOnlineFamily(id);
+      await get().installOnlineFamily(id, { files: null, license: true });
       return;
     }
     // 保留标签/收藏/合集：删除时不清元数据，重新入库后仍然有效
     await get().uninstallFamily(family, { silent: true, keepMeta: true });
-    const leftovers = get().fonts.filter((f) => f.family === family && f.source !== "system");
+    const leftovers = get().fonts.filter(sameFamily);
     if (leftovers.length > 0) {
       toast.error(t("toast.redownloadFailed"), t("toast.cantUninstallSystemSub"));
       return;
     }
 
-    await get().installOnlineFamily(id);
+    // 重下是「整套重来」，不受补全逻辑影响
+    await get().installOnlineFamily(id, { files: null, license: true });
   },
 
   setMotionPref: (motionPref) => {

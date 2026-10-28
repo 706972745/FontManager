@@ -56,6 +56,16 @@ export interface FontFace {
   addedAt: number | null;
 }
 
+export interface CharsetStats {
+  /** cmap 可用码位总数（去掉控制字符、代理区、私用区、重复码位） */
+  total: number;
+  han: number;
+  kana: number;
+  hangul: number;
+  latin: number;
+  symbols: number;
+}
+
 export interface TrashEntry {
   id: string;
   originalPath: string;
@@ -91,6 +101,8 @@ export interface InstallResult {
   installed: FontFace[];
   errors: string[];
   duplicates: string[];
+  /** 本次跳过的 WOFF/WOFF2 个数（同字体已有 ttf/otf，或 woff2 不受支持） */
+  webfontsSkipped?: number;
 }
 
 export interface ScanProgress {
@@ -187,8 +199,17 @@ export interface OnlineFamilyDetail {
 export interface OnlineDownloadResult {
   family: string;
   paths: string[];
-  licensePath: string;
+  /** 本次是否落了许可证文件（只补字重时为 null） */
+  licensePath: string | null;
   source: string;
+}
+
+/** 在线安装的下载范围：只下缺的字重 / 只补版权文件 */
+export interface OnlineInstallScope {
+  /** null = 全部文件；数组 = 只下这些文件名（空数组 = 一个字体都不下） */
+  files: string[] | null;
+  /** 是否同时落许可证文件 */
+  license: boolean;
 }
 
 export interface OnlineProgress {
@@ -196,6 +217,18 @@ export interface OnlineProgress {
   file: string;
   done: number;
   total: number;
+}
+
+/** 版权文件反查结果（族名 + PostScript 名双严格命中） */
+export interface LicenseSaved {
+  family: string;
+  fileName: string;
+  licenseName: string;
+  licenseUrl: string;
+  /** 匹配依据：命中的 PostScript 名 */
+  postscript: string;
+  /** 实际写入的目录 */
+  written: string[];
 }
 
 export interface AffinityConnection {
@@ -233,12 +266,20 @@ export const ipc = {
     invoke<string[]>("affinity_session_activate", { paths }),
   onlineCatalogue: (force: boolean) => invoke<OnlineCatalogue>("online_catalogue", { force }),
   onlineFamily: (id: string) => invoke<OnlineFamilyDetail>("online_family", { id }),
-  onlineDownload: (id: string) => invoke<OnlineDownloadResult>("online_download", { id }),
+  /** 下载字族文件。files 给 null = 全下；给数组 = 只下这些文件名；license 控制是否落许可证 */
+  onlineDownload: (id: string, files: string[] | null = null, license = true) =>
+    invoke<OnlineDownloadResult>("online_download", { id, files, license }),
   onlinePreview: (id: string) => invoke<string>("online_preview", { id }),
   onlineClearStaging: (id: string) => invoke<void>("online_clear_staging", { id }),
   onlineHosts: () => invoke<string[]>("online_hosts"),
   /** 列出各目录下的版权信息类文件（用于判断字族是否带版权文件） */
   infoFiles: (dirs: string[]) => invoke<Record<string, string[]>>("info_files", { dirs }),
+  /**
+   * 按「族名 + PostScript 名」双严格匹配到上游反查许可证并写进字体目录。
+   * 匹配不上返回 null（绝不猜）。
+   */
+  fontLicenseFetch: (family: string, postscripts: string[], dirs: string[]) =>
+    invoke<LicenseSaved | null>("font_license_fetch", { family, postscripts, dirs }),
   scanFonts: () => invoke<FontFace[]>("scan_fonts"),
   setFontActive: (path: string, active: boolean) =>
     invoke<void>("set_font_active", { path, active }),
@@ -296,6 +337,36 @@ export const ipc = {
   /** 批量问「这些字面有没有中文字形」，返回同序布尔数组 */
   fontCjk: (probes: [string, number][]) =>
     invoke<boolean[]>("font_cjk", { probes }),
+  /**
+   * 批量问汉字覆盖档位："none" 一个汉字都没有 / "sparse" 有但明显不全 / "full" 正常中文字体。
+   *
+   * 比 fontCjk 多一档：「只有几百个字」的字体拿它排标题可以、排正文会缺字，
+   * 卡片上要能和「一个汉字都没有」区分开。
+   */
+  fontHanCoverage: (probes: [string, number][]) =>
+    invoke<("none" | "sparse" | "full")[]>("font_han_coverage", { probes }),
+  /**
+   * 精确统计字符集构成（详情面板用）：cmap 总码位数 + 汉字 / 假名 / 谚文 / 拉丁各多少。
+   * 要枚举全部码位，只对当前打开的那个字面调用。
+   */
+  fontCharset: (probes: [string, number][]) =>
+    invoke<CharsetStats[]>("font_charset", { probes }),
+  /**
+   * 问「这些字面里有没有 chars 里每个字符的字形」，返回同序的布尔矩阵
+   * （外层对应 probes，内层对应 chars 的码位顺序）。用来按示例文字的语言标注缺字。
+   */
+  fontCoverage: (probes: [string, number][], chars: string) =>
+    invoke<boolean[][]>("font_coverage", { probes, chars }),
+  /**
+   * 浏览器打不开这个字面时，要一份「能预览」的副本。
+   *
+   * 两类字体 WebView2 必定加载失败：`.ttc` 字体集合（只认单面 sfnt），
+   * 以及 cmap 只有 Big5 / GBK / ShiftJIS 等旧编码子表的老字体。
+   * 后端会把字面抽出来、把旧编码翻成 Unicode 重建 cmap，返回缓存文件路径；
+   * 浏览器本来就能打开、或修不出来时返回 null。
+   */
+  fontPreviewFile: (path: string, faceIndex: number) =>
+    invoke<string | null>("font_preview_file", { path, faceIndex }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
   writeBinaryFile: (path: string, data: number[]) =>
     invoke<void>("write_binary_file", { path, data }),

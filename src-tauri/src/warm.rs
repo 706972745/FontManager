@@ -35,15 +35,27 @@ enum State {
 
 #[derive(Clone, Copy)]
 struct Slot {
+    /// 内部状态（含 Probing —— 这个不往界面上报）
     state: State,
+    /// 对外报告的状态：探测期间保持上一次的结论，避免圆点跟着闪
+    stable: State,
     percent: u8,
     ms: u32,
     checked: Option<Instant>,
+    /// 连续失败的次数：COM 偶尔忙一下不该立刻把 100% 打成 0%
+    fails: u8,
 }
 
 impl Default for Slot {
     fn default() -> Self {
-        Slot { state: State::Idle, percent: 0, ms: 0, checked: None }
+        Slot {
+            state: State::Idle,
+            stable: State::Idle,
+            percent: 0,
+            ms: 0,
+            checked: None,
+            fails: 0,
+        }
     }
 }
 
@@ -104,11 +116,12 @@ pub fn snapshot() -> Vec<AppWarm> {
             .as_ref()
             .and_then(|g| g.get(id).copied())
             .unwrap_or_default();
+        // 报 stable 而不是内部 state：探测那几百毫秒里界面不该换颜色、更不该改数字
         AppWarm {
             id,
             running: true,
             percent: slot.percent,
-            state: state_name(slot.state),
+            state: state_name(slot.stable),
             ms: slot.ms,
         }
     };
@@ -139,10 +152,11 @@ pub fn note_activity(id: &'static str) {
     let Ok(mut guard) = slots().lock() else { return };
     let slot = guard.entry(id).or_default();
     slot.checked = Some(now);
-    if matches!(slot.state, State::Failed) {
-        slot.state = State::Ready;
-        slot.percent = 100;
-    }
+    slot.fails = 0;
+    // 既然应用成功了，说明对象模型是通的
+    slot.state = State::Ready;
+    slot.stable = State::Ready;
+    slot.percent = 100;
 }
 
 fn maybe_probe(id: &'static str, target: Target, running: bool) {
@@ -151,25 +165,39 @@ fn maybe_probe(id: &'static str, target: Target, running: bool) {
         let Ok(mut guard) = slots().lock() else { return };
         let slot = guard.entry(id).or_default();
         if !running {
-            *slot = Slot { state: State::NotRunning, percent: 0, ms: 0, checked: Some(now) };
+            *slot = Slot {
+                state: State::NotRunning,
+                stable: State::NotRunning,
+                ..Slot::default()
+            };
             return;
         }
-        match slot.state {
-            State::Probing => return,
-            State::Ready => {
-                if slot.checked.map(|t| now.duration_since(t) < FRESH_FOR).unwrap_or(false) {
-                    return;
-                }
+        // 已经就绪的每 90 秒复测一次；出过问题的 15 秒就重试，好让用户不至于盯着 0% 等太久。
+        // 注意判据看 stable：内部正在探测时不该再进一次。
+        if slot.state == State::Probing {
+            return;
+        }
+        let interval = if slot.stable == State::Failed || slot.fails > 0 {
+            Some(RETRY_AFTER_FAIL)
+        } else if slot.stable == State::Ready {
+            Some(FRESH_FOR)
+        } else {
+            // 刚发现这个软件在跑：立刻测，别拿上次的 checked 挡 90 秒
+            None
+        };
+        if let Some(limit) = interval {
+            if slot.checked.map(|t| now.duration_since(t) < limit).unwrap_or(false) {
+                return;
             }
-            State::Failed => {
-                if slot.checked.map(|t| now.duration_since(t) < RETRY_AFTER_FAIL).unwrap_or(false) {
-                    return;
-                }
-            }
-            _ => {}
         }
         slot.state = State::Probing;
-        slot.percent = 50;
+        /* 关键：过渡期的百分比不能掉。
+         * 原来这里一律写 50，于是每 90 秒复测都会让底部从「100%」跳到「50%」再跳回去，
+         * 看起来像连接不稳（用户就是这么报的）。已经就绪过的继续显示 100，
+         * 只有从没成功过的才给 50 这个「正在连」的中间值。 */
+        if slot.stable != State::Ready {
+            slot.percent = 50;
+        }
         true
     };
     if !start {
@@ -183,20 +211,28 @@ fn maybe_probe(id: &'static str, target: Target, running: bool) {
         if let Ok(mut guard) = slots().lock() {
             let slot = guard.entry(id).or_default();
             slot.checked = Some(now);
-            match result {
+            slot.state = State::Ready;
+            let ok = match result {
                 Ok((true, ms)) => {
-                    slot.state = State::Ready;
-                    slot.percent = 100;
                     slot.ms = ms;
+                    true
                 }
                 Ok((false, ms)) => {
-                    // 进程在，但 COM 接不上（还在启动 / 卡在对话框）
-                    slot.state = State::Failed;
-                    slot.percent = 0;
                     slot.ms = ms;
+                    false
                 }
-                Err(_) => {
-                    slot.state = State::Failed;
+                Err(_) => false,
+            };
+            if ok {
+                slot.stable = State::Ready;
+                slot.percent = 100;
+                slot.fails = 0;
+            } else {
+                /* 已经 100% 过的，允许一次瞬时失败：Photoshop 正在开大文件、弹模态框时
+                 * COM 会暂时拒绝，这时候把 0% 甩到用户脸上是误报。连续两次才算真掉线。 */
+                slot.fails = slot.fails.saturating_add(1);
+                if slot.stable != State::Ready || slot.fails >= 2 {
+                    slot.stable = State::Failed;
                     slot.percent = 0;
                 }
             }

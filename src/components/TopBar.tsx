@@ -108,7 +108,10 @@ const SCRIPT_FILTERS = [
   "hebrew",
   "devanagari",
   "thai",
-  "cjk",
+  // 0.9.3-7 起「中文」和「日文」分开筛：原来合成一个 cjk，导致纯中文字体
+  // 因为没有假名而永远筛不出来
+  "han",
+  "kana",
   "korean",
   "vietnamese",
 ] as const;
@@ -150,6 +153,7 @@ function FilterMenu() {
   return (
     <div className="sort-wrap">
       <motion.button
+        data-tour="filters"
         className={`sort-btn ${open ? "sort-open" : ""} ${activeCount > 0 ? "filter-live" : ""}`}
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"

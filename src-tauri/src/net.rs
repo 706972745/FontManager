@@ -1,5 +1,6 @@
 use crate::store::AppState;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 pub const USER_AGENT: &str = concat!(
@@ -62,6 +63,28 @@ const MIRROR_PREFIXES: [&str; 4] = [
 /// 记住「原始地址在本机不可达」，后续请求直接走镜像，避免每次都要等一轮超时。
 static RAW_UNREACHABLE: AtomicBool = AtomicBool::new(false);
 
+/// 这个标记的变化要落进 state.json：
+/// 进程内记住只能管一次运行，重启后第一个在线请求又会先撞 10 秒超时（用户以为卡死）。
+static PERSIST: OnceLock<Box<dyn Fn(bool) + Send + Sync>> = OnceLock::new();
+
+/// 启动时把上次运行学到的结果灌进来，之后第一次在线请求就知道该不该直连。
+pub fn seed_raw_unreachable(unreachable: bool) {
+    RAW_UNREACHABLE.store(unreachable, Ordering::Relaxed);
+}
+
+/// 注册持久化钩子（只在状态翻转时调用，写盘频率极低）。
+pub fn set_persist_hook(f: Box<dyn Fn(bool) + Send + Sync>) {
+    let _ = PERSIST.set(f);
+}
+
+fn remember_raw_unreachable(unreachable: bool) {
+    if RAW_UNREACHABLE.swap(unreachable, Ordering::Relaxed) != unreachable {
+        if let Some(persist) = PERSIST.get() {
+            persist(unreachable);
+        }
+    }
+}
+
 /// 把 google/fonts 的 raw 地址改写成所有镜像地址（非 raw 地址返回空）。
 pub fn mirror_urls(url: &str) -> Vec<String> {
     match url.strip_prefix(RAW_PREFIX) {
@@ -112,7 +135,7 @@ async fn fetch_with_mirror(client: &reqwest::Client, url: &str) -> Result<Vec<u8
                 if is_terminal(&err) {
                     return Err(err);
                 }
-                RAW_UNREACHABLE.store(true, Ordering::Relaxed);
+                remember_raw_unreachable(true);
                 last_err = err;
             }
         }
@@ -133,7 +156,7 @@ async fn fetch_with_mirror(client: &reqwest::Client, url: &str) -> Result<Vec<u8
     // 镜像也全部失败：再试一次原始地址，成功则说明网络已恢复。
     match fetch_bytes(client, url, RAW_TIMEOUT).await {
         Ok(bytes) => {
-            RAW_UNREACHABLE.store(false, Ordering::Relaxed);
+            remember_raw_unreachable(false);
             Ok(bytes)
         }
         Err(err) => Err(format!("{last_err}; raw: {err}")),

@@ -91,6 +91,23 @@ pub struct FontFace {
     pub added_at: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CharsetStats {
+    /// cmap 里可用码位的总数（去掉控制字符、代理区、私用区、重复码位）
+    pub total: u32,
+    /// 汉字（U+3400–4DBF、4E00–9FFF、F900–FAFF、20000–2FA1F 等区段）
+    pub han: u32,
+    /// 日文假名（平假名 / 片假名 / 半角片假名）
+    pub kana: u32,
+    /// 韩文谚文
+    pub hangul: u32,
+    /// 拉丁字母（含 Latin-1 补充、扩展、越南语附加符）
+    pub latin: u32,
+    /// 其余：标点、符号、数学、emoji 等
+    pub symbols: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrashEntry {

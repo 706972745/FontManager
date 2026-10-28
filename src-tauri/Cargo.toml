@@ -1,6 +1,6 @@
 [package]
 name = "zfontmanager"
-version = "0.9.3"
+version = "0.9.5"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
 authors = ["TheHolyOneZ"]
 license = "GPL-3.0-only"
@@ -24,6 +24,8 @@ tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ttf-parser = "0.25"
+# WOFF1 表是 zlib 流；已在依赖树里（zip/reqwest 传递引入），这里显式声明复用同一版本
+flate2 = "1"
 walkdir = "2"
 dirs = "6"
 trash = "5"

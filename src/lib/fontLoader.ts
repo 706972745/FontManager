@@ -1,6 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { ipc } from "./ipc";
 import type { FontFace as ZFontFace } from "./ipc";
+
+/** 加载失败时用来「找后端修一份」的定位信息 */
+type RepairHint = { id: string; path: string; index: number };
 
 type LoadState = "loading" | "loaded" | "failed";
 const cache = new Map<string, LoadState>();
@@ -47,31 +51,58 @@ function touch(name: string): void {
 }
 
 function ensureLoaded(face: ZFontFace): void {
-  ensurePathLoaded(cssName(face), face.previewPath ?? face.path);
+  ensurePathLoaded(cssName(face), face.previewPath ?? face.path, {
+    id: face.id,
+    path: face.previewPath ?? face.path,
+    index: face.faceIndex ?? 0,
+  });
 }
 
-function ensurePathLoaded(name: string, path: string): void {
+/**
+ * 「让后端修一份」的结果，按字面 id 记住。
+ * 值可能是 null（修不出来），也要记：不然每次 LRU 淘汰后重载都要再跑一趟。
+ */
+const repaired = new Map<string, string | null>();
+
+function tryLoad(name: string, path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ff = new FontFace(name, `url("${convertFileSrc(path)}")`);
+    ff.load()
+      .then(() => {
+        document.fonts.add(ff);
+        resolve(true);
+      })
+      .catch(() => resolve(false));
+  });
+}
+
+function ensurePathLoaded(name: string, path: string, repair?: RepairHint): void {
   if (cache.has(name)) {
     touch(name);
     return;
   }
   cache.set(name, "loading");
 
-  const url = convertFileSrc(path);
-  const ff = new FontFace(name, `url("${url}")`);
-  ff.load()
-    .then(() => {
-      document.fonts.add(ff);
-      cache.set(name, "loaded");
-      touch(name);
-    })
-    .catch(() => {
-      cache.set(name, "failed");
-    })
-    .finally(() => {
-      listeners.get(name)?.forEach((fn) => fn());
-      listeners.delete(name);
-    });
+  void (async () => {
+    let ok = await tryLoad(name, path);
+    if (!ok && repair) {
+      // 首启失败先试普通路径；还不行就问后端要一份浏览器认得的副本（ttc 抽面 / cmap 重建）
+      let fixed = repaired.get(repair.id);
+      if (fixed === undefined) {
+        try {
+          fixed = await ipc.fontPreviewFile(repair.path, repair.index);
+        } catch {
+          fixed = null;
+        }
+        repaired.set(repair.id, fixed);
+      }
+      if (fixed) ok = await tryLoad(name, fixed);
+    }
+    cache.set(name, ok ? "loaded" : "failed");
+    if (ok) touch(name);
+    listeners.get(name)?.forEach((fn) => fn());
+    listeners.delete(name);
+  })();
 }
 
 export function useFontCss(face: ZFontFace | null): {

@@ -27,6 +27,9 @@ pub struct InstallResult {
     pub installed: Vec<FontFace>,
     pub errors: Vec<String>,
     pub duplicates: Vec<String>,
+    /// 本次导入跳过的 WOFF/WOFF2 个数（同字体已有 ttf/otf，或 woff2 不受支持）
+    #[serde(default)]
+    pub webfonts_skipped: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +83,9 @@ pub struct StagedFile {
     pub is_font: bool,
     /// 是否来自 zip 压缩包（zip 导入无论选择何种模式都移动进字体库）
     pub is_zip: bool,
+    /// 是否为本批转换出的文件（WOFF 解包的 sfnt 落在 staging 临时目录，
+    /// 没有「源路径」可链，与 zip 一样强制移动进字体库）
+    pub converted: bool,
     /// 在压缩包/拖入文件夹内的相对目录（空 = 根目录），用于把许可证与对应字体归到同一字族
     pub rel: PathBuf,
     /// 文件夹备注的版权信息：文件所在文件夹的名字（zip 用压缩包名）。
@@ -94,6 +100,7 @@ impl StagedFile {
             path,
             is_font,
             is_zip,
+            converted: false,
             rel,
             folder_note: note,
         }
@@ -251,6 +258,160 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
     Err(format!("not a font file: {}", path.display()))
 }
 
+/// WOFF/WOFF2 的导入判重与解包（规则见 webfonts 模块注释）：
+/// - 与同目录同名的 ttf/otf 是同一款字体 → 跳过 woff（计数 webfontsSkipped）；
+/// - 落单的 WOFF1 → 解包成 sfnt 落到 staging，作为转换文件强制移动进字体库；
+/// - WOFF2 → 跳过（GDI 不支持，转换需要 Brotli + 变换表重建，暂不实现）。
+fn process_webfonts(
+    files: Vec<StagedFile>,
+    staging: &Path,
+    result: &mut InstallResult,
+) -> Vec<StagedFile> {
+    // staging 以前只在 zip 分支建目录；落单 WOFF 解包也要往这里写，
+    // 拖放/导入文件夹时它并不存在 → fs::write 报 os error 3（系统找不到指定的路径）。
+    // 解包要写文件就先把目录准备好（失败不早退，后面 write 会给出具体错误）。
+    if files.iter().any(|f| crate::webfonts::webfont_ext(&f.path).is_some()) {
+        let _ = fs::create_dir_all(staging);
+    }
+    let (rest, webs): (Vec<_>, Vec<_>) = files.into_iter().partition(|f| {
+        !(f.is_font && crate::webfonts::webfont_ext(&f.path).is_some())
+    });
+    if webs.is_empty() {
+        return rest;
+    }
+
+    // 同批兄弟索引：(相对目录, 小写主干) -> ttf/otf 暂存路径
+    let mut siblings: std::collections::HashMap<(String, String), Vec<PathBuf>> =
+        std::collections::HashMap::new();
+    for f in &rest {
+        if !f.is_font {
+            continue;
+        }
+        let ext = f
+            .path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase());
+        if !matches!(ext.as_deref(), Some("ttf") | Some("otf")) {
+            continue;
+        }
+        if let Some(stem) = f.path.file_stem().and_then(|s| s.to_str()) {
+            let key = (
+                f.rel.to_string_lossy().to_lowercase(),
+                stem.to_lowercase(),
+            );
+            siblings.entry(key).or_default().push(f.path.clone());
+        }
+    }
+
+    let mut out = rest;
+    for f in webs {
+        let ext = crate::webfonts::webfont_ext(&f.path).unwrap_or("woff");
+        let name = f
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        // 同批兄弟（zip 解压平铺时靠 rel 区分目录）
+        let batch_sibs = f
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|stem| {
+                siblings
+                    .get(&(f.rel.to_string_lossy().to_lowercase(), stem.to_lowercase()))
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        // 磁盘同目录同名（单个文件拖入时批次里没有兄弟；zip 来源没有真实目录概念）
+        let mut disk_sibs: Vec<PathBuf> = Vec::new();
+        if !f.is_zip {
+            if let (Some(parent), Some(stem)) = (f.path.parent(), f.path.file_stem()) {
+                if let Ok(rd) = fs::read_dir(parent) {
+                    for e in rd.flatten() {
+                        let p = e.path();
+                        let Some(x) = p.extension().and_then(|e| e.to_str()) else { continue };
+                        if !matches!(x.to_ascii_lowercase().as_str(), "ttf" | "otf") {
+                            continue;
+                        }
+                        if p.file_stem().is_some_and(|s| s.eq_ignore_ascii_case(stem)) {
+                            disk_sibs.push(p);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 身份比对：woff 解包后的 sfnt 与任一兄弟同字体 → 跳过
+        let mut is_same = false;
+        'check: for sib in batch_sibs.iter().chain(disk_sibs.iter()) {
+            let (Ok(wdata), Ok(sdata)) = (fs::read(&f.path), fs::read(sib)) else {
+                continue;
+            };
+            let Ok(sfnt) = crate::webfonts::woff1_to_sfnt(&wdata) else {
+                break 'check; // woff 坏了，走后面的解包报错路径
+            };
+            if crate::webfonts::same_font(&sfnt, &sdata) {
+                is_same = true;
+                break;
+            }
+        }
+        if is_same {
+            result.webfonts_skipped += 1;
+            continue;
+        }
+        if ext == "woff2" {
+            // GDI 加载不了 woff2，转换又需要 Brotli + 变换表重建：跳过并计数
+            result.webfonts_skipped += 1;
+            continue;
+        }
+
+        // 落单的 WOFF1：解包成 sfnt，强制移动进字体库
+        let converted = match fs::read(&f.path) {
+            Ok(data) => match crate::webfonts::woff1_to_sfnt(&data) {
+                Ok(sfnt) => {
+                    let ext2 = crate::webfonts::sfnt_extension(&sfnt);
+                    let stem = f
+                        .path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "font".into());
+                    let dest = unique_dest(staging, Path::new(&format!("{stem}.{ext2}")).as_os_str());
+                    match fs::write(&dest, &sfnt) {
+                        Ok(()) => Some(StagedFile {
+                            path: dest,
+                            is_font: true,
+                            is_zip: false,
+                            converted: true,
+                            rel: f.rel.clone(),
+                            folder_note: f.folder_note.clone(),
+                        }),
+                        Err(e) => {
+                            result.errors.push(format!("woff → {ext2}: {e}"));
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    result.errors.push(format!("{name}: {e}"));
+                    None
+                }
+            },
+            Err(e) => {
+                result.errors.push(format!("{name}: {e}"));
+                None
+            }
+        };
+        if let Some(c) = converted {
+            out.push(c);
+        } else {
+            result.webfonts_skipped += 1;
+        }
+    }
+    out
+}
+
 pub fn install(
     app: &tauri::AppHandle,
     dropped: Vec<String>,
@@ -269,9 +430,12 @@ pub fn install(
             Err(e) => result.errors.push(e),
         }
     }
+    // WOFF 判重 / 解包（见 process_webfonts 与 webfonts 模块注释）
+    let files = process_webfonts(files, &staging, &mut result);
 
-    // zip 导入无论选择何种模式都移动进字体库（zip 解压出的临时文件没有"链接"意义）
-    let any_zip = files.iter().any(|f| f.is_zip);
+    // zip 导入无论选择何种模式都移动进字体库（zip 解压出的临时文件没有"链接"意义）；
+    // WOFF 解包出的转换文件落在 staging 临时目录，同理强制移动
+    let any_zip = files.iter().any(|f| f.is_zip || f.converted);
 
     let infos: Vec<StagedFile> = files
         .iter()
@@ -329,8 +493,13 @@ pub fn install(
             );
             continue;
         }
-        // zip 来源的字体强制走移动模式，保证字体与版权信息文件一起进入字体库
-        let eff_mode = if staged.is_zip { InstallMode::Move } else { mode };
+        // zip 来源的字体强制走移动模式，保证字体与版权信息文件一起进入字体库；
+        // WOFF 解包的转换文件落在 staging 临时目录，同理强制移动
+        let eff_mode = if staged.is_zip || staged.converted {
+            InstallMode::Move
+        } else {
+            mode
+        };
         match eff_mode {
             InstallMode::Link => {
                 if src_faces.is_empty() {
@@ -514,13 +683,29 @@ pub fn install_online(
     // 许可证文本 → 版权分类 → 目录名后缀
     let license_text = license_path.and_then(|p| fs::read_to_string(p).ok());
     let class = copyright::classify(license_text.as_deref());
-    let dir = library
+    let fresh_dir = library
         .join(ONLINE_DIR_NAME)
         .join(sanitize_component(source))
         .join(copyright::family_dir_name(family, class));
-    if let Err(e) = fs::create_dir_all(&dir) {
-        result.errors.push(e.to_string());
-        return result;
+
+    // 字库里已有的同名字族目录
+    let existing_dirs: Vec<PathBuf> = license_dirs.iter().map(PathBuf::from).filter(|p| p.is_dir()).collect();
+    // 补字重时不带许可证 → 版权分类会变成「未知版权」，照这个新建目录就会把同一个字族劈成两个。
+    // 已有目录里名字对得上族名的，直接沿用。
+    let dir = existing_dirs
+        .iter()
+        .find(|p| dir_name_is_family(p, family))
+        .cloned()
+        .unwrap_or(fresh_dir);
+    let mut license_dirs: Vec<PathBuf> = existing_dirs.into_iter().filter(|p| p.as_path() != dir.as_path()).collect();
+    license_dirs.retain(|p| p.is_dir());
+
+    let need_new_dir = !paths.is_empty() || (license_path.is_some() && license_dirs.is_empty());
+    if need_new_dir {
+        if let Err(e) = fs::create_dir_all(&dir) {
+            result.errors.push(e.to_string());
+            return result;
+        }
     }
 
     let emit = |file: &str, done: usize, ok: bool, error: Option<String>| {
@@ -536,7 +721,8 @@ pub fn install_online(
         );
     };
 
-    let mut staging_parent: Option<PathBuf> = None;
+    // 无论有没有真装文件都要清 staging（只补版权文件时 paths 为空）
+    let staging_parent: Option<PathBuf> = paths.first().and_then(|p| Path::new(p).parent().map(|x| x.to_path_buf()));
     for (i, p) in paths.iter().enumerate() {
         let src = Path::new(p);
         let file_name = src.file_name().map(|f| f.to_owned()).unwrap_or_default();
@@ -554,9 +740,6 @@ pub fn install_online(
         let dest = unique_dest(&dir, &file_name);
         match move_file(src, &dest) {
             Ok(()) => {
-                if staging_parent.is_none() {
-                    staging_parent = src.parent().map(|p| p.to_path_buf());
-                }
                 let mut faces = parser::parse_font_file(&dest, FontSource::Managed);
                 for face in &mut faces {
                     face.active = false;
@@ -575,13 +758,12 @@ pub fn install_online(
     // 许可证文件复制进字族目录（保留原文件名）
     if let Some(lp) = license_path {
         if let Some(name) = Path::new(lp).file_name() {
-            let _ = fs::copy(lp, dir.join(name));
+            if dir.is_dir() {
+                let _ = fs::copy(lp, dir.join(name));
+            }
             // 字库中已有的同名字族目录也补一份，避免"字重齐全但没有版权文件"
-            for extra in license_dirs {
-                let p = Path::new(extra);
-                if p.is_dir() && p != dir.as_path() {
-                    let _ = fs::copy(lp, p.join(name));
-                }
+            for p in &license_dirs {
+                let _ = fs::copy(lp, p.join(name));
             }
         }
     }
@@ -589,8 +771,30 @@ pub fn install_online(
     if let Some(parent) = staging_parent {
         let _ = fs::remove_dir_all(parent);
     }
-    refresh_system_font_cache();
+    crate::diag::log(&format!(
+        "online install[{family}]: 装入 {} 个字体面 / 收到 {} 个文件，license={}，目标目录 {}，附带目录 {} 个",
+        result.installed.len(),
+        total,
+        license_path.is_some(),
+        dir.display(),
+        license_dirs.len()
+    ));
+    if !result.installed.is_empty() {
+        refresh_system_font_cache();
+    }
     result
+}
+
+/// 目录名是不是这个字族的目录（「Lora（商用免费）」→ Lora）
+fn dir_name_is_family(dir: &Path, family: &str) -> bool {
+    let Some(name) = dir.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let base = match name.find('（') {
+        Some(i) => &name[..i],
+        None => name,
+    };
+    base.trim().to_lowercase() == family.trim().to_lowercase()
 }
 
 /// 清理路径组件中的非法字符

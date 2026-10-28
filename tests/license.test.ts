@@ -10,7 +10,7 @@ test("classifyLicense recognizes open, restrictive and unknown licenses", () => 
 });
 
 test("effectiveCopyrightClass maps license text to a copyright class", () => {
-  assert.equal(effectiveCopyrightClass("SIL Open Font License"), "free");
+  assert.equal(effectiveCopyrightClass("SIL Open Font License"), "free_commercial");
   assert.equal(effectiveCopyrightClass("Trial version, evaluation only"), "paid");
   assert.equal(effectiveCopyrightClass(null), "unknown");
 });
@@ -18,12 +18,12 @@ test("effectiveCopyrightClass maps license text to a copyright class", () => {
 test("manual copyright status overrides the auto-detected class", () => {
   assert.equal(effectiveCopyrightClass("SIL Open Font License", "paid"), "paid");
   assert.equal(effectiveCopyrightClass("Trial version", "timelimited"), "timelimited");
-  assert.equal(effectiveCopyrightClass(null, "free"), "free");
+  assert.equal(effectiveCopyrightClass(null, "free"), "free_commercial");
 });
 
 test('"auto" and unknown override values fall back to auto detection', () => {
-  assert.equal(effectiveCopyrightClass("SIL Open Font License", "auto"), "free");
-  assert.equal(effectiveCopyrightClass("SIL Open Font License", undefined), "free");
+  assert.equal(effectiveCopyrightClass("SIL Open Font License", "auto"), "free_commercial");
+  assert.equal(effectiveCopyrightClass("SIL Open Font License", undefined), "free_commercial");
   assert.equal(effectiveCopyrightClass(null, "bogus"), "unknown");
 });
 
