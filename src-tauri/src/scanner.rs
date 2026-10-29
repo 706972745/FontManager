@@ -78,6 +78,49 @@ fn classify(path: &std::path::Path, base_source: FontSource, managed: &Path) -> 
     }
 }
 
+/// 字库目录里「直接放进去、没走导入流程」的字体文件。
+///
+/// 用户会手动往字库文件夹丢字体，点刷新就该看见——但扫描链只认系统目录、额外目录和
+/// `state.linked` 里记录过的路径，手动放进去的既不在 linked 也没人遍历，所以刷不出来。
+/// 返回的是还没登记过的绝对路径（大小写不敏感比较，避免 Windows 下重复收编）。
+pub fn discover_managed(dir: &std::path::Path, known: &std::collections::HashSet<String>) -> Vec<String> {
+    if !dir.is_dir() {
+        return Vec::new();
+    }
+    let known_lower: std::collections::HashSet<String> =
+        known.iter().map(|s| s.to_lowercase()).collect();
+    let mut out: Vec<String> = Vec::new();
+    for e in WalkDir::new(dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if !e.file_type().is_file() {
+            continue;
+        }
+        let p = e.into_path();
+        if !parser::is_font_file(&p) {
+            continue;
+        }
+        // woff/woff2 在扫描阶段本来就被挡掉（Windows 加载不了），别收编进来变死面
+        let ext = p
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if matches!(ext.as_str(), "woff" | "woff2") {
+            continue;
+        }
+        let key = p.to_string_lossy().to_string();
+        if known_lower.contains(&key.to_lowercase()) {
+            continue;
+        }
+        out.push(key);
+    }
+    out.sort();
+    out
+}
+
 pub fn all_dirs(extra: &[String]) -> Vec<(PathBuf, FontSource)> {
     let mut dirs_list = font_dirs();
     for d in extra {
@@ -149,7 +192,9 @@ pub fn scan_all(
     let mut faces = Vec::with_capacity(total);
     // 字体库里按目录缓存版权判定：目录名 / 同目录的版权信息文件写明的版权，
     // 一个目录只判一次（要读文件，但比解析字体便宜得多）
-    let mut dir_class: std::collections::HashMap<PathBuf, String> =
+    // 目录 → (版权分类, 备注留痕)：同一个目录只读一次授权文件，
+    // 分类和「判定依据」一起带出来（详情面板的备注要能追溯是哪段原文下的结论）
+    let mut dir_info: std::collections::HashMap<PathBuf, crate::copyright::DirCopyright> =
         std::collections::HashMap::new();
     // 解析结果缓存由调用方持有：链接字体那一段也用同一个实例，最后统一落盘
     // 边扫边推：已解析好的字体分批发给前端，界面就能「读到多少显示多少」，
@@ -179,14 +224,24 @@ pub fn scan_all(
         };
         if source == FontSource::Managed {
             if let Some(dir) = path.parent() {
-                let class = dir_class
+                let found = dir_info
                     .entry(dir.to_path_buf())
-                    .or_insert_with(|| {
-                        crate::copyright::classify_dir(dir).as_str().to_string()
-                    })
+                    .or_insert_with(|| crate::copyright::inspect_dir_files_only(dir))
                     .clone();
                 for face in &mut parsed {
-                    face.copyright_class = Some(class.clone());
+                    // 目录里有授权文件 / 目录名带后缀 → 用目录结论；否则只看这个字族自己的 name 表
+                    if found.class != crate::copyright::CopyrightClass::Unknown {
+                        face.copyright_class = Some(found.class.as_str().to_string());
+                        face.license_note = found.note.clone();
+                    } else {
+                        let (cls, note) = crate::copyright::inspect_face(
+                            face.license.as_deref(),
+                            face.license_url.as_deref(),
+                            face.copyright.as_deref(),
+                        );
+                        face.copyright_class = Some(cls.as_str().to_string());
+                        face.license_note = note;
+                    }
                 }
             }
         }
@@ -208,4 +263,31 @@ pub fn scan_all(
     faces.sort_by(|a, b| a.id.cmp(&b.id));
     faces.dedup_by(|a, b| a.id == b.id);
     faces
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovers_fonts_not_yet_registered() {
+        let dir = std::env::temp_dir().join("zfm-discover-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub").join("A.ttf"), b"x").unwrap();
+        std::fs::write(dir.join("B.otf"), b"x").unwrap();
+        // woff2 / 说明文件不该被收编
+        std::fs::write(dir.join("C.woff2"), b"x").unwrap();
+        std::fs::write(dir.join("note.txt"), b"x").unwrap();
+
+        let known = std::collections::HashSet::new();
+        let got = discover_managed(&dir, &known);
+        assert_eq!(got.len(), 2, "{got:?}");
+
+        // 已经登记过的不会再返回（刷新按钮重复点也不会重复收编）
+        let known: std::collections::HashSet<String> = got.iter().cloned().collect();
+        assert!(discover_managed(&dir, &known).is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

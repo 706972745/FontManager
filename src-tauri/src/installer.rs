@@ -1044,6 +1044,31 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// 0.9.4-1 回归：落单的 WOFF（不走 zip 分支）也必须把 staging 目录建出来，
+    /// 否则解包落盘报 os error 3（系统找不到指定的路径）。
+    #[test]
+    fn lone_woff_creates_staging_dir() {
+        let tmp = std::env::temp_dir().join(format!("zfm-woff-staging-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let woff = tmp.join("Lone.woff");
+        fs::write(&woff, b"wOFF-garbage").unwrap(); // 分流只看扩展名，内容好坏不影响本断言
+        let staged = StagedFile::new(woff, true, false, PathBuf::new(), None);
+
+        let staging = tmp.join("deep").join("staging"); // 故意用不存在的多级目录
+        let mut result = InstallResult {
+            installed: vec![],
+            errors: vec![],
+            duplicates: vec![],
+            webfonts_skipped: 0,
+        };
+        let _ = process_webfonts(vec![staged], &staging, &mut result);
+
+        assert!(staging.is_dir(), "落单 WOFF 也应创建 staging 目录");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     /// 导入时版权来源的权重：版权信息文件 > 文件夹备注 > 字体自带信息
     #[test]
     fn copyright_source_priority() {

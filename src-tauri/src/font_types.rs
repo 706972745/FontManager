@@ -71,6 +71,10 @@ pub struct FontFace {
     /// 界面上就能显示文件夹备注的版权，而不只是字体 name 表里的那点信息。
     #[serde(default)]
     pub copyright_class: Option<String>,
+    /// 从同目录授权文档里摘出的「哪些渠道能 / 不能商用」原话（只摘原句，不改写）。
+    /// 扫描后首次见到这个字族时写进备注；用户改过 / 删过就不再写。
+    #[serde(default)]
+    pub license_note: Option<String>,
     pub format: FontFormat,
     pub is_variable: bool,
     pub axes: Vec<VariationAxis>,

@@ -4,6 +4,140 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.6] — 2026-10-29
+
+0.9.5-1 / 0.9.5-2 / 0.9.5-3 三个预发布版本的合并正式版，内容与它们一致：
+
+- **版权判定改为「保守优先」+ 判定留痕写进备注**（0.9.5-1）：删掉单字「免费」判商用
+  免费、`ofl`/`gpl` 裸子串等误判来源；多证据冲突一律判「未知」；授权文件支持
+  UTF-8 / UTF-16 / GBK；详情面板备注新增「判定依据：…｜原文「…」｜来源：…」，
+  0.9.5-2 起还带「授权原文：」渠道条款摘录。每个字族只自动写一次，用户改过不覆盖。
+- **「个人免费、商用收费」一律判「个人免费」**（0.9.5-2）：`personal use only` /
+  `non-commercial` / 「不可商用」「禁止商用」等条款不再标成收费；仍判收费的只剩
+  真要求付钱/试用的表述。判定口径带版本号，旧自动备注按新口径自动重写。
+- **刷新按钮收编「直接放进字库」的字体**（0.9.5-3）：扫描开头递归走一遍字库目录，
+  没登记过的字体自动补进链接字体（记入库时间），版权判定、备注、启停状态走同一条链；
+  顺带修掉额外目录与链接记录指向同一文件时出现两份卡片的问题。
+- **修正**（0.9.5-3）：`Free for commercial or non-commercial use` 被 `non-commercial`
+  带偏成个人免费 → 新增英文「明确可商用」标记，在个人免费之前判定；
+  个人免费的备注此前引不到原句，已补。
+
+#### 验证（0.9.6 发布前真机回归）
+
+- `cargo test` 71 通过（新增 `lone_woff_creates_staging_dir` 回归：落单 WOFF 导入
+  必须自建 staging 目录）；`pnpm test` 54 通过。
+- 真机抽样：Gobold Bold → 个人免费 + 备注留痕（原文「Personal use: FREE」）；
+  Blue Highway Linocut → 商用免费；Tamanegi_Geki → 商用免费 + 渠道原文两行齐全。
+- 真机：把未导入的测试字体丢进字库目录，点刷新即自动收编出现在列表；测完清理。
+- 速览回归：Alt+` 收起/展开、光标感应、完整界面按钮往返全部正常。
+
+## [0.9.5-3] — 2026-10-29
+
+### 修正：`free for commercial or non-commercial use` 被误判成个人免费
+
+- 9.5-2 把 `non-commercial` 归到「个人免费」后，`This font is freeware. Free for commercial
+  or non-commercial use.`（Blue Highway 那类）被误判成个人免费——它其实是**允许商用**。
+- 修法：新增 `OPEN_EXPLICIT_EN`（`free for commercial` / `commercial use is free` /
+  `commercial use: free` / `free for any commercial`），在个人免费判定**之前**先认；
+  中文仍按「不可商用里含可商用」的老顺序放在收费判定之后。
+- 顺带修：`Reason::PersonalOnly` 之前没参与「找原文」，个人免费的备注引不到原句，现在补上。
+- `NOTE_RULES_VERSION` 升到 3，装的旧自动备注会在下次扫描时按新口径重写。
+
+## [0.9.5-2] — 2026-10-29
+
+### 版权口径：「个人免费、商用收费」一律判「个人免费」
+
+- **改动**（`copyright.rs` / `license.ts`）：`personal use only` / `non-commercial` /
+  `not for commercial` / 「不可商用」「禁止商用」「非商业使用」「仅限个人」「仅供个人」/
+  `Personal use: FREE` 等条款，从「收费」改为**「个人免费」**。用户口径：字体本身免费可用，
+  只是商用要另购授权，标成收费等于把免费字体说成要花钱。
+- 仍然算「收费」的只剩真要求付钱/试用的：`purchase a license` / `requires a license` /
+  `buy the commercial license` / 试用 / 评估 / `shareware` / 「收费」「付费」。
+- 备注依据新增一条文案：「写明个人使用免费、商用需另购授权「xxx」」，不再是笼统的「限制条款」。
+- 判定口径带版本号 `NOTE_RULES_VERSION`：升级后旧自动备注自动作废、按新口径重写
+  （只删「判定依据：/授权原文：」开头的，用户手写备注不动）。
+
+### 修复：刷新按钮刷不出「直接放进字库」的字体
+
+- **原因**：`scan_fonts` 只扫「系统字体目录 + 额外目录 + `state.linked` 里登记过的路径」。
+  用户手动往字库文件夹丢的字体既不在 `linked`、也没人遍历 → 点刷新永远看不见。
+- **修法**：扫描开头先 `discover_managed()` 走一遍字库目录（递归、跳过 woff/woff2），
+  把没登记过的字体**自动收编**进 `linked` + `added`（记入库时间），之后走同一条解析链
+  （版权判定、备注、启用状态一致）。已登记过的按大小写不敏感比较跳过，重复点刷新不会重复收编。
+- 顺带修掉一个潜在重复：额外目录与 `linked` 指向同一文件时会出现两份卡片，现在按路径去重。
+
+#### 验证
+
+- `cargo test` 69 通过（新增 `discovers_fonts_not_yet_registered`、
+  `personal_free_with_paid_commercial_is_personal`）；`pnpm test` 53 通过。
+- 真机：往字库目录放入一个未经导入的测试字体后重启/刷新，日志出现
+  「[scan] 字库里发现 1 个未导入的字体，自动收编」，`state.linked` 增加该路径，字体出现在列表；
+  删掉测试字体与其 state 记录后恢复原状。
+
+## [0.9.5-1] — 2026-10-29
+
+### 版权判定改为「保守优先」+ 判定留痕写进备注
+
+**背景**：用户要求「但凡不能百分百肯定，就不要随便设置版权」，同时希望能直接在软件里
+看到判定依据是哪一段原文。
+
+#### 改判定口径（`copyright.rs` / `license.ts`）
+
+- **删掉三条误判来源**：① 单字「免费」直接判商用免费；② `"ofl"` / `"gpl"` 裸子串匹配
+  （`Soflow`、`logo` 会中）；③ `"limited license"` 判限时。
+- **新顺序**：① 许可证身份（OFL / Apache / MIT / BSD / CC0 / UFL / GPL / Arphic / IPA，
+  短标记走词边界，认 `GPLv3` / `OFL1.1`）→ 商用免费；② 明确「个人免费」；③ 确凿的
+  收费 / 受限 / 试用 / shareware；④ 明确「可商用」；⑤ 其余（只写免费 / free /
+  保留所有权利）→ **未知**。
+- **证据冲突不猜**：同一段文本既给开源许可又要求买授权 → 未知；同一目录两份授权文件
+  说法不同 → 未知。
+- **`may not be modified / redistributed`、`all rights reserved` 不再判收费**：这些讲的是
+  分发，不是能不能商用（旧版冤枉了 8 个字面）。
+- **name 表 14（许可证链接）终于用上了**：正文判不出来时，`scripts.sil.org/ofl`、
+  `apache.org/licenses`、`creativecommons.org/publicdomain/zero`、`ubuntu.com/licence`、
+  `gnu.org/licenses` 作为兜底证据。
+- **编码兜底**：授权文件按 UTF-8 → UTF-16(BOM) → UTF-8 lossy 读。原来只认 UTF-8，
+  记事本另存的 UTF-16 / GBK 中文授权说明直接被丢掉。
+- 前端 `license.ts` 与后端逐条对齐（此前前端没有中文标记、没有词边界，两侧结论会不一致）。
+
+#### 新增：授权渠道 + 判定依据 → 详情面板「备注」
+
+- `usage_note()` 从授权文档里摘**原句**（不改写、不总结）：含渠道词（公众号 / 电商 /
+  印刷 / LOGO / 游戏 / APP…）且 ±6 字内有授权口吻的句子，或「个人 / 企业……可商用」总述，
+  最多 3 句、200 字。
+- `inspect_dir()` 同时给出分类与留痕文本，备注形如：
+
+  ```
+  授权原文：此款字体无论是个人还是企业都可以免费商用
+  判定依据：商用免费（开源许可证（sil open font license））｜原文「This Font Software is licensed under the SIL Open Font License, Version 1.1」｜来源：OFL.txt
+  ```
+
+  判不出来时同样留痕：`判定依据：未知版权（只写了免费，没写能不能商用）｜原文「免费下载，欢迎分享」`。
+- 写盘新命令 `seed_license_notes` + `AppState.noteSeeded`：**只在该字族没有备注且从未
+  自动写过时写一次**——用户改过不覆盖、删掉不复活。前端扫描结束后批量提交一次。
+- 扫描侧同目录只读一次授权文件（`dir_info` 缓存），分类与备注一起带出。
+
+#### 验证
+
+- `cargo test` 20 项版权相关用例通过（含 5 项留痕用例）；`pnpm test` 53 通过。
+- 按真实库 5461 个字面做新旧口径 A/B：仅 13 个变动（6 收费→未知、4 限时→未知、
+  2 未知→收费、1 未知→商用免费），5448 个不变。
+- 真机（0.9.5-1，4103 字族 / 5785 字面）：扫描 0.8 秒完成，**1946 个字族**自动写入备注，
+  分布 未知 1700 / 收费 125 / 商用免费 121。抽样核对：
+  - `Scheherazade` → 商用免费，原文「SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007」（name 表 13）
+  - `Gobold` → 收费，原文「Commercial use: DONATE, mininal $10 USD…」（Readme.txt）
+  - 大量西文 → 未知，「只写了保留权利 / 禁止转发，没说要收费」+ 原文「All Rights Reserved」
+
+#### 两个必须记住的坑
+
+1. **链接字体走的是另一条扫描分支**（`scan_fonts` 里的 linked 循环），原来**完全不判目录版权**，
+   `copyright_class` / 目录里的授权说明对这批字体形同不存在。用户几千个字体几乎全是链接进库的，
+   所以这个功能等于从未生效过。现在两条分支都做判定。
+2. **平铺大目录不能按目录判版权**：把 4930 个字体放在同一个目录时，拿「目录里第一个字体的
+   name 表」去判整个目录，会让 3922 个字族全被写成同一句无关的授权原文。
+   修法：目录级只认**授权文件 + 目录名后缀**（`inspect_dir_files_only`），name 表证据改成
+   逐字面判定（`inspect_face`），各字族只引用自己的原文。
+
 ## [0.9.5] — 2026-10-29
 
 ### 版本号统一提升到 0.9.5 + 发布

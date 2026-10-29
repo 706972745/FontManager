@@ -38,6 +38,8 @@ export interface FontFace {
    * （free / paid / timelimited / unknown）。字体库目录里的字体才有。
    */
   copyrightClass?: string | null;
+  /** 从同目录授权文档摘出的「哪些渠道能 / 不能商用」原话（只摘原句，不改写） */
+  licenseNote?: string | null;
   format: FontFormat;
   isVariable: boolean;
   axes: VariationAxis[];
@@ -316,6 +318,9 @@ export const ipc = {
   getFavorites: () => invoke<string[]>("get_favorites"),
   getNotes: () => invoke<Record<string, string>>("get_notes"),
   setNote: (family: string, note: string) => invoke<void>("set_note", { family, note }),
+  /** 把「授权原文」写进备注：只在该字族没有备注、且从没自动写过时生效，返回真正写了的字族 */
+  seedLicenseNotes: (items: { family: string; note: string }[]) =>
+    invoke<string[]>("seed_license_notes", { items }),
   setFavorite: (family: string, favorite: boolean) =>
     invoke<void>("set_favorite", { family, favorite }),
   getCharset: (path: string, faceIndex: number) =>

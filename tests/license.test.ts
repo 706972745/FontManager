@@ -4,9 +4,48 @@ import { classifyLicense, copyrightExpired, effectiveCopyrightClass } from "../s
 
 test("classifyLicense recognizes open, restrictive and unknown licenses", () => {
   assert.equal(classifyLicense("Licensed under the SIL Open Font License 1.1"), "open");
-  assert.equal(classifyLicense("Personal use only, may not be redistributed"), "restrictive");
+  assert.equal(classifyLicense("Personal use only, may not be redistributed"), "personal");
   assert.equal(classifyLicense("Some custom wording"), "unknown");
+  // 个人免费 + 商用要买（Gobold 那类写法）→ 个人免费
+  assert.equal(
+    classifyLicense("Personal use: FREE. Commercial use: buy the commercial license."),
+    "personal",
+  );
   assert.equal(classifyLicense(null), "unknown");
+});
+
+test("weak evidence stays unknown (口径：宁可不说，也不能说错)", () => {
+  // 只写「免费」，没说能不能商用
+  assert.equal(classifyLicense("免费下载，欢迎分享"), "unknown");
+  assert.equal(classifyLicense("This font is free."), "unknown");
+  assert.equal(classifyLicense("Freely available from our site"), "unknown");
+  // 「保留所有权利 / 不许转发」讲的是分发，不等于收费
+  assert.equal(classifyLicense("All rights reserved. May not be redistributed."), "unknown");
+  // 明确了才能下结论
+  assert.equal(classifyLicense("完全免费，可商用"), "open");
+  assert.equal(classifyLicense("本字体免费，禁止商用"), "personal");
+});
+
+test("explicit commercial grant beats the word non-commercial", () => {
+  assert.equal(
+    classifyLicense("This font is freeware. Free for commercial or non-commercial use."),
+    "open",
+  );
+  assert.equal(classifyLicense("不可商用"), "personal");
+});
+
+test("short markers need word boundaries", () => {
+  assert.equal(classifyLicense("Soflow Sans Display"), "unknown");
+  assert.equal(classifyLicense("License: OFL"), "open");
+  assert.equal(classifyLicense("GPL2 with font embedding exception"), "open");
+  assert.equal(classifyLicense("License: GPLv3"), "open");
+});
+
+test("contradictory license text is not guessed", () => {
+  assert.equal(
+    classifyLicense("Licensed under the SIL Open Font License. Purchase a license for commercial use."),
+    "unknown",
+  );
 });
 
 test("effectiveCopyrightClass maps license text to a copyright class", () => {

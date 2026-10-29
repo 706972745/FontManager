@@ -789,6 +789,34 @@ function localizedAliases(face: FontFace): string[] {
 }
 
 /**
+ * 扫描结果里带的「授权原文」→ 首次见到某个字族时写进备注（详情面板 → 备注）。
+ *
+ * 只摘原句、不改写；后端保证每个字族只自动写一次（用户改过不覆盖、删掉不复活）。
+ * 没有任何渠道说明的字族不会写，备注保持空。
+ */
+async function seedLicenseNotes(
+  fonts: FontFace[],
+  notes: Record<string, string>,
+): Promise<Record<string, string> | null> {
+  const items = new Map<string, string>();
+  for (const f of fonts) {
+    const note = f.licenseNote?.trim();
+    if (!note || notes[f.family] || items.has(f.family)) continue;
+    items.set(f.family, note);
+  }
+  if (items.size === 0) return null;
+  const payload = [...items].map(([family, note]) => ({ family, note }));
+  const seeded = await ipc.seedLicenseNotes(payload).catch(() => [] as string[]);
+  if (seeded.length === 0) return null;
+  const next = { ...notes };
+  for (const family of seeded) {
+    const note = items.get(family);
+    if (note) next[family] = note;
+  }
+  return next;
+}
+
+/**
  * 字体里没有汉字时提醒一句。
  *
  * 不提醒的后果很具体：用户给中文段落套一款西文字体，PS/AI/CDR 全都「成功」了，
@@ -1101,6 +1129,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
         // 权威结果已到位，临时列表可以丢了（否则会多占一份内存）
         scanFonts: [],
       });
+      // 授权文档里写了「哪些渠道能 / 不能商用」的，首次见到就把原话写进备注
+      const seededNotes = await seedLicenseNotes(fonts, notes);
+      if (seededNotes) set({ notes: seededNotes });
       // 旧版快照记录的是绝对路径（换电脑/改字体库路径就失效）：
       // 扫描完手头字体后统一迁移成可移植标识，并回写 state.json
       const index = buildFaceIndex(fonts);

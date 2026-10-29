@@ -44,6 +44,32 @@ fn file_time(path: &str, birth: bool) -> Option<u64> {
     t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs())
 }
 
+/// 判定口径升级后，把旧的「自动备注」作废，让下一次扫描按新口径重写。
+/// 只删以「判定依据：/授权原文：」开头的（都是我们自己写的），用户手写备注一律不动。
+fn migrate_note_rules(app: &tauri::AppHandle) {
+    let store: State<Store> = app.state();
+    let Ok(mut state) = store.0.lock() else {
+        return;
+    };
+    if state.note_rules == copyright::NOTE_RULES_VERSION {
+        return;
+    }
+    let stale: Vec<String> = state.note_seeded.iter().cloned().collect();
+    for fam in stale {
+        let auto = state
+            .notes
+            .get(&fam)
+            .is_some_and(|t| t.starts_with("判定依据：") || t.starts_with("授权原文："));
+        if auto {
+            state.notes.remove(&fam);
+        }
+    }
+    state.note_seeded.clear();
+    state.note_rules = copyright::NOTE_RULES_VERSION;
+    let _ = store::save(&state);
+    crate::diag::log("[copyright] 判定口径升级，自动备注已作废待重写");
+}
+
 #[tauri::command]
 async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
     let (extra, library_dir, linked) = {
@@ -56,6 +82,33 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
         )
     };
     let managed = scanner::effective_managed_dir(library_dir.as_deref());
+    migrate_note_rules(&app);
+    // 字库目录里「直接拖进去、没走导入流程」的字体：刷新按钮原来只扫
+    // 「系统目录 + 额外目录 + linked 记录」，手动放进字库的既不在 linked、也没人遍历，
+    // 所以永远刷不出来。这里先收编进 linked，后面那条链接字体扫描链就会正常解析
+    // （版权判定、备注、启用状态全都走同一套逻辑）。
+    let mut linked = linked;
+    if library_dir.is_some() {
+        let fresh = scanner::discover_managed(&managed, &linked);
+        if !fresh.is_empty() {
+            crate::diag::log(&format!(
+                "[scan] 字库里发现 {} 个未导入的字体，自动收编",
+                fresh.len()
+            ));
+            if let Ok(mut state) = app.state::<Store>().0.lock() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                for p in &fresh {
+                    state.linked.insert(p.clone());
+                    state.added.entry(p.clone()).or_insert(now);
+                }
+                let _ = store::save(&state);
+            }
+            linked.extend(fresh);
+        }
+    }
     // 注册表探测（列出系统已注册的所有字体路径）跟扫描互不依赖，没必要排队：
     // 扫描几千个文件要好几秒，探测也要几百毫秒，串行做的话「进度条 100%」到
     // 「字体真正可用」之间就会多出一段干等。这里开一条线程先跑着，扫完再收。
@@ -80,9 +133,24 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
     let t_linked = std::time::Instant::now();
     let mut linked_faces = Vec::new();
     let mut linked_batch: Vec<FontFace> = Vec::new();
+    // 链接字体的目录也要做版权判定 + 备注留痕。
+    // 这里是用户真正在用的库（几千个字面全躺在扫描目录之外），原来只有
+    // scan_all 那条路算了 dirClass —— 结果界面上的版权全落到 name 表那点信息，
+    // 目录里的授权说明（LICENSE / 授权说明.txt）根本没被看过。
+    let mut linked_dirs: std::collections::HashMap<
+        std::path::PathBuf,
+        crate::copyright::DirCopyright,
+    > = std::collections::HashMap::new();
+    // 上面那条扫描链可能已经扫过同一批文件（字库目录同时被列进额外目录时），
+    // 这里按路径去重，避免同一个字体出现两份卡片。
+    let mut scanned: std::collections::HashSet<String> =
+        faces.iter().map(|f| f.path.to_lowercase()).collect();
     for path in &linked {
         let p = std::path::Path::new(path);
         if !p.is_file() {
+            continue;
+        }
+        if !scanned.insert(path.to_lowercase()) {
             continue;
         }
         let meta = std::fs::metadata(p).ok();
@@ -93,7 +161,7 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-        let parsed = match cache.get(path, mtime, size, FontSource::Managed) {
+        let mut parsed = match cache.get(path, mtime, size, FontSource::Managed) {
             Some(hit) => hit,
             None => {
                 let fresh = parser::parse_font_file(p, FontSource::Managed);
@@ -101,6 +169,27 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
                 fresh
             }
         };
+        if let Some(dir) = p.parent() {
+            let found = linked_dirs
+                .entry(dir.to_path_buf())
+                .or_insert_with(|| crate::copyright::inspect_dir_files_only(dir))
+                .clone();
+            for face in &mut parsed {
+                // 目录里有授权文件 / 目录名带后缀 → 用目录结论；否则只看这个字族自己的 name 表
+                if found.class != crate::copyright::CopyrightClass::Unknown {
+                    face.copyright_class = Some(found.class.as_str().to_string());
+                    face.license_note = found.note.clone();
+                } else {
+                    let (cls, note) = crate::copyright::inspect_face(
+                        face.license.as_deref(),
+                        face.license_url.as_deref(),
+                        face.copyright.as_deref(),
+                    );
+                    face.copyright_class = Some(cls.as_str().to_string());
+                    face.license_note = note;
+                }
+            }
+        }
         linked_batch.extend(parsed.iter().cloned());
         linked_faces.extend(parsed);
         if linked_batch.len() >= 240 {
@@ -1062,6 +1151,39 @@ fn set_note(store: State<Store>, family: String, note: String) -> Result<(), Str
     store::save(&state)
 }
 
+#[derive(serde::Deserialize)]
+struct LicenseNoteSeed {
+    family: String,
+    note: String,
+}
+
+/// 把扫描时从授权文档摘出的「哪些渠道能 / 不能商用」原话写进备注。
+///
+/// 只在「这个字族还没有备注，且从没自动写过」时写一次：
+/// 用户改过备注不会被覆盖，用户主动删掉也不会下次启动又冒出来。
+#[tauri::command]
+fn seed_license_notes(store: State<Store>, items: Vec<LicenseNoteSeed>) -> Result<Vec<String>, String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    let mut seeded = Vec::new();
+    for it in items {
+        let family = it.family.trim().to_string();
+        let note = it.note.trim().to_string();
+        if family.is_empty() || note.is_empty() {
+            continue;
+        }
+        if state.notes.contains_key(&family) || state.note_seeded.contains(&family) {
+            continue;
+        }
+        state.notes.insert(family.clone(), note);
+        state.note_seeded.insert(family.clone());
+        seeded.push(family);
+    }
+    if !seeded.is_empty() {
+        store::save(&state)?;
+    }
+    Ok(seeded)
+}
+
 #[tauri::command]
 fn get_favorites(store: State<Store>) -> Result<Vec<String>, String> {
     let state = store.0.lock().map_err(|e| e.to_string())?;
@@ -1777,6 +1899,7 @@ pub fn run() {
             set_favorite,
             get_notes,
             set_note,
+            seed_license_notes,
             play_sound,
             get_charset,
             fonts_with_char,

@@ -58,6 +58,15 @@ pub struct AppState {
 
     pub notes: HashMap<String, String>,
 
+    /// 已经自动写过「授权原文」备注的字族：写过一次就不再写
+    /// （用户改过备注不该被覆盖；用户主动删掉也不该下次启动又复活）
+    #[serde(default)]
+    pub note_seeded: HashSet<String>,
+
+    /// 自动备注是按哪一版判定口径写的（口径变了要重写，见 copyright::NOTE_RULES_VERSION）
+    #[serde(default)]
+    pub note_rules: u32,
+
     pub prefs: serde_json::Value,
 
     pub parked: HashMap<String, String>,
