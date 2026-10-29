@@ -88,6 +88,10 @@ pub struct StagedFile {
     pub converted: bool,
     /// 在压缩包/拖入文件夹内的相对目录（空 = 根目录），用于把许可证与对应字体归到同一字族
     pub rel: PathBuf,
+    /// 这一条来自哪个「批次」：压缩包路径 / 拖入的文件夹路径 / None（散装单个文件）。
+    /// 一次拖入多个 zip（或多个文件夹）时，解压后都平铺在同一个 staging 目录里，
+    /// 只靠 rel 区分会把 A 包的授权文件套到 B 包的字体上，所以匹配许可证要连它一起看。
+    pub origin: Option<PathBuf>,
     /// 文件夹备注的版权信息：文件所在文件夹的名字（zip 用压缩包名）。
     /// 文件夹名里写明版权时（"Lora（免费字体）"）按它分类，权重低于版权信息文件、
     /// 高于字体自带的版权信息。
@@ -102,6 +106,7 @@ impl StagedFile {
             is_zip,
             converted: false,
             rel,
+            origin: None,
             folder_note: note,
         }
     }
@@ -125,16 +130,45 @@ fn folder_note_for(path: &Path, is_zip: bool, zip_stem: Option<&str>) -> Option<
  *   3. 字体自带的版权信息（name 表 license → copyright）
  * 权重高的那一级识别出结果就用它，识别不出才往下一级走。
  */
+/// 版权信息文件的归属键：同一个压缩包/文件夹里的同一相对目录
+type InfoKey = (Option<PathBuf>, PathBuf);
+
+/// 归属键的唯一构造点：批次（origin）+ 相对目录（rel）。
+/// 分组和查找都必须走它，否则「按包隔离」这个约束会在某一边悄悄失效。
+fn info_key_for(staged: &StagedFile) -> InfoKey {
+    (staged.origin.clone(), staged.rel.clone())
+}
+
+/// 把版权信息类文件按归属键分组（install 与单元测试共用同一套分组）
+fn group_infos(
+    infos: &[StagedFile],
+) -> std::collections::HashMap<InfoKey, Vec<PathBuf>> {
+    let mut map: std::collections::HashMap<InfoKey, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+    for i in infos {
+        map.entry(info_key_for(i)).or_default().push(i.path.clone());
+    }
+    map
+}
+
 fn resolve_class(
     staged: &StagedFile,
     faces: &[FontFace],
-    infos_by_rel: &std::collections::HashMap<PathBuf, Vec<PathBuf>>,
-    all_infos: &[PathBuf],
+    infos_by_rel: &std::collections::HashMap<InfoKey, Vec<PathBuf>>,
+    all_infos: &[(Option<PathBuf>, PathBuf)],
 ) -> copyright::CopyrightClass {
-    // 1. 版权信息文件：优先与字体同目录的那些；跨目录时只有「整批就一份」才敢采信
-    let mut candidates: Vec<PathBuf> = infos_by_rel.get(&staged.rel).cloned().unwrap_or_default();
-    if candidates.is_empty() && all_infos.len() == 1 {
-        candidates = all_infos.to_vec();
+    // 1. 版权信息文件：优先与字体「同批次 + 同目录」的那些。
+    //    批次（origin）必须一致：一次拖入多个 zip 时它们都平铺在同一个 staging 里，
+    //    只看相对目录会把 A 包的 OFL 套到 B 包的字体上。
+    let key = info_key_for(staged);
+    let mut candidates: Vec<PathBuf> = infos_by_rel.get(&key).cloned().unwrap_or_default();
+    // 跨目录兜底：整批只有一份、且和自己同一批次时才敢采信
+    if candidates.is_empty() {
+        if let [(origin, path)] = all_infos {
+            if *origin == staged.origin {
+                candidates = vec![path.clone()];
+            }
+        }
     }
     for p in candidates {
         if let Some(text) = read_text_snippet(&p, 64 * 1024) {
@@ -206,9 +240,13 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
                 .unwrap_or_default();
             let note = folder_note_for(p, false, None);
             if parser::is_font_file(p) {
-                out.push(StagedFile::new(p.to_path_buf(), true, false, rel, note));
+                let mut st = StagedFile::new(p.to_path_buf(), true, false, rel, note);
+                st.origin = Some(path.to_path_buf());
+                out.push(st);
             } else if is_info_file(p) {
-                out.push(StagedFile::new(p.to_path_buf(), false, false, rel, note));
+                let mut st = StagedFile::new(p.to_path_buf(), false, false, rel, note);
+                st.origin = Some(path.to_path_buf());
+                out.push(st);
             }
         }
         return Ok(out);
@@ -236,13 +274,15 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
             let dest = unique_dest(staging, &file_name);
             let mut out_file = fs::File::create(&dest).map_err(|e| e.to_string())?;
             std::io::copy(&mut entry, &mut out_file).map_err(|e| e.to_string())?;
-            out.push(StagedFile::new(
+            let mut st = StagedFile::new(
                 dest,
                 is_font,
                 true,
                 name.parent().map(|pp| pp.to_path_buf()).unwrap_or_default(),
                 zip_note.clone(),
-            ));
+            );
+            st.origin = Some(path.to_path_buf());
+            out.push(st);
         }
         return Ok(out);
     }
@@ -281,7 +321,7 @@ fn process_webfonts(
     }
 
     // 同批兄弟索引：(相对目录, 小写主干) -> ttf/otf 暂存路径
-    let mut siblings: std::collections::HashMap<(String, String), Vec<PathBuf>> =
+    let mut siblings: std::collections::HashMap<(Option<PathBuf>, String, String), Vec<PathBuf>> =
         std::collections::HashMap::new();
     for f in &rest {
         if !f.is_font {
@@ -297,6 +337,7 @@ fn process_webfonts(
         }
         if let Some(stem) = f.path.file_stem().and_then(|s| s.to_str()) {
             let key = (
+                f.origin.clone(),
                 f.rel.to_string_lossy().to_lowercase(),
                 stem.to_lowercase(),
             );
@@ -319,7 +360,11 @@ fn process_webfonts(
             .and_then(|s| s.to_str())
             .map(|stem| {
                 siblings
-                    .get(&(f.rel.to_string_lossy().to_lowercase(), stem.to_lowercase()))
+                    .get(&(
+                        f.origin.clone(),
+                        f.rel.to_string_lossy().to_lowercase(),
+                        stem.to_lowercase(),
+                    ))
                     .cloned()
                     .unwrap_or_default()
             })
@@ -385,6 +430,7 @@ fn process_webfonts(
                             is_zip: false,
                             converted: true,
                             rel: f.rel.clone(),
+                            origin: f.origin.clone(),
                             folder_note: f.folder_note.clone(),
                         }),
                         Err(e) => {
@@ -445,16 +491,13 @@ pub fn install(
     let fonts: Vec<StagedFile> = files.into_iter().filter(|f| f.is_font).collect();
     let total = fonts.len();
 
-    // 版权信息文件按相对目录归好类，供「版权信息文件 > 文件夹备注 > 字体自带」的权重判断
-    let mut infos_by_rel: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
-        std::collections::HashMap::new();
-    for info in &infos {
-        infos_by_rel
-            .entry(info.rel.clone())
-            .or_default()
-            .push(info.path.clone());
-    }
-    let all_infos: Vec<PathBuf> = infos.iter().map(|i| i.path.clone()).collect();
+    // 版权信息文件按「批次 + 相对目录」归好类，供「版权信息文件 > 文件夹备注 > 字体自带」的权重判断。
+    // 批次必带：一次拖入多个 zip/文件夹时，它们解压后共用一个 staging 平铺目录。
+    let infos_by_rel = group_infos(&infos);
+    let all_infos: Vec<(Option<PathBuf>, PathBuf)> = infos
+        .iter()
+        .map(|i| (i.origin.clone(), i.path.clone()))
+        .collect();
 
     if mode == InstallMode::Move || any_zip {
         if let Err(e) = fs::create_dir_all(library) {
@@ -463,10 +506,13 @@ pub fn install(
         }
     }
 
-    // 归档追踪：相对目录 → 该目录中的字体被归入的字族目录；以及本次安装创建的全部字族目录
-    let mut rel_family_dirs: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
+    // 归档追踪：批次+相对目录 → 该目录中的字体被归入的字族目录；
+    // 以及本次安装创建的全部字族目录（按批次再分一份，许可证回填时不能跨包乱发）
+    let mut rel_family_dirs: std::collections::HashMap<InfoKey, Vec<PathBuf>> =
         std::collections::HashMap::new();
     let mut all_family_dirs: Vec<PathBuf> = Vec::new();
+    let mut origin_family_dirs: std::collections::HashMap<Option<PathBuf>, Vec<PathBuf>> =
+        std::collections::HashMap::new();
 
     for (i, staged) in fonts.into_iter().enumerate() {
         let src = staged.path.clone();
@@ -611,7 +657,11 @@ pub fn install(
                                     all_family_dirs.push(parent.to_path_buf());
                                 }
                                 rel_family_dirs
-                                    .entry(staged.rel.clone())
+                                    .entry(info_key_for(&staged))
+                                    .or_default()
+                                    .push(parent.to_path_buf());
+                                origin_family_dirs
+                                    .entry(staged.origin.clone())
                                     .or_default()
                                     .push(parent.to_path_buf());
                             }
@@ -632,25 +682,7 @@ pub fn install(
             let Some(name) = info.path.file_name().map(|f| f.to_owned()) else {
                 continue;
             };
-            let mut targets: Vec<PathBuf> = Vec::new();
-            if let Some(dirs) = rel_family_dirs.get(&info.rel) {
-                let mut uniq: Vec<PathBuf> = Vec::new();
-                for d in dirs {
-                    if !uniq.contains(d) {
-                        uniq.push(d.clone());
-                    }
-                }
-                if uniq.len() == 1 {
-                    targets.push(uniq.remove(0));
-                }
-            }
-            if targets.is_empty() {
-                if all_family_dirs.len() == 1 {
-                    targets.push(all_family_dirs[0].clone());
-                } else {
-                    targets.extend(all_family_dirs.iter().cloned());
-                }
-            }
+            let targets = license_targets(info, &rel_family_dirs, &origin_family_dirs, &all_family_dirs);
             for t in targets {
                 let _ = fs::copy(&info.path, unique_dest(&t, &name));
             }
@@ -660,6 +692,51 @@ pub fn install(
     let _ = fs::remove_dir_all(&staging);
     refresh_system_font_cache();
     result
+}
+
+
+/// 决定某个版权信息文件应该复制进哪些字族目录。
+///
+/// 规则（多 zip 一起导入时必须按包隔离，不能互相串）：
+/// 1. 同批次 + 同相对目录下的字族目录只有一个 → 只进它；
+/// 2. 否则在本批次内部兜底：本批次只产生一个字族 → 进它；多个 → 每个都放一份；
+/// 3. 本批次一个字体都没装成时，整批只剩一个字族才放进去。
+fn license_targets(
+    info: &StagedFile,
+    rel_family_dirs: &std::collections::HashMap<InfoKey, Vec<PathBuf>>,
+    origin_family_dirs: &std::collections::HashMap<Option<PathBuf>, Vec<PathBuf>>,
+    all_family_dirs: &[PathBuf],
+) -> Vec<PathBuf> {
+    fn uniq(dirs: &[PathBuf]) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
+        for d in dirs {
+            if !out.contains(d) {
+                out.push(d.clone());
+            }
+        }
+        out
+    }
+    if let Some(dirs) = rel_family_dirs.get(&info_key_for(info)) {
+        let one = uniq(dirs);
+        if one.len() == 1 {
+            return vec![one[0].clone()];
+        }
+    }
+    let mine = origin_family_dirs
+        .get(&info.origin)
+        .map(|d| uniq(d))
+        .unwrap_or_default();
+    match mine.len() {
+        1 => vec![mine[0].clone()],
+        0 => {
+            if all_family_dirs.len() == 1 {
+                vec![all_family_dirs[0].clone()]
+            } else {
+                Vec::new()
+            }
+        }
+        _ => mine,
+    }
 }
 
 /// 在线下载字体的安装：
@@ -1044,6 +1121,175 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    fn write_zip(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = fs::File::create(path).unwrap();
+        let mut zw = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default();
+        for (name, body) in entries {
+            zw.start_file(*name, opts).unwrap();
+            std::io::Write::write_all(&mut zw, *body).unwrap();
+        }
+        zw.finish().unwrap();
+    }
+
+    /// 一次导入多个 zip：A 包的授权文件不能套到 B 包的字体上。
+    /// （解压后都平铺在同一个 staging 目录，两个包都把字体放在根目录时 rel 都是空）
+    #[test]
+    fn multi_zip_license_does_not_leak_across_zips() {
+        let tmp = std::env::temp_dir().join(format!("zfm-multizip-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let zip_a = tmp.join("free-pack.zip");
+        write_zip(
+            &zip_a,
+            &[
+                ("A-Font.ttf", &b"aaa"[..]),
+                ("OFL.txt", &b"SIL Open Font License Version 1.1"[..]),
+            ],
+        );
+        let zip_b = tmp.join("paid-pack.zip");
+        write_zip(&zip_b, &[("B-Font.ttf", &b"bbb"[..])]);
+
+        let staging = tmp.join("staging");
+        let mut files = Vec::new();
+        for z in [&zip_a, &zip_b] {
+            files.extend(expand_dropped(z, &staging).unwrap());
+        }
+
+        let infos: Vec<StagedFile> = files.iter().filter(|f| !f.is_font).cloned().collect();
+        // 必须和 install() 用同一个分组函数，否则回归时测试也会「跟着一起错」
+        let infos_by_rel = group_infos(&infos);
+        let all_infos: Vec<(Option<PathBuf>, PathBuf)> = infos
+            .iter()
+            .map(|i| (i.origin.clone(), i.path.clone()))
+            .collect();
+
+        let font_a = files
+            .iter()
+            .find(|f| f.is_font && f.origin.as_deref() == Some(zip_a.as_path()))
+            .expect("A 包的字体");
+        let font_b = files
+            .iter()
+            .find(|f| f.is_font && f.origin.as_deref() == Some(zip_b.as_path()))
+            .expect("B 包的字体");
+
+        assert_eq!(
+            resolve_class(font_a, &[], &infos_by_rel, &all_infos),
+            copyright::CopyrightClass::FreeCommercial,
+            "A 包自己的 OFL 应该生效"
+        );
+        assert_ne!(
+            resolve_class(font_b, &[], &infos_by_rel, &all_infos),
+            copyright::CopyrightClass::FreeCommercial,
+            "B 包没有授权文件，不能被 A 包的 OFL 串成商用免费"
+        );
+        assert_eq!(
+            resolve_class(font_b, &[], &infos_by_rel, &all_infos),
+            copyright::CopyrightClass::Unknown,
+            "判不出来就应该老实报未知"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// 多 zip 一起导入：A 包的授权文件只能落在 A 包的字族目录里
+    #[test]
+    fn license_targets_stay_inside_own_zip() {
+        let zip_a = PathBuf::from(r"C:/fonts/a-free.zip");
+        let zip_b = PathBuf::from(r"C:/fonts/b-paid.zip");
+        let dir_a = PathBuf::from(r"C:/lib/FamilyA（商用免费）");
+        let dir_b = PathBuf::from(r"C:/lib/FamilyB（收费字体）");
+
+        let mut info_a = StagedFile::new(PathBuf::from("OFL.txt"), false, true, PathBuf::new(), None);
+        info_a.origin = Some(zip_a.clone());
+
+        let mut rel_dirs: std::collections::HashMap<InfoKey, Vec<PathBuf>> =
+            std::collections::HashMap::new();
+        rel_dirs.insert((Some(zip_a.clone()), PathBuf::new()), vec![dir_a.clone()]);
+        rel_dirs.insert((Some(zip_b.clone()), PathBuf::new()), vec![dir_b.clone()]);
+
+        let mut origin_dirs: std::collections::HashMap<Option<PathBuf>, Vec<PathBuf>> =
+            std::collections::HashMap::new();
+        origin_dirs.insert(Some(zip_a.clone()), vec![dir_a.clone()]);
+        origin_dirs.insert(Some(zip_b.clone()), vec![dir_b.clone()]);
+
+        let all = vec![dir_a.clone(), dir_b.clone()];
+        assert_eq!(
+            license_targets(&info_a, &rel_dirs, &origin_dirs, &all),
+            vec![dir_a.clone()],
+            "A 包的 OFL 不能进 B 包的字族目录"
+        );
+
+        // 许可证在包根、字体在子目录：按同批次兜底，仍然只进 A 自己的字族
+        let mut root_info =
+            StagedFile::new(PathBuf::from("LICENSE.txt"), false, true, PathBuf::new(), None);
+        root_info.origin = Some(zip_a.clone());
+        let mut rel_dirs2 = rel_dirs.clone();
+        rel_dirs2.insert(
+            (Some(zip_a.clone()), PathBuf::from("Fonts")),
+            vec![dir_a.clone()],
+        );
+        assert_eq!(
+            license_targets(&root_info, &rel_dirs2, &origin_dirs, &all),
+            vec![dir_a.clone()]
+        );
+    }
+
+    /// 松散文件夹（一次拖入一个文件夹）：根目录的授权文件仍按老规则发给该文件夹里的每个字族
+    #[test]
+    fn license_targets_loose_folder_covers_all_its_families() {
+        let folder = PathBuf::from(r"C:/fonts/pack");
+        let d1 = PathBuf::from(r"C:/lib/FamilyOne");
+        let d2 = PathBuf::from(r"C:/lib/FamilyTwo");
+
+        let mut info = StagedFile::new(PathBuf::from("LICENSE.txt"), false, false, PathBuf::new(), None);
+        info.origin = Some(folder.clone());
+
+        let mut origin_dirs: std::collections::HashMap<Option<PathBuf>, Vec<PathBuf>> =
+            std::collections::HashMap::new();
+        origin_dirs.insert(Some(folder), vec![d1.clone(), d2.clone()]);
+
+        let targets = license_targets(
+            &info,
+            &std::collections::HashMap::new(),
+            &origin_dirs,
+            &[d1.clone(), d2.clone()],
+        );
+        assert_eq!(targets, vec![d1, d2]);
+    }
+
+    /// 两个 zip 里有同名文件：解压到同一个 staging 时不能互相覆盖
+    #[test]
+    fn multi_zip_same_file_name_keeps_both() {
+        let tmp = std::env::temp_dir().join(format!("zfm-multizip-dup-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let zip_a = tmp.join("one.zip");
+        write_zip(&zip_a, &[("Same.ttf", &b"first"[..])]);
+        let zip_b = tmp.join("two.zip");
+        write_zip(&zip_b, &[("Same.ttf", &b"second"[..])]);
+
+        let staging = tmp.join("staging");
+        let mut fonts = Vec::new();
+        for z in [&zip_a, &zip_b] {
+            fonts.extend(
+                expand_dropped(z, &staging)
+                    .unwrap()
+                    .into_iter()
+                    .filter(|f| f.is_font),
+            );
+        }
+        assert_eq!(fonts.len(), 2, "两个同名文件都要留下来");
+        assert_ne!(fonts[0].path, fonts[1].path, "落盘路径不能相同");
+
+        let bodies: Vec<Vec<u8>> = fonts.iter().map(|f| fs::read(&f.path).unwrap()).collect();
+        assert!(bodies.contains(&b"first".to_vec()) && bodies.contains(&b"second".to_vec()));
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     /// 0.9.4-1 回归：落单的 WOFF（不走 zip 分支）也必须把 staging 目录建出来，
     /// 否则解包落盘报 os error 3（系统找不到指定的路径）。
     #[test]
@@ -1087,11 +1333,11 @@ mod tests {
         );
 
         // 1. 同目录有版权信息文件：按文件正文判定（免费），文件夹备注的"收费"不生效
-        let mut by_rel: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
+        let mut by_rel: std::collections::HashMap<(Option<PathBuf>, PathBuf), Vec<PathBuf>> =
             std::collections::HashMap::new();
-        by_rel.insert(PathBuf::new(), vec![license.clone()]);
+        by_rel.insert((None, PathBuf::new()), vec![license.clone()]);
         assert_eq!(
-            resolve_class(&staged, &[], &by_rel, &[license]),
+            resolve_class(&staged, &[], &by_rel, &[(None, license.clone())]),
             copyright::CopyrightClass::FreeCommercial
         );
 
