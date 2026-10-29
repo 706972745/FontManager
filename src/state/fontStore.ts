@@ -401,6 +401,18 @@ let quickbarGeometry: WindowGeometry | null = null;
 let quickbarBusy = false;
 /** 过渡进行中用户最后一次表达的意图；跑完按它决定要不要再走一趟 */
 let quickbarWant: boolean | null = null;
+/**
+ * 当前这一轮切换的 Promise。busy 时进来的调用等它，而不是立刻 resolve——
+ * 否则 `await setQuickbar(x)` 之后读到的还是旧状态（`app://activate` 就踩这个）。
+ */
+let quickbarChain: Promise<void> = Promise.resolve();
+/** 正在进行的那一次扫描（single-flight：并发扫描会让旧结果覆盖新结果） */
+let scanInflight: Promise<void> | null = null;
+/**
+ * 在线详情的代次。关闭详情 / 切到别的字族时递增，让还在飞的
+ * `onlineFamily` / `onlinePreview` 回来时认出自己已经过期，不再写回。
+ */
+let onlineDetailGen = 0;
 
 /** 用户关了动效就直接切，不做窗口形变 */
 function morphDuration(): number {
@@ -450,8 +462,11 @@ async function enterQuickbar() {
     const width = Math.round(targetWidth * scale);
     // 展开后的速览高度（物理像素），收起态收进顶部一条时记下来用于还原
     const fullHeight = Math.round(targetHeight * scale);
-    // 进入速览 = 直接收到屏幕顶部的一条：一次形变到位，不再「先变成完整速览面板」
-    const dockHeight = Math.round(DOCK_HEIGHT_HINT * scale);
+    // 进入速览 = 直接收到屏幕顶部的一条：一次形变到位，不再「先变成完整速览面板」。
+    // 但用户把「贴顶自动隐藏」关掉时不要收：那种配置下窗口应该直接停在完整尺寸，
+    // 否则会收成 34px 提示条、热键又被关掉，等于进来就出不去（§5 第 1 条）。
+    const autoHide = useFontStore.getState().quickbarAutoHide;
+    const dockHeight = autoHide ? Math.round(DOCK_HEIGHT_HINT * scale) : fullHeight;
     let x = pos.x;
     // 顶边对齐到工作区顶（避开任务栏）
     const y = monitor
@@ -491,9 +506,13 @@ async function enterQuickbar() {
     await win.setSize(new PhysicalSize(width, dockHeight)).catch(() => {});
     await win.setPosition(new PhysicalPosition(x, y)).catch(() => {});
     // 窗口已经是顶部一条：把收起态交给 dock，展开时还原成完整的速览尺寸
-    await adoptQuickbarDock(width, fullHeight).catch((e) =>
-      console.warn("[quickbar] 接管收起态失败", e),
-    );
+    // 窗口已经到目标几何：autoHide 开着时窗口是顶部一条，把收起态交给 dock；
+    // 关着时窗口本来就是展开尺寸，没有收起态可接管（接管了会立刻被 scheduleShrink 压成细线）。
+    if (autoHide) {
+      await adoptQuickbarDock(width, fullHeight).catch((e) =>
+        console.warn("[quickbar] 接管收起态失败", e),
+      );
+    }
     // 速览界面置顶在所有窗口之上，回到完整界面时再取消
     await win.setAlwaysOnTop(true);
   } catch (e) {
@@ -1106,6 +1125,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   rescan: async () => {
+    // 并发扫描会互相覆盖（先发起的可能后回来，把新结果擦掉）：改成 single-flight，
+    // 同一时刻只有一次真正在扫，后来者等同一份结果（§5 第 11 条）。
+    if (scanInflight) return scanInflight;
+    const run = (async () => {
     set({ phase: "scanning", scanFonts: [] });
     try {
       const [fonts, tags, collections, snapshots, favorites, notes, trash] = await Promise.all([
@@ -1163,9 +1186,28 @@ export const useFontStore = create<FontStore>((set, get) => ({
       const alive = new Set(fonts.filter((f) => f.active).map((f) => f.family));
       const kept = get().sessionActivated.filter((n) => alive.has(n));
       if (kept.length !== get().sessionActivated.length) set({ sessionActivated: kept });
+      // 权威结果到位后裁掉已经不存在于字库的选择 / 比较项：
+      // 否则「选着的那一族被删掉」之后，选择里留着一个看不见的族，
+      // 浮层一关（画面里没有任何可见项）却还在拦快捷键，Delete 会删到不可见的东西（§5 第 18 条）。
+      const sel = get().selection.filter((n) => names.has(n));
+      if (sel.length !== get().selection.length) set({ selection: sel });
+      const cmp = get().compare;
+      if (cmp) {
+        const keptCmp = cmp.filter((n) => names.has(n));
+        // 比较至少要两项才有意义；掉到两项以下就整个关掉
+        if (keptCmp.length < 2) set({ compare: null });
+        else if (keptCmp.length !== cmp.length) set({ compare: keptCmp });
+      }
     } catch (e) {
       set({ phase: "error" });
       toast.error(t("toast.couldntScan"), String(e));
+    }
+    })();
+    scanInflight = run;
+    try {
+      await run;
+    } finally {
+      if (scanInflight === run) scanInflight = null;
     }
   },
 
@@ -1422,15 +1464,20 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   setFamilyTags: async (family, tags) => {
-    const prev = get().tags;
-    const next = { ...prev };
+    const prevOwn = get().tags[family];
+    const next = { ...get().tags };
     if (tags.length === 0) delete next[family];
     else next[family] = tags;
     set({ tags: next });
     try {
       await ipc.setTags(family, tags);
     } catch (e) {
-      set({ tags: prev });
+      // 只回滚这一族的标签：批量改标签时其他族可能已经写成功，
+      // 整包回滚会把它们一起擦掉（§5 第 36 条）。
+      const cur = { ...get().tags };
+      if (prevOwn === undefined) delete cur[family];
+      else cur[family] = prevOwn;
+      set({ tags: cur });
       toast.error(t("toast.couldntSaveTags"), String(e));
     }
   },
@@ -2004,7 +2051,16 @@ export const useFontStore = create<FontStore>((set, get) => ({
     try {
       await ipc.setSettings(settings);
     } catch (e) {
-      set({ settings: prev });
+      // 只回滚「本次真正要写、且界面上还是这次值」的字段。
+      // 整包回滚成 prev 会把并发成功的其他修改一起擦掉（§5 第 12 条）。
+      const cur = get().settings;
+      const rollback: Partial<AppSettings> = {};
+      for (const key of Object.keys(settings) as (keyof AppSettings)[]) {
+        if (cur[key] === settings[key] && prev[key] !== settings[key]) {
+          (rollback as Record<string, unknown>)[key as string] = prev[key];
+        }
+      }
+      set({ settings: { ...cur, ...rollback } });
       toast.error(t("toast.couldntSaveSettings"), String(e));
       return;
     }
@@ -2068,29 +2124,38 @@ export const useFontStore = create<FontStore>((set, get) => ({
   setOnlineVariableOnly: (onlineVariableOnly) => set({ onlineVariableOnly }),
 
   openOnlineFamily: async (id) => {
+    // 详情 / 预览都是异步回来的：关掉弹层或连点另一张卡片时，旧请求晚到会把
+    // 新的覆盖掉（表现为「关不掉 / 自己又弹开 / 预览是上一个字族」）。
+    // 每次打开递增代次，回写前只认自己是当前代次（§5 第 9 条）。
+    const gen = ++onlineDetailGen;
     set({ onlineDetailLoading: true, onlineDetail: null, onlinePreviewPath: null });
     try {
       const detail = await ipc.onlineFamily(id);
+      if (gen !== onlineDetailGen) return;
       set({ onlineDetail: detail, onlineDetailLoading: false });
     } catch (e) {
+      if (gen !== onlineDetailGen) return;
       set({ onlineDetailLoading: false });
       toast.error(t("toast.onlineDetailFailed"), String(e));
       return;
     }
     try {
       const path = await ipc.onlinePreview(id);
-      if (get().onlineDetail?.id === id) set({ onlinePreviewPath: path });
+      if (gen !== onlineDetailGen || get().onlineDetail?.id !== id) return;
+      set({ onlinePreviewPath: path });
     } catch {
-      set({ onlinePreviewPath: null });
+      if (gen === onlineDetailGen) set({ onlinePreviewPath: null });
     }
   },
 
   closeOnlineFamily: () => {
+    // 作废所有在飞的详情 / 预览回写（否则关上之后又被旧结果打开）
+    onlineDetailGen++;
     const { onlineDetail, onlineDownloading } = get();
     if (onlineDetail && onlineDownloading !== onlineDetail.id) {
       void ipc.onlineClearStaging(onlineDetail.id);
     }
-    set({ onlineDetail: null, onlinePreviewPath: null });
+    set({ onlineDetail: null, onlinePreviewPath: null, onlineDetailLoading: false });
   },
 
   installOnlineFamily: async (id, scope) => {
@@ -2203,7 +2268,13 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   setBulkTagFor: (bulkTagFor) => set({ bulkTagFor }),
 
-  startTour: () => set({ tourStep: 0 }),
+  // 重播导览：先把视图切回字库。回收站 / 关于 / 在线栏目里没有导览要指的那些元素，
+  // 否则镜头找不到目标，整段导览会对着空气讲（§5 第 29 条）。
+  startTour: () => {
+    const nav = get().nav;
+    const stuck = nav.kind === "trash" || nav.kind === "about" || nav.kind === "online";
+    set(stuck ? { tourStep: 0, nav: { kind: "library" } } : { tourStep: 0 });
+  },
   setTourStep: (tourStep) => set({ tourStep }),
   endTour: () => {
     set({ tourStep: null, onboarded: true, selectedFamily: null, selection: [] });
@@ -2252,21 +2323,31 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // 一套收窗口、一套摆几何，最后窗口停在半截尺寸，看起来就是「界面展开了但显示不对」。
     // 现在串行化：同一时刻只有一个流程在跑，期间的新请求只记「最终想去哪」，跑完再补。
     quickbarWant = on;
-    if (quickbarBusy) return;
-    quickbarBusy = true;
-    try {
-      while (quickbarWant !== null && quickbarWant !== get().quickbar) {
-        const target = quickbarWant;
-        quickbarWant = null;
-        if (target) await enterQuickbar();
-        else await exitQuickbar();
-      }
-    } catch (e) {
-      toast.error(t("toast.quickbarFailed"), String(e));
-    } finally {
-      quickbarBusy = false;
-      quickbarWant = null;
+    if (quickbarBusy) {
+      // busy 时不能提前 resolve：调用方 await 之后要能读到「切换真的完成了」的状态，
+      // 否则 `app://activate` 这类路径会拿旧状态去干活（§5 第 3 条）。
+      await quickbarChain;
+      // 登记意图的时机可能刚好落在上一轮 while 退出之后，这里补跑一次
+      if (!quickbarBusy && get().quickbar !== on) await get().setQuickbar(on);
+      return;
     }
+    quickbarBusy = true;
+    quickbarChain = (async () => {
+      try {
+        while (quickbarWant !== null && quickbarWant !== get().quickbar) {
+          const target = quickbarWant;
+          quickbarWant = null;
+          if (target) await enterQuickbar();
+          else await exitQuickbar();
+        }
+      } catch (e) {
+        toast.error(t("toast.quickbarFailed"), String(e));
+      } finally {
+        quickbarBusy = false;
+        quickbarWant = null;
+      }
+    })();
+    await quickbarChain;
   },
   setQuickbarAutoHide: (quickbarAutoHide) => set({ quickbarAutoHide }),
   setQuickbarHotkey: async (quickbarHotkey) => {

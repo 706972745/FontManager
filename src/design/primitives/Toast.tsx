@@ -92,6 +92,10 @@ export function Toaster() {
             onClick={() => dismiss(t.id)}
             onMouseEnter={() => pause(t.id)}
             onMouseLeave={() => resume(t.id)}
+            // 键盘用户也要能「停住」：焦点进到提示里（比如「撤销」按钮上）就不该再倒计时，
+            // 否则刚 Tab 过去它就被收走了（§5 第 34 条）
+            onFocusCapture={() => pause(t.id)}
+            onBlurCapture={() => resume(t.id)}
             whileHover={{ y: -1 }}
             whileTap={{ scale: 0.97 }}
             layout

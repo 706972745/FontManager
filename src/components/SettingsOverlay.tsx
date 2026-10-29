@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { springSoft } from "../design/springs";
@@ -71,13 +71,25 @@ export function SettingsOverlay() {
   /** 正在录制新快捷键：这段时间拦截所有按键，别让它们落到页面别处 */
   const [recording, setRecording] = useState(false);
   const [autostart, setAutostart] = useState(false);
+  /** 开机自启的读取代次：晚到的旧读取不许覆盖用户刚改的值（§5 第 25 条） */
+  const autostartReadGen = useRef(0);
+  /** 开机自启的保存代次：只回滚「最后一次」的失败，别把后来成功的值拨回去 */
+  const autostartSaveGen = useRef(0);
   const affinityConnection = useFontStore((s) => s.affinityConnection);
   const refreshAffinityConnection = useFontStore((s) => s.refreshAffinityConnection);
   const pollAffinityLink = useFontStore((s) => s.pollAffinityLink);
 
   useEffect(() => {
     if (!openState) return;
-    void ipc.getAutostart().then(setAutostart).catch(() => {});
+    // 读取代次：打开设置时的那次读取可能比用户点开关还慢，
+    // 晚到的「旧值」会把刚拨过去的状态盖回去（§5 第 25 条）。
+    const gen = ++autostartReadGen.current;
+    void ipc
+      .getAutostart()
+      .then((v) => {
+        if (gen === autostartReadGen.current) setAutostart(v);
+      })
+      .catch(() => {});
   }, [openState]);
 
   useEffect(() => {
@@ -97,13 +109,29 @@ export function SettingsOverlay() {
 
   useEffect(() => {
     if (!openState) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSettingsOpen(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [openState, setSettingsOpen]);
+    // capture + 最上层消费：设置面板是模态的，Escape 只能它来关（§5 第 8 条）。
+    // 用 stopImmediatePropagation 压住同一 target 上的其他 window 监听
+    // （否则关设置的同时，主界面的 Escape 还会顺手把选择清掉）。
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (recording) return; // 录制中由录制监听器处理（它自己会退出录制）
+      if (e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setSettingsOpen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [openState, setSettingsOpen, recording]);
+
+  // 设置关掉就一定要退出快捷键录制：录制监听器是 capture 阶段拦全应用按键的，
+  // 面板都没了它还在，整个界面会「所有键都打不进去」（§5 第 10 条）。
+  useEffect(() => {
+    if (!openState) setRecording(false);
+  }, [openState]);
 
   useEffect(() => {
-    if (!recording) return;
+    if (!openState || !recording) return;
     const onKey = (e: KeyboardEvent) => {
       // 录制期间所有按键都归我们：既别触发页面快捷键，也别触发「Esc 关闭设置」
       e.preventDefault();
@@ -271,12 +299,15 @@ export function SettingsOverlay() {
                   on={autostart}
                   onChange={(on) => {
                     setAutostart(on);
-                    void ipc
-                      .setAutostart(on)
-                      .catch((e) => {
-                        setAutostart(!on);
-                        toast.error(t("toast.autostartFailed"), String(e));
-                      });
+                    // 用户已经表达了新意图：让在飞的旧读取作废
+                    autostartReadGen.current++;
+                    const gen = ++autostartSaveGen.current;
+                    void ipc.setAutostart(on).catch((e) => {
+                      // 只回滚最后一次：连点两下时，先失败的那次不该把后来的值改回去
+                      if (gen !== autostartSaveGen.current) return;
+                      setAutostart(!on);
+                      toast.error(t("toast.autostartFailed"), String(e));
+                    });
                   }}
                   label={t("settings.autostart")}
                 />

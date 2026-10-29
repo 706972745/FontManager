@@ -7,6 +7,7 @@ import { PillToggle } from "../design/primitives/PillToggle";
 import { SIZES, useFontStore } from "../state/fontStore";
 import { useT, type TKey } from "../lib/i18n";
 import { usePathFontCss } from "../lib/fontLoader";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { ipc, type FontFace, type OnlineFamily } from "../lib/ipc";
 import {
   expectationFromCatalogue,
@@ -67,6 +68,27 @@ export function OnlineView() {
   const setVariableOnly = useFontStore((s) => s.setOnlineVariableOnly);
   const openFamily = useFontStore((s) => s.openOnlineFamily);
   const closeFamily = useFontStore((s) => s.closeOnlineFamily);
+
+  /**
+   * 在线详情是个 aria-modal 弹层，但以前只有 aria 没有行为：Escape 关不掉、
+   * Tab 会跑到背后被遮住的列表上（§5 第 19 条）。这里补上焦点陷阱 + Escape，
+   * 关掉时 useFocusTrap 会自动把焦点还给打开它的那张卡片。
+   */
+  const detailRef = useFocusTrap<HTMLDivElement>(Boolean(detail || detailLoading));
+  useEffect(() => {
+    if (!detail && !detailLoading) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      // 最上层先吃：别让全局快捷键顺手把主界面的选择也清了
+      e.stopImmediatePropagation();
+      // 下载中不给关，和「点遮罩不关」保持一致
+      if (downloading) return;
+      closeFamily();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [detail, detailLoading, downloading, closeFamily]);
   const install = useFontStore((s) => s.installOnlineFamily);
   const setSettingsOpen = useFontStore((s) => s.setSettingsOpen);
 
@@ -355,6 +377,7 @@ export function OnlineView() {
             onClick={() => !downloading && closeFamily()}
           >
             <motion.div
+              ref={detailRef}
               className="online-detail"
               role="dialog"
               aria-modal="true"
@@ -519,7 +542,10 @@ function OnlineCard({
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
+          // Space 同时是主界面的「启用/停用选中字族」：卡片自己消费掉，
+          // 别让它冒泡到全局快捷键（§5 第 6 条）
           e.preventDefault();
+          e.stopPropagation();
           onOpen();
         }
       }}

@@ -384,12 +384,40 @@ function CopyrightStatusSection({ family }: { family: string }) {
       variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
     >
       <div className="detail-heading">{t("detail.copyrightStatus")}</div>
-      <div className="copyright-status-row" role="radiogroup" aria-label={t("detail.copyrightStatus")}>
+      <div
+        className="copyright-status-row"
+        role="radiogroup"
+        aria-label={t("detail.copyrightStatus")}
+        onKeyDown={(e) => {
+          const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"];
+          if (!keys.includes(e.key)) return;
+          // radiogroup 内部的方向键不能被全局列表导航抢走（§5 第 30 条）
+          e.preventDefault();
+          e.stopPropagation();
+          const opts = COPYRIGHT_STATUS_OPTIONS;
+          const n = opts.length;
+          const cur = opts.indexOf(status as (typeof opts)[number]);
+          const next =
+            e.key === "Home"
+              ? 0
+              : e.key === "End"
+                ? n - 1
+                : e.key === "ArrowRight" || e.key === "ArrowDown"
+                  ? (Math.max(cur, -1) + 1) % n
+                  : (cur <= 0 ? n : cur) - 1;
+          setCopyrightStatus(family, opts[next]);
+          // roving tabindex：焦点跟着选中项走
+          e.currentTarget
+            .querySelectorAll<HTMLButtonElement>("[role='radio']")
+            [next]?.focus();
+        }}
+      >
         {COPYRIGHT_STATUS_OPTIONS.map((opt) => (
           <button
             key={opt}
             role="radio"
             aria-checked={status === opt}
+            tabIndex={status === opt ? 0 : -1}
             className={`copyright-status-btn ${status === opt ? "copyright-status-active" : ""}`}
             onClick={() => setCopyrightStatus(family, opt)}
           >
@@ -606,26 +634,45 @@ export function DetailPanel() {
   const dragging = useRef(false);
   /** 正在拖左边缘调宽：此时宽度必须实时跟手，不能再走弹簧（会拖出「粘手」感） */
   const [resizing, setResizing] = useState(false);
+  /** 拖宽时挂上的监听清理函数：pointercancel / 卸载时统一收掉 */
+  const dragCleanup = useRef<(() => void) | null>(null);
 
   const onResizeDown = useCallback(
     (e: React.PointerEvent) => {
+      dragCleanup.current?.();
       dragging.current = true;
       setResizing(true);
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      const target = e.target as HTMLElement;
+      try {
+        target.setPointerCapture(e.pointerId);
+      } catch {
+        /* 拿不到捕获就退化为 window 监听 */
+      }
       const onMove = (ev: PointerEvent) => {
         if (dragging.current) setPanelWidth(window.innerWidth - ev.clientX);
       };
-      const onUp = () => {
+      // pointerup 不是唯一出口：系统手势打断（pointercancel）、指针捕获丢失、
+      // 面板在拖动中被卸载，都会留下一套「跟手」监听在后台继续改宽度（§5 第 26 条）。
+      function end() {
         dragging.current = false;
         setResizing(false);
         window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-      };
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+        target.removeEventListener("lostpointercapture", end);
+        if (dragCleanup.current === end) dragCleanup.current = null;
+      }
       window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointerup", end);
+      window.addEventListener("pointercancel", end);
+      target.addEventListener("lostpointercapture", end);
+      dragCleanup.current = end;
     },
     [setPanelWidth],
   );
+
+  // 面板卸载（切到速览 / 关闭面板）时把监听收干净
+  useEffect(() => () => dragCleanup.current?.(), []);
 
   const family = selectedFamily
     ? familiesFor(fonts, tags).get(selectedFamily) ?? null
@@ -711,14 +758,30 @@ export function DetailPanel() {
     };
   }, [dirsKey]);
 
+  /**
+   * 版权搜索的请求代次。搜版权是「发起 → 网络 / 磁盘 → 写回文件列表」的多段异步，
+   * 期间用户很可能已经切到别的字族（甚至关掉面板）：旧结果写回来就会变成
+   * 「B 字族的详情里列出 A 字族的版权文件」（§5 第 24 条）。
+   */
+  const licenseReqGen = useRef(0);
+  useEffect(() => {
+    licenseReqGen.current++;
+    return () => {
+      licenseReqGen.current++;
+    };
+  }, [family?.name]);
+
   const searchLicense = async () => {
     if (!family || licenseSearching || writableDirs.length === 0) return;
+    const gen = ++licenseReqGen.current;
+    const forFamily = family.name;
     setLicenseSearching(true);
     try {
       const postscripts = [
         ...new Set(family.faces.map((f) => f.postscriptName).filter((p): p is string => !!p)),
       ];
-      const hit = await ipc.fontLicenseFetch(family.name, postscripts, writableDirs);
+      const hit = await ipc.fontLicenseFetch(forFamily, postscripts, writableDirs);
+      if (gen !== licenseReqGen.current) return;
       if (!hit) {
         toast.info(t("toast.licenseNotFound"), t("toast.licenseNotFoundSub"));
         return;
@@ -729,15 +792,17 @@ export function DetailPanel() {
         "install",
       );
       const map = await ipc.infoFiles(writableDirs);
+      if (gen !== licenseReqGen.current) return;
       setLicenseFiles([...new Set(Object.values(map).flat())].sort());
     } catch (e) {
+      if (gen !== licenseReqGen.current) return;
       const raw = String(e);
       toast.error(
         t("toast.licenseFetchFailed"),
         /switched off/i.test(raw) ? t("toast.licenseNeedsOnline") : raw,
       );
     } finally {
-      setLicenseSearching(false);
+      if (gen === licenseReqGen.current) setLicenseSearching(false);
     }
   };
 

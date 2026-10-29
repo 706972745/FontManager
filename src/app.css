@@ -1,13 +1,19 @@
 
 /**
- * 速览 ↔ 完整界面的窗口形变过程中，内容是钉在目标尺寸上渲染的，窗口要 0.26s
- * 才走到同一个尺寸 —— 这期间窗口比内容大的那几帧，多出来的部分画的是浏览器
- * 的默认画布色（纯白），看着就像窗口边上挂着一条白竖条。把画布底色铺成应用
- * 底色，这块区域就和内容融成一片了（light 主题下 --canvas 也是浅灰）。
+ * 页面画布全程透明 + 高度链钉满视口：
+ * - 透明：圆角（.app-frame / .qb-frame 共用 --qb-radius = 8 物理像素/DPR）外侧要
+ *   露出桌面，完整界面 ↔ 速览形变中窗口比内容大的那几帧也一样——可见形状永远是
+ *   内容自己的圆角形状。原来这里铺 canvas 底色（给形变帧的空白补色），代价是
+ *   窗口四角变成 canvas 色的直角，和 CSS 圆角对不上。
+ * - 高度：html/body/#root 钉满视口，.app-frame / .qb-frame 的 height:100% 才有
+ *   确定值——收起/展开动画里 qb-frame 要逐帧贴住窗口边缘（圆角画在窗口边上）。
+ * 窗口本体是 tauri transparent: true + shadow: false，桌面从透明区透出来。
  */
 html,
-body {
-  background: var(--canvas);
+body,
+#root {
+  height: 100%;
+  background: transparent;
 }
 
 #root {
@@ -34,6 +40,11 @@ body {
   position: relative;
   border: 1px solid rgba(var(--ink-rgb), 0.07);
   background: var(--canvas);
+  /* 圆角与速览完全同源（--qb-radius，App 挂载时写入）：完整界面原来是 DWM 系统圆角，
+     现在改由 CSS 画——DWM 圆角自带的那圈窗口阴影按用户要求一并去掉，
+     两个界面弧度从此同一个来源，形变途中也不会再闪直角。 */
+  border-radius: var(--qb-radius, 8px);
+  overflow: hidden;
   overflow: hidden;
   isolation: isolate;
 }
@@ -4708,10 +4719,31 @@ h2.detail-title.copy-name {
   border: 1px solid rgba(var(--ink-rgb), 0.08);
   background: var(--canvas);
   overflow: hidden;
+  /* 圆角全程常开（半径 = 8 物理像素 / DPR，见 useQuickbarDock 的 --qb-radius）。
+     以前只在收起态（hint/retract）加：展开时 docked 立刻变 false，这条规则失效，
+     而系统圆角要等 IPC 往返才切回来，中间几帧窗口是直角 —— 就是「展开时四角闪一下」。 */
+  border-radius: var(--qb-radius, 8px);
   /* 收起成细线时底色要淡成透明（retract 阶段），过渡而不是一帧切过去 */
   transition:
     background-color 0.26s linear,
     border-color 0.26s linear;
+}
+
+/**
+ * .qb-frame 的唯一子层。平时 flex:1 填满 qb-frame，内部布局和以前「子元素直接排在
+ * qb-frame 上」完全一致；收起/展开动画期间（useQuickbarDock 的 contentHeight）
+ * 把内容钉在原高度（flex none + height），超出窗口的部分由 qb-frame 的
+ * overflow:hidden + 圆角裁掉——这样窗口底边每一步都落在 qb-frame 的圆角上，
+ * 不会再出现「窗口比内容矮，底边是裁切线，收起途中下面两个角是直角」。
+ */
+.qb-pin {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.qb-pin[data-pin="true"] {
+  flex: 0 0 auto;
 }
 
 .qb-grip {
@@ -4767,6 +4799,16 @@ body.is-dragging textarea {
   height: var(--dock-line-h, 5px);
   border-radius: 3px;
   background: rgba(var(--ink-rgb), 0.38);
+  /**
+   * 细线阶段不做任何过渡：这条线的终值在上面（100% / dock-line-h / 0.38），
+   * 和 retract 阶段末尾完全一致，所以这里关掉过渡不会少掉任何「摊开」动作
+   * （摊开发生在 retract，用户看得见）。
+   *
+   * 之前不关的后果：切到 bar 发生在屏幕外，0.26s 的宽度/高度/透明度过渡正好
+   * 撞上 160ms 的滑入 —— 线滑回屏幕时还是半透明的，落到顶边后才继续「淡入」，
+   * 看起来就是「抓手线从屏幕外进来时有透明度动画」。用户要求：出来就是最终那条线。
+   */
+  transition: none;
 }
 /**
  * bar 阶段：窗口里只该看得到那条横线。
@@ -4778,15 +4820,25 @@ body.is-dragging textarea {
 .qb-frame[data-dock-phase="bar"] {
   background: transparent;
   border-color: transparent;
+  /**
+   * 底色不做过渡：切到 bar 发生在屏幕外（shrinkToBar 换内容那一步），
+   * 如果还让 background-color 走 0.26s，滑回来的头 100ms 里窗口底色还是半透明的 ——
+   * 半透明底色叠在抓手线下面，线的合成亮度就会从暗到亮地「渐变」，
+   * 看起来就是用户说的「抓手线从显示器外进来时有不透明度动画」。
+   * 这里直接一步到位：线滑回来时底色早就完全透明，线的样子从头到尾一致。
+   */
+  transition: none;
 }
-html:has(.qb-frame[data-dock-phase="bar"]),
-body:has(.qb-frame[data-dock-phase="bar"]),
-/* retract 阶段：窗口底下的 html/body 也要立刻让开。这一层在 .qb-frame 后面，
-   .qb-frame 自己的底色是慢慢淡掉的，所以这里不需要过渡也看不出跳变 */
-html:has(.qb-frame[data-dock-phase="retract"]),
-body:has(.qb-frame[data-dock-phase="retract"]) {
-  background: transparent;
+/**
+ * 收起态（提示条 / 收回中 / 细线）：窗口本体一律直角（DWM 圆角在速览期间是关掉的，
+ * 见 useQuickbarDock），圆角由 .qb-frame 的常开 border-radius 画。
+ * 这里保留一条显式规则只是为了语义清晰：收起态的形状与展开态完全一致。
+ */
+.qb-frame[data-dock-phase="hint"],
+.qb-frame[data-dock-phase="retract"] {
+  border-radius: var(--qb-radius, 8px);
 }
+/* html/body 全程透明（见文件顶部），速览不再需要按 qb-mode / 收起阶段切换底色。 */
 /**
  * 贴顶最小化：内容先向上卷走 + 淡出，随后窗口直接消失。
  * 只在 useQuickbarDock 的 minimizeAtTop 里临时挂到 body 上——目的是让「最小化」
@@ -4816,6 +4868,19 @@ body.qb-minimizing .qb-content {
 /* 整体收起后，抓手条稍微亮一点，提示这里还能拖 / 靠近可展开 */
 .qb-grip[data-collapsed="true"] .qb-grip-bar {
   background: rgba(var(--ink-rgb), 0.32);
+}
+
+/**
+ * 形变期间窗口必须「看得见」：完整界面 ↔ 速览的窗口形变本身就是动画，
+ * 页面画布若全程透明，形变中的窗口就隐形了（用户看到的是内容直接消失/出现）。
+ * 这里在 body 上铺回 canvas 底色并带上同一颗圆角（--qb-radius）——形变中的
+ * 窗口是一块圆角的 canvas 色矩形在缩放，四角全程圆润，落位后立即恢复透明。
+ * ui-fade-out（进速览前旧界面渐隐）同理：淡出露出来的就是这块底色，和形变无缝衔接。
+ */
+body.is-morphing,
+body.ui-fade-out {
+  background: var(--canvas);
+  border-radius: var(--qb-radius);
 }
 
 
@@ -5295,3 +5360,24 @@ body.ui-fade-out .app-frame {
   border-color: rgba(var(--ink-rgb), 0.12);
 }
 
+
+/* ---------------------------------------------------------------------------
+ * 「减少动态效果」统一兜底（§5 第 33 条）
+ *
+ * 以前只零散照顾了几个（pill 的呼吸、安装进度、设置里的转圈），
+ * 录制快捷键的呼吸、在线栏刷新转圈、不确定进度条这几处漏掉了 ——
+ * 系统 / 应用里开了「减少动效」之后它们还在一直闪。
+ * 这里集中关掉所有无限循环动画；一次性过渡交给上面的 duration 覆盖。
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .hotkey-field-recording,
+  .spin,
+  .load-fill-indeterminate {
+    animation: none;
+  }
+}
+:root[data-motion="reduced"] .hotkey-field-recording,
+:root[data-motion="reduced"] .spin,
+:root[data-motion="reduced"] .load-fill-indeterminate {
+  animation: none;
+}

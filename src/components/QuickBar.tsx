@@ -24,7 +24,7 @@ import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
 import { buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
-import { minimizeQuickbar, useQuickbarDock } from "../lib/useQuickbarDock";
+import { expandQuickbarPanel, minimizeQuickbar, useQuickbarDock } from "../lib/useQuickbarDock";
 import { useInView } from "../lib/useInView";
 import { useWindowDrag } from "../lib/useWindowDrag";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
@@ -138,6 +138,16 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       className="qb-item"
       title={t("quickbar.copyHint", { name: family.name })}
       onClick={() => copyText(family.name, t("copy.familyName"))}
+      onKeyDown={(e) => {
+        // div[role=button] 不会自己响应键盘：Enter / Space 得手动接（§5 第 31 条）。
+        // 焦点在子控件（展开字重、字重行）上时那个控件负责，这里不抢。
+        if (e.key !== "Enter" && e.key !== " ") return;
+        if (e.target !== e.currentTarget) return;
+        e.preventDefault();
+        // Space 同时是主界面的「启用 / 停用」：卡片自己消费掉，别再冒泡
+        e.stopPropagation();
+        copyText(family.name, t("copy.familyName"));
+      }}
       onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(family))}
       {...plainProps}
     >
@@ -323,6 +333,14 @@ export function QuickBar() {
   // 进入速览的那一下窗口正在形变，列表不要再做逐个入场的动作
   const intro = useIntro();
 
+  // 速览窗口整段时间都挂 qb-mode：html/body 让出底色，四角交给 .qb-frame 的 CSS 圆角。
+  // 不能只按 docked 挂 —— 展开的那一瞬间 docked 变 false，底色会回来，圆角外侧露出直角，
+  // 和「系统圆角要等 IPC 才生效」叠在一起就是用户看到的四角闪一下。
+  useEffect(() => {
+    document.body.classList.add("qb-mode");
+    return () => document.body.classList.remove("qb-mode");
+  }, []);
+
   // 速览界面不接收拖放导入：拖放事件是窗口级的，这里挂一个空监听把它吃掉。
   // 速览是查名字 / 复制的浮层，把字体文件拖进来就开始装字体完全是意外行为。
   useEffect(() => {
@@ -335,12 +353,12 @@ export function QuickBar() {
   // 右键菜单实测尺寸变化时，同步窗口最小尺寸（宽度 ≥ 菜单宽 × 1.5，高度 ≥ 菜单高）
   useEffect(() => subscribeContextMenuSize(() => void syncQuickbarMinSize()), []);
 
-  // 收成细线时窗口要透出桌面（只留一条实心线）。Windows 上 DWM 窗口阴影会强制
-  // 窗口不透明（tauri#8308），所以 bar 阶段必须关掉阴影，其余阶段再开回来。
-  // retract 阶段底色已经在淡成透明，必须同步关掉阴影，否则过渡那一瞬间会是一块实心黑。
+  // 窗口边缘阴影一律不要（用户要求：完整界面和速览统一都不要）。
+  // DWM 阴影还会强制窗口不透明（tauri#8308），速览收成细线时窗口必须透出桌面。
+  // 进速览补一次关闭即可，退出速览也不打开——完整界面的那圈阴影同样来自它。
   useEffect(() => {
-    void win.setShadow(!(docked && (phase === "bar" || phase === "retract"))).catch(() => {});
-  }, [win, docked, phase]);
+    void win.setShadow(false).catch(() => {});
+  }, [win]);
 
   // 已启用的字族总数：顶栏「已启用 N」永远报这个数，筛选/搜索只影响下面的列表，
   // 否则勾一个筛选条件就会显示「已启用 0」，看起来像字体全被停用了。
@@ -397,15 +415,19 @@ export function QuickBar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [setQuickbar, query]);
 
-  // 窗口形变期间钉住内容尺寸；收起/展开动画期间钉住内容高度
+  // 窗口形变期间把 qb-frame 钉在目标尺寸；收成细线时钉在细线尺寸。
+  // 收起/展开动画期间 qb-frame 的高度不再走 React——由 useQuickbarDock 的
+  // animateHeight 每帧直接写 DOM（带 45ms 前导量，保证内容底边始终落在窗口
+  // 底边内侧，圆角画在内容自己的边缘上）；contentHeight 只负责把内层
+  // .qb-pin 钉在原高度，让内容不被压缩。
   const frameStyle: CSSProperties | undefined = morph
     ? { width: `${morph.width}px`, height: `${morph.height}px` }
-    : contentHeight != null
-      ? { height: `${contentHeight}px` }
-      : bar != null
-        // 收成细线时窗口是一小段居中的短线，不再占满整个速览宽度
-        ? { width: `${bar.width}px`, height: `${bar.height}px` }
-        : undefined;
+    : bar != null
+      // 收成细线时窗口是一小段居中的短线，不再占满整个速览宽度
+      ? { width: `${bar.width}px`, height: `${bar.height}px` }
+      : undefined;
+  const pinStyle: CSSProperties | undefined =
+    contentHeight != null ? { height: `${contentHeight}px` } : undefined;
 
   return (
     <motion.div
@@ -417,6 +439,11 @@ export function QuickBar() {
       animate={{ opacity: revealed ? 1 : 0 }}
       transition={intro ? easeTop : INTRO_OFF}
     >
+      <div
+        className="qb-pin"
+        data-pin={contentHeight != null ? "true" : undefined}
+        style={pinStyle}
+      >
       {/* 抓手条：无论收起还是展开都保留，窗口始终能拖动 */}
       <div
         className="qb-grip"
@@ -428,7 +455,20 @@ export function QuickBar() {
       </div>
 
       {docked ? (
-        <div className="qb-dockbar" onPointerDown={dragWindow} title={dockHint}>
+        <div
+          className="qb-dockbar"
+          role="button"
+          tabIndex={0}
+          onPointerDown={dragWindow}
+          title={dockHint}
+          onKeyDown={(e) => {
+            // 收起态这条也是「入口」：键盘用户必须能把它叫出来（§5 第 31 条）
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            e.stopPropagation();
+            void expandQuickbarPanel();
+          }}
+        >
           <span className="qb-dock-dot" aria-hidden="true" />
           <span className="qb-dock-label">
             {t("quickbar.collapsedHint", { hotkey: hotkeyLabel })}
@@ -550,6 +590,7 @@ export function QuickBar() {
           <WarmFooter compact />
         </div>
       )}
+      </div>
     </motion.div>
   );
 }

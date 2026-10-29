@@ -24,22 +24,49 @@ interface MenuState {
   x: number;
   y: number;
   items: MenuItem[];
+  /** 打开菜单前的焦点元素：关掉时要还回去（§5 第 23 条） */
+  prevFocus: HTMLElement | null;
   show: (x: number, y: number, items: MenuItem[]) => void;
   close: () => void;
 }
 
-const useMenuStore = create<MenuState>((set) => ({
+const useMenuStore = create<MenuState>((set, get) => ({
   open: false,
   x: 0,
   y: 0,
   items: [],
-  show: (x, y, items) => set({ open: true, x, y, items }),
-  close: () => set({ open: false }),
+  prevFocus: null,
+  show: (x, y, items) =>
+    set({
+      open: true,
+      x,
+      y,
+      items,
+      prevFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    }),
+  close: () => {
+    const prev = get().prevFocus;
+    set({ open: false, prevFocus: null });
+    // 键盘用户关掉菜单后，焦点不能掉回 body（否则 Tab 要从头开始走）
+    if (prev && prev !== document.body && document.contains(prev)) {
+      prev.focus({ preventScroll: true });
+    }
+  },
 }));
+
+/** 右键菜单是否开着：全局快捷键 / 顶层弹层判定要用（见 App.tsx 的 topLayerOpen） */
+export function isContextMenuOpen(): boolean {
+  return useMenuStore.getState().open;
+}
 
 export function openContextMenu(e: ReactMouseEvent, items: MenuItem[]) {
   e.preventDefault();
   e.stopPropagation();
+  // 右键不会改变焦点：先把触发它的元素聚焦，菜单关掉时焦点才有地方可回
+  const host = e.currentTarget as HTMLElement | null;
+  if (host && host !== document.body && (host.tabIndex >= 0 || host.isContentEditable)) {
+    host.focus({ preventScroll: true });
+  }
   useMenuStore.getState().show(e.clientX, e.clientY, items);
 }
 
@@ -91,9 +118,22 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
         : (cur - 1 + items.length) % items.length;
       items[next].focus();
     };
+    /**
+     * Tab 逃出菜单会跑到背后被遮住的界面上（视觉上「焦点消失了」）。
+     * 菜单是模态的，Tab 直接关掉菜单并把焦点还回去最稳（§5 第 23 条）。
+     */
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      e.stopPropagation();
+      close();
+    };
     el.addEventListener("keydown", onKey);
-    return () => el.removeEventListener("keydown", onKey);
-  }, [items]);
+    el.addEventListener("keydown", onTab);
+    return () => {
+      el.removeEventListener("keydown", onKey);
+      el.removeEventListener("keydown", onTab);
+    };
+  }, [items, close]);
 
   return (
     <motion.div
@@ -167,13 +207,21 @@ export function ContextMenuHost() {
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    // capture 阶段 + stopImmediatePropagation：菜单是当前最上层，
+    // Escape 只能它来消费。用冒泡阶段的 stopPropagation 压不住同一 target 上的
+    // 其他监听（App 的全局快捷键就会顺手把选择也清了 —— §5 第 22 条）。
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      close();
+    };
     const onScroll = () => close();
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     window.addEventListener("wheel", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("wheel", onScroll);
       window.removeEventListener("resize", onScroll);
     };

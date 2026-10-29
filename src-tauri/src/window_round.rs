@@ -7,20 +7,26 @@
 //!
 //! 只有 Win11 认这个属性；Win10 上函数存在但会返回失败，四角维持原样，不影响功能。
 //!
-//! ## 为什么还要按高度关掉
+//! ## 收起态为什么要切成直角
 //!
-//! 速览收起时窗口只有 12 逻辑像素高，里面画的是 5px 的抓手线。DWM 圆角用的是固定
-//! 半径（约 8px），套在这么矮的窗口上会把整个窗口裁成一颗胶囊，线的两头也被切进圆角里
-//! —— 看起来就是「抓手线坏了」。所以窗口矮于阈值时切成直角，线该什么样还是什么样。
+//! 速览收起后窗口只剩屏幕顶部一条（提示条 ~43 物理像素 / 细线 ~15 物理像素）。
+//! 这时候不能再用 DWM 圆角，有两个原因，都是实测出来的：
+//!
+//! 1. **细线会被裁成胶囊**：DWM 半径固定约 8 物理像素，套在 15px 高的窗口上，
+//!    整条窗口变成胶囊，抓手线的两头被切掉。
+//! 2. **DWM 只给圆角窗口画阴影**（这才是主要问题）：白色背景实测，43px 高的提示条
+//!    下方亮度从 255 掉到 184，阴影一直拖到 140px 才收干净；同一条提示条只要把圆角
+//!    关掉，整片立刻回到 255。收起态是贴在屏幕上沿的一条，底下就是用户的桌面，
+//!    这圈大阴影在浅色背景上非常扎眼。
+//!
+//! 所以收起态一律切成直角，圆角改由 `.qb-frame` 的 CSS 画（半径按 8 物理像素换算，
+//! 见 `--qb-radius`）。切换点落在提示条那 43px 高度上，两种圆角形状一致，看不出跳变。
 
 #![cfg(target_os = "windows")]
 
 use std::ffi::c_void;
-use std::time::Duration;
 
 use tauri::WebviewWindow;
-use windows_sys::Win32::Foundation::RECT;
-use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
 /// DWMWA_WINDOW_CORNER_PREFERENCE
 const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
@@ -28,10 +34,6 @@ const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
 const DWMWCP_DONOTROUND: u32 = 1;
 /// DWM_WINDOW_CORNER_PREFERENCE::DWMWCP_ROUND
 const DWMWCP_ROUND: u32 = 2;
-
-/// 高度低于这个物理像素就认为窗口是「一根线」：12 逻辑 px × 125% ≈ 15，
-/// 展开的速览提示条约 42，完整界面 800+，中间没有别的形态。
-const FLAT_THRESHOLD_PX: i32 = 24;
 
 #[link(name = "dwmapi")]
 extern "system" {
@@ -55,42 +57,18 @@ fn set_round(raw_hwnd: *mut c_void, on: bool) {
     }
 }
 
-fn physical_height(raw_hwnd: *mut c_void) -> i32 {
-    let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    // SAFETY: rect 是栈上合法的输出缓冲；窗口句柄由 tauri 提供。
-    let ok = unsafe { GetWindowRect(raw_hwnd, &mut rect) };
-    if ok == 0 {
-        return 0;
-    }
-    (rect.bottom - rect.top).max(0)
-}
-
-/// 给窗口开启系统圆角。raw_hwnd 由 tauri 的 `window.hwnd()` 提供。
-pub fn round_corners(raw_hwnd: *mut c_void) {
-    set_round(raw_hwnd, true);
-}
-
-/// 盯着窗口高度，在「一根线」和正常窗口之间自动切换圆角。
+/// 由前端调用：切换这个窗口的 DWM 圆角偏好。
 ///
-/// 150ms 轮询一次（`GetWindowRect` 是纯用户态读取，比一帧渲染便宜得多），
-/// 只在判定翻转时才真的调用 DWM，所以常态下几乎没有开销。
-pub fn watch_height(window: WebviewWindow) {
-    std::thread::spawn(move || {
-        let mut raw: *mut c_void = std::ptr::null_mut();
-        let mut rounded: Option<bool> = None;
-        loop {
-            std::thread::sleep(Duration::from_millis(150));
-            if raw.is_null() {
-                match window.hwnd() {
-                    Ok(h) => raw = h.0 as *mut c_void,
-                    Err(_) => continue,
-                }
-            }
-            let want_round = physical_height(raw) > FLAT_THRESHOLD_PX;
-            if rounded != Some(want_round) {
-                set_round(raw, want_round);
-                rounded = Some(want_round);
-            }
-        }
-    });
+/// 现在只往「关掉」的方向用（DONOTROUND）：圆角统一由 CSS 画（`--qb-radius`），
+/// 因为 DWM 只给圆角窗口画阴影，而完整界面和速览都不要窗口边缘阴影。
+/// 保留 `on` 参数是为了语义完整（万一以后要恢复系统圆角），但调用方一律传 false。
+pub fn set_rounded(window: &WebviewWindow, on: bool) {
+    if let Ok(hwnd) = window.hwnd() {
+        set_round(hwnd.0 as *mut c_void, on);
+    }
+}
+
+#[tauri::command]
+pub fn set_window_rounded(window: WebviewWindow, on: bool) {
+    set_rounded(&window, on);
 }

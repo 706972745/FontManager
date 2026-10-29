@@ -30,13 +30,22 @@ pub const DOCK_NEAR_EVENT: &str = "quickbar://dock-near";
 /// 感应线程轮询间隔（毫秒）
 #[cfg(windows)]
 const SENSOR_POLL_MS: u64 = 90;
-/// 感应带：窗口下沿再往下延伸这么多物理像素，光标落进来就算「够近」
+/// 命中判定容差（物理像素）：只吸收光标坐标取整的误差，不再向下扩一条感应带。
+///
+/// 这里原来是 `22`：窗口下沿再往下 22 物理像素都算「靠近」。两个问题：
+/// 1. 细线只有几像素高，往下 22px 意味着鼠标还在桌面空白处、离那条线挺远就弹开，
+///    用户的原话是「区域要抓手线那么高那么宽就行，不要太宽」；
+/// 2. 22 是写死的物理像素，不随 DPI / 分辨率缩放 —— 150% 缩放下这 22px 视觉上只剩
+///    2/3 高，换台机器手感就变了。
+///
+/// 改成「就用窗口矩形本身」：细线态窗口高度就是那条线加一点透明靶区（12 逻辑像素），
+/// 宽度也等于线宽，天然跟着 DPI 走，各分辨率下都是「贴着线才算靠近」。
 #[cfg(windows)]
-const SENSOR_BAND_PX: i32 = 22;
+const SENSOR_SLOP_PX: i32 = 1;
 
 #[cfg(windows)]
 mod platform {
-    use super::{PREV_PROC, QUICKBAR_MODE, SENSOR_BAND_PX};
+    use super::{PREV_PROC, QUICKBAR_MODE, SENSOR_SLOP_PX};
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
@@ -128,8 +137,9 @@ mod platform {
         }
     }
 
-    /// 光标是否落在窗口横向范围内、且高度上离窗口不超过一条感应带（物理像素）。
-    /// 收成 5px 细线后鼠标几乎不可能「进入窗口」，靠这条感应带把它救回来。
+    /// 光标是否落在窗口矩形里（外扩一个取整容差）。
+    /// 收成细线后鼠标几乎不可能「进入窗口」，这条判定就是细线唯一的 hover 入口；
+    /// 范围严格等于窗口本身（= 抓手线的宽高），不再向下加感应带。
     pub fn cursor_near(raw_hwnd: isize) -> bool {
         if raw_hwnd == 0 {
             return false;
@@ -146,10 +156,10 @@ mod platform {
             if rect.right <= rect.left || rect.bottom <= rect.top {
                 return false;
             }
-            pt.y >= rect.top - 2
-                && pt.y <= rect.bottom + SENSOR_BAND_PX
-                && pt.x >= rect.left - 2
-                && pt.x <= rect.right + 2
+            pt.y >= rect.top - SENSOR_SLOP_PX
+                && pt.y <= rect.bottom + SENSOR_SLOP_PX
+                && pt.x >= rect.left - SENSOR_SLOP_PX
+                && pt.x <= rect.right + SENSOR_SLOP_PX
         }
     }
 
@@ -200,6 +210,11 @@ pub fn set_quickbar_mode(window: WebviewWindow, mode: bool) {
     let _ = window.set_skip_taskbar(mode);
     #[cfg(windows)]
     {
+        // 圆角唯一所有者是 CSS（--qb-radius，见 App.tsx / app.css），DWM 圆角
+        // 在哪儿都不启用——它自带一圈窗口阴影，而完整界面和速览都不要阴影。
+        // 这里以前会 set_rounded(true)，一进速览就把 DWM 圆角重新打开，
+        // 和「DWM 只关不开」的约定直接冲突（§5 第 13 条）。
+        crate::window_round::set_rounded(&window, false);
         if mode {
             install_once(&window);
         }

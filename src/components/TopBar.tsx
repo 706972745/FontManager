@@ -13,13 +13,42 @@ import {
   X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { familiesFor, SIZES, useFontStore, type SortMode } from "../state/fontStore";
 import { useFontCss } from "../lib/fontLoader";
 import type { Classification, FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
+
+const NAV_KEYS = ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"];
+
+/**
+ * 浮层内部的 listbox / tablist 方向键导航。
+ *
+ * 全局「上下方向键换选中字族」是挂在 window 上的，会把浮层里的方向键抢走——
+ * 结果是排序菜单、筛选菜单只能用鼠标点，键盘用户按方向键反而在动背后的列表（§5 第 30 条）。
+ * 所以浮层自己先 preventDefault + stopPropagation，再在内部移动焦点。
+ */
+function listboxKeys(e: ReactKeyboardEvent<HTMLElement>) {
+  if (!NAV_KEYS.includes(e.key)) return;
+  const items = [
+    ...e.currentTarget.querySelectorAll<HTMLElement>("[role='option'], [role='tab']"),
+  ].filter((el) => el.offsetParent !== null);
+  if (items.length === 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const cur = items.indexOf(document.activeElement as HTMLElement);
+  const next =
+    e.key === "Home"
+      ? 0
+      : e.key === "End"
+        ? items.length - 1
+        : e.key === "ArrowDown" || e.key === "ArrowRight"
+          ? (cur + 1 + items.length) % items.length
+          : (cur - 1 + items.length) % items.length;
+  items[next]?.focus();
+}
 
 const SORT_MODES = ["name", "styles", "size", "glyphs", "added"] as const satisfies readonly SortMode[];
 
@@ -63,6 +92,7 @@ export function SortMenu() {
             <motion.ul
               className="sort-menu glass-e3"
               role="listbox"
+              onKeyDown={listboxKeys}
               initial={{ opacity: 0, y: -6, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.13 } }}
@@ -172,6 +202,7 @@ export function FilterMenu() {
               className="sort-menu filter-menu glass-e3"
               role="listbox"
               aria-multiselectable
+              onKeyDown={listboxKeys}
               initial={{ opacity: 0, y: -6, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.13 } }}
@@ -542,7 +573,24 @@ export function TopBar() {
 
       <RescanButton />
 
-      <div className="view-toggle" role="tablist" aria-label={t("top.viewMode")}>
+      <div
+        className="view-toggle"
+        role="tablist"
+        aria-label={t("top.viewMode")}
+        onKeyDown={(e) => {
+          // 两个 tab 之间用左右键切换（同时激活），否则这两个按钮键盘够不到
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          e.stopPropagation();
+          const modes = ["grid", "list"] as const;
+          const cur = modes.findIndex((m) => m === viewMode);
+          const next = modes[(cur + (e.key === "ArrowRight" ? 1 : -1) + modes.length) % modes.length];
+          setViewMode(next);
+          e.currentTarget.querySelectorAll<HTMLButtonElement>("[role='tab']")[
+            modes.indexOf(next)
+          ]?.focus();
+        }}
+      >
         {(["grid", "list"] as const).map((mode) => (
           <motion.button
             key={mode}

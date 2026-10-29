@@ -1766,16 +1766,9 @@ pub fn run() {
             window_dock::start_hotkey_listener(app.handle().clone(), quickbar_hotkey);
             if let Some(window) = app.get_webview_window("main") {
                 fit_window(&window, ui_scale_pref);
-                // 四角裁成系统窗口那种圆角（Win11 生效；Win10 上无副作用）。
-                // 速览收起成一根线时窗口只有十几像素高，会由 watch_height 自动切回直角，
-                // 不然 DWM 的固定半径会把抓手线两头切掉。
-                #[cfg(target_os = "windows")]
-                {
-                    if let Ok(hwnd) = window.hwnd() {
-                        window_round::round_corners(hwnd.0 as *mut std::ffi::c_void);
-                    }
-                    window_round::watch_height(window.clone());
-                }
+                // 圆角不再用 DWM（DWMWCP_ROUND 自带一圈窗口阴影，用户要求完整界面
+                // 也不要阴影）：完整界面和速览的圆角统一由前端 CSS 画（--qb-radius）。
+                // set_window_rounded 命令保留，只用于把系统圆角关死。
                 // 立刻把窗口亮出来，再等前端把字库扫完。
                 // 原来是「前端 init 全部完成才 show」——几千个字体的扫描要好几秒，
                 // 这段时间用户对着空桌面，看不到任何反馈。现在窗口一出来就是骨架屏 +
@@ -1914,6 +1907,7 @@ pub fn run() {
             apply_font_in_app,
             window_dock::set_quickbar_mode,
             window_dock::set_dock_sensor,
+            window_round::set_window_rounded,
             window_dock::set_quickbar_hotkey,
             window_dock::focus_quickbar,
             window_dock::set_window_transitions,

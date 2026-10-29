@@ -4,6 +4,152 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.7] — 2026-10-30
+
+本轮把全量代码审计（两份报告共 36 项）里**未实施的交互 / 动画缺陷**逐条修完。
+下面是按「现象 → 根因 → 改法」整理的条目，验收方式见每段末尾。
+
+### 修：交互状态机（速览收起 / 展开 / 热键）
+
+- **关掉「贴顶自动隐藏」后，速览一进来就卡在 34px、热键也失灵**。
+  根因：`useQuickbarDock(enabled)` 把**整个 hook** 门控掉了（`if (!enabled) return`，
+  连监听都不装），而 `enterQuickbar()` 又无条件把窗口收成 `DOCK_HEIGHT_HINT`。
+  改法：`enabled` 只门控「自动」行为（贴顶自动收、失焦自动收、热键观察期自动收、
+  移出静置召回），热键 / 还原 / 接管收起态 / 基础监听全部保活（`enabledRef` 读，
+  主 effect 不再因开关翻转重建）；`quickbarAutoHide=false` 时进入速览直接落 `fullHeight`。
+- **速览展开但被最小化 / 托盘隐藏时，第一次按热键不唤醒**。
+  根因：toggle 只判断 `docked`，最小化状态下算出「已展开 → 收起」。现在先读
+  `isMinimized()/isVisible()`，只要不可见就统一走「恢复 → 展开 → show → 抢焦点」。
+- **`setQuickbar()` 在 busy 时提前 resolve**，`await` 完读到的还是旧状态。
+  改为返回同一个 in-flight Promise；busy 调用等「当前流程 + 排队意图」全部完成才 resolve，
+  并处理「意图登记落在上一轮 while 退出之后」的边角（补跑一次）。
+- **展开动画期间失焦被丢弃，动画完不补收起**：新增 `blurPending`，展开 / 几何落定后
+  若已失焦且仍贴顶，补一次 `collapse()`。
+- **`stopAnim()` 取消动画后不清 DOM、不恢复几何**：
+  取消路径统一清 `.qb-frame` 的 `style.height` / `data-anim`（`clearFrameDom`）。
+- **连按热键被静默吞掉**：热键 toggle 改为串行队列（`lib/quickbarAnim.ts` 的
+  `createSerialQueue`），执行时才读最新 `docked`；算法可单测。
+- **hover / 感应带冷却期吞掉唯一的边沿事件**（划上去没反应，得挪开再划）：
+  被动画、失焦宽限期、收起冷却挡下来时记 `pendingReveal` 并按剩余时间延迟重试，
+  到期复查光标是否还在。
+- **贴顶最小化的锁顺序与类残留**：先拿 `mutating` 锁再 `await measure()`（两个最小化请求
+  不会再同时穿过检查）；`qb-minimizing` 用 `try/finally` 摘除，任何分支都不会让内容永久透明。
+- **`morph_window` 的零时长 / 同几何分支不取消旧动画**（落位后旧线程下一帧又拖走）：
+  该分支先 `cancel_previous()`。
+- **拖动与细线滑出并行写窗口位置**：拖动开始前检查 `is-morphing` 与
+  `isQuickbarGeometryBusy()`，动画期间不允许起拖；拖动 `stop()` 前 flush 最后一次位移，
+  hook 卸载时收干净监听。
+- **展开方向 45ms 滞后未归一化**：结尾 1.14% 的跳变改为 `(t·d − L)/(d − L)`，
+  `t=1` 精确到 1（`leadNormalized`，有单测）。
+- **`set_quickbar_mode` 里 `set_rounded(true)` 重开 DWM 圆角**，与「圆角唯一所有者是 CSS」
+  冲突：删掉，改成显式关死。
+
+### 修：键盘所有权（弹层 / 全局快捷键）
+
+- **全局 Space 双触发**（焦点在按钮上时既切字体又点按钮）：全局 handler 先看
+  `e.defaultPrevented`，并排除 `button / a[href] / select / [contenteditable]`；
+  在线卡片处理 Space 时 `stopPropagation()`。
+- **回收站 / 关于 / 在线栏目仍在执行字库快捷键**（Delete 会删掉屏幕上根本看不见的字族）：
+  非字族浏览页面把 `visibleOrder` 置空，并在 Delete / Space / 右键菜单入口统一判 `nav`。
+- **弹窗无统一键盘所有权**（Escape 穿透清选择、Ctrl+K / `?` 叠弹窗）：
+  新增 `topLayerOpen()`（弹窗 / 浮层 / 右键菜单 / 导览 / 输入提示），任一打开时
+  全局字库快捷键整体让路；Ctrl+K 与 `?` 只允许关掉自己、不允许叠加；
+  右键菜单、设置、在线详情、重复字体提示的 Escape 改为 capture + `stopImmediatePropagation`，
+  由最上层消费。
+- **关闭设置不退快捷键录制**（隐藏的 capture 监听继续拦全应用按键）：
+  录制监听仅 `openState && recording` 激活，面板一关就 `setRecording(false)`。
+- **右键菜单关闭不恢复焦点、Tab 逃出**：打开时记住触发元素、关闭时还回去；
+  Tab 直接关菜单。
+- **竞态**：在线详情 / 预览加请求代次（关闭即作废回写）；扫描改 single-flight；
+  设置保存失败只回滚本次字段；标签并发失败只回滚对应字族；版权搜索带代次守卫；
+  安装进度定时器统一管理；autostart 读取带代次、保存只回滚最后一次。
+
+### 修：可访问性
+
+- 在线详情补 `useFocusTrap` + Escape（下载中不关），关闭后焦点回到打开它的卡片。
+- 排序 / 筛选菜单的 listbox、视图 tablist、版权 radiogroup 补方向键 + `preventDefault`，
+  不再被全局列表导航抢走；`FontList` 行容器从 `<button>` 改为 `role="button"`（原来是
+  非法嵌套 `<button>`），补 Enter/Space；`QuickItem` 与收起态抓手同样补键盘激活。
+- 导览：键盘事件改 `stopImmediatePropagation`、焦点收进卡片；重播时若停在回收站 /
+  关于 / 在线栏目，先切回字库（否则镜头找不到目标）。
+- 「减少动态效果」统一兜底 `hotkey-pulse` / `.spin` / 不确定进度条；
+  带「撤销」的 Toast 获得焦点时暂停倒计时；重复字体提示补 dialog 语义 + Escape。
+
+### 修：收起 / 展开途中窗口底边两角是直角；完整界面阴影移除；圆角全站统一
+
+- **圆角单一来源**：完整界面（`.app-frame`）和速览（`.qb-frame`）的圆角全部由 CSS 画
+  （`--qb-radius = 8 物理像素 / DPR`，App 挂载时写入），DWM 系统圆角（DWMWCP_ROUND）
+  彻底停用——它自带一圈窗口阴影，而阴影按用户要求两个界面都不要。
+  `lib.rs` 启动时的 `round_corners` 移除；`set_window_rounded` 只用来关死，不再打开。
+  `QuickBar` 的 `setShadow` 恒为 false（原来速览展开态会把它开回来）。
+- **收起 / 展开途中底边直角（真根因是纹理滞后）**：WebView2 的布局/合成跟不上每帧
+  `setSize`，纹理里的内容高度总比窗口滞后 1~3 帧；内容和窗口一样高时，窗口底边就把
+  纹理裁出一条直边。修法是让「内容底边永远缩在窗口底边内侧」：
+  - 收起：窗口比内容晚 45ms 起步（`animateHeight` 里压缩剩余时长的同一条缓动）；
+  - 展开：内容比窗口晚 45ms 长高（合成器里窗口边也可能滞后于纹理，方向相反）；
+  - qb-frame 的高度在动画期间由 `animateHeight` 每帧直接写 DOM（不走 React 状态），
+    内容钉挂挪进新增的 `.qb-pin` 内层（React 的 `contentHeight` 只管它）。
+  60fps 白底垫景逐帧验收：1121 帧里 0 帧真直角（修复前每轮展开/收起都有 2~80 帧）。
+- **形变动画的可见性**：html/body 改为全程透明（圆角外侧、收起/展开的空隙都透出桌面）
+  之后，完整界面 ↔ 速览的窗口形变本身会隐形——`body.is-morphing / body.ui-fade-out`
+  期间在 body 上铺回 canvas 底色并带同一颗圆角，形变是一块圆角的 canvas 色矩形在
+  缩放，四角全程圆润，落位后立即恢复透明。
+- html/body/#root 高度链补齐（`height:100%`）：`.app-frame` / `.qb-frame` 的
+  `height:100%` 从此有确定值，`overflow:hidden` + 圆角在视口级生效。
+
+### 修：速览展开 / 收回时四角「圆角→直角→圆角」闪一下
+
+- 60fps 抓帧实测：展开过程中窗口到 382px 高时有 **2 帧四角是直角**（主线程忙时能拖到
+  80+ 帧）；收回路径同样中招（整段从 1240 缩到 63 都是直角）。
+- 根因是**两套圆角机制跟着 `docked` 异步切换**：`data-dock-phase={docked ? phase : undefined}`
+  在展开瞬间被摘掉，`.qb-frame` 的 CSS 圆角规则整段失效；DWM 圆角要走
+  `set_window_rounded(true)` 的 IPC，要 1~N 帧才生效 —— 中间既无 CSS 圆角也无系统圆角。
+- 改法：**不再为了省阴影去切形状**。
+  - `.qb-frame` 的 `border-radius` 常开（`--qb-radius` = 8 物理像素 / DPR）；
+  - 新增 `body.qb-mode`（QuickBar 挂载时加）：速览窗口的 html/body 全程透明，
+    圆角由 `.qb-frame` 画（形变 `is-morphing` 期间仍铺 canvas，避免露出桌面）；
+  - DWM 圆角改为**进速览关一次、退出速览开回来**（不再跟 `docked` 走）：
+    速览内一律无阴影（提示条 / 细线 / 展开态三者一致），完整界面照旧保留圆角与阴影。
+
+### 修：抓手线从屏幕外滑回来时还在「淡入」
+
+- 根因不是线的颜色：切到 bar 阶段发生在屏幕外，但 `.qb-grip-bar` 的
+  宽度/高度/颜色过渡和外层 `.qb-frame` 的底色过渡（0.26s）也在那一刻起步，
+  正好跨完 160ms 的滑入段 —— 线落地后仍有约 100ms 的亮度爬升（实测 189→195→204→207）。
+- 改法：bar 阶段 `.qb-grip-bar` 与 `.qb-frame` 都 `transition: none`。
+  两者的终值与 retract 阶段末态完全一致（「摊开」发生在 retract，用户看得见），
+  所以关掉过渡不会丢任何动画，线滑回来就是最终那条线。
+
+### 改：细线感应带「太宽」，且不随 DPI 变化
+
+- `window_dock.rs` 原来用「窗口矩形 + 下方 22 **物理**像素」判定靠近：细线只有
+  几像素高，鼠标还在桌面空白处就弹开；22px 写死，150% 缩放下视觉上只剩 2/3 高。
+- 改成 `SENSOR_SLOP_PX = 1`：感应区 = 窗口矩形本身（高度就是那条线 + 一点透明靶区、
+  宽度等于线宽），天然跟随 DPI / 分辨率。
+
+### 修：速览收起态的阴影与「圆角跳直角」
+
+- **收起后提示条底下有一大圈阴影**（黑背景不明显，浅色背景非常扎眼）。根因是
+  **DWM 只给圆角窗口画阴影**：提示条 43px 高时窗口是圆角，Windows 就给它糊了一圈
+  大阴影。白色背景实测，提示条下方亮度从 255 掉到 **184**，一直拖到 140px 才收干净；
+  把窗口圆角关掉，整片立刻回到 255。
+  现在收起态一律把窗口切成直角（`set_window_rounded(false)`，由前端在 docked 变化时调），
+  圆角改由 `.qb-frame` 的 CSS 画，半径按「8 物理像素 / DPR」算进 `--qb-radius`，
+  和 DWM 的固定半径一致。
+- **收起过程中四角从圆角跳成直角**：原来是按窗口高度轮询切圆角（<24px 切直角），
+  提示条 43px 与细线 15px 各在阈值两侧，收起的最后一段必然突变。
+  现在收起态的直角是**状态**决定的而不是高度算出来的；而且收成细线的动作改成
+  **整块向上滑出屏幕顶 → 屏幕外换成细线 → 细线从外面落回顶边**
+  （`shrinkToBar` 走 `morph_window`，180ms 滑出 / 160ms 落回），
+  形状切换发生在屏幕外，用户看不到任何突变；内容也不再被窗口底边一刀裁掉。
+
+### 测试
+
+- 新增 `tests/quickbarAnim.test.ts`（3 例）：LEAD 归一化收尾精确到 1、
+  热键串行队列的合并与顺序、快捷键匹配 / 脏数据规范化。
+- 全量：`npm test` **57 例通过**（原 54 + 新增 3）、`tsc --noEmit` 无错、
+  `cargo check` / `cargo build --release` 通过。
+
 ## [0.9.6] — 2026-10-29
 
 0.9.5-1 / 0.9.5-2 / 0.9.5-3 三个预发布版本的合并正式版，内容与它们一致：

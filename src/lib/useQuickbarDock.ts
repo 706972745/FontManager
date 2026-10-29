@@ -1,5 +1,6 @@
 import {
   LogicalPosition,
+  PhysicalPosition,
   PhysicalSize,
   currentMonitor,
   cursorPosition,
@@ -11,6 +12,8 @@ import { useEffect, useRef, useState } from "react";
 import { syncQuickbarMinSize, useFontStore } from "../state/fontStore";
 import { matchesHotkey } from "./hotkey";
 import { ipc } from "./ipc";
+import { createSerialQueue, leadNormalized } from "./quickbarAnim";
+import { morphWindow } from "./windowMorph";
 
 /** 窗口顶边离屏幕工作区顶边多近算「吸顶」（逻辑像素） */
 const DOCK_TOLERANCE = 5;
@@ -28,11 +31,18 @@ const REVEAL_AFTER_BLUR_MS = 600;
 /** 收起 / 展开的窗口动画时长（毫秒） */
 const ANIM_MS = 200;
 /**
- * 提示条收成细线的时长（毫秒）。
- * 比普通展开 / 收起长一点：这一段是「提示行向上滑走 + 窗口变矮 + 底色变透明」三件事
- * 同时收尾，太快就又变成「被一刀切掉」了。
+ * 收成细线时「提示条滑出屏幕 / 细线落回画面」的时长（毫秒）。
+ *
+ * 以前是窗口原地变矮 + 内容淡出，两个毛病：内容被从底部一刀裁掉；窗口高度跨过
+ * DWM 的圆角阈值时四角会从圆角跳成直角。改成整块往上滑出屏幕后，圆角是「滑走」
+ * 而不是「变形」，也不裁内容。
  */
-const RETRACT_MS = 260;
+const RETRACT_OUT_MS = 180;
+const RETRACT_IN_MS = 160;
+/** 屏幕外换内容后的等待（毫秒）：给 React 一帧时间把细线画出来 */
+const BAR_SWAP_MS = 70;
+/** 滑出时多走这么多像素，确保整窗真的在屏幕外（外框比客户区高一点） */
+const OFFSCREEN_PAD = 24;
 /**
  * 收起后分两个阶段：
  * - hint：34px，抓手 + 一行提示（告诉用户快捷键），停留一小会儿；
@@ -116,6 +126,16 @@ let activeAdoptDock: ((widthPhys: number, heightPhys: number) => Promise<void>) 
  */
 let activeMinimize: (() => Promise<boolean>) | null = null;
 
+/**
+ * 速览窗口几何是否正被状态机改写（收起/展开动画、收成细线的滑出形变）。
+ * 拖动这类也要写窗口位置的操作必须先问一句：两套写入互相覆盖，
+ * 窗口最后就停在「拖了一半又跳回去」的坐标上（§5 第 15 条）。
+ */
+let dockBusyGetter: (() => boolean) | null = null;
+export function isQuickbarGeometryBusy(): boolean {
+  return dockBusyGetter?.() ?? false;
+}
+
 /** 内容卷走（然后窗口直接消失）的时长（毫秒） */
 const MINIMIZE_FADE_MS = 160;
 
@@ -158,18 +178,59 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
   const [bar, setBar] = useState<{ width: number; height: number } | null>(null);
   const dockedRef = useRef(false);
   const phaseRef = useRef<DockPhase>("hint");
+  /**
+   * 「贴顶自动隐藏」开关。
+   *
+   * 注意它只门控**自动**行为（贴顶自动收起、失焦自动收起、热键观察期自动收起、
+   * 移出静置自动召回）；热键、还原、接管收起态、基础监听全都得留着——
+   * 以前是把整个 hook 门控掉（`if (!enabled) return`），关掉开关后速览一进来就
+   * 卡在 34px 提示条、热键也失灵，只能杀进程（§5 第 1 条）。
+   * 用 ref 读，主 effect 就不用因为开关翻转而整段重建（重建会丢掉收起态和监听）。
+   */
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
+  /**
+   * 速览窗口在整个速览期间都用「无系统圆角 + CSS 圆角」：
+   *
+   * 1. DWM 只给圆角窗口画阴影，而收起态（43px 提示条 / 12px 细线）贴在屏幕顶、
+   *    底下就是桌面，那圈阴影会糊出一大片（实测亮度 255→184，一直到 140px 才干净）；
+   * 2. 更关键的是**不能跟着 docked 切**：展开时 `docked=false` 会让 CSS 圆角规则失效，
+   *    而 DWM 圆角要等 IPC 往返才生效，中间那几帧窗口既没 CSS 圆角也没系统圆角 ——
+   *    实测 60fps 抓帧里稳定出现 2 帧直角（主线程忙时能拖到 80 帧），
+   *    就是用户看到的「四个角从圆角变直角又变回来」。
+   *
+   * 所以：进速览关一次系统圆角、CSS 圆角常开（形状全程一致），离开速览再开回来
+   * （完整界面保留系统圆角和阴影）。代价是速览内一律没有阴影 —— 和完整界面比是
+   * 「速览不投影」，但速览内部展开/收起完全一致，也不再有任何形状跳变。
+   */
+  /**
+   * 速览期间系统圆角保持关闭，退出时也不再打开。
+   *
+   * 圆角（完整界面和速览）现在全部由 CSS 画（--qb-radius，App 挂载时按
+   * 「8 物理像素 / DPR」写入，两个界面同一个来源、弧度必然一致）；
+   * DWM 圆角在哪儿都不启用——它自带一圈窗口阴影，而用户要求两个界面
+   * 都不要窗口边缘阴影。这里进速览补一道关闭只是防御性的。
+   */
+  useEffect(() => {
+    void ipc.setWindowRounded(false).catch(() => {});
+    return () => {
+      void ipc.setWindowRounded(false).catch(() => {});
+    };
+  }, []);
+
+  /**
+   * 关掉「贴顶自动隐藏」时把可能已经收起的面板还原回展开尺寸。
+   *
+   * 这里只做「还原」这一件事：状态机本身（上面的主 effect）不因开关翻转而重建，
+   * 否则热键句柄、收起态、原生监听会一起丢掉（§5 第 1 条）。
+   */
+  useEffect(() => {
+    if (enabled) return;
+    void activeRestore?.();
+  }, [enabled]);
 
   useEffect(() => {
-    if (!enabled) {
-      dockedRef.current = false;
-      phaseRef.current = "hint";
-      setDocked(false);
-      setPhase("hint");
-      setBar(null);
-      setContentHeight(null);
-      return;
-    }
-
     const win = getCurrentWindow();
     let alive = true;
     let unlisten: (() => void) | undefined;
@@ -214,6 +275,24 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     let blurredAt = 0;
     /** 是不是我们关掉了这个窗口的 DWM 过渡（还原后要开回去） */
     let transitionsOff = false;
+    /**
+     * 动画期间发生的「失焦」先记下来，等几何落定再补收起。
+     * 以前是 `if (dockedRef.current || animating) return` 直接丢掉：展开动画跑 200ms，
+     * 这期间点到别的软件，收尾时就没人再管，面板一直摊在屏幕上（§5 第 4 条）。
+     */
+    let blurPending = false;
+    /**
+     * 被冷却 / 宽限期 / 动画挡下来的「靠近」事件。
+     * hover 是边沿事件：挡掉这一下就再也不会重来，只能自己排一次重试（§5 第 20 条）。
+     */
+    let pendingReveal: { near: boolean } | null = null;
+    let revealRetryTimer: ReturnType<typeof setTimeout> | undefined;
+    /**
+     * 热键 toggle 串行链。快速连按时第二下会撞上 `animating/mutating` 被静默丢掉，
+     * 现在排队按顺序执行，执行时才读最新的 docked（§5 第 21 条）。
+     * 算法在 lib/quickbarAnim.ts（可单测）。
+     */
+    const toggleQueue = createSerialQueue();
 
     const setPhaseBoth = (next: DockPhase) => {
       phaseRef.current = next;
@@ -235,6 +314,25 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     const clearHotkeyHold = () => {
       if (hotkeyHoldTimer) clearTimeout(hotkeyHoldTimer);
       hotkeyHoldTimer = undefined;
+    };
+    const clearRevealRetry = () => {
+      if (revealRetryTimer) clearTimeout(revealRetryTimer);
+      revealRetryTimer = undefined;
+      pendingReveal = null;
+    };
+    /** 「自动」行为的开关：只在关掉贴顶自动隐藏时挡住自动收起/召回 */
+    const autoHideOn = () => enabledRef.current;
+
+    /**
+     * 清掉动画直接写上去的行内几何与标记。
+     * 取消动画（stopAnim / 各种 restore 路径）必须一起清：只重置 React 状态的话，
+     * `.qb-frame` 会一直钉在中断那一帧的高度上，界面看起来「卡在半截」（§5 第 5 条）。
+     */
+    const clearFrameDom = () => {
+      const el = document.querySelector<HTMLElement>(".qb-frame");
+      if (!el) return;
+      el.style.height = "";
+      el.removeAttribute("data-anim");
     };
 
     /** 光标此刻是否落在窗口矩形里（热键呼出时鼠标往往不动，只能主动问系统） */
@@ -268,10 +366,17 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         void (async () => {
           // 注意：这里要判断「还是展开态」——展开后 dockedRef 已经是 false，
           // 写成 !dockedRef 会直接把整段逻辑 return 掉（第一版就踩了这个坑）。
-          if (!alive || dockedRef.current || animating || mutating) return;
+          if (!alive || dockedRef.current) return;
+          // 正在动画 / 改几何的：等它跑完再看，否则这一下就白丢了
+          if (animating || mutating) {
+            armHotkeyHold();
+            return;
+          }
           // 用户可能在这 1 秒里已经退出速览（Esc / 返回按钮）：那这个观察期就作废，
           // 否则会把刚回到的「完整界面」也收成顶栏（真的会收，别问怎么知道的）。
           if (!useFontStore.getState().quickbar) return;
+          // 关掉「贴顶自动隐藏」时不该再自动收回去
+          if (!autoHideOn()) return;
           if (await cursorInsideWindow()) {
             // 鼠标在面板里：转成正常 hover 展开，之后移出静置再收
             hoverExpanded = true;
@@ -292,6 +397,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         finishTimer = undefined;
       }
       animating = false;
+      // 取消也得把行内高度 / data-anim 摘掉，否则 qb-frame 停在中断那一帧
+      clearFrameDom();
     };
 
     /**
@@ -310,23 +417,37 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
      * 细线阶段窗口只是变矮，宽度和水平位置都跟速览展开时一致——
      * 这样「收起来在哪、多宽」用户是有预期的，不会出现线跑到屏幕中间的问题。
      *
+     * 内容底边必须始终落在窗口底边**内侧**（圆角修复的关键）：
+     * WebView2 的布局/合成跟不上每帧 SetSize，纹理里的内容高度总比窗口滞后 1~3 帧；
+     * 如果内容和窗口一样高，窗口底边就会把纹理裁出一条直边——收起/展开途中
+     * 下面两个角看起来就是直角。所以 qb-frame 的高度在这里直接写 DOM（不走 React
+     * 状态，60fps setState 会抖）：收起时按 t+LEAD 取值（内容比窗口先到位）、
+     * 展开时按 t-LEAD（内容比窗口慢一步），两个方向内容都缩在窗口里面，
+     * 底边和窗口底边之间露出透明画布（桌面），圆角由 .qb-frame 自己的
+     * border-radius 画（见 app.css / App.tsx 的 --qb-radius）。
+     *
      * 卡死防护（「最小化再恢复后窗口卡住不动」的根因）：窗口最小化 / 被完全遮挡时
      * WebView2 会停发 rAF，动画永远走不到 done，animating 就一直是 true——
      * 之后所有收起 / 展开 / 长回提示全被它拒掉，窗口彻底失去响应。
      * 所以：页面不可见时直接落到终态；可见时也挂一道 setTimeout 兜底
      * （后台标签页定时器会被钳到 ~1s，正好够用），保证 animating 一定会释放。
      */
+    const ANIM_LEAD_MS = 45;
     const animateHeight = (
       fromH: number,
       toH: number,
       widthPhys: number,
       done: () => void,
+      scale: number,
       durationMs: number = ANIM_MS,
     ) => {
       stopAnim();
       animating = true;
+      const frameEl = document.querySelector<HTMLElement>(".qb-frame");
+      const shrinking = toH < fromH;
       const start = performance.now();
       let settled = false;
+      const clearFrameHeight = clearFrameDom;
       const finish = (writeFinal: boolean) => {
         if (settled) return;
         settled = true;
@@ -339,6 +460,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           finishTimer = undefined;
         }
         animating = false;
+        clearFrameHeight();
         if (writeFinal) {
           // 兜底路径也把最终几何写一次，保证窗口和状态机一致
           void win.setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, toH))).catch(() => {
@@ -356,8 +478,28 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           return;
         }
         const t = Math.min(1, (performance.now() - start) / durationMs);
-        const eased = 1 - Math.pow(1 - t, 3);
+        // 收起方向：窗口比内容晚 LEAD_MS 起步、在剩余时间里跑完同一条缓动——
+        // WebView2 的纹理要 1~3 帧才反映出新的内容高度，窗口若与内容同时起步，
+        // 头几帧纹理里还是全高内容、被窗口底边裁出直角。窗口晚这一拍，
+        // 任何一帧的纹理里内容底边都在窗口底边内侧，圆角始终完整。
+        // 展开方向正好相反：窗口边在合成器里也可能滞后于纹理，内容若与窗口同步长高，
+        // 纹理里偏高的旧内容会被裁出直角——所以内容滞后 LEAD_MS 再长。
+        // 两个方向的效果一致：内容底边永远缩在可见窗口底边之内，圆角画在内容自己的边缘上。
+        const lead = Math.min(ANIM_LEAD_MS, Math.max(1, durationMs - 1));
+        // 两个方向都把 LEAD 归一化（算法与单测见 lib/quickbarAnim.ts）：
+        // 早先展开方向写成 `t - L/d`，结尾只到 0.775 再补一帧，收尾会跳约 1.14%（§5 第 14 条）。
+        const norm = leadNormalized(t, durationMs, lead);
+        const tw = shrinking ? norm : t;
+        const eased = 1 - Math.pow(1 - tw, 3);
         const h = Math.round(fromH + (toH - fromH) * eased);
+        // 内容高度：展开时滞后 LEAD，收起时按原始进度（窗口已延后，天然在前）
+        const tf = shrinking ? t : norm;
+        const easedS = 1 - Math.pow(1 - tf, 3);
+        const hs = Math.round(fromH + (toH - fromH) * easedS);
+        if (frameEl) {
+          frameEl.setAttribute("data-anim", "true");
+          frameEl.style.height = `${(hs / scale).toFixed(2)}px`;
+        }
         void win.setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, h))).catch(() => {
           /* 窗口正在被拖动时偶尔会失败，忽略即可 */
         });
@@ -413,28 +555,53 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           /* 保持 CSS 默认值 */
         }
         shrinkWindowHints();
-        // 不要「啪」地直接跳到 bar：先进入 retract 阶段——提示行向上滑走并淡出、
-        // 底色与边框同时淡成透明（见 app.css 的 data-dock-phase="retract"），
-        // 窗口高度用同样的时长收到细线，落地后才算 bar。
-        setPhaseBoth("retract");
+        // 收成细线 = 整块向上滑出屏幕，再在屏幕外换成细线、从外面落回来。
+        //
+        // 为什么不继续「原地变矮 + 淡出」：
+        // 1. 内容会被窗口底边一刀裁掉，看着像被切断；
+        // 2. 窗口高度跨过 DWM 圆角阈值那一刻，四角从圆角直接跳成直角，很割裂
+        //    （DWM 只给圆角窗口画阴影，所以圆角又不能一直开着）。
+        // 滑出去之后圆角是「滑走」的，切换发生在屏幕外，用户看不到任何形状突变。
         lastChangeAt = Date.now();
-        animateHeight(
-          from,
-          to,
-          widthPhys,
-          () => {
-            if (!alive) return;
-            setPhaseBoth("bar");
-            setBar({ width: Math.round(widthPhys / s), height: DOCK_HEIGHT_BAR });
-            // 收成横线说明这一轮收起彻底结束了：解锁「靠近就展开」。
-            // 只靠「指针离开过一次」解锁是不够的——刚点完速览按钮时鼠标往往压在那条上，
-            // 但它其实从来没「进入」过收起后的窗口，也就永远等不到离开，划上去不会弹开。
-            hoverArmed = true;
-            // 细线只有几像素高，鼠标几乎碰不到——交给原生侧的光标感应带
-            void ipc.setDockSensor(true).catch(() => {});
-          },
-          RETRACT_MS,
-        );
+        const pos = await win.outerPosition();
+        const px = Math.round(pos.x);
+        const py = Math.round(pos.y);
+        try {
+          // 1) 提示条整块往上滑出顶边（尺寸不变，内容不压缩也不裁）
+          await morphWindow(
+            { x: px, y: py, width: widthPhys, height: from },
+            { x: px, y: py - from - OFFSCREEN_PAD, width: widthPhys, height: from },
+            RETRACT_OUT_MS,
+          );
+          if (!alive || !dockedRef.current) return;
+          // 2) 屏幕外换成细线：内容切到 bar 阶段，尺寸收成细线高，贴着顶边上沿待命
+          setPhaseBoth("bar");
+          setBar({ width: Math.round(widthPhys / s), height: DOCK_HEIGHT_BAR });
+          await win.setSize(new PhysicalSize(widthPhys, to)).catch(() => {});
+          await win.setPosition(new PhysicalPosition(px, py - to - OFFSCREEN_PAD)).catch(() => {});
+          // 窗口在屏幕外时 rAF 可能被节流，这里用定时器给 React 一帧画细线
+          await new Promise<void>((resolve) => setTimeout(resolve, BAR_SWAP_MS));
+          if (!alive || !dockedRef.current) return;
+          // 3) 细线从屏幕外落回顶边
+          await morphWindow(
+            { x: px, y: py - to - OFFSCREEN_PAD, width: widthPhys, height: to },
+            { x: px, y: py, width: widthPhys, height: to },
+            RETRACT_IN_MS,
+          );
+        } catch {
+          // 原生形变不可用：直接落位到细线，绝不能把窗口留在屏幕外
+          await win.setSize(new PhysicalSize(widthPhys, to)).catch(() => {});
+          await win.setPosition(new PhysicalPosition(px, py)).catch(() => {});
+        }
+        if (!alive) return;
+        setPhaseBoth("bar");
+        setBar({ width: Math.round(widthPhys / s), height: DOCK_HEIGHT_BAR });
+        // 收成横线说明这一轮收起彻底结束了：解锁「靠近就展开」。
+        // 只靠「指针离开过一次」解锁是不够的——刚点完速览按钮时鼠标往往压在那条上，
+        // 但它其实从来没「进入」过收起后的窗口，也就永远等不到离开，划上去不会弹开。
+        hoverArmed = true;
+        // 细线只有几像素高，鼠标几乎碰不到——交给原生侧的光标感应带
+        void ipc.setDockSensor(true).catch(() => {});
       } finally {
         mutating = false;
       }
@@ -477,15 +644,21 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         await win.setMinSize(null).catch(() => {});
         setContentHeight(size.height / scale);
         lastChangeAt = Date.now();
-        animateHeight(size.height, dockPhys, size.width, () => {
-          if (!alive) return;
-          dockedRef.current = true;
-          setDocked(true);
-          setContentHeight(null);
-          setPhaseBoth("hint");
-          // 提示行只显示一小会儿，之后收成横线
-          scheduleShrink();
-        });
+        animateHeight(
+          size.height,
+          dockPhys,
+          size.width,
+          () => {
+            if (!alive) return;
+            dockedRef.current = true;
+            setDocked(true);
+            setContentHeight(null);
+            setPhaseBoth("hint");
+            // 提示行只显示一小会儿，之后收成横线
+            scheduleShrink();
+          },
+          scale,
+        );
       } finally {
         mutating = false;
       }
@@ -514,14 +687,30 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         setContentHeight(toH / scale);
         lastChangeAt = Date.now();
         hoverExpanded = byHover;
-        animateHeight(fromH, toH, widthPhys, () => {
-          if (!alive) return;
-          setContentHeight(null);
-          // 展开完毕再恢复「放得下右键菜单」的最小尺寸限制
-          void syncQuickbarMinSize();
-          // 鼠标已经不在窗口里的话，静置一会儿自动收回
-          if (hoverExpanded && !pointerInside) scheduleRecall();
-        });
+        // 从这里开始才算「展开过程中失焦」：起点清一次，避免上一次收起时的陈旧标记
+        blurPending = false;
+        animateHeight(
+          fromH,
+          toH,
+          widthPhys,
+          () => {
+            if (!alive) return;
+            setContentHeight(null);
+            // 展开完毕再恢复「放得下右键菜单」的最小尺寸限制
+            void syncQuickbarMinSize();
+            // 鼠标已经不在窗口里的话，静置一会儿自动收回
+            if (hoverExpanded && !pointerInside) scheduleRecall();
+            // 动画期间失焦过的：几何落定了才补收起，否则 setSize 会被动画线程覆盖（§5 第 4 条）
+            if (blurPending) {
+              blurPending = false;
+              void measure().then((m) => {
+                if (!alive || dockedRef.current || !m?.near) return;
+                void collapse();
+              });
+            }
+          },
+          scale,
+        );
       } finally {
         mutating = false;
       }
@@ -545,11 +734,31 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           setBar(null);
           restoreWindowHints();
           void ipc.setDockSensor(false).catch(() => {});
-          animateHeight(from, to, wide, () => then());
+          animateHeight(from, to, wide, () => then(), scale);
         })
         .finally(() => {
           mutating = false;
         });
+    };
+
+    /**
+     * 被挡下来的「靠近」排一次重试。
+     *
+     * hover / 感应带都是**边沿事件**：冷却、失焦宽限期、动画期间挡掉这一下之后，
+     * 用户鼠标停在原地不动就再也不会发第二次——表现就是「划上去没反应，得挪开再划」。
+     * 所以按剩余时间延迟重试，到期再复查一次光标（§5 第 20 条）。
+     */
+    const scheduleRevealRetry = (delay: number, near: boolean) => {
+      pendingReveal = { near };
+      if (revealRetryTimer) return;
+      revealRetryTimer = setTimeout(() => {
+        revealRetryTimer = undefined;
+        const want = pendingReveal;
+        pendingReveal = null;
+        if (!alive || !want) return;
+        if (!want.near && !pointerInside) return;
+        reveal(want.near);
+      }, Math.max(40, delay));
     };
 
     /**
@@ -560,11 +769,27 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       if (revealTimer) return;
       revealTimer = setTimeout(() => {
         revealTimer = undefined;
-        if (!alive || !dockedRef.current || animating || mutating) return;
+        if (!alive || !dockedRef.current) return;
+        // 动画 / 几何锁：排一次重试，别把这唯一的边沿事件丢掉
+        if (animating || mutating) {
+          scheduleRevealRetry(120, near);
+          return;
+        }
         // 刚失焦收起的这一小会儿鼠标可能还压在窗口上：先别弹开，过了宽限期照常展开
-        if (!hoverArmed || Date.now() - blurredAt < REVEAL_AFTER_BLUR_MS) return;
+        if (!hoverArmed || Date.now() - blurredAt < REVEAL_AFTER_BLUR_MS) {
+          const left = REVEAL_AFTER_BLUR_MS - (Date.now() - blurredAt);
+          if (left > 0) {
+            scheduleRevealRetry(left + 30, near);
+            return;
+          }
+          if (!hoverArmed) return;
+        }
         if (!near && !pointerInside) return;
-        if (Date.now() - lastChangeAt < REVEAL_COOLDOWN_MS) return;
+        // 刚收起后的冷却期内也排重试（鼠标往往还压在窗口上，冷却一过就该弹）
+        if (Date.now() - lastChangeAt < REVEAL_COOLDOWN_MS) {
+          scheduleRevealRetry(REVEAL_COOLDOWN_MS - (Date.now() - lastChangeAt) + 20, near);
+          return;
+        }
         void expand(true);
       }, SETTLE_MS);
     };
@@ -575,6 +800,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       recallTimer = setTimeout(() => {
         recallTimer = undefined;
         if (!alive || dockedRef.current || animating) return;
+        if (!autoHideOn()) return;
         if (!hoverExpanded || pointerInside) return;
         void evaluate();
       }, RECALL_IDLE_MS);
@@ -591,6 +817,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     const restoreNow = async () => {
       stopAnim();
       mutating = false;
+      clearRevealRetry();
+      blurPending = false;
       if (hintTimer) {
         clearTimeout(hintTimer);
         hintTimer = undefined;
@@ -655,6 +883,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       lastChangeAt = Date.now();
       hoverExpanded = false;
       hoverArmed = false;
+      blurPending = false;
+      clearRevealRetry();
       setDocked(true);
       setContentHeight(null);
       setPhaseBoth("hint");
@@ -669,45 +899,48 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
      */
     const minimizeAtTop = async (): Promise<boolean> => {
       if (mutating || animating) return false;
-      const m = await measure();
-      if (!alive || !m?.near) return false;
+      // 先拿锁再 await：量几何是异步的，两个最小化请求（按钮 + 快捷键）会在这段
+      // await 里同时穿过上面的检查，然后两套流程一起改几何（§5 第 16 条）。
       mutating = true;
       try {
+        const m = await measure();
+        if (!alive || !m?.near) return false;
         // 1) 内容卷走（CSS），观感上就是「收起来」
         document.body.classList.add("qb-minimizing");
-        await new Promise<void>((r) => setTimeout(r, MINIMIZE_FADE_MS));
-        if (!alive) {
-          document.body.classList.remove("qb-minimizing");
+        try {
+          await new Promise<void>((r) => setTimeout(r, MINIMIZE_FADE_MS));
+          if (!alive) return true;
+          // 2) 窗口一步落到细线，并把收起态接过来：还原时就是这条抓手栏
+          const { scale, size } = await currentPhys();
+          const barPhys = Math.round(DOCK_HEIGHT_BAR * scale);
+          if (size.height > barPhys + 8) {
+            restoreSize = { width: size.width, height: size.height };
+            await win.setMinSize(null).catch(() => {});
+            await win
+              .setSize(new PhysicalSize(Math.max(1, size.width), Math.max(1, barPhys)))
+              .catch(() => {});
+          }
+          dockedRef.current = true;
+          lastChangeAt = Date.now();
+          hoverExpanded = false;
+          // 还原回来时鼠标往往还在原来那条线上，解锁才划得开
+          hoverArmed = true;
+          setDocked(true);
+          setContentHeight(null);
+          setPhaseBoth("bar");
+          setBar({ width: Math.round(size.width / scale), height: DOCK_HEIGHT_BAR });
+          shrinkWindowHints();
+          void ipc.setDockSensor(true).catch(() => {});
+          // 3) 关掉这个窗口的 DWM 过渡再真最小化：不播「飞到任务栏」
+          await ipc.setWindowTransitions(true).catch(() => {});
+          transitionsOff = true;
+          await win.minimize().catch(() => {});
           return true;
+        } finally {
+          // 任何一条分支退出都要摘掉卷走标记：它留在 body 上内容就是永久透明的
+          // （`qb-minimizing` 的规则是 opacity:0，见 app.css）（§5 第 16 条）。
+          document.body.classList.remove("qb-minimizing");
         }
-        // 2) 窗口一步落到细线，并把收起态接过来：还原时就是这条抓手栏
-        const { scale, size } = await currentPhys();
-        const barPhys = Math.round(DOCK_HEIGHT_BAR * scale);
-        if (size.height > barPhys + 8) {
-          restoreSize = { width: size.width, height: size.height };
-          await win.setMinSize(null).catch(() => {});
-          await win
-            .setSize(new PhysicalSize(Math.max(1, size.width), Math.max(1, barPhys)))
-            .catch(() => {});
-        }
-        dockedRef.current = true;
-        lastChangeAt = Date.now();
-        hoverExpanded = false;
-        // 还原回来时鼠标往往还在原来那条线上，解锁才划得开
-        hoverArmed = true;
-        setDocked(true);
-        setContentHeight(null);
-        setPhaseBoth("bar");
-        setBar({ width: Math.round(size.width / scale), height: DOCK_HEIGHT_BAR });
-        // 内容已经换成细线了，这时才摘掉卷走标记：早摘会有一帧「面板又亮回来」
-        document.body.classList.remove("qb-minimizing");
-        shrinkWindowHints();
-        void ipc.setDockSensor(true).catch(() => {});
-        // 3) 关掉这个窗口的 DWM 过渡再真最小化：不播「飞到任务栏」
-        await ipc.setWindowTransitions(true).catch(() => {});
-        transitionsOff = true;
-        await win.minimize().catch(() => {});
-        return true;
       } finally {
         mutating = false;
       }
@@ -810,10 +1043,13 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         return;
       }
       if (dockedRef.current) return;
+      // 关掉「贴顶自动隐藏」：不再贴顶自动收起（热键手动收起不受影响）
+      if (!autoHideOn()) return;
       if (settleTimer) return;
       settleTimer = setTimeout(() => {
         settleTimer = undefined;
         if (!alive || animating || mutating || dockedRef.current) return;
+        if (!autoHideOn()) return;
         // 收起前把窗口稍微对齐到顶边，避免抓手被拖到屏幕外看不见
         void win
           .setPosition(new LogicalPosition(left, Math.round(edge)))
@@ -829,6 +1065,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     const onFocusChange = ({ payload: focused }: { payload: boolean }) => {
       if (!alive) return;
       if (focused) {
+        blurPending = false;
         // 从最小化 / 别的软件回来：把可能被吞掉的尺寸补回来
         void healGeometry();
         // 还原这一下已经落地了，把 DWM 过渡开回去（留一点余量，别让还原又动起来）
@@ -842,9 +1079,15 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         return;
       }
       blurredAt = Date.now();
-      if (dockedRef.current || animating) return;
+      // 只有「动画正在进行」时才需要记下来等落定后补收：
+      // 其它情况下面会直接处理，而收起态（docked）本来就该保持收起 ——
+      // 如果无条件记，收起时的失焦会变成一个陈旧的 pending，
+      // 下次 hover 展开刚结束就被它立刻收回（§5 第 4 条的边界）。
+      if (animating || mutating) blurPending = true;
+      if (dockedRef.current) return;
+      if (animating || mutating) return;
       void measure().then((m) => {
-        if (!alive || !m?.near || dockedRef.current || animating) return;
+        if (!alive || !m?.near || dockedRef.current) return;
         // 鼠标已经到别的窗口去了：解锁「靠近就展开」，回来时正常弹开，不用先点一下
         hoverArmed = true;
         void collapse();
@@ -897,6 +1140,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       // 指针离开过一次，之后「靠近展开」才生效
       hoverArmed = true;
       clearReveal();
+      // 鼠标已经走了：之前排的「等冷却完再展开」也一并作废，别在鼠标离开后才弹开
+      clearRevealRetry();
       if (dockedRef.current || !hoverExpanded) return;
       scheduleRecall();
     };
@@ -914,15 +1159,23 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       void healGeometry();
     };
 
+    /**
+     * 热键 toggle 走串行链：连按时第二下会撞上 animating / mutating 被静默丢掉，
+     * 用户看到「按了两下只反应一下」。排队执行，执行时才读最新 docked（§5 第 21 条）。
+     */
+    const queueToggle = (run: () => Promise<void>): Promise<void> => toggleQueue.run(run);
+
     // 配置的快捷键收起 / 展开（界面内：有焦点时原生热键不会把按键送进来，这里是兜底）
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
       if (!matchesHotkey(e, useFontStore.getState().quickbarHotkey)) return;
       e.preventDefault();
       markEngaged();
-      if (animating) return;
-      if (dockedRef.current) void expand();
-      else void collapse();
+      void queueToggle(async () => {
+        if (!alive) return;
+        if (dockedRef.current) await expand();
+        else await collapse();
+      });
     };
 
     /**
@@ -931,23 +1184,33 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
      * 否则面板弹出来了却收不到键盘输入。
      */
     const onGlobalHotkey = () => {
-      if (!alive || animating || mutating) return;
+      if (!alive) return;
       markEngaged();
-      if (dockedRef.current) {
-        void (async () => {
-          // 可能正被最小化在任务栏里：先捞回来，否则后面的改尺寸全被系统吞掉
+      void queueToggle(async () => {
+        if (!alive) return;
+        // 窗口可能正被最小化在任务栏、或被「贴顶最小化 / 托盘」藏起来了。
+        // 这时候只看 docked 会算成「已经展开 → 收起」，第一次按就等于没反应（§5 第 2 条）。
+        const [minimized, visible] = await Promise.all([
+          win.isMinimized().catch(() => false),
+          win.isVisible().catch(() => true),
+        ]);
+        if (!alive) return;
+        const hidden = minimized || !visible;
+        if (dockedRef.current || hidden) {
+          // 不可见 / 收起：统一走「恢复 → 展开 → 显示 → 抢焦点」
           await win.unminimize().catch(() => {});
-          await expand();
+          await win.show().catch(() => {});
+          if (dockedRef.current) await expand();
+          else await healGeometry();
           if (!alive) return;
-          void win.show().catch(() => {});
           void ipc.focusQuickbar().catch(() => {
             void win.setFocus().catch(() => {});
           });
           armHotkeyHold();
-        })();
-      } else {
-        void collapse();
-      }
+          return;
+        }
+        await collapse();
+      });
     };
 
     document.addEventListener("pointermove", onPointerMove, true);
@@ -1003,6 +1266,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       });
     void evaluate();
     activeMinimize = minimizeAtTop;
+    dockBusyGetter = () => animating || mutating;
 
     return () => {
       alive = false;
@@ -1011,6 +1275,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       clearReveal();
       clearRecall();
       clearHotkeyHold();
+      clearRevealRetry();
       if (hintTimer) clearTimeout(hintTimer);
       document.removeEventListener("pointermove", onPointerMove, true);
       document.documentElement.removeEventListener("pointerleave", onPointerLeave);
@@ -1027,12 +1292,15 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       if (activeExpand) activeExpand = null;
       if (activeAdoptDock === adoptDock) activeAdoptDock = null;
       if (activeMinimize === minimizeAtTop) activeMinimize = null;
+      if (dockBusyGetter) dockBusyGetter = null;
       if (transitionsOff) {
         transitionsOff = false;
         void ipc.setWindowTransitions(false).catch(() => {});
       }
     };
-  }, [enabled]);
+    // 依赖故意留空：开关翻转只影响「自动」行为（读 enabledRef），
+    // 状态机本身不能重建——重建会丢掉收起态、热键句柄与原生监听（§5 第 1 条）。
+  }, []);
 
   return { docked, contentHeight, phase, bar };
 }

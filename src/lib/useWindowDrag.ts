@@ -1,5 +1,11 @@
 import { PhysicalPosition, getCurrentWindow } from "@tauri-apps/api/window";
-import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { isQuickbarGeometryBusy } from "./useQuickbarDock";
 
 /** 可以越过屏幕上边界的余量（物理像素）：留一点点让窗口能贴到顶，又不会整条飞到屏幕外 */
 const OVER_TOP = 4;
@@ -19,11 +25,16 @@ const INTERACTIVE = "input, textarea, select, button, a, [data-no-drag]";
  */
 export function useWindowDrag() {
   const cleanupRef = useRef<(() => void) | null>(null);
+  /** 组件卸载时必须摘掉监听：否则残留的 pointermove 会继续写窗口位置 */
+  useEffect(() => () => cleanupRef.current?.(), []);
 
   return useCallback((e: ReactPointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
     const el = e.currentTarget;
     if ((e.target as HTMLElement | null)?.closest(INTERACTIVE)) return;
+    // 窗口几何正在被动画 / 形变改写（速览进出、收成细线）：这时候拖动，
+    // 两套写入会互相覆盖，最后停在半路的坐标上（§5 第 15 条）。
+    if (document.body.classList.contains("is-morphing") || isQuickbarGeometryBusy()) return;
 
     cleanupRef.current?.();
     const win = getCurrentWindow();
@@ -69,7 +80,13 @@ export function useWindowDrag() {
       done = true;
       if (raf !== undefined) cancelAnimationFrame(raf);
       raf = undefined;
-      pending = null;
+      // 松手前最后一次位移必须落下去：rAF 还没跑就清掉 pending，
+      // 窗口会停在「差一帧」的位置上，快速轻拖时特别明显（§5 第 27 条）。
+      if (pending) {
+        const [x, y] = pending;
+        pending = null;
+        void win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y))).catch(() => {});
+      }
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("pointerup", stop, true);
       document.removeEventListener("pointercancel", stop, true);

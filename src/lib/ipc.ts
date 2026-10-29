@@ -260,6 +260,11 @@ export const ipc = {
   }) => invoke<void>("set_quickbar_hotkey", { hotkey }),
   /** 收成细线后开启原生侧的光标靠近感应（细线太窄，光靠鼠标进窗口几乎碰不到） */
   setDockSensor: (active: boolean) => invoke<void>("set_dock_sensor", { active }),
+  /**
+   * 开关系统窗口圆角。收起态必须关掉：DWM 只给圆角窗口画阴影，
+   * 一条 43px 的提示条在浅色桌面上会拖出一大圈阴影；关掉后圆角改由 CSS 画。
+   */
+  setWindowRounded: (on: boolean) => invoke<void>("set_window_rounded", { on }),
   setWindowTransitions: (disabled: boolean) =>
     invoke<void>("set_window_transitions", { disabled }),
   defaultLibraryDir: () => invoke<string>("default_library_dir"),

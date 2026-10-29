@@ -69,9 +69,15 @@ export function FontList({ families }: { families: Family[] }) {
             const mem = membership.get(fam.name);
             const hasMem = !!mem && (mem.snaps.length > 0 || mem.colls.length > 0);
             return (
-              <button
+              // 行容器不能用 <button>：里面装着 PillToggle（也是 button），
+              // HTML 不允许 button 嵌套 button，内层按钮的点击/键盘行为会连带触发外层
+              // （§5 第 32 条）。改成 div + role=button，自己补 Enter/Space。
+              <div
                 key={item.key}
                 data-family={fam.name}
+                role="button"
+                tabIndex={0}
+                aria-pressed={selection.includes(fam.name)}
                 className={`list-row ${
                   selection.includes(fam.name) ? "row-selected" : ""
                 }`}
@@ -93,6 +99,16 @@ export function FontList({ families }: { families: Family[] }) {
                   const mode =
                     e.ctrlKey || e.metaKey ? "toggle" : e.shiftKey ? "range" : "single";
                   selectWith(fam.name, mode, st.visibleOrder);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  // 焦点在内层开关上时，这个键属于开关
+                  if (e.target !== e.currentTarget) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const st = useFontStore.getState();
+                  if (st.comparePicking) st.togglePick(fam.name);
+                  else selectWith(fam.name, e.shiftKey ? "range" : "single", st.visibleOrder);
                 }}
                 onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(fam))}
               >
@@ -137,7 +153,7 @@ export function FontList({ families }: { families: Family[] }) {
                     label={t(fam.active ? "card.deactivate" : "card.activate", { name: fam.name })}
                   />
                 </span>
-              </button>
+              </div>
             );
           })}
         </div>

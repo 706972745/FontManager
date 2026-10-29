@@ -18,6 +18,26 @@ export function DropZone() {
   const libraryDir = useFontStore((s) => s.settings.libraryDir);
   const libraryDirEnabled = useFontStore((s) => s.settings.libraryDirEnabled);
   const moveRef = useRef<HTMLDivElement>(null);
+  /**
+   * 进度条「稍后自动消失」的定时器。
+   * 以前每来一条进度就 setTimeout 一个匿名的 900ms 收尾，不清旧的：
+   * 上一批安装的定时器会在新一批还在跑时把进度条清掉，看起来就是「装到一半进度没了」（§5 第 28 条）。
+   */
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleHideProgress = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      hideTimer.current = null;
+      setProgress(null);
+    }, 900);
+  };
+  useEffect(
+    () => () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    },
+    [],
+  );
 
   const sideAt = (pos: { x: number; y: number }): InstallMode => {
     const dpr = window.devicePixelRatio || 1;
@@ -54,7 +74,7 @@ export function DropZone() {
         setDragging(false);
         setSide("link");
         void installPaths(event.payload.paths, mode).finally(() => {
-          setTimeout(() => setProgress(null), 900);
+          scheduleHideProgress();
         });
       } else {
         setDragging(false);
@@ -62,9 +82,14 @@ export function DropZone() {
       }
     });
     const unlistenProgress = listen<InstallProgress>("install:progress", (e) => {
+      // 新进度来了：先取消上一批的收尾定时器，别让它把这一批的进度条提前清掉
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+        hideTimer.current = null;
+      }
       setProgress(e.payload);
       if (e.payload.done >= e.payload.total) {
-        setTimeout(() => setProgress(null), 900);
+        scheduleHideProgress();
       }
     });
     return () => {

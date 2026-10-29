@@ -27,7 +27,7 @@ import { LoadProgress } from "./components/LoadProgress";
 import { BulkTagPrompt } from "./components/BulkTagPrompt";
 import { DuplicateDialog } from "./components/DuplicateDialog";
 import { Onboarding } from "./components/Onboarding";
-import { ContextMenuHost, openContextMenuAt } from "./design/primitives/ContextMenu";
+import { ContextMenuHost, isContextMenuOpen, openContextMenuAt } from "./design/primitives/ContextMenu";
 import { buildFamilyMenu } from "./lib/menus";
 import { Toaster, toast } from "./design/primitives/Toast";
 import { easeTop, spring } from "./design/springs";
@@ -113,6 +113,34 @@ function EmptyLibrary({ searching, nav }: { searching: boolean; nav: Nav }) {
   );
 }
 
+/**
+ * 是否有「顶层弹层」正在占着键盘：弹窗、浮层、右键菜单、导览、输入提示。
+ *
+ * 全局字库快捷键必须在它们打开时整体让路 —— 否则 Escape 会穿透去清选择、
+ * Ctrl+K / `?` 会再叠一个弹窗上来、焦点陷阱也会互相打架（§5 第 8 条）。
+ */
+function topLayerOpen(): boolean {
+  const st = useFontStore.getState();
+  return (
+    st.compare != null ||
+    st.settingsOpen ||
+    st.helpOpen ||
+    st.paletteOpen ||
+    st.tourStep != null ||
+    st.bulkTagFor != null ||
+    st.pendingCollectionFor != null ||
+    st.pendingSnapshotFor != null ||
+    st.duplicateReport != null ||
+    st.onlineDetail != null ||
+    isContextMenuOpen()
+  );
+}
+
+/** 当前页面是否在「浏览字族」（回收站 / 关于 / 在线栏目没有字族可操作） */
+function familyNav(nav: Nav): boolean {
+  return nav.kind !== "trash" && nav.kind !== "about" && nav.kind !== "online";
+}
+
 function MainContent() {
   const phase = useFontStore((s) => s.phase);
   const nav = useFontStore((s) => s.nav);
@@ -154,9 +182,13 @@ function MainContent() {
     [displayFonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus, nav, sort],
   );
 
+  // 非字族浏览页面（回收站 / 关于 / 在线栏目）没有「可见字族顺序」，必须清空：
+  // 以前这里照样写入，导致在这些页面按 Delete / 空格仍在操作字库里选中的字族
+  // ——删掉的东西根本不在屏幕上（§5 第 7 条）。
+  const browsable = familyNav(nav);
   useEffect(() => {
-    useFontStore.setState({ visibleOrder: families.map((f) => f.name) });
-  }, [families]);
+    useFontStore.setState({ visibleOrder: browsable ? families.map((f) => f.name) : [] });
+  }, [families, browsable]);
 
   if (nav.kind === "trash") return <TrashView />;
   if (nav.kind === "about") return <AboutView />;
@@ -273,29 +305,60 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 更靠内的一层（弹层自己的 handler、卡片上的键盘处理）已经消费掉这个键
+      if (e.defaultPrevented) return;
+      const tgt = e.target instanceof Element ? e.target : null;
       const inField =
-        e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement ||
+        !!tgt?.closest("[contenteditable='true'], [contenteditable=''], [role='textbox']");
+      /**
+       * 焦点在「本身就吃 Space 的控件」上时全局快捷键让路：
+       * 以前只排除 input / textarea，焦点落在按钮上按 Space 会既切字体又点按钮（§5 第 6 条）。
+       * 注意不要排除 div[role=button]（字族卡片），那张卡片没有自己的 Space 行为。
+       */
+      const onButton = !!tgt?.closest("button, a[href], select, [contenteditable='true']");
       // 速览界面有自己的一套快捷键，主界面的快捷键在这里一律不生效
-      if (useFontStore.getState().quickbar) return;
+      const st = useFontStore.getState();
+      if (st.quickbar) return;
+
+      // Ctrl/⌘+K 与「?」允许用来关掉自己 —— 否则一旦有弹层就再也关不掉了。
+      // 打开则互斥：已经开着别的顶层弹层时不给再叠一个（§5 第 8 条）。
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (st.paletteOpen) {
+          st.setPaletteOpen(false);
+          return;
+        }
+        if (topLayerOpen()) return;
+        st.setPaletteOpen(true);
+        return;
+      }
+      if (e.key === "?" && !inField && !onButton) {
+        if (st.helpOpen) {
+          e.preventDefault();
+          st.setHelpOpen(false);
+          return;
+        }
+        if (topLayerOpen()) return;
+        e.preventDefault();
+        st.setHelpOpen(true);
+        return;
+      }
+
+      // 任一顶层弹层 / 右键菜单 / 导览开着：其余全局快捷键整体让路。
+      // Escape 由最上层自己的 handler 消费（它们都是 window 级监听），
+      // 这里再处理就会「关弹窗的同时把选择也清了」。
+      if (topLayerOpen()) return;
+
       if (e.key === "Escape" && !inField) {
-        const st = useFontStore.getState();
         st.setComparePicking(false);
         st.select(null);
       }
       if (e.key === "/" && !inField) {
         e.preventDefault();
         document.getElementById("global-search")?.focus();
-      }
-      if (e.key === "?" && !inField) {
-        e.preventDefault();
-        const st = useFontStore.getState();
-        st.setHelpOpen(!st.helpOpen);
-      }
-
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        const st = useFontStore.getState();
-        st.setPaletteOpen(!st.paletteOpen);
       }
 
       if ((e.key === "a" || e.key === "A") && (e.metaKey || e.ctrlKey) && !inField) {
@@ -321,8 +384,9 @@ export default function App() {
             : Math.max(cur - 1, 0);
         st.selectWith(order[next], e.shiftKey ? "range" : "single", order);
       }
-      if (e.key === " " && !inField) {
+      if (e.key === " " && !inField && !onButton) {
         const st = useFontStore.getState();
+        if (!familyNav(st.nav)) return;
         if (st.compare || st.settingsOpen || st.helpOpen || !st.selectedFamily) return;
         e.preventDefault();
         const fam = familiesFor(st.fonts, st.tags).get(st.selectedFamily);
@@ -346,6 +410,9 @@ export default function App() {
       }
       if (e.key === "Delete" && !inField) {
         const st = useFontStore.getState();
+        // 回收站 / 关于 / 在线栏目没有「字族浏览」上下文：这里的 Delete 一律不碰字库，
+        // 否则会删掉屏幕上根本不存在的那个选中字族（§5 第 7 条）
+        if (!familyNav(st.nav)) return;
         if (st.compare || st.settingsOpen || st.helpOpen) return;
         const doomed = st.selection.length > 0
           ? st.selection
@@ -357,6 +424,7 @@ export default function App() {
 
       if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
         const st = useFontStore.getState();
+        if (!familyNav(st.nav)) return;
         if (inField || st.compare || st.settingsOpen || st.helpOpen || !st.selectedFamily) return;
         e.preventDefault();
         const fam = familiesFor(st.fonts, st.tags).get(st.selectedFamily);
@@ -372,6 +440,14 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // 圆角半径全局常量：完整界面（.app-frame）和速览（.qb-frame）用同一个值——
+  // 8 物理像素 / DPR（= Win11 DWM 圆角的固定半径，完整界面原来是系统圆角）。
+  // 不做取整：CSS 支持小数，除出来是多少就是多少，任何 DPR 下都精确等于 8 物理像素。
+  useEffect(() => {
+    const dpr = window.devicePixelRatio || 1;
+    document.documentElement.style.setProperty("--qb-radius", `${8 / dpr}px`);
   }, []);
 
   useEffect(() => {

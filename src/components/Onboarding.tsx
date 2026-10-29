@@ -199,7 +199,9 @@ export function Onboarding() {
   useEffect(() => {
     if (tourStep === null) return;
     const onKey = (e: KeyboardEvent) => {
-      e.stopPropagation();
+      // 导览是模态的：用 stopImmediatePropagation 才压得住同一 target 上的其他 window 监听
+      // （stopPropagation 只挡住往上层传播，App 的全局快捷键照样会被触发 —— §5 第 29 条）
+      e.stopImmediatePropagation();
       if (e.key === "Escape") endTour();
       if ((e.key === "ArrowRight" || e.key === "Enter") && tourStep < STEPS.length - 1) {
         setTourStep(tourStep + 1);
@@ -211,6 +213,17 @@ export function Onboarding() {
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [tourStep, setTourStep, endTour]);
+
+  /**
+   * 每一步都把焦点收进导览卡片：键盘用户按 Tab 不会跑到背后被高亮遮住的界面上
+   * （卡片容器 tabIndex=-1，焦点落在它身上，再 Tab 就在卡片内部的按钮之间走）。
+   */
+  useEffect(() => {
+    if (tourStep === null) return;
+    const el = cardRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+  }, [tourStep]);
 
   const showWelcomePrompt = phase === "ready" && fontsReady && !onboarded && tourStep === null;
   const last = tourStep === STEPS.length - 1;
@@ -285,6 +298,7 @@ export function Onboarding() {
               ref={cardRef}
               className="tour-card glass-e3"
               style={cardPosition(rect, cardH)}
+              tabIndex={-1}
               initial={{ opacity: 0, y: 10, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={springSoft}
