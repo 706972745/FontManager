@@ -16,6 +16,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
+import { usePopoverMenu } from "../lib/usePopoverMenu";
 import { familiesFor, SIZES, useFontStore, type SortMode } from "../state/fontStore";
 import { useFontCss } from "../lib/fontLoader";
 import type { Classification, FontFormat } from "../lib/ipc";
@@ -71,13 +72,15 @@ export function SortMenu() {
   const t = useT();
   const sort = useFontStore((s) => s.sort);
   const setSort = useFontStore((s) => s.setSort);
-  const [open, setOpen] = useState(false);
+  // 开关不再用组件内 useState：打开期间必须让全局快捷键整体让路（0.9.8 BUG-B）
+  const { open, toggle, close, triggerRef, listRef } = usePopoverMenu("sort-menu");
 
   return (
     <div className="sort-wrap">
       <motion.button
+        ref={triggerRef}
         className={`sort-btn ${open ? "sort-open" : ""}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-haspopup="listbox"
         aria-expanded={open}
         whileTap={{ scale: 0.96 }}
@@ -88,8 +91,9 @@ export function SortMenu() {
       <AnimatePresence>
         {open && (
           <>
-            <div className="menu-backdrop" onClick={() => setOpen(false)} />
+            <div className="menu-backdrop" onClick={close} />
             <motion.ul
+              ref={listRef}
               className="sort-menu glass-e3"
               role="listbox"
               onKeyDown={listboxKeys}
@@ -106,7 +110,7 @@ export function SortMenu() {
                     className={sort === mode ? "sort-item sort-active" : "sort-item"}
                     onClick={() => {
                       setSort(mode);
-                      setOpen(false);
+                      close();
                     }}
                   >
                     <span>{t(SORT_KEYS[mode])}</span>
@@ -167,7 +171,7 @@ export function FilterMenu() {
   const charFilter = useFontStore((s) => s.charFilter);
   const charSearching = useFontStore((s) => s.charSearching);
   const setCharFilter = useFontStore((s) => s.setCharFilter);
-  const [open, setOpen] = useState(false);
+  const { open, toggle, close, triggerRef, listRef } = usePopoverMenu("filter-menu");
 
   const activeCount =
     classFilter.length +
@@ -183,9 +187,10 @@ export function FilterMenu() {
   return (
     <div className="sort-wrap">
       <motion.button
+        ref={triggerRef}
         data-tour="filters"
         className={`sort-btn ${open ? "sort-open" : ""} ${activeCount > 0 ? "filter-live" : ""}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t("filter.aria")}
@@ -197,8 +202,9 @@ export function FilterMenu() {
       <AnimatePresence>
         {open && (
           <>
-            <div className="menu-backdrop" onClick={() => setOpen(false)} />
+            <div className="menu-backdrop" onClick={close} />
             <motion.ul
+              ref={listRef}
               className="sort-menu filter-menu glass-e3"
               role="listbox"
               aria-multiselectable

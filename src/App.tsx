@@ -29,6 +29,7 @@ import { DuplicateDialog } from "./components/DuplicateDialog";
 import { Onboarding } from "./components/Onboarding";
 import { ContextMenuHost, isContextMenuOpen, openContextMenuAt } from "./design/primitives/ContextMenu";
 import { buildFamilyMenu } from "./lib/menus";
+import { overlayOpen } from "./lib/overlayRegistry";
 import { Toaster, toast } from "./design/primitives/Toast";
 import { easeTop, spring } from "./design/springs";
 import { INTRO_OFF, useIntro } from "./lib/useIntro";
@@ -114,10 +115,13 @@ function EmptyLibrary({ searching, nav }: { searching: boolean; nav: Nav }) {
 }
 
 /**
- * 是否有「顶层弹层」正在占着键盘：弹窗、浮层、右键菜单、导览、输入提示。
+ * 是否有「顶层弹层」正在占着键盘：弹窗、浮层、右键菜单、下拉菜单、导览、输入提示。
  *
  * 全局字库快捷键必须在它们打开时整体让路 —— 否则 Escape 会穿透去清选择、
  * Ctrl+K / `?` 会再叠一个弹窗上来、焦点陷阱也会互相打架（§5 第 8 条）。
+ *
+ * 排序 / 筛选这两个下拉菜单是组件内部的开关，store 里看不到，走 `overlayOpen()`
+ * 的登记表（0.9.8 BUG-B）：以前漏了它们，菜单开着按 Delete 会删掉背后看不见的字族。
  */
 function topLayerOpen(): boolean {
   const st = useFontStore.getState();
@@ -132,7 +136,8 @@ function topLayerOpen(): boolean {
     st.pendingSnapshotFor != null ||
     st.duplicateReport != null ||
     st.onlineDetail != null ||
-    isContextMenuOpen()
+    isContextMenuOpen() ||
+    overlayOpen()
   );
 }
 
@@ -314,11 +319,15 @@ export default function App() {
         e.target instanceof HTMLSelectElement ||
         !!tgt?.closest("[contenteditable='true'], [contenteditable=''], [role='textbox']");
       /**
-       * 焦点在「本身就吃 Space 的控件」上时全局快捷键让路：
+       * 焦点在「本身就吃 Space 的控件」上时，**只有 Space** 要让路：
        * 以前只排除 input / textarea，焦点落在按钮上按 Space 会既切字体又点按钮（§5 第 6 条）。
        * 注意不要排除 div[role=button]（字族卡片），那张卡片没有自己的 Space 行为。
+       *
+       * 名字带 Space 是刻意的：0.9.7 里它被顺手复用到了 `?` 分支上，
+       * 导致「点过任意按钮之后 ? 就打不开帮助」——按钮只消费 Space / Enter，
+       * 不消费 `?`。以后再加纯全局键，别拿这个变量当通用门禁（0.9.8 BUG-A）。
        */
-      const onButton = !!tgt?.closest("button, a[href], select, [contenteditable='true']");
+      const spaceTakenByTarget = !!tgt?.closest("button, a[href], select, [contenteditable='true']");
       // 速览界面有自己的一套快捷键，主界面的快捷键在这里一律不生效
       const st = useFontStore.getState();
       if (st.quickbar) return;
@@ -335,7 +344,8 @@ export default function App() {
         st.setPaletteOpen(true);
         return;
       }
-      if (e.key === "?" && !inField && !onButton) {
+      // 「?」是纯全局键，不看焦点落在哪（按钮不消费它）：只要不在输入框里就应该能开
+      if (e.key === "?" && !inField) {
         if (st.helpOpen) {
           e.preventDefault();
           st.setHelpOpen(false);
@@ -384,7 +394,7 @@ export default function App() {
             : Math.max(cur - 1, 0);
         st.selectWith(order[next], e.shiftKey ? "range" : "single", order);
       }
-      if (e.key === " " && !inField && !onButton) {
+      if (e.key === " " && !inField && !spaceTakenByTarget) {
         const st = useFontStore.getState();
         if (!familyNav(st.nav)) return;
         if (st.compare || st.settingsOpen || st.helpOpen || !st.selectedFamily) return;

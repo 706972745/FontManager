@@ -4,6 +4,41 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.8] — 2026-10-30
+
+修 0.9.7 真机回归（`交接文档-2026-10-30-回归报告与BUG清单.md`）里记下的两个问题。
+
+### 修：`?` 在「刚点过按钮」之后打不开帮助（0.9.7 引入的回归 · BUG-A）
+
+- **现象**：鼠标点过任意一个真 `<button>`（卡片上的收藏星、筛选按钮、设置里的开关……）
+  之后按 `?`，帮助面板不出现；点一下卡片空白处（`div[role=button]`）再按就正常。
+- **根因**：0.9.7 修「Space 双触发」时加了「焦点在按钮类控件上就让路」的判断，
+  又把它顺手复用到了 `?` 分支。可按钮只消费 Space / Enter，并不消费 `?`，
+  于是全局帮助快捷键被一个跟它无关的门禁挡住。
+- **改法**：`?` 分支只判断「不在输入框里」；那个变量改名 `spaceTakenByTarget`，
+  只在 Space 分支使用，名字本身就是「别拿它当通用门禁」的提醒。
+- **验收**：点收藏星 → `?` 出帮助 → 再 `?` 关闭；焦点在按钮上按 Space 仍只触发按钮，
+  不会顺带切换字体启用状态。
+
+### 修：排序 / 筛选菜单没纳入「顶层弹层」，全局快捷键穿透（既有缺口 · BUG-B）
+
+- **现象**：打开「筛选」或「名称」下拉菜单后，主界面的全局快捷键照常生效 ——
+  `F` 切换收藏、`C` 开对比、`Space` 启停字体、**`Delete` 把选中的字族移进回收站**、
+  方向键移动背后列表的选择。菜单明明还开着，被操作的字族却在屏幕上看不见。
+- **根因**：`topLayerOpen()` 只认 store 里的浮层和右键菜单；排序 / 筛选用的是
+  **组件内部 `useState`**，外面完全看不到，App 的全局 handler 便认为「没有弹层」。
+- **改法**：
+  1. 新增 `lib/overlayRegistry.ts`（不依赖 React 的最小登记表，带计数，
+     重复登记要等量注销才放行），`topLayerOpen()` 增加 `overlayOpen()`；
+  2. 新增 `lib/usePopoverMenu.ts`：菜单开关、登记 / 注销、**打开时把焦点送进菜单**
+     （当前选中项优先）、Escape 只关菜单（capture 阶段 `stopPropagation`，
+     不再先清空背后的选择）、关闭时把焦点还给触发器；
+  3. `SortMenu` / `FilterMenu` 接入这个 hook，`menu-backdrop` 与选中项走 `close()`。
+- **验收**：菜单开着时 `F` / `Delete` / `Space` / `?` / Ctrl+K 均无效；
+  `ArrowDown` 只在菜单内移动；`Escape` 只关菜单；菜单关掉后快捷键立即恢复。
+- **测试**：新增 `tests/overlayRegistry.test.ts`（4 例：登记即占用、同名重复登记等量注销、
+  多弹层互不影响、多注销一次不会吃掉后续登记）。全量 `npm test` **61 例通过**。
+
 ## [0.9.7] — 2026-10-30
 
 本轮把全量代码审计（两份报告共 36 项）里**未实施的交互 / 动画缺陷**逐条修完。
