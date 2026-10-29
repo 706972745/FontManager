@@ -31,6 +31,7 @@ import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { WarmFooter } from "./WarmFooter";
 import { LoadProgress } from "./LoadProgress";
 import {
+  applyFamilyFilters,
   familiesFor,
   sortFamilies,
   SIZES,
@@ -39,7 +40,7 @@ import {
   type Family,
 } from "../state/fontStore";
 import type { FontFace } from "../lib/ipc";
-import { SortMenu } from "./TopBar";
+import { FilterMenu } from "./TopBar";
 
 /**
  * 只有屏幕上看得见的头几张卡片走 motion 入场动画。
@@ -266,6 +267,18 @@ export function QuickBar() {
   const autoHide = useFontStore((s) => s.quickbarAutoHide);
   const setAutoHide = useFontStore((s) => s.setQuickbarAutoHide);
   const sort = useFontStore((s) => s.sort);
+  // 顶栏「筛选」的条件与完整界面共用同一份状态、同一套口径
+  const classFilter = useFontStore((s) => s.classFilter);
+  const scriptFilter = useFontStore((s) => s.scriptFilter);
+  const formatFilter = useFontStore((s) => s.formatFilter);
+  const featureFilter = useFontStore((s) => s.featureFilter);
+  const sourceFilter = useFontStore((s) => s.sourceFilter);
+  const charFilter = useFontStore((s) => s.charFilter);
+  const charMatches = useFontStore((s) => s.charMatches);
+  const variableOnly = useFontStore((s) => s.variableOnly);
+  const toggleableOnly = useFontStore((s) => s.toggleableOnly);
+  const licenseFilter = useFontStore((s) => s.licenseFilter);
+  const copyrightStatus = useFontStore((s) => s.copyrightStatus);
   const sampleText = useFontStore((s) => s.sampleText);
   const setSampleText = useFontStore((s) => s.setSampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
@@ -329,14 +342,41 @@ export function QuickBar() {
     void win.setShadow(!(docked && (phase === "bar" || phase === "retract"))).catch(() => {});
   }, [win, docked, phase]);
 
+  // 已启用的字族总数：顶栏「已启用 N」永远报这个数，筛选/搜索只影响下面的列表，
+  // 否则勾一个筛选条件就会显示「已启用 0」，看起来像字体全被停用了。
+  const enabledCount = useMemo(
+    () =>
+      [...familiesFor(fonts, tags).values()].filter(
+        (f) => f.active || f.partial || sessionActivated.includes(f.name),
+      ).length,
+    [fonts, tags, sessionActivated],
+  );
+
   const families = useMemo(() => {
     const enabled = [...familiesFor(fonts, tags).values()].filter(
       (f) => f.active || f.partial || sessionActivated.includes(f.name),
     );
+    const filtered = applyFamilyFilters(enabled, {
+      classFilter,
+      scriptFilter,
+      formatFilter,
+      featureFilter,
+      sourceFilter,
+      charFilter,
+      charMatches,
+      variableOnly,
+      toggleableOnly,
+      licenseFilter,
+      copyrightStatus,
+    });
     const q = query.trim().toLowerCase();
-    const hit = q ? enabled.filter((f) => f.name.toLowerCase().includes(q)) : enabled;
+    const hit = q ? filtered.filter((f) => f.name.toLowerCase().includes(q)) : filtered;
     return sortFamilies(hit, sort);
-  }, [fonts, tags, sessionActivated, query, sort]);
+  }, [
+    fonts, tags, sessionActivated, query, sort,
+    classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter,
+    charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus,
+  ]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -399,7 +439,7 @@ export function QuickBar() {
           <header className="qb-head" onPointerDown={dragWindow}>
             <span className="qb-title">
               {t("quickbar.title")}
-              <span className="qb-count tabular">{families.length}</span>
+              <span className="qb-count tabular">{enabledCount}</span>
             </span>
 
             <div className="qb-search">
@@ -490,12 +530,14 @@ export function QuickBar() {
               />
               <span className="size-value tabular">{SIZES[sizeIndex]}</span>
             </div>
-            <SortMenu />
+            <FilterMenu />
           </div>
 
           <div className="qb-body">
             {families.length === 0 ? (
-              <p className="qb-empty">{t("quickbar.empty")}</p>
+              <p className="qb-empty">
+                {enabledCount > 0 ? t("empty.search.title") : t("quickbar.empty")}
+              </p>
             ) : (
               <div className="qb-list">
                 {families.map((family, i) => (

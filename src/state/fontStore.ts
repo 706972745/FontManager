@@ -2587,16 +2587,8 @@ export function sortFamilies(families: Family[], sort: SortMode): Family[] {
   return out;
 }
 
-export function selectVisibleFamilies(s: {
-  fonts: FontFace[];
-  tags: Record<string, string[]>;
-  collections: Record<string, string[]>;
-  snapshots: Snapshot[];
-  favorites: string[];
-  sessionActivated: string[];
-  lastImported: string[];
-  notes: Record<string, string>;
-  search: string;
+/** 筛选条件（完整界面顶栏「筛选」菜单里的所有维度） */
+export type FamilyFilterState = {
   classFilter: Classification[];
   scriptFilter: string[];
   formatFilter: FontFormat[];
@@ -2608,12 +2600,13 @@ export function selectVisibleFamilies(s: {
   toggleableOnly: boolean;
   licenseFilter: string[];
   copyrightStatus: Record<string, string>;
-  nav: Nav;
-  sort: SortMode;
-}): Family[] {
-  const families = [...familiesFor(s.fonts, s.tags).values()];
-  const q = s.search.trim().toLowerCase();
-  let out = families;
+};
+
+/**
+ * 按顶栏「筛选」的条件过滤字族列表。
+ * 完整界面和速览界面共用这一份，避免两处口径慢慢跑偏。
+ */
+export function applyFamilyFilters(out: Family[], s: FamilyFilterState): Family[] {
   if (s.classFilter.length > 0) {
     out = out.filter((f) => s.classFilter.includes(f.classification));
   }
@@ -2649,6 +2642,36 @@ export function selectVisibleFamilies(s: {
       ),
     );
   }
+  return out;
+}
+
+export function selectVisibleFamilies(s: {
+  fonts: FontFace[];
+  tags: Record<string, string[]>;
+  collections: Record<string, string[]>;
+  snapshots: Snapshot[];
+  favorites: string[];
+  sessionActivated: string[];
+  lastImported: string[];
+  notes: Record<string, string>;
+  search: string;
+  classFilter: Classification[];
+  scriptFilter: string[];
+  formatFilter: FontFormat[];
+  featureFilter: string[];
+  sourceFilter: SourceFilter;
+  charFilter: string;
+  charMatches: string[] | null;
+  variableOnly: boolean;
+  toggleableOnly: boolean;
+  licenseFilter: string[];
+  copyrightStatus: Record<string, string>;
+  nav: Nav;
+  sort: SortMode;
+}): Family[] {
+  const families = [...familiesFor(s.fonts, s.tags).values()];
+  const q = s.search.trim().toLowerCase();
+  let out = applyFamilyFilters(families, s);
   if (s.nav.kind === "tag") {
     const tag = s.nav.tag;
     out = out.filter((f) => f.tags.includes(tag));

@@ -116,7 +116,7 @@ const SCRIPT_FILTERS = [
   "vietnamese",
 ] as const;
 
-function FilterMenu() {
+export function FilterMenu() {
   const t = useT();
   const classFilter = useFontStore((s) => s.classFilter);
   const toggleClassFilter = useFontStore((s) => s.toggleClassFilter);
