@@ -50,6 +50,11 @@ export interface FontFace {
   scripts: string[];
   features: string[];
   glyphCount: number;
+  /**
+   * 损坏 / 不完整的原因（解析失败、缺 name 表、0 字形、缺 cmap、文件读不出来）。
+   * null / undefined = 正常。系统字体不标记。
+   */
+  incomplete?: string | null;
   fileSize: number;
   source: FontSource;
   deactivatable: boolean;
@@ -240,7 +245,8 @@ export interface AffinityConnection {
   error: string | null;
 }
 
-export type InstallMode = "link" | "move";
+/** copy = 复制进字体库（源文件夹保留）；move = 搬进字体库；link = 只登记路径 */
+export type InstallMode = "link" | "move" | "copy";
 
 export const ipc = {
   getSettings: () => invoke<AppSettings>("get_settings"),
@@ -281,6 +287,13 @@ export const ipc = {
   onlineHosts: () => invoke<string[]>("online_hosts"),
   /** 列出各目录下的版权信息类文件（用于判断字族是否带版权文件） */
   infoFiles: (dirs: string[]) => invoke<Record<string, string[]>>("info_files", { dirs }),
+  /** 用系统默认程序打开字库里的一个文件（详情面板「版权文件」点一下就开） */
+  openLocalFile: (path: string) => invoke<void>("open_local_file", { path }),
+  /**
+   * 记录/撤销「软件里预览不出来」的字面（后端只写名单，不搬文件）。
+   * 两档修复都失败时由 fontLoader 上报，能显示时摘掉。
+   */
+  setUnpreviewable: (ids: string[], on: boolean) => invoke<void>("set_unpreviewable", { ids, on }),
   /**
    * 按「族名 + PostScript 名」双严格匹配到上游反查许可证并写进字体目录。
    * 匹配不上返回 null（绝不猜）。
@@ -375,8 +388,8 @@ export const ipc = {
    * 后端会把字面抽出来、把旧编码翻成 Unicode 重建 cmap，返回缓存文件路径；
    * 浏览器本来就能打开、或修不出来时返回 null。
    */
-  fontPreviewFile: (path: string, faceIndex: number) =>
-    invoke<string | null>("font_preview_file", { path, faceIndex }),
+  fontPreviewFile: (path: string, faceIndex: number, level = 0) =>
+    invoke<string | null>("font_preview_file", { path, faceIndex, level }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
   writeBinaryFile: (path: string, data: number[]) =>
     invoke<void>("write_binary_file", { path, data }),

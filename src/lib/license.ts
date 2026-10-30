@@ -47,20 +47,19 @@ const OPEN_EXPLICIT_EN = [
   "free for any commercial",
 ];
 
-/** 中文「可商用」声明（放在 restrictive 之后：「不可商用」里含「可商用」） */
-const OPEN_EXPLICIT_MARKERS = [
-  "免费商用",
-  "商用免费",
-  "免费可商用",
-  "可商用",
-  "允许商用",
-  "商用授权免费",
-];
-
 /**
- * 口径与旧版一致：personal use only / non-commercial / 不可商用这类许可都算 restrictive（→ 收费）。
- * 「个人免费」只认备注里明确写了「个人免费」的情况（或者用户手动在详情面板里选）。
+ * 中文「可商用」类声明（2026-10-30 起**严格整词**）：
+ * 关键词必须完整连续出现，拆开一律不算（「免费商」不算、「免费」两个字也不算）。
  */
+const OPEN_EXPLICIT_MARKERS = ["免费商用", "商用免费", "免费可商用", "可免费商用"];
+
+/** 会被否定词吃掉的「可商用」类整词（「不可商用」不能算免费） */
+const OPEN_EXPLICIT_GUARDED = ["可商用", "允许商用", "商用授权免费"];
+
+/** 否定前缀：紧挨在关键词前面时这个词作废 */
+const NEG_PREFIX = ["不", "非", "无", "免", "未", "勿", "禁"];
+
+/** 「个人免费」整词（中文按原文匹配，不需要小写） */
 const PERSONAL_EXACT = [
   "个人免费",
   "免费供个人",
@@ -70,8 +69,8 @@ const PERSONAL_EXACT = [
 ];
 
 /**
- * 「个人免费、商用要另买授权」→ 一样算 personal（2026-10-29 用户拍板）。
- * 字体本身免费可用，标成 restrictive 会把免费字体说成要花钱。
+ * 「个人使用免费、商用另购授权」的**英文**写法 → personal。
+ * 中文的「不可商用 / 禁止商用 / 非商业使用」不在这里：2026-10-30 起归收费。
  */
 const PERSONAL_ONLY_MARKERS = [
   "personal use only",
@@ -81,24 +80,39 @@ const PERSONAL_ONLY_MARKERS = [
   "non-commercial",
   "noncommercial",
   "not for commercial",
-  "不可商用",
-  "禁止商用",
-  "非商业使用",
   "仅限个人",
   "仅供个人",
 ];
 
-/** 确凿的要付钱 / 试用（只讲个人能不能用的条款在 PERSONAL_ONLY_MARKERS 里） */
-const RESTRICTIVE_MARKERS = [
+/** 收费关键词（严格整词，2026-10-30 用户给定） */
+const PAID_EXACT = [
+  "非免费字体",
+  "非免费",
+  "非商业字体",
+  "非商业",
+  "商用需授权",
+  // 「企业授权」系（2026-10-30 用户口径）：出现即说明商用要另买授权
+  "企业授权方案",
+  "企业需授权",
+  "企业授权",
+  "商用需要授权",
+  "商用需购买授权",
+  "不可商用",
+  "禁止商用",
+  "收费",
+  "付费",
+];
+
+/** 会被「无需 / 不需 / 免费」否定的收费词 */
+const PAID_GUARDED = ["购买授权", "购买商业授权", "需授权", "商用授权"];
+
+/** 英文的收费 / 试用表述 */
+const PAID_MARKERS_EN = [
   "purchase a license",
   "purchase license",
   "requires a license",
   "buy the commercial license",
   "commercial license required",
-  "购买商业授权",
-  "购买授权",
-  "需授权",
-  "商用需授权",
   "evaluation only",
   "evaluation purposes",
   "trial version",
@@ -106,8 +120,6 @@ const RESTRICTIVE_MARKERS = [
   "shareware",
   "试用版",
   "演示版",
-  "收费",
-  "付费",
 ];
 
 /** 与开源许可证身份直接冲突：同时出现说明这份文本也在讲收费 */
@@ -117,6 +129,10 @@ const HARD_CONFLICT = [
   "购买授权",
   "需授权",
   "商用需授权",
+  "不可商用",
+  "禁止商用",
+  "非免费",
+  "非商业",
   "trial version",
   "demo version",
   "evaluation only",
@@ -154,6 +170,25 @@ function hasAny(hay: string, markers: string[]): boolean {
   return markers.some((m) => hay.includes(m));
 }
 
+/**
+ * 整词命中 + 否定前缀检查（与 Rust `copyright.rs::guarded_hit` 同义）：
+ * 关键词必须完整连续出现，且正前方不能紧挨否定字。
+ * 「不可商用」是收费词、「可商用」才是免费声明 —— 只靠 includes 会把前者误判成后者。
+ */
+function guardedHit(hay: string, keys: string[], deny: string[]): string | null {
+  for (const k of keys) {
+    let from = 0;
+    for (;;) {
+      const i = hay.indexOf(k, from);
+      if (i < 0) break;
+      const prev = i === 0 ? "" : hay[i - 1];
+      if (!deny.includes(prev)) return k;
+      from = i + 1;
+    }
+  }
+  return null;
+}
+
 export function classifyLicense(text: string | null): LicenseClass {
   if (!text) return "unknown";
   const t = text.toLowerCase();
@@ -167,14 +202,23 @@ export function classifyLicense(text: string | null): LicenseClass {
   }
   // ①b 英文明确允许商用
   if (hasAny(t, OPEN_EXPLICIT_EN)) return "open";
-  // ② 个人免费（用原文匹配，中文不需要小写）
+  // ② 免费商用（严格整词；「可商用」要被否定前缀检查拦住）——最干净的结论，先判
+  if (hasAny(t, OPEN_EXPLICIT_MARKERS) || guardedHit(t, OPEN_EXPLICIT_GUARDED, NEG_PREFIX)) {
+    return "open";
+  }
+  // ③ 明确标注「个人免费 / personal use」→ personal（即使同时说「商用需授权 / 不可商用」）
+  //    2026-10-30 口径：能不能算个人免费，只看有没有明确标注；没标注的一律收费。
+  //    所以这一步必须先于收费关键词。
   if (PERSONAL_EXACT.some((m) => text.includes(m))) return "personal";
-  // ②b 个人免费、商用另购授权 → 同样算 personal
   if (hasAny(t, PERSONAL_ONLY_MARKERS)) return "personal";
-  // ③ 收费／受限（必须先于④：「不可商用」里含「可商用」）
-  if (hasAny(t, RESTRICTIVE_MARKERS)) return "restrictive";
-  // ④ 明确可商用
-  if (hasAny(t, OPEN_EXPLICIT_MARKERS)) return "open";
+  // ④ 收费关键词（严格整词）
+  if (
+    hasAny(t, PAID_EXACT) ||
+    guardedHit(t, PAID_GUARDED, NEG_PREFIX) !== null ||
+    hasAny(t, PAID_MARKERS_EN)
+  ) {
+    return "restrictive";
+  }
   return "unknown";
 }
 

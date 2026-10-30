@@ -811,5 +811,18 @@
   "waterfall.emptyTitle": "Нечего показать каскадом",
   "card.partialScriptTitle": "В этом начертании только часть глифов {script} — в основном тексте будут пропуски",
   "card.seeCjkVersion": "Китайский в {family}",
-  "detail.charsetValue": "{total} символов · {han} хань"
+  "detail.charsetValue": "{total} символов · {han} хань",
+  "filter.incompleteOnly": "Без предпросмотра / повреждённые",
+  "card.brokenFace": "нет предпросмотра",
+  "card.brokenSome": "{count}/{total} начертаний без предпросмотра",
+  "card.brokenAll": "ни одно начертание не отображается",
+  "card.structural": "нестандартная структура",
+  "detail.licenseFileOpen": "Нажмите, чтобы открыть «{file}» приложением по умолчанию",
+  "toast.openFileFailed": "Не удалось открыть файл",
+  "empty.filtered.title": "Ни один шрифт не подходит под фильтры",
+  "empty.filtered.body": "Снимите часть фильтров или сбросьте их кнопкой-воронкой сверху.",
+  "menu.noSnapshots": "Снапшотов пока нет",
+  "toast.snapshotLimitReached": "Достигнут лимит снапшотов",
+  "toast.snapshotLimitSub": "Хранится не более {max} снапшотов; удалите один и повторите.",
+  "toast.snapshotLimitImport": "В файле {count} снапшотов, но свободно только {room}."
 }

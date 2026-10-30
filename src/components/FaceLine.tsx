@@ -2,6 +2,7 @@ import { PenTool } from "lucide-react";
 import { motion } from "motion/react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useT } from "../lib/i18n";
+import { useDisplayName } from "../lib/displayName";
 import { buildFaceMenu } from "../lib/menus";
 import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
 import { spring, staggerDelay } from "../design/springs";
@@ -48,11 +49,13 @@ export function FaceLine({
   index?: number;
 }) {
   const t = useT();
+  // 字重行的提示里用界面语言的字体名
+  const displayName = useDisplayName();
   const intro = useIntro();
   const scriptStatus = useScriptStatus(face, probeText);
   // style 为空时退回 PostScript 名，不然整行只有一个空白按钮
   const styleLabel = face.style?.trim() || face.postscriptName || "Regular";
-  const fullName = `${family.name} ${styleLabel}`.trim();
+  const fullName = `${displayName(family)} ${styleLabel}`.trim();
 
   const title = t("quickbar.previewFaceHint", { name: fullName });
   const onContext = (e: ReactMouseEvent) => {
@@ -66,6 +69,12 @@ export function FaceLine({
         {styleLabel}
       </span>
       <ScriptChip status={scriptStatus} />
+      {/* 这个字重本身损坏 / 不完整：直接标在字重行上，别让用户点进去才发现 */}
+      {face.incomplete && (
+        <span className="card-broken" title={face.incomplete}>
+          {t("card.brokenFace")}
+        </span>
+      )}
       <button
         type="button"
         className="face-line-apply"

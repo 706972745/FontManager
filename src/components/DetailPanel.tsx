@@ -17,6 +17,28 @@ import { parentDir } from "../lib/onlineCoverage";
 import { playStar, playTag } from "../lib/sound";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { t as translate, useT, type TKey } from "../lib/i18n";
+import { useDisplayName } from "../lib/displayName";
+
+/** 把「目录 → 文件名列表」摊平成可点击的条目，同名去重、按文件名排序 */
+function flattenInfoFiles(map: Record<string, string[]>): { dir: string; name: string }[] {
+  const seen = new Set<string>();
+  const out: { dir: string; name: string }[] = [];
+  for (const [dir, names] of Object.entries(map)) {
+    for (const name of names) {
+      const key = `${dir}\u0000${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ dir, name });
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** 目录 + 文件名拼成完整路径（沿用目录自己的分隔符） */
+function joinPath(dir: string, name: string): string {
+  const sep = dir.includes("\\") ? "\\" : "/";
+  return `${dir}${sep}${name}`;
+}
 
 function copyName(text: string, what: string) {
   navigator.clipboard
@@ -620,6 +642,8 @@ function ConflictFileCard({ path }: { path: string }) {
 
 export function DetailPanel() {
   const t = useT();
+  // 详情标题同样按界面语言显示字体名（数据主键仍是 family.name）
+  const displayName = useDisplayName();
   const intro = useIntro();
   const selectedFamily = useFontStore((s) => s.selectedFamily);
   const fonts = useFontStore((s) => s.fonts);
@@ -735,7 +759,8 @@ export function DetailPanel() {
         .sort()
     : [];
   const dirsKey = writableDirs.join("\n");
-  const [licenseFiles, setLicenseFiles] = useState<string[] | null>(null);
+  // 「目录 + 文件名」成对存：只留文件名点开时拼不出路径（用户 2026-10-30 要求能点开）
+  const [licenseFiles, setLicenseFiles] = useState<{ dir: string; name: string }[] | null>(null);
   const [licenseSearching, setLicenseSearching] = useState(false);
   useEffect(() => {
     setLicenseFiles(null);
@@ -748,7 +773,7 @@ export function DetailPanel() {
       .infoFiles(dirsKey.split("\n"))
       .then((map) => {
         if (stale) return;
-        setLicenseFiles([...new Set(Object.values(map).flat())].sort());
+        setLicenseFiles(flattenInfoFiles(map));
       })
       .catch(() => {
         if (!stale) setLicenseFiles([]);
@@ -793,7 +818,7 @@ export function DetailPanel() {
       );
       const map = await ipc.infoFiles(writableDirs);
       if (gen !== licenseReqGen.current) return;
-      setLicenseFiles([...new Set(Object.values(map).flat())].sort());
+      setLicenseFiles(flattenInfoFiles(map));
     } catch (e) {
       if (gen !== licenseReqGen.current) return;
       const raw = String(e);
@@ -803,6 +828,17 @@ export function DetailPanel() {
       );
     } finally {
       if (gen === licenseReqGen.current) setLicenseSearching(false);
+    }
+  };
+  /**
+   * 点一下版权文件名 → 用系统默认程序打开它。
+   * 路径是「字面所在目录 + 文件名」拼出来的真实文件，后端还会再校验一次存在性。
+   */
+  const openLicenseFile = async (file: { dir: string; name: string }) => {
+    try {
+      await ipc.openLocalFile(joinPath(file.dir, file.name));
+    } catch (e) {
+      toast.error(t("toast.openFileFailed"), String(e));
     }
   };
 
@@ -894,7 +930,7 @@ export function DetailPanel() {
                 onClick={() => copyName(family.name, t("copy.familyName"))}
                 title={t("detail.copyNameHint")}
               >
-                {family.name}
+                {displayName(family)}
               </button>
               <motion.button
                 className={`star-btn ${favorite ? "star-on" : ""}`}
@@ -1127,7 +1163,19 @@ export function DetailPanel() {
                   {licenseFiles === null ? (
                     <span className="license-file-pending">…</span>
                   ) : licenseFiles.length > 0 ? (
-                    <span className="license-file-names detail-mono">{licenseFiles.join(", ")}</span>
+                    <span className="license-file-names detail-mono">
+                      {licenseFiles.map((f) => (
+                        <button
+                          key={`${f.dir}|${f.name}`}
+                          type="button"
+                          className="license-file-link"
+                          title={t("detail.licenseFileOpen", { file: f.name })}
+                          onClick={() => void openLicenseFile(f)}
+                        >
+                          {f.name}
+                        </button>
+                      ))}
+                    </span>
                   ) : writableDirs.length === 0 ? (
                     <span className="license-file-missing">{t("detail.licenseFileSystem")}</span>
                   ) : (

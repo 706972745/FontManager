@@ -7,6 +7,16 @@ import type { FontFace as ZFontFace } from "./ipc";
 type RepairHint = { id: string; path: string; index: number };
 
 type LoadState = "loading" | "loaded" | "failed";
+
+/**
+ * 预览结果要同步到「无法预览 / 损坏」这一类：由 fontStore 注册的钩子处理
+ * （既更新内存里的字面，也让后端把名单持久化）。
+ * 用钩子而不是直接 import store，避免 lib 与 state 互相引用。
+ */
+let incompleteHook: ((id: string, on: boolean) => void) | null = null;
+export function setUnpreviewableHook(fn: (id: string, on: boolean) => void) {
+  incompleteHook = fn;
+}
 const cache = new Map<string, LoadState>();
 const listeners = new Map<string, Set<() => void>>();
 /**
@@ -64,6 +74,35 @@ function ensureLoaded(face: ZFontFace): void {
  */
 const repaired = new Map<string, string | null>();
 
+/**
+ * 加载失败后的两段修复：
+ *   1 档 = 原样重建（修 cmap / 表长度这类结构问题）；
+ *   2 档 = 再额外去掉提示程序（fpgm / prep / cvt）。
+ * 有的老字体 OTS 就是不说明原因地整份拒收（652-CAI978 那批），2 档能把它们救回来。
+ */
+async function repairLoad(name: string, hint: RepairHint): Promise<boolean> {
+  for (const level of [1, 2]) {
+    const key = `${hint.id}#${level}`;
+    let path = repaired.get(key);
+    if (path === undefined) {
+      try {
+        path = await ipc.fontPreviewFile(hint.path, hint.index, level);
+      } catch {
+        path = null;
+      }
+      repaired.set(key, path);
+    }
+    if (path && (await tryLoad(name, path))) {
+      // 修一下就能显示 → 不算损坏，摘掉标记
+      incompleteHook?.(hint.id, false);
+      return true;
+    }
+  }
+  // 两档都失败：这是「软件里预览不出来」，归到「无法预览 / 损坏」
+  incompleteHook?.(hint.id, true);
+  return false;
+}
+
 function tryLoad(name: string, path: string): Promise<boolean> {
   return new Promise((resolve) => {
     const ff = new FontFace(name, `url("${convertFileSrc(path)}")`);
@@ -86,17 +125,8 @@ function ensurePathLoaded(name: string, path: string, repair?: RepairHint): void
   void (async () => {
     let ok = await tryLoad(name, path);
     if (!ok && repair) {
-      // 首启失败先试普通路径；还不行就问后端要一份浏览器认得的副本（ttc 抽面 / cmap 重建）
-      let fixed = repaired.get(repair.id);
-      if (fixed === undefined) {
-        try {
-          fixed = await ipc.fontPreviewFile(repair.path, repair.index);
-        } catch {
-          fixed = null;
-        }
-        repaired.set(repair.id, fixed);
-      }
-      if (fixed) ok = await tryLoad(name, fixed);
+      // 首次失败先试普通路径；还不行就问后端要副本（ttc 抽面 / cmap 重建 / 去提示程序）
+      ok = await repairLoad(name, repair);
     }
     cache.set(name, ok ? "loaded" : "failed");
     if (ok) touch(name);

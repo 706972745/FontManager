@@ -758,5 +758,18 @@
   "waterfall.emptyTitle": "表示するフォントがありません",
   "card.partialScriptTitle": "このフェイスは一部の{script}字形しか含みません。本文では文字が欠けます",
   "card.seeCjkVersion": "中国語は {family}",
-  "detail.charsetValue": "{total} 文字 · 漢字 {han}"
+  "detail.charsetValue": "{total} 文字 · 漢字 {han}",
+  "filter.incompleteOnly": "プレビュー不可 / 破損のみ",
+  "card.brokenFace": "プレビュー不可",
+  "card.brokenSome": "{count}/{total} ウェイトがプレビュー不可",
+  "card.brokenAll": "全ウェイトがプレビュー不可",
+  "card.structural": "構造が不規格",
+  "detail.licenseFileOpen": "クリックで「{file}」を既定のアプリで開く",
+  "toast.openFileFailed": "このファイルを開けません",
+  "empty.filtered.title": "条件に合うフォントがありません",
+  "empty.filtered.body": "条件を減らすか、右上のフィルターから解除してください。",
+  "menu.noSnapshots": "スナップショットはまだありません",
+  "toast.snapshotLimitReached": "スナップショットの上限に達しました",
+  "toast.snapshotLimitSub": "スナップショットは最大 {max} 件です。削除してから再試行してください。",
+  "toast.snapshotLimitImport": "ファイルに {count} 件ありますが、空きは {room} 件だけです。"
 }

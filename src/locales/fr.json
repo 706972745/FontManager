@@ -792,5 +792,18 @@
   "waterfall.emptyTitle": "Rien à faire cascader",
   "card.partialScriptTitle": "Cette graisse ne contient qu'une partie des glyphes {script} — le texte courant perdra des caractères",
   "card.seeCjkVersion": "Chinois dans {family}",
-  "detail.charsetValue": "{total} caractères · {han} han"
+  "detail.charsetValue": "{total} caractères · {han} han",
+  "filter.incompleteOnly": "Non prévisualisables / endommagées",
+  "card.brokenFace": "non prévisualisable",
+  "card.brokenSome": "{count}/{total} styles non prévisualisables",
+  "card.brokenAll": "aucun style prévisualisable",
+  "card.structural": "structure non standard",
+  "detail.licenseFileOpen": "Cliquer pour ouvrir « {file} » avec l'application par défaut",
+  "toast.openFileFailed": "Impossible d'ouvrir ce fichier",
+  "empty.filtered.title": "Aucune police ne correspond à ces filtres",
+  "empty.filtered.body": "Retirez un filtre ou réinitialisez-les depuis l'entonnoir en haut.",
+  "menu.noSnapshots": "Aucun instantané pour le moment",
+  "toast.snapshotLimitReached": "Limite d'instantanés atteinte",
+  "toast.snapshotLimitSub": "Au maximum {max} instantanés sont conservés ; supprimez-en un et réessayez.",
+  "toast.snapshotLimitImport": "Le fichier contient {count} instantanés mais il ne reste que {room} emplacements."
 }

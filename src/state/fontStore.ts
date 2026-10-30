@@ -1,4 +1,11 @@
 import { create } from "zustand";
+import { setUnpreviewableHook } from "../lib/fontLoader";
+
+/** 快照数量上限（与后端 MAX_SNAPSHOTS 一致）：超过就拒绝，不再悄悄淘汰最旧的 */
+export const SNAPSHOT_LIMIT = 5;
+
+/** 与后端 parser::UNPREVIEWABLE_REASON 保持一致（用前缀判断，别改一半） */
+export const UNPREVIEWABLE_REASON = "软件里无法预览（字体格式不受支持）";
 import { listen } from "@tauri-apps/api/event";
 import { adoptQuickbarDock, DOCK_HEIGHT_HINT, restoreQuickbarDock } from "../lib/useQuickbarDock";
 import {
@@ -127,6 +134,23 @@ export interface Family {
   dirCopyrightClass: string | null;
   /** 入库时间（Unix 秒，取所有字面中最早/最大值），0 = 未知 */
   addedAt: number;
+  /**
+   * 这个字族里有损坏 / 不完整的字面（解析失败、缺 name 表、0 字形、缺 cmap…）。
+   * 只对字库 / 用户字体有意义，系统字体不标记。
+   */
+  incomplete: boolean;
+  /** 第一个不完整字面的原因，用于详情面板说明 */
+  incompleteReason: string | null;
+  /**
+   * 坏字面的个数与是否全坏。
+   *
+   * 判定是**字面级**的：一个 5 字重的字族坏了 1 个，另外 4 个照常可用。
+   * 所以「坏」和「整个字族不可用」必须分开说：
+   *   brokenFaces > 0 && !brokenAll → 部分字重损坏（字族仍然能用）
+   *   brokenAll                     → 整个字族不可用，会被归到「非完整字体」目录
+   */
+  brokenFaces: number;
+  brokenAll: boolean;
 }
 
 interface FontStore {
@@ -211,6 +235,8 @@ interface FontStore {
   collapsedSections: string[];
   variableOnly: boolean;
   toggleableOnly: boolean;
+  /** 只看损坏 / 不完整的字族（解析失败、缺 name 表、0 字形、缺 cmap） */
+  incompleteOnly: boolean;
   /** 版权筛选（free/paid/timelimited/unknown），空 = 全部 */
   licenseFilter: string[];
   /** 速览界面：只显示已启用的字体，窗口压缩成一条，贴顶时自动隐藏 */
@@ -341,6 +367,9 @@ interface FontStore {
   toggleScriptFilter: (s: string) => void;
   setVariableOnly: (on: boolean) => void;
   setToggleableOnly: (on: boolean) => void;
+  setIncompleteOnly: (on: boolean) => void;
+  /** 标记/撤销一个字面的「无法预览」。只写自己这一类，不覆盖更严重的损坏原因 */
+  setFaceIncomplete: (id: string, reason: string | null) => void;
   toggleLicenseFilter: (c: string) => void;
   /** status 为 null / "auto" 时恢复为按版权信息自动识别 */
   setCopyrightStatus: (family: string, status: string | null) => void;
@@ -500,6 +529,8 @@ async function enterQuickbar() {
       { x, y, width, height: dockHeight },
       ms,
     );
+    await win.setSize(new PhysicalSize(width, dockHeight)).catch(() => {});
+    await win.setPosition(new PhysicalPosition(x, y)).catch(() => {});
     // 形变是逐帧动画，窗口被别的程序挡住 / 刚被隐藏过时，个别帧的 setSize/setPosition
     // 会被系统吞掉，最后停在「半路」的几何上：宽度已经是速览的、位置还留在主界面。
     // 所以动画结束后显式落一次终态，保证 dock 状态机接管时的窗口真的贴着顶边。
@@ -922,6 +953,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   variableOnly: false,
   collapsedSections: [],
   toggleableOnly: false,
+  incompleteOnly: false,
   licenseFilter: [],
   copyrightStatus: {},
   copyrightExpiry: {},
@@ -1573,6 +1605,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
       toast.error(t("toast.snapshotExists"), t("toast.nameTakenSub", { name: clean }));
       return;
     }
+    // 最多 5 个（用户 2026-10-30）：满了就明确提醒，不再悄悄淘汰最旧的
+    if (get().snapshots.length >= SNAPSHOT_LIMIT) {
+      toast.error(t("toast.snapshotLimitReached"), t("toast.snapshotLimitSub", { max: SNAPSHOT_LIMIT }));
+      useFontStore.setState({ pendingSnapshotFor: null });
+      return;
+    }
     const prev = get().snapshots;
     const prevPending = get().pendingSnapshotFor;
     const family = prevPending;
@@ -1811,6 +1849,18 @@ export const useFontStore = create<FontStore>((set, get) => ({
       }
       if (list.length === 0) {
         toast.error(t("toast.importFailed"), t("toast.notAnExportSub"));
+        return;
+      }
+      // 快照上限 5 个：导入只会新建（同名自动加后缀），超额直接整体失败提醒，
+      // 不做「导一半」（用户 2026-10-30）
+      const room = SNAPSHOT_LIMIT - get().snapshots.length;
+      if (list.length > room) {
+        toast.error(
+          t("toast.snapshotLimitReached"),
+          room > 0
+            ? t("toast.snapshotLimitImport", { room, count: list.length })
+            : t("toast.snapshotLimitSub", { max: SNAPSHOT_LIMIT }),
+        );
         return;
       }
       const imported: Snapshot[] = [];
@@ -2498,7 +2548,22 @@ export const useFontStore = create<FontStore>((set, get) => ({
       .catch(() => {
       });
   },
+  setFaceIncomplete: (id, reason) => {
+    const prev = get().fonts;
+    let changed = false;
+    const next = prev.map((f) => {
+      if (f.id !== id) return f;
+      // 已有更严重的原因（文件损坏等）不覆盖；摘标记时只摘自己写上去的那一类
+      if (reason && f.incomplete) return f;
+      if (!reason && f.incomplete !== UNPREVIEWABLE_REASON) return f;
+      if (f.incomplete === reason) return f;
+      changed = true;
+      return { ...f, incomplete: reason };
+    });
+    if (changed) set({ fonts: next });
+  },
   setToggleableOnly: (toggleableOnly) => set({ toggleableOnly }),
+  setIncompleteOnly: (incompleteOnly) => set({ incompleteOnly }),
 
   exportLibraryData: async (dest) => {
     const { tags, collections, favorites, notes } = get();
@@ -2616,6 +2681,10 @@ export function computeFamilies(
         copyright: null,
         dirCopyrightClass: null,
         addedAt: 0,
+        incomplete: false,
+        incompleteReason: null,
+        brokenFaces: 0,
+        brokenAll: false,
       };
       map.set(f.family, fam);
     }
@@ -2638,9 +2707,16 @@ export function computeFamilies(
     fam.glyphCount = Math.max(fam.glyphCount, f.glyphCount ?? 0);
     fam.deactivatable ||= f.deactivatable;
     fam.totalSize += f.fileSize;
+    if (f.incomplete) {
+      fam.incomplete = true;
+      fam.brokenFaces += 1;
+      fam.incompleteReason ??= f.incomplete;
+    }
   }
   for (const fam of map.values()) {
     fam.faces.sort((a, b) => styleOrder(a) - styleOrder(b));
+    // 全坏才算「整个字族不可用」；部分坏只是标注，别让用户以为这族废了
+    fam.brokenAll = fam.brokenFaces > 0 && fam.brokenFaces === fam.faces.length;
     Object.assign(fam, familyActivation(fam.faces));
   }
   return map;
@@ -2679,6 +2755,8 @@ export type FamilyFilterState = {
   charMatches: string[] | null;
   variableOnly: boolean;
   toggleableOnly: boolean;
+  /** 只看损坏 / 不完整的字族（解析失败、缺 name 表、0 字形、缺 cmap） */
+  incompleteOnly: boolean;
   licenseFilter: string[];
   copyrightStatus: Record<string, string>;
 };
@@ -2716,6 +2794,9 @@ export function applyFamilyFilters(out: Family[], s: FamilyFilterState): Family[
   if (s.toggleableOnly) {
     out = out.filter((f) => f.deactivatable);
   }
+  if (s.incompleteOnly) {
+    out = out.filter((f) => f.incomplete);
+  }
   if (s.licenseFilter.length > 0) {
     out = out.filter((f) =>
       s.licenseFilter.includes(
@@ -2745,6 +2826,8 @@ export function selectVisibleFamilies(s: {
   charMatches: string[] | null;
   variableOnly: boolean;
   toggleableOnly: boolean;
+  /** 只看损坏 / 不完整的字族（解析失败、缺 name 表、0 字形、缺 cmap） */
+  incompleteOnly: boolean;
   licenseFilter: string[];
   copyrightStatus: Record<string, string>;
   nav: Nav;
@@ -2804,7 +2887,13 @@ export function selectVisibleFamilies(s: {
         (f.foundry?.toLowerCase().includes(q) ?? false) ||
         (s.notes[f.name]?.toLowerCase().includes(q) ?? false) ||
         (f.license?.toLowerCase().includes(q) ?? false) ||
-        (f.copyright?.toLowerCase().includes(q) ?? false),
+        (f.copyright?.toLowerCase().includes(q) ?? false) ||
+        // 界面上显示的字体名（含本地化名）也能搜到：字魂那批族名是拼音
+        // 「zihunchuangzhonghei」，中文名「字魂创中黑(商用需授权)」只存在于
+        // name 表的本地化记录里 —— 搜中文必须到这里找（用户 2026-10-30）。
+        f.faces.some((fc) =>
+          fc.localizedNames?.some((ln) => ln.name.toLowerCase().includes(q)),
+        ),
     );
   }
   return sortFamilies(out, s.sort);
@@ -2887,3 +2976,12 @@ export function computeConflicts(fonts: FontFace[]): Map<string, FontConflict[]>
   }
   return out;
 }
+
+/**
+ * 预览加载结果回流到「无法预览 / 损坏」这一类：
+ * 两档修复都失败 → 标记并持久化；修好了 → 摘掉。
+ */
+setUnpreviewableHook((id, on) => {
+  useFontStore.getState().setFaceIncomplete(id, on ? UNPREVIEWABLE_REASON : null);
+  void ipc.setUnpreviewable([id], on).catch(() => {});
+});

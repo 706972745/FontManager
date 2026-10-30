@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  displayFamilyName,
   englishFamilyName,
   extraFamilyNames,
   languageLabel,
+  languagePriority,
   otherFamilyNames,
   shortName,
 } from "../src/lib/fontNames.ts";
@@ -96,4 +98,43 @@ test("语言标签回退与名称截断", () => {
   assert.equal(languageLabel("not-a-lang", "zh-CN"), "not-a-lang");
   assert.equal(shortName("short"), "short");
   assert.equal(shortName("x".repeat(40), 10).length, 10);
+});
+
+test("显示名优先用界面语言的本地化名（没有才回退默认名）", () => {
+  const zh = family("Noto Serif", [
+    {
+      ...face("Noto Serif", [
+        { lang: "en", name: "Noto Serif" },
+        { lang: "zh-Hans", name: "思源宋体" },
+        { lang: "ja", name: "Noto Serif JP" },
+      ]),
+    },
+  ]);
+  // 简体界面 → 中文名
+  assert.equal(displayFamilyName(zh, "zh-CN"), "思源宋体");
+  // 日文界面 → 日文名
+  assert.equal(displayFamilyName(zh, "ja"), "Noto Serif JP");
+  // 英文界面 → 回退默认名
+  assert.equal(displayFamilyName(zh, "en"), "Noto Serif");
+
+  // 繁体界面优先繁体名
+  const trad = family("Noto Serif TC", [
+    {
+      ...face("Noto Serif TC", [
+        { lang: "en", name: "Noto Serif TC" },
+        { lang: "zh-Hant", name: "思源宋體" },
+        { lang: "zh-Hans", name: "思源宋体" },
+      ]),
+    },
+  ]);
+  assert.equal(displayFamilyName(trad, "zh-TW"), "思源宋體");
+  assert.equal(displayFamilyName(trad, "zh-CN"), "思源宋体");
+
+  // 完全没有该语言名字 → 原样返回
+  const onlyEn = family("Inter", [
+    { ...face("Inter", [{ lang: "en", name: "Inter" }]) },
+  ]);
+  assert.equal(displayFamilyName(onlyEn, "zh-CN"), "Inter");
+
+  assert.deepEqual(languagePriority("zh-TW"), ["zh-hant", "zh-tw", "zh-hk", "zh"]);
 });

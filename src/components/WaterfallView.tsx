@@ -4,11 +4,13 @@ import { spring, staggerDelay } from "../design/springs";
 import { useFontCss } from "../lib/fontLoader";
 import { useFontStore, type Family } from "../state/fontStore";
 import { useT } from "../lib/i18n";
+import { useDisplayName } from "../lib/displayName";
 
 const WATERFALL_SIZES = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96];
 
 export function WaterfallView({ families }: { families: Family[] }) {
   const t = useT();
+  const displayName = useDisplayName();
   const selectedFamily = useFontStore((s) => s.selectedFamily);
   const sampleText = useFontStore((s) => s.sampleText);
 
@@ -39,7 +41,7 @@ export function WaterfallView({ families }: { families: Family[] }) {
   return (
     <div className="waterfall-view">
       <div className="waterfall-head">
-        <span className="waterfall-title">{family.name}</span>
+        <span className="waterfall-title">{displayName(family)}</span>
         <span className="waterfall-sub">{lead.style}</span>
       </div>
       {WATERFALL_SIZES.map((px, i) => (

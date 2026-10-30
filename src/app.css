@@ -1236,6 +1236,33 @@ h2.detail-title.copy-name {
 }
 .license-file-cell .license-file-names {
   color: var(--text-secondary);
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+}
+/* 版权文件名本身就是入口：点一下用系统默认程序打开。
+   样式沿用面板里「可点的次要文字」，不做成按钮，免得比正文还抢眼 */
+.license-file-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.license-file-link:hover {
+  color: var(--text-primary);
+  border-bottom-color: rgba(var(--ink-rgb), 0.3);
+}
+.license-file-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 .license-file-missing {
   color: var(--text-tertiary);
@@ -1642,6 +1669,9 @@ h2.detail-title.copy-name {
 .dropchoice {
   position: fixed;
   inset: 0;
+  /* fixed 会逃出 .app-frame 的 overflow:hidden：不画圆角的话
+     scrim 会把窗口四角的透明区一起盖住，看起来就是「四个角变直角」 */
+  border-radius: var(--qb-radius, 8px);
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -1796,6 +1826,9 @@ h2.detail-title.copy-name {
 .dup-backdrop {
   position: fixed;
   inset: 0;
+  /* fixed 会逃出 .app-frame 的 overflow:hidden：不画圆角的话
+     scrim 会把窗口四角的透明区一起盖住，看起来就是「四个角变直角」 */
+  border-radius: var(--qb-radius, 8px);
   z-index: 75;
   display: grid;
   place-items: center;
@@ -2686,6 +2719,9 @@ h2.detail-title.copy-name {
 .compare-backdrop {
   position: fixed;
   inset: 0;
+  /* fixed 会逃出 .app-frame 的 overflow:hidden：不画圆角的话
+     scrim 会把窗口四角的透明区一起盖住，看起来就是「四个角变直角」 */
+  border-radius: var(--qb-radius, 8px);
   z-index: 45;
   display: grid;
   place-items: center;
@@ -3173,6 +3209,9 @@ h2.detail-title.copy-name {
 .palette-backdrop {
   position: fixed;
   inset: 0;
+  /* fixed 会逃出 .app-frame 的 overflow:hidden：不画圆角的话
+     scrim 会把窗口四角的透明区一起盖住，看起来就是「四个角变直角」 */
+  border-radius: var(--qb-radius, 8px);
   z-index: 60;
   display: flex;
   justify-content: center;
@@ -4593,6 +4632,18 @@ h2.detail-title.copy-name {
   margin-left: 0.45em;
   opacity: 0.75;
 }
+/* 损坏 / 不完整标注（0.9.8-1）：字族卡片上标「2/5 字重不完整」、字重行上标「不完整」。
+   沿用缺字提示的观感（灰色小字、无边框），但不斜体——这是状态，不是提示语。 */
+.card-broken {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-13);
+  line-height: 1.2;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  opacity: 0.9;
+}
 .lic-chip.lic-restrictive {
   background: rgba(var(--ink-rgb), 0.14);
   color: var(--text-primary);
@@ -4873,12 +4924,18 @@ body.qb-minimizing .qb-content {
 /**
  * 形变期间窗口必须「看得见」：完整界面 ↔ 速览的窗口形变本身就是动画，
  * 页面画布若全程透明，形变中的窗口就隐形了（用户看到的是内容直接消失/出现）。
- * 这里在 body 上铺回 canvas 底色并带上同一颗圆角（--qb-radius）——形变中的
- * 窗口是一块圆角的 canvas 色矩形在缩放，四角全程圆润，落位后立即恢复透明。
+ * 这里铺回 canvas 底色并带上同一颗圆角（--qb-radius）——形变中的窗口是一块
+ * 圆角的 canvas 色矩形在缩放，四角全程圆润，落位后立即恢复透明。
  * ui-fade-out（进速览前旧界面渐隐）同理：淡出露出来的就是这块底色，和形变无缝衔接。
+ *
+ * 垫底必须挂在 #root 上，**不能挂在 body 上**：html 背景为透明时，body 的
+ * background 会被传播成「视口画布背景」，涂满整个视口且不再属于 body 自己，
+ * 于是 body 的 border-radius 对它完全无效 —— 形变全程四角都是 canvas 色的直角
+ * （0.9.9 真机 60fps 实录取证：角像素 = #0e0e0e = --canvas，稳定态则是桌面色）。
+ * #root 是普通元素，背景随自己的 border-radius 裁圆，颜色与 body 方案完全一致。
  */
-body.is-morphing,
-body.ui-fade-out {
+body.is-morphing #root,
+body.ui-fade-out #root {
   background: var(--canvas);
   border-radius: var(--qb-radius);
 }

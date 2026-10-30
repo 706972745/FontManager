@@ -348,7 +348,24 @@ fn parse_face(
     file_size: u64,
     source: FontSource,
 ) -> Option<FontFace> {
-    let face = ttf_parser::Face::parse(data, index).ok()?;
+    let face = match ttf_parser::Face::parse(data, index) {
+        Ok(f) => f,
+        Err(_) => {
+            // 系统字体解析不了就跳过（不归我们管，也不该占列表）；
+            // 字库 / 用户字体要留下来，标成不完整，交给「非完整字体」归集与筛选。
+            return match source {
+                FontSource::System => None,
+                _ => Some(broken_face(
+                    path,
+                    index,
+                    format,
+                    file_size,
+                    source,
+                    "字体无法解析（文件损坏或格式不受支持）",
+                )),
+            };
+        }
+    };
 
     let family = name_string(&face, ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
         .or_else(|| name_string(&face, ttf_parser::name_id::FAMILY))
@@ -362,6 +379,34 @@ fn parse_face(
     let license = name_string(&face, ttf_parser::name_id::LICENSE);
     let license_url = name_string(&face, ttf_parser::name_id::LICENSE_URL);
     let copyright = name_string(&face, ttf_parser::name_id::COPYRIGHT_NOTICE);
+
+    // 能解析但明显残缺的：挑最严重的那个原因说清楚（越靠前越致命）。
+    // 系统字体不标记 —— 用户说了「系统字体无需理会」。
+    //
+    // **不要**把「name 表读不出字族名」算成损坏：老中文字体（长城/文鼎/创艺那批）
+    // 的 name 表是 GBK/自定义编码，ttf_parser 解不出来只能回退文件名，字体本身好好的。
+    // 曾经把它当损坏，一次性把 104 个正常字体搬进了「非完整字体」目录（0.9.8-1 的坑）。
+    let mut incomplete: Option<String> = if face.number_of_glyphs() == 0 {
+        Some("字体里没有任何字形（文件不完整）".to_string())
+    } else if face.tables().cmap.is_none() {
+        Some("缺少字符映射表（cmap），文字无法正常显示".to_string())
+    } else {
+        None
+    };
+    if source == FontSource::System {
+        incomplete = None;
+    }
+    // 结构问题（loca / post / cvt）本身不算损坏 —— 只要修复副本能生成，字体照样能看。
+    // 只有**连修复都做不到**的，才是软件里永远显示不出来的真损坏（用户 2026-10-30 定）。
+    if incomplete.is_none() && source != FontSource::System {
+        if let Some(problem) = crate::preview_font::structural_problem(data) {
+            if !crate::preview_font::repairable(data) {
+                incomplete = Some(format!(
+                    "字体结构异常且无法修复：{problem}（软件里无法显示）"
+                ));
+            }
+        }
+    }
 
     let axes: Vec<VariationAxis> = face
         .variation_axes()
@@ -404,12 +449,71 @@ fn parse_face(
         scripts,
         features,
         glyph_count: face.number_of_glyphs(),
+        incomplete,
         file_size,
         source,
         deactivatable: crate::activation::can_deactivate(source),
         active: true,
         added_at: None,
     })
+}
+
+/// 完全读不出来的字体：造一个占位字面，让它出现在列表里
+/// （能被「不完整 / 损坏」筛出来，导入时也能被归到「非完整字体」目录）。
+fn broken_face(
+    path: &Path,
+    index: u32,
+    format: FontFormat,
+    file_size: u64,
+    source: FontSource,
+    reason: &str,
+) -> FontFace {
+    let path_str = path.to_string_lossy().into_owned();
+    FontFace {
+        id: format!("{}#{}", path_str, index),
+        path: path_str,
+        preview_path: None,
+        face_index: index,
+        family: fallback_family(path),
+        style: "Regular".to_string(),
+        postscript_name: None,
+        localized_names: Vec::new(),
+        foundry: None,
+        license: None,
+        license_url: None,
+        copyright: None,
+        copyright_class: None,
+        license_note: None,
+        format,
+        is_variable: false,
+        axes: Vec::new(),
+        weight: 400,
+        italic: false,
+        monospaced: false,
+        classification: Classification::Unknown,
+        scripts: Vec::new(),
+        features: Vec::new(),
+        glyph_count: 0,
+        incomplete: Some(reason.to_string()),
+        file_size,
+        source,
+        deactivatable: crate::activation::can_deactivate(source),
+        active: true,
+        added_at: None,
+    }
+}
+
+/// 这个 `incomplete` 原因算不算「真的用不了」。
+///
+/// 用户 2026-10-30 定的口径：**只要被标记为不完整/损坏，就是软件里显示不出来的**，
+/// 一律归集到「非完整字体」。所以现在凡是标上来的都返回 true；
+/// 保留这个函数是为了让调用点自己说明「为什么搬」。
+pub const UNPREVIEWABLE_REASON: &str = "软件里无法预览（字体格式不受支持）";
+
+pub fn is_hard_damage(reason: &str) -> bool {
+    // 「运行时预览失败」不搬：浏览器拒收可能是 WebView2 的瞬时问题，不能据此动用户的文件。
+    // 真正的文件损坏（读不出 / 解析失败 / 0 字形 / 缺 cmap）才整族归集。
+    !reason.starts_with("软件里无法预览")
 }
 
 fn fallback_family(path: &Path) -> String {
@@ -419,8 +523,22 @@ fn fallback_family(path: &Path) -> String {
 }
 
 pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
-    let Ok(data) = fs::read(path) else {
-        return Vec::new();
+    let data = match fs::read(path) {
+        Ok(d) => d,
+        Err(_) => {
+            // 读不出来也一样：字库 / 用户字体留个占位（标不完整），系统字体跳过
+            return match source {
+                FontSource::System => Vec::new(),
+                _ => vec![broken_face(
+                    path,
+                    0,
+                    FontFormat::Unknown,
+                    0,
+                    source,
+                    "文件无法读取（可能已被删除或无权限）",
+                )],
+            };
+        }
     };
     let file_size = data.len() as u64;
     let format = detect_format(&data, path);
@@ -452,6 +570,7 @@ pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
             scripts: Vec::new(),
             features: Vec::new(),
             glyph_count: 0,
+            incomplete: None,
             file_size,
             source,
             deactivatable: crate::activation::can_deactivate(source),
@@ -572,6 +691,26 @@ pub fn face_glyph_hits(path: &Path, face_index: u32, chars: &[char]) -> Vec<bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 损坏 / 不完整的字库字体要留下占位并标记原因（好归到「非完整字体」、能被筛出来）；
+    /// 系统字体解析不了就跳过，不占列表。
+    #[test]
+    fn broken_fonts_are_flagged_not_dropped() {
+        let dir = std::env::temp_dir().join("zfm-broken-font-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bad = dir.join("Broken Font.ttf");
+        std::fs::write(&bad, b"this is definitely not a font file").unwrap();
+
+        let managed = parse_font_file(&bad, FontSource::Managed);
+        assert_eq!(managed.len(), 1, "字库字体要留占位");
+        assert!(managed[0].incomplete.is_some(), "要标记不完整");
+        assert_eq!(managed[0].family, "Broken Font", "用文件名当字族名");
+        // 系统字体：跳过（用户说了「系统字体无需理会」）
+        assert!(parse_font_file(&bad, FontSource::System).is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn system_font() -> Option<std::path::PathBuf> {
         walkdir::WalkDir::new("/usr/share/fonts")

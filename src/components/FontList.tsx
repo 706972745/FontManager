@@ -8,9 +8,11 @@ import { FormatBadge } from "./FamilyCard";
 import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useT } from "../lib/i18n";
+import { useDisplayName } from "../lib/displayName";
 
 export function FontList({ families }: { families: Family[] }) {
   const t = useT();
+  const displayName = useDisplayName();
   const parentRef = useRef<HTMLDivElement>(null);
   const setFamilyActive = useFontStore((s) => s.setFamilyActive);
   const selectWith = useFontStore((s) => s.selectWith);
@@ -113,7 +115,7 @@ export function FontList({ families }: { families: Family[] }) {
                 onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(fam))}
               >
                 <span className="row-name">
-                  <span className="row-name-text">{fam.name}</span>
+                  <span className="row-name-text">{displayName(fam)}</span>
                   {hasMem && (
                     <span className="row-members">
                       {mem!.snaps.map((n) => (

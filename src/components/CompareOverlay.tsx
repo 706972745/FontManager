@@ -7,11 +7,13 @@ import { familiesFor, useFontStore, type Family } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { FormatBadge } from "./FamilyCard";
 import { useT } from "../lib/i18n";
+import { useDisplayName } from "../lib/displayName";
 
 const COMPARE_SIZES = [14, 24, 40];
 
 function CompareColumn({ family, onRemove }: { family: Family; onRemove: () => void }) {
   const t = useT();
+  const displayName = useDisplayName();
   const sampleText = useFontStore((s) => s.sampleText);
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   const { fontFamily } = useFontCss(lead);
@@ -21,7 +23,7 @@ function CompareColumn({ family, onRemove }: { family: Family; onRemove: () => v
     <div className="compare-col">
       <header className="compare-col-head">
         <FormatBadge format={family.formats[0]} isVariable={family.isVariable} />
-        <span className="compare-col-name">{family.name}</span>
+        <span className="compare-col-name">{displayName(family)}</span>
         <button className="detail-close" aria-label={t("compare.remove", { name: family.name })} onClick={onRemove}>
           <X size={13} strokeWidth={1.5} />
         </button>

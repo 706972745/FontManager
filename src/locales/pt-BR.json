@@ -792,5 +792,18 @@
   "waterfall.emptyTitle": "Nada para exibir em cascata",
   "card.partialScriptTitle": "Este estilo tem apenas alguns glifos {script} — o texto corrido perderá caracteres",
   "card.seeCjkVersion": "Chinês em {family}",
-  "detail.charsetValue": "{total} caracteres · {han} han"
+  "detail.charsetValue": "{total} caracteres · {han} han",
+  "filter.incompleteOnly": "Sem prévia / danificadas apenas",
+  "card.brokenFace": "sem prévia",
+  "card.brokenSome": "{count}/{total} estilos sem prévia",
+  "card.brokenAll": "nenhum estilo com prévia",
+  "card.structural": "estrutura não padrão",
+  "detail.licenseFileOpen": "Clique para abrir “{file}” com o app padrão",
+  "toast.openFileFailed": "Não foi possível abrir este arquivo",
+  "empty.filtered.title": "Nenhuma fonte corresponde a estes filtros",
+  "empty.filtered.body": "Remova alguns filtros ou limpe-os pelo funil no topo.",
+  "menu.noSnapshots": "Ainda não há snapshots",
+  "toast.snapshotLimitReached": "Limite de snapshots atingido",
+  "toast.snapshotLimitSub": "No máximo {max} snapshots são mantidos; exclua um e tente novamente.",
+  "toast.snapshotLimitImport": "O arquivo tem {count} snapshots, mas só há {room} vagas."
 }

@@ -90,6 +90,14 @@ pub struct AppState {
 
     pub online_fonts_enabled: bool,
 
+    /// 运行时判定的「软件里预览不出来」的字面（face id = `路径#序号`）。
+    ///
+    /// 用户 2026-10-30：只要预览区是「这种格式暂时无法预览」，就归到「无法预览 / 损坏」那一类。
+    /// 这一类**只标记、不搬文件** —— 浏览器拒收可能是 WebView2 的瞬时问题（内存、解码器），
+    /// 不该据此移动用户的文件。两档修复都失败才写入，能正常加载时会自动摘掉。
+    #[serde(default)]
+    pub unpreviewable: std::collections::HashSet<String>,
+
     /// raw.githubusercontent.com 在本机是否探明不可达。
     /// 记住它是为了跳过每次启动后的第一轮 10 秒超时（用户会以为「点了没反应」）；
     /// 镜像全部失败时还会回头再试原始地址，网络恢复后这个标记会被清掉。
@@ -148,27 +156,24 @@ impl AppState {
         }
     }
 
-    /// 保存（插入或覆盖）一个快照，并执行"最多 5 个、淘汰最旧"的滚动淘汰。
-    /// 覆盖同名快照时保留原 created_at；新建时若已达上限，则淘汰 created_at 最小的快照。
-    pub fn save_snapshot(&mut self, snapshot: Snapshot) {
+    /// 保存（插入或覆盖）一个快照。上限 [`MAX_SNAPSHOTS`] 个：
+    /// 覆盖同名快照随时可以；**新建**时若已达上限则返回 Err —— 用户 2026-10-30 定：
+    /// 第 6 个不能挤掉最旧的（原来会悄悄淘汰），要让「创建 / 导入」失败并提醒。
+    pub fn save_snapshot(&mut self, snapshot: Snapshot) -> Result<(), String> {
         if let Some(existing) = self.snapshots.iter_mut().find(|s| s.name == snapshot.name) {
             existing.entries = snapshot.entries;
         } else {
             if self.snapshots.len() >= MAX_SNAPSHOTS {
-                if let Some(oldest_idx) = self
-                    .snapshots
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, s)| (s.created_at, s.name.clone()))
-                    .map(|(i, _)| i)
-                {
-                    self.snapshots.remove(oldest_idx);
-                }
+                return Err(format!(
+                    "snapshot limit reached ({})",
+                    MAX_SNAPSHOTS
+                ));
             }
             self.snapshots.push(snapshot);
         }
         self.snapshots
             .sort_by_key(|s| (s.created_at, s.name.clone()));
+        Ok(())
     }
 
     pub fn snapshot(&self, name: &str) -> Option<&Snapshot> {

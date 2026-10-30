@@ -160,6 +160,8 @@ export function FilterMenu() {
   const setVariableOnly = useFontStore((s) => s.setVariableOnly);
   const toggleableOnly = useFontStore((s) => s.toggleableOnly);
   const setToggleableOnly = useFontStore((s) => s.setToggleableOnly);
+  const incompleteOnly = useFontStore((s) => s.incompleteOnly);
+  const setIncompleteOnly = useFontStore((s) => s.setIncompleteOnly);
   const formatFilter = useFontStore((s) => s.formatFilter);
   const toggleFormat = useFontStore((s) => s.toggleFormat);
   const featureFilter = useFontStore((s) => s.featureFilter);
@@ -182,7 +184,8 @@ export function FilterMenu() {
     (sourceFilter !== "all" ? 1 : 0) +
     (charFilter ? 1 : 0) +
     (variableOnly ? 1 : 0) +
-    (toggleableOnly ? 1 : 0);
+    (toggleableOnly ? 1 : 0) +
+    (incompleteOnly ? 1 : 0);
 
   return (
     <div className="sort-wrap">
@@ -369,6 +372,17 @@ export function FilterMenu() {
                   {toggleableOnly && <Check size={13} strokeWidth={2} />}
                 </button>
               </li>
+              <li>
+                <button
+                  role="option"
+                  aria-selected={incompleteOnly}
+                  className={incompleteOnly ? "sort-item sort-active" : "sort-item"}
+                  onClick={() => setIncompleteOnly(!incompleteOnly)}
+                >
+                  <span>{t("filter.incompleteOnly")}</span>
+                  {incompleteOnly && <Check size={13} strokeWidth={2} />}
+                </button>
+              </li>
             </motion.ul>
           </>
         )}
@@ -423,10 +437,9 @@ function ImportFolderButton() {
         if (typeof dir !== "string") return;
         setBusy(true);
         try {
-          // The backend install_fonts expands directories recursively,
-          // so every font in the folder and its subfolders is linked
-          // into the library exactly like a drag-and-drop import.
-          await installPaths([dir], "link");
+          // 后端会递归展开目录：文件夹（含子目录）里的字体**复制**一份进字体库，
+          // 原来的文件夹原样保留（用户 2026-10-30：不走链接、也不移动源文件）。
+          await installPaths([dir], "copy");
         } finally {
           setBusy(false);
         }

@@ -16,6 +16,7 @@ import { useFamilyMembership } from "../lib/membership";
 import { playStar } from "../lib/sound";
 import type { FontFace } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
+import { useDisplayName } from "../lib/displayName";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 
 export function FormatBadge({ format, isVariable }: { format: string; isVariable: boolean }) {
@@ -54,6 +55,9 @@ function FacePreview({
 
 export const FamilyCard = memo(function FamilyCard({ family }: { family: Family }) {
   const t = useT();
+  // 显示名按界面语言取（有中文名就显示中文名），family.name 仍然是数据主键
+  const displayName = useDisplayName();
+
   const intro = useIntro();
   const sampleText = useFontStore((s) => s.sampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
@@ -131,7 +135,15 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
     >
       <header className="card-head">
         <FormatBadge format={family.formats[0]} isVariable={family.isVariable} />
-        <span className="card-name">{family.name}</span>
+        <span className="card-name">{displayName(family)}</span>
+        {/* 字面级损坏：部分字重坏了要标出来，但字族本身还能用 */}
+        {family.brokenFaces > 0 && (
+          <span className="card-broken" title={family.incompleteReason ?? undefined}>
+            {family.brokenAll
+              ? t("card.brokenAll")
+              : t("card.brokenSome", { count: family.brokenFaces, total: family.faces.length })}
+          </span>
+        )}
         {family.faces.length > 1 && (
           <motion.button
             className="card-expand"

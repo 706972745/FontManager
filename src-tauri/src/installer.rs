@@ -35,7 +35,10 @@ pub struct InstallResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallMode {
     Link,
+    /// 搬进字体库（源文件被移走 / 进回收站）
     Move,
+    /// 复制进字体库（源文件夹原样保留）—— 「导入文件夹」按钮用这个
+    Copy,
 }
 
 impl InstallMode {
@@ -43,6 +46,7 @@ impl InstallMode {
         match s {
             "link" => Ok(Self::Link),
             "move" => Ok(Self::Move),
+            "copy" => Ok(Self::Copy),
             _ => Err(format!("unknown install mode: {s}")),
         }
     }
@@ -59,6 +63,18 @@ fn move_file(from: &Path, to: &Path) -> Result<(), String> {
     }
     fs::copy(from, to).map_err(|e| e.to_string())?;
     recycle(from)
+}
+
+/// 把字体放到目标位置：`copy_only = true` 时只复制一份（源文件保留）。
+///
+/// 「导入文件夹」按钮用复制模式——用户 2026-10-30 要求：不移动、不走链接，
+/// 把字体复制进软件的字库目录，原来的文件夹原样不动。
+fn place_file(from: &Path, to: &Path, copy_only: bool) -> Result<(), String> {
+    if copy_only {
+        fs::copy(from, to).map(|_| ()).map_err(|e| e.to_string())
+    } else {
+        move_file(from, to)
+    }
 }
 
 fn recycle(path: &Path) -> Result<(), String> {
@@ -458,6 +474,73 @@ fn process_webfonts(
     out
 }
 
+/// 把**整族**损坏的字体挪进 `<字库>/非完整字体/<字族（版权）/`。
+///
+/// 用户 2026-10-30 定：**字族里只要有一个字重坏了，整个字族都要进「非完整字体」目录**
+/// —— 半个字族留在外面、半个在里面的状态最难理解，也不方便一次性清理。
+///
+/// 所以这里按**字族**判断，不按文件：族里任何字面 `incomplete` 为真，就把这一族
+/// 在字库目录里的所有文件都搬进去（系统目录里的不动，那不是我们的文件）。
+/// 挪不动（被占用 / 只读）就原地留着，下次扫描再试。
+/// 返回 `(旧路径, 新路径)`，调用方据此更新 state 与内存里的字面。
+pub fn relocate_incomplete(library: &Path, faces: &[FontFace]) -> Vec<(String, String)> {
+    let root = library.join(copyright::INCOMPLETE_DIR);
+    // 按字族聚合：任一字面坏 → 整族算坏
+    let mut family_broken: std::collections::HashMap<&str, bool> =
+        std::collections::HashMap::new();
+    let mut family_class: std::collections::HashMap<&str, crate::copyright::CopyrightClass> =
+        std::collections::HashMap::new();
+    for f in faces {
+        let flag = family_broken.entry(f.family.as_str()).or_insert(false);
+        // 只有「文件本身坏了」（读不出 / 解析失败）才自动搬。
+        // 「缺 cmap / 0 字形」只标记不搬 —— 老字体格式特殊的情况不少，不能擅自动用户文件。
+        if f.incomplete.as_deref().is_some_and(crate::parser::is_hard_damage) {
+            *flag = true;
+        }
+        if let Some(cls) = copyright::class_from_status(f.copyright_class.as_deref().unwrap_or("")) {
+            family_class.entry(f.family.as_str()).or_insert(cls);
+        }
+    }
+    let mut moved: Vec<(String, String)> = Vec::new();
+    let mut done: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for f in faces {
+        // 这一族一个坏字面都没有 → 留在原地
+        if !family_broken.get(f.family.as_str()).copied().unwrap_or(false) {
+            continue;
+        }
+        let src = Path::new(&f.path);
+        if !src.is_file() || !src.starts_with(library) || src.starts_with(&root) {
+            continue;
+        }
+        // 一个文件可能产多个字面，只搬一次
+        if !done.insert(f.path.as_str()) {
+            continue;
+        }
+        let class = family_class
+            .get(f.family.as_str())
+            .copied()
+            .unwrap_or(crate::copyright::CopyrightClass::Unknown);
+        let dir = root.join(copyright::family_dir_name(&f.family, class));
+        if fs::create_dir_all(&dir).is_err() {
+            continue;
+        }
+        let Some(name) = src.file_name() else { continue };
+        let dest = unique_dest(&dir, name);
+        if fs::rename(src, &dest).is_err() {
+            continue;
+        }
+        crate::diag::log(&format!(
+            "[incomplete] 整族归集 {:?} → {:?}",
+            src, dest
+        ));
+        moved.push((
+            src.to_string_lossy().into_owned(),
+            dest.to_string_lossy().into_owned(),
+        ));
+    }
+    moved
+}
+
 pub fn install(
     app: &tauri::AppHandle,
     dropped: Vec<String>,
@@ -499,7 +582,7 @@ pub fn install(
         .map(|i| (i.origin.clone(), i.path.clone()))
         .collect();
 
-    if mode == InstallMode::Move || any_zip {
+    if matches!(mode, InstallMode::Move | InstallMode::Copy) || any_zip {
         if let Err(e) = fs::create_dir_all(library) {
             result.errors.push(e.to_string());
             return result;
@@ -588,7 +671,7 @@ pub fn install(
                 }
                 result.installed.extend(faces);
             }
-            InstallMode::Move => {
+            InstallMode::Move | InstallMode::Copy => {
                 let file_name = src.file_name().map(|f| f.to_owned()).unwrap_or_default();
                 // 按字族归档：<库目录>/<家族名（版权后缀）>/；解析失败时退回库根目录
                 // 目录后缀按「版权信息文件 > 文件夹备注 > 字体自带信息」三级权重判定
@@ -602,11 +685,24 @@ pub fn install(
                         &all_infos,
                     ))
                 };
+                // 损坏 / 不完整的字体单独归档到 <库>/非完整字体/<家族（版权后缀）>/：
+                // 用户 2026-10-30 要求坏字体别跟正常字族混在一起，筛选里也能单独看到。
+                // 整份文件里的字面**全**坏才搬走：.ttc 这类一个文件装多个字面，
+                // 只要还有一个好字面，文件本身就不能拆，搬走等于把好字面也关起来。
+                let incomplete = !src_faces.is_empty()
+                    && src_faces
+                        .iter()
+                        .all(|f| f.incomplete.as_deref().is_some_and(crate::parser::is_hard_damage));
+                let base = if incomplete {
+                    library.join(copyright::INCOMPLETE_DIR)
+                } else {
+                    library.to_path_buf()
+                };
                 let target_dir = match (src_faces.first(), class) {
-                    (Some(f0), Some(class)) => {
-                        library.join(copyright::family_dir_name(&f0.family, class))
-                    }
-                    _ => library.to_path_buf(),
+                    (Some(f0), Some(class)) => base.join(copyright::family_dir_name(&f0.family, class)),
+                    // 版权判不出来 + 残缺：至少按字族名分目录，别一堆坏文件摊在根上
+                    (Some(f0), None) if incomplete => base.join(copyright::sanitize(&f0.family)),
+                    _ => base,
                 };
                 let created = fs::create_dir_all(&target_dir).map_err(|e| e.to_string());
                 if let Err(e) = created {
@@ -624,7 +720,13 @@ pub fn install(
                     continue;
                 }
                 let dest = unique_dest(&target_dir, &file_name);
-                let moved = move_file(&src, &dest).map_err(|e| e.to_string());
+                // 复制模式：源文件夹原样保留（用户 2026-10-30 要求「导入文件夹」不移动）；
+                // WOFF 解包产物在 staging 临时目录，本来也只能复制走
+                let moved = place_file(
+                    &src,
+                    &dest,
+                    matches!(mode, InstallMode::Copy) || staged.converted,
+                );
                 let (ok, error) = match &moved {
                     Ok(()) => (true, None),
                     Err(e) => (false, Some(e.clone())),
@@ -677,7 +779,7 @@ pub fn install(
     // 版权信息文件（许可证/版权声明/说明）随字体归档到字族目录：
     // 与字体同处一个子目录且该目录只归入一个字族 → 只进那个字族；
     // 否则若本次安装只产生一个字族 → 进它；多字族时每个字族目录都放一份
-    if mode == InstallMode::Move || any_zip {
+    if matches!(mode, InstallMode::Move | InstallMode::Copy) || any_zip {
         for info in &infos {
             let Some(name) = info.path.file_name().map(|f| f.to_owned()) else {
                 continue;
@@ -1069,6 +1171,60 @@ pub(crate) fn refresh_system_font_cache() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 「导入文件夹」＝递归展开目录：子目录里的字体、同目录的授权文档都要被收进来，
+    /// 后面的去重和「按字族归档」跟拖拽导入是同一条管线，不会因为入口不同而跑偏。
+    #[test]
+    fn folder_import_expands_recursively_like_a_drop() {
+        let tmp = std::env::temp_dir().join(format!("zfm-folder-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let root = tmp.join("字体库");
+        let sub = root.join("_01_中文字体").join("Some Family（商用免费）");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("Some-Regular.ttf"), b"a").unwrap();
+        fs::write(sub.join("Some-Bold.ttf"), b"b").unwrap();
+        fs::write(sub.join("版权说明.txt"), "本字体免费商用".as_bytes()).unwrap();
+        fs::write(root.join("说明.txt"), "根目录的说明".as_bytes()).unwrap();
+        fs::write(root.join("cover.png"), b"png").unwrap();
+
+        let staged = expand_dropped(&root, &tmp.join("staging")).unwrap();
+        let fonts: Vec<_> = staged.iter().filter(|s| s.is_font).collect();
+        let infos: Vec<_> = staged.iter().filter(|s| !s.is_font).collect();
+        assert_eq!(fonts.len(), 2, "子目录里的两个字体都要被展开");
+        assert_eq!(infos.len(), 2, "两份 .txt 都算授权/说明文件");
+        assert!(
+            staged.iter().all(|s| s.origin.as_deref() == Some(root.as_path())),
+            "同一批文件要带同一个来源目录，版权文件才不会串到别的文件夹"
+        );
+        // png 不是字体也不是授权文件，不该被收进来
+        assert!(!staged
+            .iter()
+            .any(|s| s.path.extension().and_then(|e| e.to_str()) == Some("png")));
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// 复制模式必须留着源文件；搬移模式必须把源文件挪走
+    #[test]
+    fn copy_mode_keeps_the_source_file() {
+        let tmp = std::env::temp_dir().join(format!("zfm-copy-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let src_dir = tmp.join("src");
+        let lib = tmp.join("lib");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&lib).unwrap();
+        let src = src_dir.join("Source-Sans.ttf");
+        fs::write(&src, b"font-bytes").unwrap();
+
+        let dest = lib.join("Source-Sans.ttf");
+        place_file(&src, &dest, true).unwrap();
+        assert!(src.exists(), "复制模式不能删源文件");
+        assert!(dest.exists(), "复制模式要把文件放进字库");
+        assert_eq!(fs::read(&dest).unwrap(), b"font-bytes");
+
+        // 模式字符串能被解析（前端「导入文件夹」传的就是 copy）
+        assert_eq!(InstallMode::parse("copy").unwrap(), InstallMode::Copy);
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn detects_info_files() {

@@ -768,5 +768,18 @@
   "waterfall.emptyTitle": "没有可展示的字体",
   "card.partialScriptTitle": "这个字面只有部分{script}字形，排正文会缺字",
   "card.seeCjkVersion": "中文见 {family}",
-  "detail.charsetValue": "{total} 字符 · 汉字 {han}"
+  "detail.charsetValue": "{total} 字符 · 汉字 {han}",
+  "filter.incompleteOnly": "只看无法预览 / 损坏",
+  "card.brokenFace": "无法预览",
+  "card.brokenSome": "{count}/{total} 字重无法预览",
+  "card.brokenAll": "全部字重无法预览",
+  "card.structural": "结构不规范",
+  "detail.licenseFileOpen": "点击用系统默认程序打开「{file}」",
+  "toast.openFileFailed": "打不开这个文件",
+  "empty.filtered.title": "没有符合筛选条件的字体",
+  "empty.filtered.body": "减少几个筛选条件，或点右上角漏斗清除筛选。",
+  "menu.noSnapshots": "还没有快照",
+  "toast.snapshotLimitReached": "快照数量已达上限",
+  "toast.snapshotLimitSub": "最多保留 {max} 个快照；删掉一个再试。",
+  "toast.snapshotLimitImport": "文件里有 {count} 个快照，但只剩 {room} 个空位。"
 }

@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { MotionConfig, motion } from "motion/react";
-import { Clock, Camera, FolderOpen, History, Monitor, Power, PowerOff, SearchX, Star, Tag as TagIcon, Type } from "lucide-react";
+import { Camera, Clock, FilterX, FolderOpen, History, Monitor, Power, PowerOff, SearchX, Star, Tag as TagIcon, Type } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { DetailPanel } from "./components/DetailPanel";
 import { ResizeGrips } from "./components/ResizeGrips";
@@ -52,7 +52,17 @@ function ScanSkeleton() {
   );
 }
 
-function EmptyLibrary({ searching, nav }: { searching: boolean; nav: Nav }) {
+function EmptyLibrary({
+  searching,
+  filtered,
+  nav,
+}: {
+  searching: boolean;
+  /** 搜索词之外的条件（筛选菜单里的那些）。两者要分开说，否则会出现
+   *  「筛出来 0 条」却提示「你的字体库还空着」这种自相矛盾的空状态 */
+  filtered: boolean;
+  nav: Nav;
+}) {
   const t = useT();
   const intro = useIntro();
 
@@ -63,6 +73,11 @@ function EmptyLibrary({ searching, nav }: { searching: boolean; nav: Nav }) {
     icon = <SearchX size={26} strokeWidth={1.5} />;
     title = t("empty.search.title");
     hint = t("empty.search.body");
+  } else if (filtered) {
+    // 库里有字体，只是被筛没了：这时候说「字体库还空着」是错的
+    icon = <FilterX size={26} strokeWidth={1.5} />;
+    title = t("empty.filtered.title");
+    hint = t("empty.filtered.body");
   } else if (nav.kind === "favorites") {
     icon = <Star size={26} strokeWidth={1.5} />;
     title = t("empty.favorites.title");
@@ -165,6 +180,7 @@ function MainContent() {
   const scriptFilter = useFontStore((s) => s.scriptFilter);
   const variableOnly = useFontStore((s) => s.variableOnly);
   const toggleableOnly = useFontStore((s) => s.toggleableOnly);
+  const incompleteOnly = useFontStore((s) => s.incompleteOnly);
   const formatFilter = useFontStore((s) => s.formatFilter);
   const featureFilter = useFontStore((s) => s.featureFilter);
   const sourceFilter = useFontStore((s) => s.sourceFilter);
@@ -182,9 +198,9 @@ function MainContent() {
       selectVisibleFamilies({
         fonts: displayFonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search,
         classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
-        variableOnly, toggleableOnly, licenseFilter, copyrightStatus, nav, sort,
+        variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort,
       }),
-    [displayFonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus, nav, sort],
+    [displayFonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort],
   );
 
   // 非字族浏览页面（回收站 / 关于 / 在线栏目）没有「可见字族顺序」，必须清空：
@@ -204,8 +220,8 @@ function MainContent() {
     families.length === 0 ? (
       <EmptyLibrary
         nav={nav}
-        searching={
-          search.trim().length > 0 ||
+        searching={search.trim().length > 0}
+        filtered={
           classFilter.length > 0 ||
           scriptFilter.length > 0 ||
           formatFilter.length > 0 ||
@@ -213,7 +229,11 @@ function MainContent() {
           sourceFilter !== "all" ||
           charFilter.length > 0 ||
           variableOnly ||
-          toggleableOnly
+          toggleableOnly ||
+          /* ← 这三项原来漏了：勾「只看不完整 / 损坏」筛出 0 条时会误报「字体库还空着」 */
+          incompleteOnly ||
+          licenseFilter.length > 0 ||
+          Object.keys(copyrightStatus).length > 0
         }
       />
     ) : viewMode === "waterfall" ? (
@@ -461,7 +481,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    document.body.classList.toggle("is-morphing", morph != null);
+    const on = morph != null;
+    document.body.classList.toggle("is-morphing", on);
     return () => document.body.classList.remove("is-morphing");
   }, [morph]);
 

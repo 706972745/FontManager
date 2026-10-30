@@ -74,16 +74,25 @@ const OPEN_EXPLICIT_EN: &[&str] = &[
 
 /// 中文「可商用」类声明。比「免费」强得多，但仍然不是许可证身份，
 /// 放在收费判定之后（「不可商用」里含「可商用」）。
+///
+/// **2026-10-30 起改为严格整词**：关键词必须完整连续出现，拆开一律不算
+/// （「免费商」不算、「免费」两个字也不算；「不可商用」不能因为含「可商用」被判成免费）。
+/// 用户原话：「每个词都不可拆分开来」。
 const OPEN_EXPLICIT_MARKERS: &[&str] = &[
     "免费商用",
     "商用免费",
     "免费可商用",
-    "可商用",
-    "允许商用",
-    "商用授权免费",
+    "可免费商用",
 ];
 
-/// 明确写着「个人免费」的表述（含中文备注的几种写法）。
+/// 会被否定词吃掉的「可商用」类整词：只有前面**不是**否定字才算数。
+/// 「不可商用 / 非可商用 / 禁止可商用」属于收费口径，不能算免费。
+const OPEN_EXPLICIT_GUARDED: &[&str] = &["可商用", "允许商用", "商用授权免费"];
+
+/// 否定前缀：出现在关键词正前方时，这个关键词作废
+const NEG_PREFIX: &[char] = &['不', '非', '无', '免', '未', '勿', '禁', '非'];
+
+/// 明确写着「个人免费」的表述（严格整词，2026-10-30 起不再接受拆字写法）。
 const PERSONAL_MARKERS: &[&str] = &[
     "个人免费",
     "免费供个人",
@@ -92,8 +101,10 @@ const PERSONAL_MARKERS: &[&str] = &[
     "免费个人使用",
 ];
 
-/// 「个人免费、商用要另买授权」——**这类判个人免费**（用户 2026-10-29 拍板）：
-/// 字体本身是免费可用的，只是商用得再买授权，标成「收费」会把免费字体说成要花钱。
+/// 「个人免费、商用要另买授权」里的**英文**写法 → 判个人免费。
+///
+/// 中文的「不可商用 / 禁止商用 / 非商业使用」**不在**这里：
+/// 用户 2026-10-30 明确把它们归到收费类（见 `PAID_EXACT`）。
 const PERSONAL_ONLY_MARKERS: &[&str] = &[
     "personal use only",
     "for personal use only",
@@ -102,27 +113,43 @@ const PERSONAL_ONLY_MARKERS: &[&str] = &[
     "non-commercial",
     "noncommercial",
     "not for commercial",
-    "不可商用",
-    "禁止商用",
-    "非商业使用",
     "仅限个人",
     "仅供个人",
 ];
 
-/// 确凿的「要付钱 / 试用」表述 —— 标成收费是有依据的，不是猜。
-/// 注意：只讲「个人能不能用」的条款在 PERSONAL_ONLY_MARKERS 里，不在这里。
-const PAID_MARKERS: &[&str] = &[
-    // 要买授权
+/// 收费关键词（严格整词，2026-10-30 用户给定）：
+/// 非免费字体 / 非商业字体 / 商用需授权 / 不可商用 这一类的都算付费字体。
+/// 匹配必须是**完整连续**的字符串，拆开或只命中一部分都不算。
+const PAID_EXACT: &[&str] = &[
+    "非免费字体",
+    "非免费",
+    "非商业字体",
+    "非商业",
+    "商用需授权",
+    "商用需要授权",
+    "商用需购买授权",
+    "不可商用",
+    "禁止商用",
+    // 「企业授权」系（2026-10-30 用户口径）：出现这些字样说明商用要另买授权，
+    // 绝不能因为别处写了「商用免费」就把整段判成商用免费。
+    // 注意顺序无关：判定是「包含即命中」，「企业授权方案」也会被「企业授权」命中。
+    "企业授权方案",
+    "企业需授权",
+    "企业授权",
+    "收费",
+    "付费",
+];
+
+/// 会被「无需 / 不需 / 免费」否定的收费词（「无需授权」不是要钱）
+const PAID_GUARDED: &[&str] = &["购买授权", "购买商业授权", "需授权", "商用授权"];
+
+/// 英文的收费 / 试用表述（这些不存在拆字歧义，保持原样）
+const PAID_MARKERS_EN: &[&str] = &[
     "purchase a license",
     "purchase license",
     "requires a license",
     "buy the commercial license",
     "commercial license required",
-    "购买商业授权",
-    "购买授权",
-    "需授权",
-    "商用需授权",
-    // 试用 / 评估 / 共享软件
     "evaluation only",
     "evaluation purposes",
     "trial version",
@@ -130,9 +157,6 @@ const PAID_MARKERS: &[&str] = &[
     "shareware",
     "试用版",
     "演示版",
-    // 中文常用写法
-    "收费",
-    "付费",
 ];
 
 /// 有时间限制的许可特征串（小写）：限时字体、限时授权等
@@ -174,6 +198,10 @@ const HARD_CONFLICT: &[&str] = &[
     "购买授权",
     "需授权",
     "商用需授权",
+    "不可商用",
+    "禁止商用",
+    "非免费",
+    "非商业",
     "trial version",
     "demo version",
     "evaluation only",
@@ -186,6 +214,26 @@ fn has_any(t: &str, markers: &'static [&'static str]) -> Option<&'static str> {
         .iter()
         .find(|m| t.contains(*m))
         .map(|m| *m)
+}
+
+/// 整词命中 + **否定前缀**检查：关键词必须完整连续出现，而且它正前方不能紧挨否定字。
+///
+/// 这是「不可商用」与「可商用」的分界线：前者是收费关键词，后者才是免费声明。
+/// 只看 `contains` 会让「不可商用」误判成「可商用」——正是用户报的那类误判。
+fn guarded_hit(hay: &str, keys: &'static [&'static str], deny: &[char]) -> Option<&'static str> {
+    for k in keys {
+        let mut from = 0usize;
+        while let Some(rel) = hay[from..].find(k) {
+            let i = from + rel;
+            let prev = hay[..i].chars().next_back();
+            if !prev.is_some_and(|c| deny.contains(&c)) {
+                return Some(k);
+            }
+            // 跳过这一处继续找（同一个词可能出现多次，有被否定的也有不被否定的）
+            from = i + k.chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        }
+    }
+    None
 }
 
 /// 词边界匹配：前后都不能是 ASCII 字母，避免长单词里的子串误命中。
@@ -341,18 +389,20 @@ impl Reason {
     }
 }
 
-/// 判定口径（保守）：**不能百分百确定就不下结论**。
+/// 判定口径（2026-10-30 第 5 版，改口径记得把 `NOTE_RULES_VERSION` +1）。
 ///
+/// **关键词一律严格整词**：必须完整连续出现，拆开 / 只命中一半都不算。
 /// 顺序：
 ///   ① 许可证身份（OFL / Apache / MIT / GPL / CC0 / UFL…）→ 商用免费；
-///      但同一段文本里还写着「要买授权 / 试用版」就不判（证据互相打架）
-///   ② 「个人免费」明确字样 → 个人免费
-///   ③ 明确的商用受限/试用/收费表述 → 收费
-///   ④ 明确「可商用」字样 → 商用免费
-///   ⑤ 其余（包括只写了「免费」「freely available」「保留所有权利」）→ 未知
+///      但同一段文本里还写着「不可商用 / 要买授权 / 收费」就不判（证据互相打架）
+///   ② 免费商用关键词（免费商用 / 商用免费 / 免费可商用 / 可商用…）→ 商用免费
+///   ③ **明确标注「个人免费」** → 个人免费（即使同时写了「商用需授权 / 不可商用」）
+///   ④ 收费关键词（非免费 / 非商业 / 商用需授权 / 不可商用 / 收费 / 付费…）→ 收费
+///   ⑤ 限时；⑥ 只写「免费」等弱线索 → 未知
 ///
-/// 被删掉的三条旧规则（误判来源）：「免费」单字判商用免费、"ofl"/"gpl" 裸子串、
-/// "limited license" 判限时。
+/// ③ 必须先于 ④：用户 2026-10-30 定「能不能算个人免费，只看有没有明确标注个人免费，
+/// 没标注的一律算收费」。而 ② 又先于 ③：「免费商用」是更强的结论。
+/// 否定前缀检查兜一层（「无需授权」不是收费，「不可商用」不是可商用）。
 pub fn explain(text: Option<&str>) -> (CopyrightClass, Reason) {
     let Some(text) = text else {
         return (CopyrightClass::Unknown, Reason::Nothing);
@@ -374,25 +424,34 @@ pub fn explain(text: Option<&str>) -> (CopyrightClass, Reason) {
     if let Some(m) = has_any(&t, OPEN_EXPLICIT_EN) {
         return (CopyrightClass::FreeCommercial, Reason::ExplicitCommercial(m));
     }
-    // ② 个人免费
+    // ② 免费商用（严格整词；「可商用」要被否定前缀检查拦住）
+    //    放在最前面：明确写了「免费商用」就是最干净的结论
+    if let Some(m) = has_any(&t, OPEN_EXPLICIT_MARKERS)
+        .or_else(|| guarded_hit(&t, OPEN_EXPLICIT_GUARDED, NEG_PREFIX))
+    {
+        return (CopyrightClass::FreeCommercial, Reason::ExplicitCommercial(m));
+    }
+    // ③ 明确写了「个人免费」→ 个人免费（即使同时说「商用需授权 / 不可商用」）
+    //    用户 2026-10-30 口径：能不能算个人免费，**只看有没有明确标注个人免费**；
+    //    没标注的一律算收费。所以这一步必须先于收费关键词。
     if let Some(m) = has_any(&t, PERSONAL_MARKERS) {
         return (CopyrightClass::FreePersonal, Reason::Personal(m));
     }
-    // ②b 个人免费、商用需另购授权（同样算个人免费）
+    // ③b 英文的「personal use only / non-commercial」同理
     if let Some(m) = has_any(&t, PERSONAL_ONLY_MARKERS) {
         return (CopyrightClass::FreePersonal, Reason::PersonalOnly(m));
     }
-    // ③ 收费 / 试用（必须先于④：「不可商用」里含「可商用」）
-    if let Some(m) = has_any(&t, PAID_MARKERS) {
+    // ④ 收费关键词（严格整词 + 否定前缀保护）：
+    //    没写「个人免费」又出现「不可商用 / 禁止商用 / 商用需授权 / 非免费」→ 收费
+    if let Some(m) = has_any(&t, PAID_EXACT)
+        .or_else(|| guarded_hit(&t, PAID_GUARDED, NEG_PREFIX))
+        .or_else(|| has_any(&t, PAID_MARKERS_EN))
+    {
         return (CopyrightClass::Paid, Reason::Paid(m));
     }
-    // ④ 限时
+    // ⑤ 限时
     if let Some(m) = has_any(&t, TIME_MARKERS) {
         return (CopyrightClass::Timelimited, Reason::Timelimited(m));
-    }
-    // ⑤ 明确可商用
-    if let Some(m) = has_any(&t, OPEN_EXPLICIT_MARKERS) {
-        return (CopyrightClass::FreeCommercial, Reason::ExplicitCommercial(m));
     }
     match clue(Some(text)) {
         Some("clueMixed") => (CopyrightClass::Unknown, Reason::ClueMixed),
@@ -404,7 +463,11 @@ pub fn explain(text: Option<&str>) -> (CopyrightClass, Reason) {
 
 /// 判定口径的版本号。口径一变，旧的自动备注（「判定依据：…」）就作废、按新口径重写；
 /// 用户自己写的备注永远不动。加规则 / 改分类时记得 +1。
-pub const NOTE_RULES_VERSION: u32 = 3;
+/// v4：中文关键词改严格整词、把「不可商用 / 商用需授权 / 非免费 / 非商业」归到收费（2026-10-30）。
+/// v5：只有**明确标注「个人免费」**才判个人免费，没标注的一律收费（2026-10-30 用户口径）。
+/// v6：「企业授权方案 / 企业需授权 / 企业授权」加入收费关键词；文件夹名后缀与
+///     文件名里的「商用需授权 / 企业授权」矛盾时不再采纳后缀（字魂 7 目录的教训）。
+pub const NOTE_RULES_VERSION: u32 = 6;
 
 pub fn classify(text: Option<&str>) -> CopyrightClass {
     explain(text).0
@@ -502,6 +565,10 @@ fn suffix(class: CopyrightClass) -> &'static str {
         CopyrightClass::Unknown => "未知版权",
     }
 }
+
+/// 字库里专门放「损坏 / 不完整」字体的目录名。
+/// 用户 2026-10-30 要求：导入时坏掉的字体不能跟正常字族混在一起，单独归到这个目录下。
+pub const INCOMPLETE_DIR: &str = "非完整字体";
 
 /// 清理文件名非法字符
 pub fn sanitize(name: &str) -> String {
@@ -845,6 +912,26 @@ pub fn inspect_dir_files_only(dir: &Path) -> DirCopyright {
     inspect_dir_impl(dir, false)
 }
 
+
+/// 目录里的文件名是否带着「商用需授权 / 企业授权」这类字样。
+///
+/// 这些字样是分发站标注的「商用要另买授权」。字库里有 7 个「字魂」目录，
+/// 旧版判定把后缀写成了「（商用免费）」，与文件名自带的「(商用需授权)」直接矛盾
+/// （用户 2026-10-30：这类字样**绝不能**归类为商用免费）。矛盾时不再采纳文件夹名，
+/// 让后面的证据（版权文档 / name 表）说话。
+fn dir_files_say_commercial_restricted(dir: &Path) -> bool {
+    const MARKERS: [&str; 4] = ["商用需授权", "企业授权方案", "企业需授权", "企业授权"];
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(String::from))
+        .any(|name| MARKERS.iter().any(|m| name.contains(m)))
+}
+
 fn inspect_dir_impl(dir: &Path, include_name_table: bool) -> DirCopyright {
     let mut verdicts: Vec<Verdict> = Vec::new();
     let mut channels: Option<String> = None;
@@ -891,7 +978,17 @@ fn inspect_dir_impl(dir: &Path, include_name_table: bool) -> DirCopyright {
     }
 
     // 2. 文件夹名里备注的版权（我们自己的「（商用免费）」后缀最权威）
-    if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
+    //    但文件名带「商用需授权 / 企业授权」时，后缀的「商用免费」不可信 —— 直接跳过这一级
+    let folder_says_free_commercial = dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|name| {
+            suffix_class(name) == Some(CopyrightClass::FreeCommercial)
+                || explain(Some(name)).0 == CopyrightClass::FreeCommercial
+        })
+        .unwrap_or(false);
+    let folder_distrusted = folder_says_free_commercial && dir_files_say_commercial_restricted(dir);
+    if let Some(name) = dir.file_name().and_then(|n| n.to_str()).filter(|_| !folder_distrusted) {
         let verdict = match suffix_class(name) {
             Some(class) => Verdict {
                 class,
@@ -1081,17 +1178,20 @@ mod tests {
             CopyrightClass::FreeCommercial
         );
         assert_eq!(classify(Some("OFL.txt")), CopyrightClass::FreeCommercial);
-        // 「个人免费、商用另购授权」→ 个人免费（用户 2026-10-29 要求改口径）
+        // 2026-10-30 口径：明确写了「个人使用」→ 个人免费（哪怕同时说要买商用授权）
         assert_eq!(
             classify(Some("Free for personal use only. Commercial license required.")),
             CopyrightClass::FreePersonal
         );
-        assert_eq!(classify(Some("仅供个人使用，商用请购买授权")), CopyrightClass::FreePersonal);
-        assert_eq!(classify(Some("不可商用")), CopyrightClass::FreePersonal);
+        assert_eq!(
+            classify(Some("仅供个人使用，商用请购买授权")),
+            CopyrightClass::FreePersonal
+        );
+        assert_eq!(classify(Some("不可商用")), CopyrightClass::Paid);
         assert_eq!(classify(Some("收费字体，购买授权后使用")), CopyrightClass::Paid);
         assert_eq!(classify(Some("免费商用，可商用")), CopyrightClass::FreeCommercial);
         assert_eq!(classify(Some("个人免费")), CopyrightClass::FreePersonal);
-        // 「个人使用免费 + 商用要买」这种英文写法（Gobold 那类）→ 个人免费
+        // 英文写明了 personal use → 个人免费
         assert_eq!(
             classify(Some("Personal use: FREE. Commercial use: buy the commercial license.")),
             CopyrightClass::FreePersonal
@@ -1102,6 +1202,33 @@ mod tests {
         );
         assert_eq!(classify(Some("Some custom text")), CopyrightClass::Unknown);
         assert_eq!(classify(None), CopyrightClass::Unknown);
+    }
+
+    /// 用户 2026-10-30 的核心要求：关键词必须**整词连续**出现，拆开一律不算
+    #[test]
+    fn keywords_must_match_whole_phrase() {
+        // 「免费商用」四个字必须连着出现
+        assert_eq!(classify(Some("免费商用")), CopyrightClass::FreeCommercial);
+        assert_eq!(classify(Some("免费商")), CopyrightClass::Unknown);
+        assert_eq!(classify(Some("免费")), CopyrightClass::Unknown);
+        assert_eq!(classify(Some("商用")), CopyrightClass::Unknown);
+        assert_eq!(classify(Some("免费 商用")), CopyrightClass::Unknown);
+        // 「个人免费」同理
+        assert_eq!(classify(Some("个人免费")), CopyrightClass::FreePersonal);
+        assert_eq!(classify(Some("个人")), CopyrightClass::Unknown);
+        // 收费关键词也是整词
+        assert_eq!(classify(Some("非免费字体")), CopyrightClass::Paid);
+        assert_eq!(classify(Some("非免费")), CopyrightClass::Paid);
+        assert_eq!(classify(Some("非商业字体")), CopyrightClass::Paid);
+        assert_eq!(classify(Some("商用需授权")), CopyrightClass::Paid);
+        assert_eq!(classify(Some("不可商用")), CopyrightClass::Paid);
+        // 「不可商用」不能因为含「可商用」被判成免费
+        assert_eq!(classify(Some("本字体不可商用")), CopyrightClass::Paid);
+        // 但「可商用」本身仍然是免费声明（前置不是否定字）
+        assert_eq!(classify(Some("可商用")), CopyrightClass::FreeCommercial);
+        assert_eq!(classify(Some("允许商用")), CopyrightClass::FreeCommercial);
+        // 「无需授权」讲的是不用买授权，不是收费
+        assert_eq!(classify(Some("个人使用无需授权")), CopyrightClass::Unknown);
     }
 
     /// 保守口径的核心：证据不够就不下结论（误判比未知更糟）
@@ -1116,24 +1243,28 @@ mod tests {
             classify(Some("All rights reserved. May not be redistributed.")),
             CopyrightClass::Unknown
         );
-        // 只写了「免费」+ 禁止商用 → 个人免费
+        // 只写了「免费」+ 禁止商用 → 收费（2026-10-30 口径：「禁止商用」是收费关键词）
         assert_eq!(
             classify(Some("本字体免费，禁止商用")),
-            CopyrightClass::FreePersonal
+            CopyrightClass::Paid
         );
         // 只写了「免费」，但写清了可以商用 → 商用免费
         assert_eq!(classify(Some("完全免费，可商用")), CopyrightClass::FreeCommercial);
     }
 
-    /// 「个人免费、商用收费」一律算个人免费；真要花钱的才叫收费
+    /// 2026-10-30 最终口径：**只有明确标注「个人免费」才算个人免费**，
+    /// 没标注的只要出现「不可商用 / 禁止商用 / 商用需授权 / 非免费 / 非商业」一律收费。
     #[test]
-    fn personal_free_with_paid_commercial_is_personal() {
+    fn personal_free_requires_explicit_label() {
+        // 明确标注了个人免费 → 个人免费（即便同一句里说要买商用授权）
         for text in [
-            "This font is free for personal use only. Commercial license required.",
-            "Personal use: FREE. Commercial use: buy the commercial license.",
-            "non-commercial use only",
+            "个人免费，商用需授权",
+            "本字体个人免费，但不可商用",
+            "个人免费下载，禁止商用",
+            "免费供个人学习使用，商用需另购授权",
             "仅供个人使用，商用请购买授权",
-            "本字体免费，禁止商用",
+            "Personal use: FREE. Commercial use: buy the commercial license.",
+            "Free for personal use only. Commercial license required.",
         ] {
             assert_eq!(
                 classify(Some(text)),
@@ -1141,16 +1272,25 @@ mod tests {
                 "should be personal: {text}"
             );
         }
-        // 没说个人能不能用、只要求买授权的，仍然是收费
+        // 没写「个人免费」→ 一律收费
         for text in [
-            "purchase a license",
+            "不可商用",
+            "本字体不可商用",
+            "禁止商用",
+            "商用需授权",
+            "该字体为非商业字体",
+            "非免费字体",
             "收费字体，购买授权后使用",
             "Trial version, evaluation only",
-            "shareware",
         ] {
-            assert_eq!(classify(Some(text)), CopyrightClass::Paid, "should be paid: {text}");
+            assert_eq!(
+                classify(Some(text)),
+                CopyrightClass::Paid,
+                "should be paid: {text}"
+            );
         }
     }
+
 
     /// 「free for commercial or non-commercial use」是允许商用，别被 non-commercial 带偏
     #[test]
@@ -1165,8 +1305,8 @@ mod tests {
             classify(Some("Free for commercial use. Attribution appreciated.")),
             CopyrightClass::FreeCommercial
         );
-        // 中文「不可商用」仍然不能翻车
-        assert_eq!(classify(Some("不可商用")), CopyrightClass::FreePersonal);
+        // 中文「不可商用」是收费关键词，仍然不能翻车
+        assert_eq!(classify(Some("不可商用")), CopyrightClass::Paid);
     }
 
     #[test]
@@ -1267,6 +1407,55 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 「企业授权」系是收费关键词（2026-10-30 用户口径）；
+    /// 但同一段里写明「免费商用 / 个人免费」的，仍按明确结论算。
+    #[test]
+    fn enterprise_license_words_are_paid() {
+        for text in [
+            "字魂字库-企业授权方案",
+            "企业授权请联系客服",
+            "企业需授权后使用",
+            "本字体商用需授权",
+        ] {
+            assert_eq!(classify(Some(text)), CopyrightClass::Paid, "should be paid: {text}");
+        }
+        assert_eq!(
+            classify(Some("本字体免费商用，企业授权请咨询")),
+            CopyrightClass::FreeCommercial,
+            "明确写了免费商用，不被「企业授权」拖累"
+        );
+        assert_eq!(
+            classify(Some("个人免费，商用需授权")),
+            CopyrightClass::FreePersonal
+        );
+    }
+
+    /// 文件夹后缀说「商用免费」，但目录里的文件名带「商用需授权 / 企业授权」时，
+    /// 后缀不可信（字魂 7 目录的教训）——不能判成商用免费。
+    #[test]
+    fn folder_suffix_distrusted_when_file_names_contradict() {
+        let dir = std::env::temp_dir().join("zfm-suffix-conflict");
+        let _ = std::fs::remove_dir_all(&dir);
+        let bad = dir.join("zihuntest（商用免费）");
+        std::fs::create_dir_all(&bad).unwrap();
+        std::fs::write(bad.join("字魂测试(商用需授权) #字体# .ttf"), b"fake").unwrap();
+        assert_eq!(
+            inspect_dir_files_only(&bad).class,
+            CopyrightClass::Unknown,
+            "矛盾时不能采纳「（商用免费）」后缀"
+        );
+
+        // 对照组：没有矛盾文件名的目录，后缀照常生效
+        let good = dir.join("zihuntest2（商用免费）");
+        std::fs::create_dir_all(&good).unwrap();
+        std::fs::write(good.join("SomeFont.ttf"), b"fake").unwrap();
+        assert_eq!(
+            inspect_dir_files_only(&good).class,
+            CopyrightClass::FreeCommercial
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn trail_dir(tag: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("zfm-trail-{tag}"));
         let _ = std::fs::remove_dir_all(&dir);
@@ -1300,11 +1489,11 @@ mod tests {
             )],
         );
         let r = inspect_dir(&dir);
+        // 2026-10-30 口径：写明「仅供个人使用」→ 个人免费
         assert_eq!(r.class, CopyrightClass::FreePersonal);
         let note = r.note.expect("should have note");
         assert!(note.contains("授权原文："), "{note}");
         assert!(note.contains("判定依据：个人免费"), "{note}");
-        assert!(note.contains("商用需另购授权"), "{note}");
         assert!(note.contains("仅供个人使用"), "{note}");
         assert!(note.contains("授权说明.txt"), "{note}");
         let _ = std::fs::remove_dir_all(&dir);

@@ -72,13 +72,14 @@ fn migrate_note_rules(app: &tauri::AppHandle) {
 
 #[tauri::command]
 async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
-    let (extra, library_dir, linked) = {
+    let (extra, library_dir, linked, unpreviewable) = {
         let store: State<Store> = app.state();
         let state = store.0.lock().map_err(|e| e.to_string())?;
         (
             state.extra_dirs.clone(),
             state.active_library_dir().map(|s| s.to_owned()),
             state.linked.clone(),
+            state.unpreviewable.clone(),
         )
     };
     let managed = scanner::effective_managed_dir(library_dir.as_deref());
@@ -109,27 +110,40 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
             linked.extend(fresh);
         }
     }
+    // 链接进库的字体（导入时选「链接」而非复制）往往有几千个，而且全部躺在扫描目录之外：
+    // 先数一遍（只做 is_file，便宜），好把它们算进同一条进度条。
+    // 以前它们发生在进度 100% 之后且不发任何进度事件 —— 界面上就是卡在 100%（0.9.8-1 修）。
+    let linked_files: Vec<String> = linked
+        .iter()
+        .filter(|p| std::path::Path::new(p).is_file())
+        .cloned()
+        .collect();
+    let linked_total = linked_files.len();
     // 注册表探测（列出系统已注册的所有字体路径）跟扫描互不依赖，没必要排队：
     // 扫描几千个文件要好几秒，探测也要几百毫秒，串行做的话「进度条 100%」到
     // 「字体真正可用」之间就会多出一段干等。这里开一条线程先跑着，扫完再收。
     let probe_handle = std::thread::spawn(activation::probe);
     let t_scan = std::time::Instant::now();
     // 缓存跟着扫描一起在后台线程里创建并带回来：链接字体那一段要继续用它
-    let (mut faces, mut cache) = tauri::async_runtime::spawn_blocking({
+    let (mut faces, mut cache, scan_files) = tauri::async_runtime::spawn_blocking({
         let app = app.clone();
+        // managed 后面还要用来归集损坏字体，这里给闭包一份副本
+        let managed = managed.clone();
         move || {
             let mut cache = crate::fontcache::FontCache::load();
-            let faces = scanner::scan_all(&app, &extra, &managed, &mut cache);
-            (faces, cache)
+            let (faces, files) = scanner::scan_all(&app, &extra, &managed, &mut cache, linked_total);
+            (faces, cache, files)
         }
     })
     .await
     .map_err(|e| e.to_string())?;
     eprintln!("[scan] 解析耗时 {:?}", t_scan.elapsed());
+    // 总进度 = 系统/额外目录的文件 + 字库链接字体；两条链共用这一条进度
+    let grand_total = scan_files + linked_total;
 
     // 链接进库的字体（导入时选「链接」而非复制）往往有几千个，而且全部躺在扫描目录之外：
     // 原来这里逐个重新解析，进度条显示 100% 之后还要干等十几秒才轮到它们。
-    // 现在同样走解析缓存，并且边解析边推给界面。
+    // 现在同样走解析缓存，边解析边推给界面，并把进度继续往前推（同一条进度条）。
     let t_linked = std::time::Instant::now();
     let mut linked_faces = Vec::new();
     let mut linked_batch: Vec<FontFace> = Vec::new();
@@ -145,11 +159,18 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
     // 这里按路径去重，避免同一个字体出现两份卡片。
     let mut scanned: std::collections::HashSet<String> =
         faces.iter().map(|f| f.path.to_lowercase()).collect();
-    for path in &linked {
-        let p = std::path::Path::new(path);
-        if !p.is_file() {
-            continue;
+    for (done, path) in linked_files.iter().enumerate() {
+        // 进度每 25 个推一次（和扫描链同一节奏）；循环末尾补一次，保证不回退也不跳空
+        if done % 25 == 0 {
+            let _ = app.emit(
+                "scan:progress",
+                scanner::ScanProgress {
+                    done: scan_files + done,
+                    total: grand_total,
+                },
+            );
         }
+        let p = std::path::Path::new(path);
         if !scanned.insert(path.to_lowercase()) {
             continue;
         }
@@ -200,9 +221,17 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
     if !linked_batch.is_empty() {
         let _ = app.emit("scan:batch", &linked_batch);
     }
+    // 收口：进度必须落到 100%，否则前端会停在最后一个 25 的倍数上（看起来像卡住）
+    let _ = app.emit(
+        "scan:progress",
+        scanner::ScanProgress {
+            done: grand_total,
+            total: grand_total,
+        },
+    );
     eprintln!(
         "[scan] 链接字体 {} 个，耗时 {:?}",
-        linked.len(),
+        linked_total,
         t_linked.elapsed()
     );
     // 这一轮没见到的路径（删掉的字体 / 换掉的目录）从缓存里清掉，落盘放后台线程
@@ -214,11 +243,57 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
         faces.extend(linked_faces);
     }
 
+    // 运行时判过「预览不出来」的字面：结构扫描看不出这一点，这里把标记补回去。
+    // 已有的更严重原因（文件损坏等）不覆盖。
+    if !unpreviewable.is_empty() {
+        for f in faces.iter_mut() {
+            if f.incomplete.is_none() && unpreviewable.contains(&f.id) {
+                f.incomplete = Some(crate::parser::UNPREVIEWABLE_REASON.to_string());
+            }
+        }
+    }
+
     diag::index_library(&faces);
     let t_probe = std::time::Instant::now();
     // 并行探测的结果在这里收口；线程意外挂了就退回去自己再探一次
     let probe = probe_handle.join().unwrap_or_else(|_| activation::probe());
     eprintln!("[scan] 等注册表探测 {:?}", t_probe.elapsed());
+
+    // 字库里**已经存在**但损坏 / 不完整的字体：顺手挪进「非完整字体」目录。
+    // 导入流程自己会归档，这里兜住「以前就在库里」的那些（用户 2026-10-30 的要求）。
+    let moved = installer::relocate_incomplete(&managed, &faces);
+    if !moved.is_empty() {
+        let old_to_new: std::collections::HashMap<String, String> = moved.into_iter().collect();
+        // 路径变了，内存里的字面得按新位置重新解析，否则这一屏全是打不开的字
+        let mut fresh: Vec<FontFace> = Vec::new();
+        for new in old_to_new.values() {
+            for mut f in parser::parse_font_file(std::path::Path::new(new), FontSource::Managed) {
+                let (cls, note) = crate::copyright::inspect_face(
+                    f.license.as_deref(),
+                    f.license_url.as_deref(),
+                    f.copyright.as_deref(),
+                );
+                f.copyright_class = Some(cls.as_str().to_string());
+                f.license_note = note;
+                fresh.push(f);
+            }
+        }
+        faces.retain(|f| !old_to_new.contains_key(&f.path));
+        faces.extend(fresh);
+        // 链接记录 / 入库时间跟着换到新路径，不然后台会认为这些字体没了
+        if let Ok(mut state) = app.state::<Store>().0.lock() {
+            for (old, new) in &old_to_new {
+                state.linked.remove(old);
+                state.linked.insert(new.clone());
+                if let Some(t) = state.added.remove(old) {
+                    state.added.insert(new.clone(), t);
+                }
+            }
+            let _ = store::save(&state);
+        }
+        eprintln!("[scan] 已归集 {} 个损坏字体到「非完整字体」", old_to_new.len());
+    }
+
     let store: State<Store> = app.state();
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
     let before = state.linked.len();
@@ -611,10 +686,11 @@ async fn font_preview_file(
     app: tauri::AppHandle,
     path: String,
     face_index: u32,
+    level: Option<u8>,
 ) -> Result<Option<String>, String> {
     let scope = app.asset_protocol_scope();
     tauri::async_runtime::spawn_blocking(move || {
-        preview_font::ensure_preview_font(std::path::Path::new(&path), face_index).map(|p| {
+        preview_font::ensure_preview_font(std::path::Path::new(&path), face_index, level.unwrap_or(0)).map(|p| {
             // 单独放行这一份（目录级放行在启动时做过，这里兜住运行期新建的文件）
             let _ = scope.allow_file(&p);
             p.to_string_lossy().into_owned()
@@ -988,6 +1064,42 @@ async fn font_license_fetch(
     }))
 }
 
+/// 用系统默认程序打开字库里的某个文件（详情面板「版权文件」那一行点一下就开）。
+///
+/// 路径来自字面所在目录的扫描结果，不是前端随便拼的字符串；但仍然校验一次
+/// 「是不是真实存在的文件」，避免把任意路径交给系统外壳去打开。
+#[tauri::command]
+fn open_local_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_file() {
+        return Err(format!("file not found: {path}"));
+    }
+    tauri_plugin_opener::OpenerExt::opener(&app)
+        .open_path(path, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+
+/// 记录或摘掉「软件里预览不出来」的标记。
+///
+/// 前端在两档修复都失败时调（`on = true`），成功加载时摘掉（`on = false`）。
+/// 只写 state、不做文件移动 —— 浏览器拒收可能是瞬时的，不能据此动用户的文件。
+#[tauri::command]
+fn set_unpreviewable(app: tauri::AppHandle, ids: Vec<String>, on: bool) -> Result<(), String> {
+    let store: State<Store> = app.state();
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    if on {
+        state.unpreviewable.extend(ids.iter().cloned());
+    } else {
+        for id in &ids {
+            state.unpreviewable.remove(id);
+        }
+    }
+    // 字体列表在前端，这里只持久化名单；前端拿到结果后自己刷新那一批字面
+    crate::store::save(&state);
+    Ok(())
+}
+
 /// 列出给定目录里的版权信息类文件（非递归）。
 /// 在线栏目判断"字库是否已完整收录"时需要知道字族目录是否带版权文件。
 #[tauri::command]
@@ -1098,7 +1210,7 @@ fn get_snapshots(store: State<Store>) -> Result<Vec<store::Snapshot>, String> {
 #[tauri::command]
 fn save_snapshot(store: State<Store>, snapshot: store::Snapshot) -> Result<Vec<store::Snapshot>, String> {
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
-    state.save_snapshot(snapshot);
+    state.save_snapshot(snapshot)?; // 新建超上限（5 个）直接报错，前端弹提醒
     store::save(&state)?;
     Ok(state.snapshots.clone())
 }
@@ -1125,7 +1237,7 @@ fn rename_snapshot(store: State<Store>, from: String, to: String) -> Result<(), 
         name: to,
         created_at: snap.created_at,
         entries: snap.entries,
-    });
+    })?;
     store::save(&state)
 }
 
@@ -1862,6 +1974,8 @@ pub fn run() {
             online_clear_staging,
             online_hosts,
             info_files,
+            open_local_file,
+            set_unpreviewable,
             font_license_fetch,
             restore_from_trash,
             delete_trash_entry,

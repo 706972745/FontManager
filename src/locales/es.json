@@ -792,5 +792,18 @@
   "waterfall.emptyTitle": "Nada que mostrar en cascada",
   "card.partialScriptTitle": "Este estilo solo tiene algunos glifos {script}: el texto corrido perderá caracteres",
   "card.seeCjkVersion": "Chino en {family}",
-  "detail.charsetValue": "{total} caracteres · {han} han"
+  "detail.charsetValue": "{total} caracteres · {han} han",
+  "filter.incompleteOnly": "Solo sin vista previa / dañadas",
+  "card.brokenFace": "sin vista previa",
+  "card.brokenSome": "{count}/{total} estilos sin vista previa",
+  "card.brokenAll": "ningún estilo tiene vista previa",
+  "card.structural": "estructura no estándar",
+  "detail.licenseFileOpen": "Clic para abrir «{file}» con la app predeterminada",
+  "toast.openFileFailed": "No se pudo abrir este archivo",
+  "empty.filtered.title": "Ninguna fuente coincide con estos filtros",
+  "empty.filtered.body": "Quita algún filtro o bórralos desde el embudo de arriba.",
+  "menu.noSnapshots": "Aún no hay instantáneas",
+  "toast.snapshotLimitReached": "Límite de instantáneas alcanzado",
+  "toast.snapshotLimitSub": "Se conservan como máximo {max} instantáneas; borra una e inténtalo de nuevo.",
+  "toast.snapshotLimitImport": "El archivo tiene {count} instantáneas pero solo quedan {room} huecos."
 }

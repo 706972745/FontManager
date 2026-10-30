@@ -62,7 +62,14 @@ export const DOCK_BAR_LINE = 5;
  */
 const HINT_HOLD_MS = 1000;
 /** 鼠标移出窗口后，静置多久自动收回（毫秒） */
-const RECALL_IDLE_MS = 900;
+/**
+ * 鼠标移出面板后多久收起。
+ *
+ * 原来是 900ms「静置」——用户把鼠标挪走还得等将近一秒才收，手感很黏。
+ * 2026-10-30 按用户要求改成 0（立刻收）。`scheduleRecall` 里仍会复查
+ * `pointerInside`，所以「划出去又马上划回来」不会误收。
+ */
+const RECALL_IDLE_MS = 0;
 /**
  * 热键呼出后的观察期（毫秒）：面板弹出来先给用户看一眼，
  * 这段时间内鼠标没进面板就自动收起——避免「按了一下键，屏幕顶上一直摊着一块」。
@@ -208,7 +215,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
    * 速览期间系统圆角保持关闭，退出时也不再打开。
    *
    * 圆角（完整界面和速览）现在全部由 CSS 画（--qb-radius，App 挂载时按
-   * 「8 物理像素 / DPR」写入，两个界面同一个来源、弧度必然一致）；
+   * 「8 物理像素 / DPR」写入，两个界面同一个来源、弧度必然一致）。
+   *
    * DWM 圆角在哪儿都不启用——它自带一圈窗口阴影，而用户要求两个界面
    * 都不要窗口边缘阴影。这里进速览补一道关闭只是防御性的。
    */
@@ -1143,7 +1151,15 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       // 鼠标已经走了：之前排的「等冷却完再展开」也一并作废，别在鼠标离开后才弹开
       clearRevealRetry();
       if (dockedRef.current || !hoverExpanded) return;
-      scheduleRecall();
+      if (!autoHideOn()) return;
+      // 立刻收：不再走「静置 + 贴边稳定」那两段延迟，鼠标一离开就开始收。
+      // 正在跑动画时不硬插一脚（会和形变线程抢几何），退回排队，落定后再收。
+      if (animating || mutating) {
+        scheduleRecall();
+        return;
+      }
+      clearRecall();
+      void collapse();
     };
 
     const onEngage = () => {

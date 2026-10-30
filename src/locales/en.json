@@ -777,5 +777,18 @@
   "waterfall.emptyTitle": "Nothing to cascade",
   "card.partialScriptTitle": "This face only has some {script} glyphs — body text will have missing characters",
   "card.seeCjkVersion": "Chinese in {family}",
-  "detail.charsetValue": "{total} characters · {han} Han"
+  "detail.charsetValue": "{total} characters · {han} Han",
+  "filter.incompleteOnly": "Can't preview / damaged only",
+  "card.brokenFace": "can't preview",
+  "card.brokenSome": "{count}/{total} styles can't preview",
+  "card.brokenAll": "no style can be previewed",
+  "card.structural": "non-standard structure",
+  "detail.licenseFileOpen": "Click to open “{file}” with the default app",
+  "toast.openFileFailed": "Couldn't open this file",
+  "empty.filtered.title": "No fonts match these filters",
+  "empty.filtered.body": "Loosen a filter or two, or clear them from the funnel button up top.",
+  "menu.noSnapshots": "No snapshots yet",
+  "toast.snapshotLimitReached": "Snapshot limit reached",
+  "toast.snapshotLimitSub": "At most {max} snapshots are kept; delete one and try again.",
+  "toast.snapshotLimitImport": "The file has {count} snapshots but only {room} slot(s) left."
 }

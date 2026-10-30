@@ -6,9 +6,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { isQuickbarGeometryBusy } from "./useQuickbarDock";
+import { snapDragTop } from "./dragSnap";
 
-/** 可以越过屏幕上边界的余量（物理像素）：留一点点让窗口能贴到顶，又不会整条飞到屏幕外 */
-const OVER_TOP = 4;
 /** 拖动时不响应拖动的控件（输入框、按钮、滑条……） */
 const INTERACTIVE = "input, textarea, select, button, a, [data-no-drag]";
 
@@ -70,8 +69,11 @@ export function useWindowDrag() {
     const onMove = (ev: PointerEvent) => {
       if (!ready || done) return;
       const nx = baseX + (ev.screenX - startX) * dpr;
-      // 往上顶到屏幕边缘就停住，配合吸顶收起
-      const ny = Math.max(-OVER_TOP, baseY + (ev.screenY - startY) * dpr);
+      const rawY = baseY + (ev.screenY - startY) * dpr;
+      // DPR 实时取：拖到另一块不同缩放的屏幕上时，吸附距离也跟着那块屏幕换算。
+      // 距顶边不足吸附距离 → 直接贴到 y=0（含越过顶边的情况），松手后吸顶状态机
+      // 会照常判定收起；离开吸附区才回到自由拖动，保留原有越顶余量。
+      const ny = snapDragTop(rawY, window.devicePixelRatio || dpr || 1);
       pending = [nx, ny];
       if (raf === undefined) raf = requestAnimationFrame(flush);
     };

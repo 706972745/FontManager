@@ -550,14 +550,37 @@ fn checksum(data: &[u8]) -> u32 {
 }
 
 /// 用给定的 cmap 重新拼一个单字面的 sfnt
-fn rebuild(data: &[u8], sfnt: usize, tables: &[TableRec], new_cmap: Option<&[u8]>) -> Option<Vec<u8>> {
+fn rebuild(
+    data: &[u8],
+    sfnt: usize,
+    tables: &[TableRec],
+    new_cmap: Option<&[u8]>,
+    strip_hinting: bool,
+) -> Option<Vec<u8>> {
     // 收表：丢掉 DSIG（老字体的签名表经常是坏的，OTS 会因此整份拒收）、
     // 零长度表、竖向度量表（OTS 会检查 vmtx 是否覆盖全部字形，老字体常常对不上；
     // 横向预览完全用不到），cmap 换成新的
+    // 修 loca / post 要用到：字形数与 loca 的条目宽度
+    let num_glyphs = tables
+        .iter()
+        .find(|t| &t.tag == b"maxp")
+        .and_then(|t| u16_at(data, t.offset + 4))
+        .unwrap_or(0);
+    let loca_long = tables
+        .iter()
+        .find(|t| &t.tag == b"head")
+        .and_then(|t| i16_at(data, t.offset + 50))
+        .unwrap_or(0)
+        != 0;
     let mut items: Vec<([u8; 4], Vec<u8>)> = Vec::new();
     let mut saw_cmap = false;
     for t in tables {
         if &t.tag == b"DSIG" || &t.tag == b"vmtx" || &t.tag == b"vhea" || &t.tag == b"VORG" {
+            continue;
+        }
+        // 第二档修复：连提示程序一起丢掉。有的老字体 fpgm/prep 里是一堆坏字节码，
+        // OTS 不报具体原因就是整份拒收（652-CAI978 那类），去掉提示完全不影响预览。
+        if strip_hinting && matches!(&t.tag, b"fpgm" | b"prep" | b"cvt ") {
             continue;
         }
         if t.len == 0 {
@@ -602,7 +625,13 @@ fn rebuild(data: &[u8], sfnt: usize, tables: &[TableRec], new_cmap: Option<&[u8]
             } else {
                 0
             };
-            if !matches!(version, 0x0001_0000 | 0x0002_0000 | 0x0002_5000 | 0x0003_0000) {
+            // 2.0 还要求「字形名数量 == maxp.numGlyphs」，老字体经常对不上
+            // （330-CAI978 写成 251、实际 232 个字形），OTS 直接拒收。
+            // 预览用不到字形名，统一降级成 3.0 最稳。
+            let bad_count = version == 0x0002_0000
+                && u16_at(raw, 32).map(|n| n as u32 != num_glyphs as u32).unwrap_or(true);
+            if bad_count || !matches!(version, 0x0001_0000 | 0x0002_0000 | 0x0002_5000 | 0x0003_0000)
+            {
                 let mut minimal = vec![0u8; 32];
                 // version 0x00030000：只留 32 字节固定头，没有字形名
                 minimal[1] = 3;
@@ -628,6 +657,17 @@ fn rebuild(data: &[u8], sfnt: usize, tables: &[TableRec], new_cmap: Option<&[u8]
         if tag == b"hhea" && raw.len() >= 36 {
             // hhea 的 majorVersion 同样有写成 2 的老字体，OTS 会拒收
             raw[0..2].copy_from_slice(&1u16.to_be_bytes());
+        }
+        if tag == b"loca" && num_glyphs > 0 {
+            // OTS 要求 loca 长度恰好是 (numGlyphs+1) × 2/4；多出来的字节会让它整份拒收
+            let expect = (num_glyphs as usize + 1) * if loca_long { 4 } else { 2 };
+            if raw.len() != expect {
+                raw.resize(expect, 0);
+            }
+        }
+        if tag == b"cvt " && raw.len() % 2 != 0 {
+            // OTS 按 u16 读 cvt，奇数长度报错
+            raw.pop();
         }
         if tag == b"maxp" && raw.len() >= 16 && raw[0..4] == [0, 1, 0, 0] {
             // 有些老 MS 字体把 maxZones 写成 7（规范只允许 1 / 2），OTS 直接判
@@ -732,8 +772,88 @@ fn touch(path: &Path) {
 }
 
 /// 这个字面浏览器是不是自己就能打开（普通字体 + cmap 有受支持的子表）
+/// OTS 一定会拒收、但**从表目录上看不出来**的结构问题。
+///
+/// 这些字体在库里能解析、字形也在，卡片上却只显示「这种格式暂时无法预览」——
+/// 因为 `browser_can_load` 原来只检查 cmap 子表平台，认为「浏览器能加载」，
+/// 于是根本不走修复流程，最后 WebView2 的 OTS 把它们整份拒掉。
+///
+/// 已经踩实的三种（0.9.8-1）：
+///   1. `loca` 长度和「字形数 × 2/4」对不上（101PUPS.TTF 多 2 字节）；
+///   2. `post` 是 2.0 但字形名数量和 maxp.numGlyphs 不符（330-CAI978：251 vs 232）；
+///   3. `cvt ` 长度是奇数（OTS 按 u16 读，奇数长度直接报错）。
+pub fn structural_problem(data: &[u8]) -> Option<&'static str> {
+    let sfnt = 0usize;
+    if data.len() < 12 {
+        return None;
+    }
+    let tables = tables_of(data, sfnt)?;
+    let find = |tag: &[u8; 4]| tables.iter().find(|t| &t.tag == tag);
+    let num_glyphs = find(b"maxp")
+        .and_then(|t| u16_at(data, t.offset + 4))
+        .unwrap_or(0);
+    if num_glyphs == 0 {
+        return None;
+    }
+    // loca：长度必须恰好是 (numGlyphs + 1) * (2 或 4)
+    if let (Some(head), Some(loca)) = (find(b"head"), find(b"loca")) {
+        let long_fmt = i16_at(data, head.offset + 50).unwrap_or(0) != 0;
+        let expect = (num_glyphs as usize + 1) * if long_fmt { 4 } else { 2 };
+        if loca.len as usize != expect {
+            return Some("loca 长度与字形数不符");
+        }
+    }
+    // post 2.0：字形名数量必须等于 numGlyphs
+    if let Some(post) = find(b"post") {
+        let version = u32::from_be_bytes([
+            data.get(post.offset).copied().unwrap_or(0),
+            data.get(post.offset + 1).copied().unwrap_or(0),
+            data.get(post.offset + 2).copied().unwrap_or(0),
+            data.get(post.offset + 3).copied().unwrap_or(0),
+        ]);
+        if version == 0x0002_0000 {
+            if let Some(names) = u16_at(data, post.offset + 32) {
+                if names != num_glyphs {
+                    return Some("post 字形名数量与字形数不符");
+                }
+            }
+        }
+    }
+    // cvt：OTS 按 u16 读，长度必须是偶数
+    if let Some(cvt) = find(b"cvt ") {
+        if cvt.len % 2 != 0 {
+            return Some("cvt 表长度是奇数");
+        }
+    }
+    None
+}
+
+/// 这份字体**能不能**被修复成浏览器认得的副本。
+///
+/// 判据就是修复流程自己能不能走通：表目录读得出来、cmap 里至少有一个能用
+/// （Unicode 子表，或者认得出代码页的旧编码子表）。
+/// 修不好 = 在软件里永远显示不出来，才算「真损坏」。
+pub fn repairable(data: &[u8]) -> bool {
+    let Some(tables) = tables_of(data, 0) else {
+        return false;
+    };
+    let Some(cmap) = tables.iter().find(|t| &t.tag == b"cmap") else {
+        return false;
+    };
+    let subs = cmap_subtables(data, cmap.offset);
+    subs.iter()
+        .any(|s| unicode_rank(s.platform, s.encoding, s.format).is_some())
+        || subs
+            .iter()
+            .any(|s| code_page_for(s.platform, s.encoding).is_some())
+}
+
 fn browser_can_load(data: &[u8], sfnt: usize, is_collection: bool) -> bool {
     if is_collection {
+        return false;
+    }
+    // 结构有问题的一律送去修复（修不了就当普通字体，行为跟以前一致）
+    if structural_problem(data).is_some() {
         return false;
     }
     let Some(tables) = tables_of(data, sfnt) else {
@@ -750,7 +870,9 @@ fn browser_can_load(data: &[u8], sfnt: usize, is_collection: bool) -> bool {
 }
 
 /// 给这个字面准备一份浏览器能加载的副本；不需要 / 做不到时返回 None
-pub fn ensure_preview_font(path: &Path, face_index: u32) -> Option<PathBuf> {
+/// `level`：0 = 只在「浏览器明显认不了」时修（默认）；1 = 强制重建；
+/// 2 = 强制重建并去掉提示程序（fpgm / prep / cvt）—— 兜住 OTS 不说明原因的拒收。
+pub fn ensure_preview_font(path: &Path, face_index: u32, level: u8) -> Option<PathBuf> {
     // 先按 mtime + 大小算缓存名，命中就直接返回——TTC 动辄上百 MB，能省一次整读
     let md = fs::metadata(path).ok()?;
     let mtime = md
@@ -765,7 +887,7 @@ pub fn ensure_preview_font(path: &Path, face_index: u32) -> Option<PathBuf> {
     let key = fnv1a(key, &(face_index as u64).to_be_bytes());
     let dir = cache_dir()?;
     for ext in ["ttf", "otf"] {
-        let hit = dir.join(format!("{CACHE_TAG}-{key:016x}.{ext}"));
+        let hit = dir.join(format!("{CACHE_TAG}-L{level}-{key:016x}.{ext}"));
         if hit.exists() {
             touch(&hit);
             return Some(hit);
@@ -777,11 +899,12 @@ pub fn ensure_preview_font(path: &Path, face_index: u32) -> Option<PathBuf> {
     let index = (face_index as usize).min(offsets.len().saturating_sub(1));
     let sfnt = *offsets.get(index)?;
     let is_collection = &data[0..4] == b"ttcf";
-    if browser_can_load(&data, sfnt, is_collection) {
+    // level 0 才做「看起来能加载就别动」的短路；失败重试时（1/2）一律重建
+    if level == 0 && browser_can_load(&data, sfnt, is_collection) {
         return None;
     }
     let ext = if &data[sfnt..sfnt + 4] == b"OTTO" { "otf" } else { "ttf" };
-    let target = dir.join(format!("{CACHE_TAG}-{key:016x}.{ext}"));
+    let target = dir.join(format!("{CACHE_TAG}-L{level}-{key:016x}.{ext}"));
 
     let tables = tables_of(&data, sfnt)?;
     let cmap_rec = tables.iter().find(|t| &t.tag == b"cmap")?;
@@ -851,7 +974,7 @@ pub fn ensure_preview_font(path: &Path, face_index: u32) -> Option<PathBuf> {
     }
     let pairs: Vec<(u32, u16)> = map.into_iter().collect();
     let cmap = build_cmap(&pairs);
-    let rebuilt = rebuild(&data, sfnt, &tables, Some(&cmap))?;
+    let rebuilt = rebuild(&data, sfnt, &tables, Some(&cmap), level >= 2)?;
 
     // 先写临时文件再改名，避免并发下读到半个文件
     let tmp = dir.join(format!(".{CACHE_TAG}-{key:016x}.{}.tmp", std::process::id()));
@@ -891,7 +1014,7 @@ mod tests {
                     Some((p, i)) => (p.to_string(), i.parse::<u32>().unwrap_or(0)),
                     None => (line.to_string(), 0),
                 };
-                match ensure_preview_font(Path::new(&path), index) {
+                match ensure_preview_font(Path::new(&path), index, 0) {
                     Some(p) => {
                         ok += 1;
                         if let Some(dir) = &sweep {
@@ -921,7 +1044,7 @@ mod tests {
             Some((p, i)) => (p.to_string(), i.parse::<u32>().unwrap_or(0)),
             None => (spec, 0),
         };
-        let out = ensure_preview_font(Path::new(&path), index);
+        let out = ensure_preview_font(Path::new(&path), index, 0);
         println!("{path}#{index} -> {out:?}");
         assert!(out.is_some(), "没能修出预览字体");
     }

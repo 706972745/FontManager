@@ -775,5 +775,18 @@
   "waterfall.emptyTitle": "Nichts zum Staffeln",
   "card.partialScriptTitle": "Dieser Schnitt enthält nur einige {script}-Glyphen — Fließtext verliert Zeichen",
   "card.seeCjkVersion": "Chinesisch in {family}",
-  "detail.charsetValue": "{total} Zeichen · {han} Han"
+  "detail.charsetValue": "{total} Zeichen · {han} Han",
+  "filter.incompleteOnly": "Nur nicht anzeigbare / beschädigte",
+  "card.brokenFace": "keine Vorschau",
+  "card.brokenSome": "{count}/{total} Schnitte ohne Vorschau",
+  "card.brokenAll": "kein Schnitt darstellbar",
+  "card.structural": "nicht standardkonform",
+  "detail.licenseFileOpen": "Klicken, um „{file}“ mit der Standard-App zu öffnen",
+  "toast.openFileFailed": "Datei konnte nicht geöffnet werden",
+  "empty.filtered.title": "Keine Schrift passt zu diesen Filtern",
+  "empty.filtered.body": "Locker die Filter oder setze sie über den Trichter oben rechts zurück.",
+  "menu.noSnapshots": "Noch keine Schnappschüsse",
+  "toast.snapshotLimitReached": "Snapshot-Limit erreicht",
+  "toast.snapshotLimitSub": "Maximal {max} Snapshots werden behalten; lösche einen und versuche es erneut.",
+  "toast.snapshotLimitImport": "Die Datei enthält {count} Snapshots, aber es sind nur noch {room} frei."
 }

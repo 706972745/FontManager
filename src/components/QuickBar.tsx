@@ -20,6 +20,7 @@ import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
 import { ScriptChip } from "./ScriptChip";
 import { FaceLine, faceLineFontSize } from "./FaceLine";
 import { useT, type TKey } from "../lib/i18n";
+import { useDisplayName } from "../lib/displayName";
 import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
 import { buildFamilyMenu, copyText } from "../lib/menus";
@@ -73,6 +74,8 @@ function QuickFaceRow({
 
 function QuickItem({ family, index }: { family: Family; index: number }) {
   const t = useT();
+  // 速览里同样按界面语言显示字体名（与完整界面一个口径）
+  const displayName = useDisplayName();
   const sampleText = useFontStore((s) => s.sampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
   // 版权状态：手动设置优先，否则按版权信息自动识别（与完整界面卡片一致）
@@ -164,7 +167,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
             className="qb-item-name"
             style={fontFamily ? { fontFamily, fontStyle, fontWeight: previewWeight } : undefined}
           >
-            {family.name}
+            {displayName(family)}
           </span>
           {/* 画不出示例文字的语言时，这一行直接换成「无中文」这类标注（与完整界面一致） */}
           {hasScriptNote(scriptStatus) ? (
@@ -287,6 +290,7 @@ export function QuickBar() {
   const charMatches = useFontStore((s) => s.charMatches);
   const variableOnly = useFontStore((s) => s.variableOnly);
   const toggleableOnly = useFontStore((s) => s.toggleableOnly);
+  const incompleteOnly = useFontStore((s) => s.incompleteOnly);
   const licenseFilter = useFontStore((s) => s.licenseFilter);
   const copyrightStatus = useFontStore((s) => s.copyrightStatus);
   const sampleText = useFontStore((s) => s.sampleText);
@@ -384,6 +388,7 @@ export function QuickBar() {
       charMatches,
       variableOnly,
       toggleableOnly,
+      incompleteOnly,
       licenseFilter,
       copyrightStatus,
     });

@@ -86,6 +86,11 @@ pub struct FontFace {
     pub scripts: Vec<String>,
     pub features: Vec<String>,
     pub glyph_count: u16,
+    /// 损坏 / 不完整：`Some(原因)` 表示这个字面不可用
+    /// （解析失败、缺 name 表、0 字形、缺 cmap、文件被截断…）。
+    /// 系统字体不标记（动不了也不需要整理）；字库里的字体由导入流程归到「非完整字体」目录。
+    #[serde(default)]
+    pub incomplete: Option<String>,
     pub file_size: u64,
     pub source: FontSource,
     pub deactivatable: bool,

@@ -2,11 +2,12 @@ import { motion } from "motion/react";
 import { Camera, ChevronDown, Clock, FileUp, FolderOpen, Globe, History, Info, Keyboard, Library, Monitor, Plus, Power, PowerOff, Star, Tag, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
-import { openContextMenu } from "../design/primitives/ContextMenu";
+import { openContextMenu, type MenuItem } from "../design/primitives/ContextMenu";
 import { spring, springSoft, staggerDelay } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { allTags, familiesFor, useFontStore, type Family, type Nav } from "../state/fontStore";
-import { exportFontList } from "../lib/menus";
+import { faceKey } from "../lib/snapshotKey";
+import { exportFontList, snapshotToggleAction } from "../lib/menus";
 import { t as translate, useT } from "../lib/i18n";
 
 function navKey(n: Nav): string {
@@ -352,6 +353,8 @@ export function Sidebar() {
               <Plus size={13} strokeWidth={2} />
             </motion.button>
           </div>
+          {!collapsed.includes("collections") && (
+          <>
           {creating && (
             <NewCollectionInput
               onDone={() => {
@@ -379,27 +382,53 @@ export function Sidebar() {
                 label={name}
                 count={(collections[name] ?? []).length}
                 index={i++}
-                onContextMenu={(e) =>
+                onContextMenu={(e) => {
+                  const members = collections[name] ?? [];
+                  // 分组内字体直接加进指定快照（用户 2026-10-30）：
+                  // 与选择菜单同一个 toggle 逻辑 —— 全在就勾着、再点一次整组移出
+                  const snapItems: MenuItem[] = snapshots.map((sn) => {
+                    const keys = fonts
+                      .filter((f) => members.includes(f.family))
+                      .map(faceKey);
+                    const entryKeys = new Set(sn.entries.map((en) => en.key));
+                    return {
+                      kind: "check",
+                      label: sn.name,
+                      checked: keys.length > 0 && keys.every((k) => entryKeys.has(k)),
+                      action: snapshotToggleAction(sn.name, members),
+                    };
+                  });
                   openContextMenu(e, [
                     { label: translate("menu.rename"), action: () => setRenaming(name) },
                     {
                       label: translate("menu.exportFontList"),
                       action: () => {
                         const map = familiesFor(fonts, tags);
-                        const fams = (collections[name] ?? [])
+                        const fams = members
                           .map((n) => map.get(n))
                           .filter((f): f is Family => Boolean(f));
                         void exportFontList(fams, name);
                       },
                     },
                     { kind: "separator" },
+                    { kind: "heading", label: translate("menu.snapshots") },
+                    ...(snapItems.length > 0
+                      ? snapItems
+                      : [
+                          {
+                            label: translate("menu.noSnapshots"),
+                            disabled: true,
+                            action: () => {},
+                          } satisfies MenuItem,
+                        ]),
+                    { kind: "separator" },
                     {
                       label: translate("menu.deleteCollection"),
                       danger: true,
                       action: () => void deleteCollection(name),
                     },
-                  ])
-                }
+                  ]);
+                }}
               />
             ),
           )}
@@ -407,6 +436,8 @@ export function Sidebar() {
             <button className="sidebar-hint" onClick={() => setCreating(true)}>
               {t("side.firstCollection")}
             </button>
+          )}
+          </>
           )}
         </div>
 
@@ -455,6 +486,8 @@ export function Sidebar() {
               <Plus size={13} strokeWidth={2} />
             </motion.button>
           </div>
+          {!collapsed.includes("snapshots") && (
+          <>
           {creatingSnapshot && (
             <NewSnapshotInput
               onDone={() => {
@@ -516,6 +549,8 @@ export function Sidebar() {
             <button className="sidebar-hint" onClick={() => setCreatingSnapshot(true)}>
               {t("side.firstSnapshot")}
             </button>
+          )}
+          </>
           )}
         </div>
 

@@ -110,7 +110,7 @@ export async function exportFontList(families: Family[], title: string) {
   }
 }
 
-function snapshotToggleAction(snapshot: string, families: string[]) {
+export function snapshotToggleAction(snapshot: string, families: string[]) {
   return () => {
     const s = useFontStore.getState();
     const snap = s.snapshots.find((sn) => sn.name === snapshot);

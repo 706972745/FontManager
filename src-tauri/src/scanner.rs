@@ -133,12 +133,22 @@ pub fn all_dirs(extra: &[String]) -> Vec<(PathBuf, FontSource)> {
 /// 太小会刷爆 IPC，太大又失去「边读边出现」的观感；120 个大约 30~60ms 一批。
 const BATCH_FACES: usize = 120;
 
+/// 扫描系统目录 + 额外目录。
+///
+/// `progress_offset`：这条链之后还有多少个文件要解析（链接进库的字体）。
+/// 进度条是用户眼里的「一个」动作，所以两条链共用同一条进度：
+/// 这里的 total 要把 offset 算进去，done 从 offset 起算。
+/// 以前只报这一段的文件数，字库里几千个字体是在进度到 100% **之后**才解析的，
+/// 而且一个进度事件都不发 —— 界面上就是一条永远停在 100% 的进度条（0.9.8-1 修）。
+///
+/// 返回值第二个是这一阶段实际的文件总数，调用方接着用它算总进度。
 pub fn scan_all(
     app: &tauri::AppHandle,
     extra: &[String],
     managed: &Path,
     cache: &mut crate::fontcache::FontCache,
-) -> Vec<FontFace> {
+    progress_offset: usize,
+) -> (Vec<FontFace>, usize) {
     let all_files: Vec<(PathBuf, FontSource)> = all_dirs(extra)
         .into_iter()
         .flat_map(|(dir, source)| {
@@ -188,8 +198,9 @@ pub fn scan_all(
         })
         .collect();
 
-    let total = files.len();
-    let mut faces = Vec::with_capacity(total);
+    let files_len = files.len();
+    let total = files_len + progress_offset;
+    let mut faces = Vec::with_capacity(files_len);
     // 字体库里按目录缓存版权判定：目录名 / 同目录的版权信息文件写明的版权，
     // 一个目录只判一次（要读文件，但比解析字体便宜得多）
     // 目录 → (版权分类, 备注留痕)：同一个目录只读一次授权文件，
@@ -201,7 +212,13 @@ pub fn scan_all(
     // 而不是等全部扫完（几千个字体时要好几秒）才一次性出现。
     let mut batch: Vec<FontFace> = Vec::with_capacity(BATCH_FACES);
     // 先把 0% 报出去：界面立刻能显示进度条，而不是空等第一帧解析完
-    let _ = app.emit("scan:progress", ScanProgress { done: 0, total });
+    let _ = app.emit(
+        "scan:progress",
+        ScanProgress {
+            done: progress_offset,
+            total,
+        },
+    );
     for (done, (path, base_source)) in files.into_iter().enumerate() {
         let source = classify(&path, base_source, managed);
         let key = path.to_string_lossy().to_string();
@@ -252,8 +269,14 @@ pub fn scan_all(
             let _ = app.emit("scan:batch", &batch);
             batch.clear();
         }
-        if done % 25 == 0 || done + 1 == total {
-            let _ = app.emit("scan:progress", ScanProgress { done: done + 1, total });
+        if done % 25 == 0 || done + 1 == files_len {
+            let _ = app.emit(
+                "scan:progress",
+                ScanProgress {
+                    done: progress_offset + done + 1,
+                    total,
+                },
+            );
         }
     }
     if !batch.is_empty() {
@@ -262,7 +285,7 @@ pub fn scan_all(
 
     faces.sort_by(|a, b| a.id.cmp(&b.id));
     faces.dedup_by(|a, b| a.id == b.id);
-    faces
+    (faces, files_len)
 }
 
 #[cfg(test)]
