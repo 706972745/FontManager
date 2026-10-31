@@ -15,7 +15,6 @@ import { openContextMenu } from "../design/primitives/ContextMenu";
 import { easeTop, staggerDelay, spring } from "../design/springs";
 import { MemberChip } from "./MemberChip";
 import { useFontCss } from "../lib/fontLoader";
-import { notifyScrollActivity } from "../lib/scrollActivity";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
 import { styleScope } from "../lib/styleScope";
 import { ScriptChip } from "./ScriptChip";
@@ -101,9 +100,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   /** 鼠标正悬停的字重行：卡片预览临时用它渲染，移开恢复 Regular（与完整界面一致） */
   const [hoverFaceId, setHoverFaceId] = useState<string | null>(null);
   const previewFace = family.faces.find((f) => f.id === hoverFaceId) ?? lead;
-  const { fontFamily } = useFontCss(index < ANIMATED_ITEMS || inView ? previewFace : null, {
-    deferWhileScrolling: true,
-  });
+  const { fontFamily } = useFontCss(index < ANIMATED_ITEMS || inView ? previewFace : null);
   const fontStyle = previewFace.italic ? "italic" : "normal";
   const previewWeight = previewFace === lead ? undefined : previewFace.weight;
   // 与完整界面主列表一致：优先用户输入的示例文本，否则用族名
@@ -593,7 +590,7 @@ export function QuickBar() {
 
           {/* 滚动容器是 .qb-body（overflow-y:auto）；.qb-list 只是 flex 列，
               事件挂在它身上收不到 scroll —— 0.9.9-23 第一次接就踩了这个坑 */}
-          <div className="qb-body" onScroll={notifyScrollActivity}>
+          <div className="qb-body" >
             {families.length === 0 ? (
               <p className="qb-empty">
                 {enabledCount > 0 ? t("empty.search.title") : t("quickbar.empty")}

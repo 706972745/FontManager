@@ -2,7 +2,6 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { createFaceLru } from "./faceRegistry";
 import { ipc } from "./ipc";
-import { useScrollActivity } from "./scrollActivity";
 import type { FontFace as ZFontFace } from "./ipc";
 
 /** 加载失败时用来「找后端修一份」的定位信息 */
@@ -190,23 +189,10 @@ function ensurePathLoaded(
   })();
 }
 
-export function useFontCss(
-  face: ZFontFace | null,
-  opts?: {
-    /**
-     * 列表里滚动的卡片传 true：滚动期间先不加载真字体（退回系统字体），
-     * 停手 180 ms 后再加载。理由见 lib/scrollActivity.ts —— 淘汰根本还不掉内存，
-     * 只能靠「不加载」。
-     */
-    deferWhileScrolling?: boolean;
-  },
-): {
+export function useFontCss(face: ZFontFace | null): {
   fontFamily: string | null;
   failed: boolean;
 } {
-  const defer = opts?.deferWhileScrolling === true;
-  const scrolling = useScrollActivity();
-  const blocked = defer && scrolling;
   const name = face ? cssName(face) : null;
   const [, bump] = useState(0);
   const state = name ? cache.get(name) : undefined;
@@ -220,8 +206,6 @@ export function useFontCss(
 
   useEffect(() => {
     if (!face || !name) return;
-    // 滚动中先不碰：等停稳后这个 effect 会因为 scrolling 变 false 再跑一次
-    if (blocked) return;
     // 依赖里带上 state：被 LRU 淘汰后 cache 里没有这个名字、state 变 undefined，
     // effect 会重跑并重新加载。少了这一条，淘汰正在显示的字体会让它永久停在系统字体上。
     ensureLoaded(face);
@@ -234,10 +218,10 @@ export function useFontCss(
         set.delete(fn);
       };
     }
-  }, [face, name, state, blocked]);
+  }, [face, name, state]);
 
   return {
-    fontFamily: !blocked && state === "loaded" && name ? name : null,
+    fontFamily: state === "loaded" && name ? name : null,
     failed: state === "failed",
   };
 }

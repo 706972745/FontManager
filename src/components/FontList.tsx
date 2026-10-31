@@ -11,7 +11,6 @@ import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useT } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
-import { notifyScrollActivity } from "../lib/scrollActivity";
 
 export function FontList({ families }: { families: Family[] }) {
   const t = useT();
@@ -58,7 +57,7 @@ export function FontList({ families }: { families: Family[] }) {
         <span className="col-size">{t("list.size")}</span>
         <span className="col-status">{t("list.active")}</span>
       </div>
-      <div ref={parentRef} className="list-scroll" onScroll={notifyScrollActivity}>
+      <div ref={parentRef} className="list-scroll">
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((item) => {
             const fam = families[item.index];

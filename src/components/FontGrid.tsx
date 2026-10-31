@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { spring, staggerDelay } from "../design/springs";
 import { FamilyCard } from "./FamilyCard";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
-import { notifyScrollActivity } from "../lib/scrollActivity";
 import type { Family } from "../state/fontStore";
 import { SIZES, useFontStore } from "../state/fontStore";
 
@@ -34,7 +33,7 @@ export function FontGrid({ families }: { families: Family[] }) {
   const arriving = intro && Date.now() - mountedAt.current < 1200;
 
   return (
-    <div ref={parentRef} className="grid-scroll" onScroll={notifyScrollActivity}>
+    <div ref={parentRef} className="grid-scroll">
       <div
         className="grid-inner"
         style={{ height: virtualizer.getTotalSize(), position: "relative" }}

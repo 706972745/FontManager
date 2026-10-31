@@ -149,8 +149,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const cjkSibling = useCjkSibling(family.name, needsCjkSibling);
   const scriptHint = cjkSibling ? t("card.seeCjkVersion", { family: cjkSibling }) : null;
   const previewFace = family.faces.find((f) => f.id === hoverFaceId) ?? lead;
-  // 卡片会随列表滚动不断换人：滚动期间先不上真字体，停手再加载（见 lib/scrollActivity.ts）
-  const { fontFamily, failed } = useFontCss(previewFace, { deferWhileScrolling: true });
+  const { fontFamily, failed } = useFontCss(previewFace);
   const text = sampleText.trim() || family.name;
   // 权重：手动设置 > 字体自带版权信息 > 文件夹备注 / 版权信息文件判定的版权
   // 与筛选同一口径（`familyCopyrightClass`），否则「勾了商用免费却筛出标着未知的卡」
