@@ -194,12 +194,8 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
           Aa
         </span>
         <span className="qb-item-info">
-          <span
-            className="qb-item-name"
-            style={fontFamily ? { fontFamily, fontStyle, fontWeight: previewWeight } : undefined}
-          >
-            {displayName(family)}
-          </span>
+          {/* 族名用界面字体，不跟随字体本身（与完整界面 .card-name 口径一致） */}
+          <span className="qb-item-name">{displayName(family)}</span>
           {/* 画不出示例文字的语言时，这一行直接换成「无中文」这类标注（与完整界面一致） */}
           {hasScriptNote(scriptStatus) ? (
             <span className="qb-item-noscript" style={{ minHeight: size * 1.15 }}>
