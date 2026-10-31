@@ -225,9 +225,27 @@ body,
 }
 .nav-icon,
 .nav-label,
-.nav-count {
+.nav-count,
+.nav-no {
   position: relative;
   z-index: 1;
+}
+/* 分组 / 快照的序号：字重行胶囊上写的是「快照4」，用户靠这个号把两边对上（0.9.9-20）。
+   等宽数字 + 右对齐，个位数与两位数之间不会把名字推得跳来跳去。 */
+.nav-no {
+  flex: none;
+  min-width: 12px;
+  margin-right: -4px;
+  font-size: var(--fs-10);
+  font-weight: 600;
+  line-height: 1;
+  text-align: right;
+  color: var(--text-tertiary);
+  opacity: 0.75;
+}
+.nav-row:hover .nav-no,
+.nav-active .nav-no {
+  opacity: 1;
 }
 .nav-icon {
   display: grid;
@@ -4616,6 +4634,27 @@ h2.detail-title.copy-name {
   flex: none;
   opacity: 0.7;
 }
+/* 名字可以被压扁省略，后面的数字不能被压没（用户要看「放了几个字重」） */
+.member-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.member-chip-count {
+  flex: none;
+  margin-left: 1px;
+  opacity: 0.62;
+  font-weight: 600;
+}
+/* 数量前加一个分隔点：快照名本身是「1」「2」「3」时，`1 24` 会被读成「序号 数量」，
+   加个点就变成「名称 · 数量」，一眼能分开（用户 2026-10-31 反馈） */
+.member-chip-count::before {
+  content: "·";
+  margin: 0 3px 0 1px;
+  opacity: 0.6;
+  font-weight: 400;
+}
 /* 快照徽标：虚线边框区分 */
 .member-chip-snap {
   border-style: dashed;
@@ -5491,6 +5530,23 @@ body.ui-fade-out .app-frame {
 .face-line-toggle.off:hover {
   opacity: 0.85;
 }
+/* 字重行尾部的「这个字重进了哪些快照/分组」胶囊（0.9.9-18）。
+   完整界面与速览共用 FaceLine，所以这一套两处一起生效。
+   行本身很矮（字重名可缩放到 11~34px），胶囊要比卡片头部那颗更扁、更短。 */
+.face-line-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+.face-line .member-chip.face-chip {
+  max-width: 96px;
+  padding: 2px 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
 /* 系统字体（动不了的那份）不给按，但也不能看不出来是颗按钮 */
 .face-line-toggle:disabled {
   opacity: 0.22;
@@ -5538,7 +5594,8 @@ body.ui-fade-out .app-frame {
   line-height: 1.45;
   color: var(--text-secondary);
   text-align: left;
-  white-space: normal;
+  /* pre-line：data-hint-text 里用 \n 分行（胶囊悬浮时第一行是容器名，往下每行一个字重） */
+  white-space: pre-line;
   word-break: break-word;
   /* 关键：气泡不能吃鼠标。否则"鼠标移到气泡上 → 离开按钮 → 气泡收起 →
      指针又落到按钮上 → 重新计时"会不停闪 */

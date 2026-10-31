@@ -126,7 +126,7 @@ export function DropZone() {
               <div
                 ref={moveRef}
                 className={`dropchoice-panel dropchoice-move ${side === "move" ? "dropchoice-active" : "dropchoice-dim"}`}
-                title={target}
+                data-hint-text={target}
               >
                 <FolderInput size={30} strokeWidth={1.75} />
                 <div className="dropchoice-title">{moveTitle}</div>

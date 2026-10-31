@@ -1,3 +1,4 @@
+import type { FontFace } from "./ipc";
 export type LicenseClass = "open" | "personal" | "restrictive" | "unknown";
 
 /**
@@ -293,4 +294,33 @@ export function copyrightExpired(expiry: string | null | undefined): boolean {
   if (!expiry) return false;
   const d = new Date(`${expiry}T23:59:59.999`);
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
+}
+
+/**
+ * 字族的「代表字面」。
+ *
+ * 卡片预览、缺字提示、版权徽标都以它为准：优先 `Regular`，没有就取第一个字面。
+ * 抽出来是因为筛选（`applyFamilyFilters`）必须和界面**用同一份口径** ——
+ * 以前筛选看的是字族聚合出来的 `license` / `dirCopyrightClass`（"第一个非空的字面"），
+ * 而卡片看的是这里，两者在「Regular 没有版权信息、别的字面有」时给出不同分类：
+ * 结果就是**勾了「商用免费」能筛出这张卡，卡片上却写着「未知」**（用户 2026-10-31 报）。
+ */
+export function leadFace(faces: readonly FontFace[]): FontFace | undefined {
+  return faces.find((f) => f.style === "Regular") ?? faces[0];
+}
+
+/**
+ * 字族的版权分类，口径与卡片 / 速览 / 详情面板上的徽标完全一致：
+ * 手动设置 > 该字面自带的版权信息 > 目录备注 / 版权文件判定的分类。
+ */
+export function familyCopyrightClass(
+  faces: readonly FontFace[],
+  override?: string | null,
+): CopyrightClass {
+  const lead = leadFace(faces);
+  return effectiveCopyrightClass(
+    lead?.license ?? null,
+    override ?? undefined,
+    lead?.copyrightClass ?? null,
+  );
 }

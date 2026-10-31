@@ -1,6 +1,6 @@
 import { Eye, EyeOff } from "lucide-react";
 import { motion } from "motion/react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { useMemo, type MouseEvent as ReactMouseEvent } from "react";
 import { useT } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
 import { buildFaceMenu, canToggleFace } from "../lib/menus";
@@ -11,6 +11,27 @@ import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import type { FontFace } from "../lib/ipc";
 import { useFontStore, type Family } from "../state/fontStore";
 import { ScriptChip } from "./ScriptChip";
+import { MemberChip } from "./MemberChip";
+import { faceKey } from "../lib/snapshotKey";
+import { buildContainerIndexCached, containersFor } from "../lib/faceContainers";
+
+/**
+ * 这个字面进了哪些快照 / 分组（用户 2026-10-31：字重行眼睛左边要能看出这个字重被放进了哪儿）。
+ *
+ * 索引是全局 single-slot 缓存的，所以哪怕一屏挂了几十个字重行，也只建一次；
+ * 三个输入都是 store 里的稳定引用，任何一处真的变了才重算。
+ */
+function useFaceContainers(family: Family, face: FontFace) {
+  const snapshots = useFontStore((s) => s.snapshots);
+  const collections = useFontStore((s) => s.collections);
+  const collectionFaces = useFontStore((s) => s.collectionFaces);
+  const key = useMemo(() => faceKey(face), [face]);
+
+  return useMemo(() => {
+    const index = buildContainerIndexCached(snapshots, collections, collectionFaces);
+    return containersFor(index, family.name, key);
+  }, [snapshots, collections, collectionFaces, family.name, key]);
+}
 
 /**
  * 字重行的文字大小跟着主预览字号走：完整界面取 1/4，速览界面取 1/8。
@@ -73,16 +94,39 @@ export function FaceLine({
    */
   const toggleable = canToggleFace(face);
   const setFaceActive = useFontStore((s) => s.setFaceActive);
+  // 这个字重被放进了哪些快照 / 分组（没有就整块不渲染）
+  const containers = useFaceContainers(family, face);
   const body = (
     <>
-      <span className="face-line-name" title={title}>
+      <span className="face-line-name" data-hint-text={title}>
         {styleLabel}
       </span>
       <ScriptChip status={scriptStatus} />
       {/* 这个字重本身损坏 / 不完整：直接标在字重行上，别让用户点进去才发现 */}
       {face.incomplete && (
-        <span className="card-broken" title={face.incomplete}>
+        <span className="card-broken" data-hint-text={face.incomplete}>
           {t("card.brokenFace")}
+        </span>
+      )}
+      {/* 紧贴眼睛左边：这个字重进了哪些快照 / 分组。
+          行上只写**序号**（快照1 / 快照2 / 分组1…）—— 行太窄，`.苹方-繁` 那种长容器名塞不下；
+          真名放在悬浮气泡里，序号对应的就是侧栏里那一个。 */}
+      {containers.length > 0 && (
+        <span className="face-line-chips">
+          {containers.map((c) => (
+            <MemberChip
+              key={`${c.kind}-${c.name}`}
+              kind={c.kind}
+              badge={{ name: c.name, count: 0, styles: [] }}
+              label={String(c.index)}
+              hintText={t(
+                c.kind === "snap" ? "card.inSnapshotIndex" : "card.inCollectionIndex",
+                { index: c.index, name: c.name },
+              )}
+              iconSize={9}
+              className="face-chip"
+            />
+          ))}
         </span>
       )}
       <button
@@ -91,7 +135,7 @@ export function FaceLine({
         disabled={!toggleable}
         aria-pressed={face.active}
         aria-label={t(face.active ? "menu.deactivate" : "menu.activate")}
-        title={t(face.active ? "menu.deactivate" : "menu.activate")}
+       
         data-hint={face.active ? "hint.faceToggleOn" : "hint.faceToggleOff"}
         onClick={(e) => {
           e.stopPropagation();

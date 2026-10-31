@@ -46,7 +46,7 @@ export function WarmFooter({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`warm-footer ${compact ? "warm-footer-compact" : ""}`}>
       {shown.map((w) => (
-        <span key={w.id} className="warm-chip" title={label(w)}>
+        <span key={w.id} className="warm-chip" data-hint-text={label(w)}>
           <span className={`warm-dot warm-${w.state}`} aria-hidden="true" />
           <span className="warm-name">{t(`adobe.${w.id}`)}</span>
           <span className={`warm-pct tabular ${w.state === "failed" ? "warm-pct-bad" : ""}`}>

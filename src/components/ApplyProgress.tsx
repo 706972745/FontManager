@@ -31,10 +31,10 @@ export function ApplyProgress({ compact = false }: { compact?: boolean }) {
         <span className="load-text">
           {t("snap.cancelled")} · {t("snap.cancelledDetail", { done: notice!.done, total: notice!.total })}
         </span>
-        <button className="load-cancel" onClick={undoLastApply} title={t("snap.cancelUndoTip")}>
+        <button className="load-cancel" onClick={undoLastApply} data-hint-text={t("snap.cancelUndoTip")}>
           {t("snap.cancelUndo")}
         </button>
-        <button className="load-cancel" onClick={dismissApplyNotice} title={t("snap.noticeClose")}>
+        <button className="load-cancel" onClick={dismissApplyNotice} data-hint-text={t("snap.noticeClose")}>
           {t("snap.noticeClose")}
         </button>
       </div>
@@ -60,7 +60,7 @@ export function ApplyProgress({ compact = false }: { compact?: boolean }) {
       </span>
       {/* 撤销本身是一次「回到原状」的动作，中途停下来的话又会卡在第三个中间态，所以不给再取消 */}
       {!cancelled && !undo && (
-        <button className="load-cancel" onClick={cancelApply} title={t("snap.cancelTip")}>
+        <button className="load-cancel" onClick={cancelApply} data-hint-text={t("snap.cancelTip")}>
           {t("snap.cancel")}
         </button>
       )}

@@ -7,6 +7,7 @@ import { spring, springSoft, staggerDelay } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { allTags, familiesFor, isSystemFamily, useFontStore, type Family, type Nav } from "../state/fontStore";
 import { faceKey } from "../lib/snapshotKey";
+import { sortContainers } from "../lib/faceContainers";
 import { exportFontList, snapshotToggleAction } from "../lib/menus";
 import { t as translate, useT } from "../lib/i18n";
 
@@ -24,6 +25,7 @@ function NavRow({
   label,
   count,
   index,
+  no,
   hint,
   onContextMenu,
 }: {
@@ -32,6 +34,12 @@ function NavRow({
   label: string;
   count?: number;
   index: number;
+  /**
+   * 分组 / 快照的序号（从 1 开始）。
+   * 字重行胶囊只写「快照4 / 分组2」，用户靠这个号把两边对上，
+   * 所以两处必须用同一套排序（`lib/faceContainers.ts::sortContainers`）。
+   */
+  no?: number;
   /** i18n key：悬停 1 秒解释这一行的数字是「字族数」还是别的口径 */
   hint?: string;
   onContextMenu?: (e: React.MouseEvent) => void;
@@ -62,6 +70,7 @@ function NavRow({
         <motion.span className="nav-pill" layoutId="nav-pill" transition={spring} />
       )}
       <span className="nav-icon">{icon}</span>
+      {no !== undefined && <span className="nav-no tabular">{no}</span>}
       <span className="nav-label">{label}</span>
       {count !== undefined && <span className="nav-count tabular">{count}</span>}
     </motion.button>
@@ -244,8 +253,9 @@ export function Sidebar() {
   const tagCounts = allTags(tags);
   const collapsed = useFontStore((s) => s.collapsedSections);
   const toggleSection = useFontStore((s) => s.toggleSection);
-  const collectionNames = Object.keys(collections).sort((a, b) => a.localeCompare(b));
-  const snapshotNames = snapshots.map((sn) => sn.name).sort((a, b) => a.localeCompare(b));
+  // 排序必须与字重行胶囊的序号同源（`sortContainers`），否则「快照 2」会对不上第 2 行
+  const collectionNames = sortContainers(Object.keys(collections));
+  const snapshotNames = sortContainers(snapshots.map((sn) => sn.name));
   const snapshotByName = new Map(snapshots.map((sn) => [sn.name, sn] as const));
 
   const exportSnapshotFlow = async (name: string) => {
@@ -392,7 +402,7 @@ export function Sidebar() {
               }}
             />
           )}
-          {collectionNames.map((name) =>
+          {collectionNames.map((name, ci) =>
             renaming === name ? (
               <RenameInput
                 key={name}
@@ -408,6 +418,7 @@ export function Sidebar() {
                 key={name}
                 nav={{ kind: "collection", name }}
                 icon={<FolderOpen size={15} strokeWidth={1.5} />}
+                no={ci + 1}
                 label={name}
                 count={collectionCount(name)}
                 index={i++}
@@ -523,11 +534,11 @@ export function Sidebar() {
             <NewSnapshotInput
               onDone={() => {
                 setCreatingSnapshot(false);
-                useFontStore.setState({ pendingSnapshotFor: null });
+                useFontStore.setState({ pendingSnapshotFor: null, pendingSnapshotFace: null });
               }}
             />
           )}
-          {snapshotNames.map((name) =>
+          {snapshotNames.map((name, si) =>
             renamingSnapshot === name ? (
               <RenameInput
                 key={name}
@@ -543,6 +554,7 @@ export function Sidebar() {
                 key={name}
                 nav={{ kind: "snapshot", name }}
                 icon={<Camera size={15} strokeWidth={1.5} />}
+                no={si + 1}
                 label={name}
                 count={snapshotByName.get(name)?.entries.length ?? 0}
                 index={i++}

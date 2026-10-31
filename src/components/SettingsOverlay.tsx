@@ -445,7 +445,7 @@ export function SettingsOverlay() {
                       type="button"
                       className="hotkey-reset"
                       onClick={() => void setQuickbarHotkey(DEFAULT_HOTKEY)}
-                      title={t("settings.quickbarHotkeyReset")}
+                      data-hint-text={t("settings.quickbarHotkeyReset")}
                     >
                       {t("settings.quickbarHotkeyReset")}
                     </button>
@@ -553,7 +553,7 @@ export function SettingsOverlay() {
                     <span className="settings-folder-tag">{t("settings.libraryDefault")}</span>
                     <button
                       className="path-link detail-mono settings-folder-path"
-                      title={defaultLibDir}
+                      data-hint-text={defaultLibDir}
                       onClick={() => void revealItemInDir(defaultLibDir).catch(() => {})}
                     >
                       <FolderOpen size={13} strokeWidth={1.5} />
@@ -581,7 +581,7 @@ export function SettingsOverlay() {
                     <div className={`settings-folder ${customDirActive ? "" : "settings-dim"}`}>
                       <button
                         className="path-link detail-mono settings-folder-path"
-                        title={settings.libraryDir}
+                        data-hint-text={settings.libraryDir}
                         onClick={() =>
                           void revealItemInDir(settings.libraryDir ?? "").catch(() => {})
                         }
