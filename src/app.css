@@ -5308,11 +5308,15 @@ body.ui-fade-out .app-frame {
   overflow-y: auto;
   padding: 2px 10px 12px;
 }
-/* 窄竖排列表：条目样式对齐完整界面右侧详情面板的字体预览 */
+/* 窄竖排列表：条目样式对齐完整界面右侧详情面板的字体预览。
+   0.9.9-25 起是虚拟列表：子项绝对定位（行高不固定，由 QuickBar 实测），
+   gap 交给 .qb-row 的 padding-bottom，这样测出来的行高已含间距。 */
 .qb-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  position: relative;
+  display: block;
+}
+.qb-row {
+  padding-bottom: 8px;
 }
 .qb-item {
   display: flex;
