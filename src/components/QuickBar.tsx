@@ -31,6 +31,7 @@ import { useWindowDrag } from "../lib/useWindowDrag";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { WarmFooter } from "./WarmFooter";
 import { LoadProgress } from "./LoadProgress";
+import { ApplyProgress } from "./ApplyProgress";
 import {
   applyFamilyFilters,
   familiesFor,
@@ -84,6 +85,13 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const { inSnapshots, inCollections } = useFamilyMembership(family.name);
   const size = SIZES[sizeIndex];
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
+  /**
+   * 速览里只列**已启用**的字重（用户 2026-10-31：「可单独显示已经启用的字重，没启用的字重不会显示出来」）。
+   * 一个族里可能只启用了几个字重，列出没启用的会让人以为它们也能用。
+   * 整族一个都没启用时不至于出现在速览里，兜底仍用全量，免得列表空掉。
+   */
+  const enabledFaces = family.faces.filter((f) => f.active);
+  const visibleFaces = enabledFaces.length > 0 ? enabledFaces : family.faces;
   // 首屏这几张立刻加载字体；其余等滚动到附近再说，避免上千个 FontFace 一起加载
   const [itemRef, inView] = useInView<HTMLDivElement>();
   /** 鼠标正悬停的字重行：卡片预览临时用它渲染，移开恢复 Regular（与完整界面一致） */
@@ -194,8 +202,9 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
           <span className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`} title={licTitle}>
             {t(`copyright.${licCls}` as TKey)}
           </span>
-          {family.faces.length > 1 && (
+          {visibleFaces.length > 1 && (
             <button
+              data-hint="hint.qbExpand"
               type="button"
               className="qb-item-meta qb-item-expand tabular"
               aria-expanded={expanded}
@@ -204,7 +213,6 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
                   ? t("card.collapseStyles")
                   : t("card.expandStyles")
               }
-              title={t("card.stylesCount", { count: family.faces.length })}
               onClick={(e) => {
                 e.stopPropagation();
                 setExpanded((v) => !v);
@@ -218,7 +226,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
                   transition: "transform 140ms ease",
                 }}
               />
-              {family.faces.length}
+              {visibleFaces.length}
             </button>
           )}
         </span>
@@ -248,14 +256,14 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
 
       {copyright && <span className="qb-item-copy">{copyright}</span>}
 
-      {expanded && family.faces.length > 0 && (
+      {expanded && visibleFaces.length > 0 && (
         <div
           className="qb-faces"
           /* 字重名的大小跟着上面的示例字号走（速览面板只有卡片一半宽，取 1/8） */
           style={{ "--face-line-size": faceLineFontSize(size, 8) } as CSSProperties}
           onClick={(e) => e.stopPropagation()}
         >
-          {family.faces.map((face) => (
+          {visibleFaces.map((face) => (
             <QuickFaceRow
               key={face.id}
               family={family}
@@ -412,7 +420,9 @@ export function QuickBar() {
         setQuery("");
         return;
       }
-      if (inField) return;
+      // 空搜索框也要能退出：以前这里是 `if (inField) return;`，而 Alt+` 唤出速览后
+      // 焦点默认就落在搜索框里（且此时搜索框是空的）—— 结果是按 Esc 什么都发生不了，
+      // 用户被关在速览里出不来（0.9.9-1 实测确认）。
       e.preventDefault();
       void setQuickbar(false);
     };
@@ -509,38 +519,44 @@ export function QuickBar() {
 
             <div className="qb-actions">
               <button
+                data-hint="hint.qbAutoHide"
                 className={`qb-btn ${autoHide ? "qb-btn-on" : ""}`}
                 aria-pressed={autoHide}
-                title={`${t(autoHide ? "quickbar.autoHideOn" : "quickbar.autoHideOff")}\n${dockHint}`}
                 aria-label={t("quickbar.autoHide")}
                 onClick={() => setAutoHide(!autoHide)}
               >
                 {autoHide ? <Pin size={13} strokeWidth={1.5} /> : <PinOff size={13} strokeWidth={1.5} />}
               </button>
               <button
+                data-hint="hint.backFull"
                 className="qb-btn"
-                title={t("quickbar.back")}
                 aria-label={t("quickbar.back")}
                 onClick={() => void setQuickbar(false)}
               >
                 {t("quickbar.backShort")}
               </button>
               <button
+                data-hint="hint.minimize"
                 className="qb-btn"
-                title={t("titlebar.minimize")}
                 aria-label={t("titlebar.minimize")}
                 onClick={() => {
                   // 贴在屏幕顶边时由 dock 接管：内容先卷走、再真最小化，且不播系统飞行动画
-                  void minimizeQuickbar().then((handled) => {
-                    if (!handled) void win.minimize();
-                  });
+                  void minimizeQuickbar()
+                    .then((handled) => {
+                      if (!handled) void win.minimize();
+                    })
+                    // 接管失败（几何读不到 / 锁被别人拿着）就退回普通最小化，
+                    // 不能留一个 unhandled rejection 让按钮看起来「点了没反应」（§5 第 16 条）
+                    .catch(() => {
+                      void win.minimize();
+                    });
                 }}
               >
                 <Minimize2 size={12} strokeWidth={1.6} />
               </button>
               <button
+                data-hint="hint.close"
                 className="qb-btn qb-btn-close"
-                title={t("titlebar.close")}
                 aria-label={t("titlebar.close")}
                 onClick={() => void win.close()}
               >
@@ -592,6 +608,7 @@ export function QuickBar() {
             )}
           </div>
           <LoadProgress compact />
+          <ApplyProgress compact />
           <WarmFooter compact />
         </div>
       )}

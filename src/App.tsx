@@ -24,10 +24,12 @@ import { CommandPalette } from "./components/CommandPalette";
 import { QuickBar } from "./components/QuickBar";
 import { WarmFooter } from "./components/WarmFooter";
 import { LoadProgress } from "./components/LoadProgress";
+import { ApplyProgress } from "./components/ApplyProgress";
 import { BulkTagPrompt } from "./components/BulkTagPrompt";
 import { DuplicateDialog } from "./components/DuplicateDialog";
 import { Onboarding } from "./components/Onboarding";
 import { ContextMenuHost, isContextMenuOpen, openContextMenuAt } from "./design/primitives/ContextMenu";
+import { HoverHintHost } from "./design/primitives/HoverHint";
 import { buildFamilyMenu } from "./lib/menus";
 import { overlayOpen } from "./lib/overlayRegistry";
 import { Toaster, toast } from "./design/primitives/Toast";
@@ -170,6 +172,7 @@ function MainContent() {
   const scanFonts = useFontStore((s) => s.scanFonts);
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
+  const collectionFaces = useFontStore((s) => s.collectionFaces);
   const snapshots = useFontStore((s) => s.snapshots);
   const favorites = useFontStore((s) => s.favorites);
   const sessionActivated = useFontStore((s) => s.sessionActivated);
@@ -196,11 +199,11 @@ function MainContent() {
   const families = useMemo(
     () =>
       selectVisibleFamilies({
-        fonts: displayFonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search,
+        fonts: displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search,
         classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
         variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort,
       }),
-    [displayFonts, tags, collections, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort],
+    [displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort],
   );
 
   // 非字族浏览页面（回收站 / 关于 / 在线栏目）没有「可见字族顺序」，必须清空：
@@ -382,9 +385,21 @@ export default function App() {
       // 这里再处理就会「关弹窗的同时把选择也清了」。
       if (topLayerOpen()) return;
 
-      if (e.key === "Escape" && !inField) {
-        st.setComparePicking(false);
-        st.select(null);
+      if (e.key === "Escape") {
+        // 搜索框里的 Esc 以前是死键：`!inField` 把整段跳过，用户想清空搜索或退出
+        // 选择都毫无反应（0.9.9-1 实测确认）。分级处理：有内容先清空；空的就把焦点
+        // 撤离输入框，再按一次自然落到下面的「取消选择」上。
+        const inSearch = (e.target as Element | null)?.id === "global-search";
+        if (inSearch) {
+          e.preventDefault();
+          if (st.search.trim()) st.setSearch("");
+          else (e.target as HTMLElement | null)?.blur();
+          return;
+        }
+        if (!inField) {
+          st.setComparePicking(false);
+          st.select(null);
+        }
       }
       if (e.key === "/" && !inField) {
         e.preventDefault();
@@ -438,18 +453,59 @@ export default function App() {
         e.preventDefault();
         void st.toggleFavorite(st.selectedFamily);
       }
-      if (e.key === "Delete" && !inField) {
+      if ((e.key === "Delete" || e.key === "Del") && !inField) {
         const st = useFontStore.getState();
         // 回收站 / 关于 / 在线栏目没有「字族浏览」上下文：这里的 Delete 一律不碰字库，
         // 否则会删掉屏幕上根本不存在的那个选中字族（§5 第 7 条）
         if (!familyNav(st.nav)) return;
         if (st.compare || st.settingsOpen || st.helpOpen) return;
-        const doomed = st.selection.length > 0
-          ? st.selection
-          : st.selectedFamily ? [st.selectedFamily] : [];
-        if (doomed.length === 0) return;
-        e.preventDefault();
-        for (const name of doomed) void st.uninstallFamily(name);
+
+        const doomed =
+          st.selection.length > 0
+            ? st.selection
+            : st.selectedFamily
+              ? [st.selectedFamily]
+              : [];
+
+        // ① 有选中 → 内容区语义。分组/快照里是「移出成员」（不删字体），
+        //    其他视图保持原来的「移到回收站」。Shift 是逃生口：无论在哪都真删。
+        //    必须先判「有选中」再判侧栏焦点 —— 侧栏行是原生 button，点完焦点会留在
+        //    那一行上；顺序反了就会「点了分组 → 又点了里面一个字体 → 按 Delete
+        //    连分组一起删掉」，那是数据灾难（0.9.9-1 设计要点）。
+        if (doomed.length > 0) {
+          e.preventDefault();
+          if (!e.shiftKey && st.nav.kind === "collection") {
+            const name = st.nav.name;
+            void st.removeFamiliesFromCollection(name, doomed).then(() => st.select(null));
+            return;
+          }
+          if (!e.shiftKey && st.nav.kind === "snapshot") {
+            const name = st.nav.name;
+            void st.removeFamiliesFromSnapshot(name, doomed).then(() => st.select(null));
+            return;
+          }
+          for (const name of doomed) void st.uninstallFamily(name);
+          return;
+        }
+
+        // ② 没选中 → 看焦点是否停在侧栏的分组/快照行上，是就删掉这个容器。
+        //    用属性判定而不是 instanceof HTMLButtonElement：NavRow 现在是
+        //    motion.button，将来若改成 div+role 也不会坏。
+        const row = (document.activeElement as HTMLElement | null)?.closest?.(
+          "[data-nav-kind]",
+        );
+        const kind = row?.getAttribute("data-nav-kind");
+        const container = row?.getAttribute("data-nav-name");
+        if (!container) return;
+        if (kind === "collection") {
+          e.preventDefault();
+          void st.deleteCollection(container);
+          return;
+        }
+        if (kind === "snapshot") {
+          e.preventDefault();
+          void st.deleteSnapshot(container);
+        }
       }
 
       if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
@@ -493,6 +549,7 @@ export default function App() {
         <ContextMenuHost />
         <Toaster />
         <ResizeGrips />
+        <HoverHintHost />
       </MotionConfig>
     );
   }
@@ -517,6 +574,7 @@ export default function App() {
               <MainContent />
             </main>
             <LoadProgress />
+            <ApplyProgress />
             <WarmFooter />
           </div>
           <DetailPanel />
@@ -534,6 +592,7 @@ export default function App() {
       <DuplicateDialog />
       <Toaster />
       <ResizeGrips />
+      <HoverHintHost />
     </MotionConfig>
   );
 }

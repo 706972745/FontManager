@@ -30,6 +30,9 @@ pub struct InstallResult {
     /// 本次导入跳过的 WOFF/WOFF2 个数（同字体已有 ttf/otf，或 woff2 不受支持）
     #[serde(default)]
     pub webfonts_skipped: usize,
+    /// 因「系统已经装了这个字体」而没入库的文件数（避免在库里造出重复副本）
+    #[serde(default)]
+    pub system_duplicates: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -573,6 +576,8 @@ pub fn install(
         .collect();
     let fonts: Vec<StagedFile> = files.into_iter().filter(|f| f.is_font).collect();
     let total = fonts.len();
+    // 系统已装字体的 PostScript 名（缓存一次）：命中就别再往库里复制一份
+    let sys_ps = crate::scanner::system_postscript_names();
 
     // 版权信息文件按「批次 + 相对目录」归好类，供「版权信息文件 > 文件夹备注 > 字体自带」的权重判断。
     // 批次必带：一次拖入多个 zip/文件夹时，它们解压后共用一个 staging 平铺目录。
@@ -600,6 +605,20 @@ pub fn install(
     for (i, staged) in fonts.into_iter().enumerate() {
         let src = staged.path.clone();
         let src_faces = parser::parse_font_file(&src, FontSource::Managed);
+        // 系统里已经装了这个字体 → 不再复制/链接一份进库。
+        // 以前判重只看**路径**（known），同一个字体从别处拷过来就算"新"，
+        // 于是库里越攒越多和系统重复的副本（用户 2026-10-31 问「以后还会不会自动再复制一份」）。
+        if !sys_ps.is_empty()
+            && src_faces.iter().any(|f| {
+                f.postscript_name
+                    .as_ref()
+                    .map(|ps| sys_ps.contains(&ps.to_lowercase()))
+                    .unwrap_or(false)
+            })
+        {
+            result.system_duplicates += 1;
+            continue;
+        }
         let src_keys: Vec<String> = src_faces.iter().map(dup_key).collect();
         if !src_keys.is_empty() && src_keys.iter().all(|k| known.contains(k)) {
             for k in &src_keys {
@@ -1464,6 +1483,8 @@ mod tests {
             errors: vec![],
             duplicates: vec![],
             webfonts_skipped: 0,
+            // 0.9.9-13 新增的字段：测试这里只关心 staging 目录，不关心系统重复计数
+            system_duplicates: 0,
         };
         let _ = process_webfonts(vec![staged], &staging, &mut result);
 

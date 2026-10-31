@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { useModalLayer } from "../lib/modalLayer";
 import { useT, type TKey } from "../lib/i18n";
 
 const SECTIONS: [TKey, [string[], TKey][]][] = [
@@ -34,7 +35,11 @@ const SECTIONS: [TKey, [string[], TKey][]][] = [
       [["Space"], "sc.toggleActive"],
       [["C"], "sc.compare"],
       [["F"], "sc.favorite"],
-      [["Del"], "sc.trash"],
+      // Del 的语义按上下文走（0.9.9-1）：分组/快照里是「移出成员」，侧栏停在
+      // 分组/快照行上是「删掉这个容器」，其他视图仍是「移到回收站」。
+      // 真要删字体时按 Shift+Del，所以两条分开写。
+      [["Del"], "sc.trashInContext"],
+      [["Shift", "Del"], "sc.trash"],
       [["Shift", "F10"], "sc.contextMenu"],
     ],
   ],
@@ -57,13 +62,21 @@ export function ShortcutsOverlay() {
   const open = useFontStore((s) => s.helpOpen);
   const setHelpOpen = useFontStore((s) => s.setHelpOpen);
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const isTopLayer = useModalLayer(open);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setHelpOpen(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, setHelpOpen]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // 只有栈顶那一层能关自己（§5 第 8 条）
+      if (!isTopLayer()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setHelpOpen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, setHelpOpen, isTopLayer]);
 
   return (
     <AnimatePresence>

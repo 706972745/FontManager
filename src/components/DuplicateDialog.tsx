@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { springSnappy } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
+import { useFocusTrap } from "../lib/useFocusTrap";
+import { useModalLayer } from "../lib/modalLayer";
 
 /**
  * 「这些字体已经存在，跳过了」提示。
@@ -15,7 +17,9 @@ export function DuplicateDialog() {
   const t = useT();
   const report = useFontStore((s) => s.duplicateReport);
   const close = () => useFontStore.getState().setDuplicateReport(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  // 焦点陷阱：Tab 不会跑到被遮住的界面上；关闭时自动把焦点还给打开它的元素（§5 第 35 条）
+  const panelRef = useFocusTrap<HTMLDivElement>(!!report);
+  const isTopLayer = useModalLayer(!!report);
   /** 焦点在里面时暂停自动关闭 */
   const pausedRef = useRef(false);
 
@@ -30,6 +34,8 @@ export function DuplicateDialog() {
     }, 6500);
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // 不是最上层就让路：否则会把自己的下层（设置 / 对比）关掉而自己还开着（§5 第 8 条）
+      if (!isTopLayer()) return;
       e.preventDefault();
       // 最上层先吃，别让 Escape 继续去清主界面的选择
       e.stopImmediatePropagation();
@@ -40,7 +46,7 @@ export function DuplicateDialog() {
       clearTimeout(id);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [report]);
+  }, [report, isTopLayer]);
 
   return (
     <AnimatePresence>

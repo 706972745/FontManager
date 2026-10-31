@@ -25,6 +25,9 @@ export function LoadProgress({ compact = false }: { compact?: boolean }) {
       className={`load-progress ${compact ? "load-progress-compact" : ""}`}
       role="status"
       aria-live="polite"
+      /* 用户 2026-10-31 问「这里为什么是 5000 多」：分母是**字体文件数**（含系统目录与链接字体），
+         和侧栏按字族统计的数字不是一回事，悬停解释一句 */
+      data-hint="hint.loadProgress"
     >
       <div className="load-track" aria-hidden="true">
         {percent == null ? (

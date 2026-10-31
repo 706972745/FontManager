@@ -3,13 +3,13 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   Columns2,
   Copy,
+  Minus,
   Plus,
   Download,
   FileText,
   FolderOpen,
   FolderPlus,
   Image as ImageIcon,
-  PenTool,
   Power,
   Star,
   Timer,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { MenuItem } from "../design/primitives/ContextMenu";
 import { toast } from "../design/primitives/Toast";
+import { AppBadge } from "../components/AppBadge";
 import { allTags, familiesFor, useFontStore, type Family } from "../state/fontStore";
 import { entryFromFace, faceKey } from "./snapshotKey";
 import { AVAILABLE_ADOBE_APPS, ipc, type FontFace } from "./ipc";
@@ -152,6 +153,8 @@ function buildBulkMenu(names: string[]): MenuItem[] {
   const snapshotNames = s.snapshots.map((sn) => sn.name).sort((a, b) => a.localeCompare(b));
   const snapshotByName = new Map(s.snapshots.map((sn) => [sn.name, sn] as const));
   const n = names.length;
+  const inCollection = s.nav.kind === "collection" ? s.nav.name : null;
+  const inSnapshot = s.nav.kind === "snapshot" ? s.nav.name : null;
 
   return [
     { kind: "heading", label: t("menu.selectedCount", { count: n }) },
@@ -239,6 +242,20 @@ function buildBulkMenu(names: string[]): MenuItem[] {
       icon: <FileText size={14} strokeWidth={1.5} />,
       action: () => void exportFontList(families, t("menu.selection")),
     },
+    // 正在看分组/快照时，多选也要有「移出」这条（对应 Delete 的批量语义）
+    ...(inCollection || inSnapshot
+      ? ([
+          { kind: "separator" },
+          {
+            label: t("menu.removeCountFromContainer", { count: n }),
+            icon: <Minus size={14} strokeWidth={1.5} />,
+            action: () => {
+              if (inCollection) void s.removeFamiliesFromCollection(inCollection, names);
+              else if (inSnapshot) void s.removeFamiliesFromSnapshot(inSnapshot, names);
+            },
+          },
+        ] satisfies MenuItem[])
+      : []),
     {
       label: t("menu.moveCountToTrash", { count: n }),
       icon: <Trash2 size={14} strokeWidth={1.5} />,
@@ -257,6 +274,27 @@ function buildBulkMenu(names: string[]): MenuItem[] {
  * 想给选中的文字单独换 Bold / Light 就做不到。这里给每个字重一份自己的菜单：
  * 应用走 applyFaceInApp（带该字重的 PostScript 名），复制也分成「字体全名」和「PostScript 名」。
  */
+/**
+ * 这个字面能不能单独启停。
+ *
+ * 系统目录里的那份动不了（`deactivatable` 只对非 System 来源的字体为 true），
+ * 但同 PostScript 名 / 同族同样式的库内副本可以动 —— 详情面板展示的常常是系统那份，
+ * 用户点的却是「这个字重」，所以要往下找一层。字重行尾巴那颗眼睛按钮和右键菜单共用它，
+ * 免得两处判断跑偏（一处能点、一处是灰的）。
+ */
+export function canToggleFace(face: FontFace): boolean {
+  if (face.deactivatable) return true;
+  const ps = (face.postscriptName ?? "").toLowerCase();
+  return useFontStore
+    .getState()
+    .fonts.some(
+      (f) =>
+        f.deactivatable &&
+        ((ps && (f.postscriptName ?? "").toLowerCase() === ps) ||
+          (f.family === face.family && f.style === face.style)),
+    );
+}
+
 export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
   const s = useFontStore.getState();
   // 少数字体本身没写 family/style（或写成了空格），拼出来会是空串：
@@ -268,12 +306,79 @@ export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
     "—";
   const items: MenuItem[] = [{ kind: "heading", label: fullName }];
 
+  // 0.9.9-13：字重级操作。以前字重菜单只能「应用到 PS/AI/CDR」和复制名字，
+  // 想单独停用一个字重、或只把这个字重存进快照，只能整族操作再手动收拾。
+  const snapshots = s.snapshots;
+  const key = faceKey(face);
+  const toggleable = canToggleFace(face);
+
+  items.push(
+    {
+      label: t(face.active ? "menu.deactivate" : "menu.activate"),
+      icon: <Power size={14} strokeWidth={1.5} />,
+      disabled: !toggleable,
+      action: () => void s.setFaceActive(face.id, !face.active),
+    },
+    { kind: "separator" },
+  );
+
+  const collectionNames = Object.keys(s.collections).sort((a, b) => a.localeCompare(b));
+  // 和字族菜单同一套：没有分组时也给「新建分组…」入口（速览里不给新建）
+  if (collectionNames.length > 0 || !s.quickbar) {
+    items.push({ kind: "heading", label: t("menu.collections") });
+    for (const name of collectionNames) {
+      const inFamily = (s.collections[name] ?? []).includes(face.family);
+      const inFace = (s.collectionFaces[name] ?? []).includes(key);
+      items.push({
+        kind: "check",
+        label: name,
+        checked: inFamily || inFace,
+        /**
+         * 勾选状态有两个来源（整族在组里 / 这个字重单独在组里），点一下要撤掉**当前生效的那个**。
+         * 0.9.9-13 一律走 toggleFaceInCollection，于是「整族在组里、字重没单独进」时点一下
+         * 只是新增一条字重成员，勾选看上去点不掉（用户 2026-10-31 反馈）。
+         */
+        action: () => {
+          if (inFamily && !inFace) void s.removeFamiliesFromCollection(name, [face.family]);
+          else void s.toggleFaceInCollection(name, face.id);
+        },
+      });
+    }
+    if (!s.quickbar) {
+      items.push({
+        label: t("menu.newCollection"),
+        icon: <FolderPlus size={14} strokeWidth={1.5} />,
+        // 从字重进来的「新建分组」只放这个字重，不把整族拖进去
+        action: () =>
+          useFontStore.setState({ pendingCollectionFor: face.family, pendingCollectionFace: key }),
+      });
+    }
+    items.push({ kind: "separator" });
+  }
+
+  if (snapshots.length > 0) {
+    items.push(
+      { kind: "heading", label: t("menu.snapshots") },
+      ...[...snapshots]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(
+          (sn): MenuItem => ({
+            kind: "check",
+            label: sn.name,
+            checked: sn.entries.some((e) => e.key === key),
+            action: () => void s.toggleFaceInSnapshot(sn.name, face.id),
+          }),
+        ),
+      { kind: "separator" },
+    );
+  }
+
   if (s.adobeAvailable) {
     items.push(
       ...AVAILABLE_ADOBE_APPS.map(
         (app): MenuItem => ({
           label: t("menu.applyInApp", { app: t(`adobe.${app}`) }),
-          icon: <PenTool size={14} strokeWidth={1.5} />,
+          icon: <AppBadge app={app} />,
           disabled: !face.postscriptName,
           action: () => void s.applyFaceInApp(family.name, face.id, app),
         }),
@@ -324,6 +429,10 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
     a.localeCompare(b),
   );
   const canUninstall = family.faces.some((f) => f.source !== "system");
+  // 正看着某个分组/快照时，菜单里要有和 Delete 对应的「移出成员」入口，
+  // 否则用户按 Delete 发现字体从列表消失，会以为操作失败了（0.9.9-1）。
+  const inCollection = s.nav.kind === "collection" ? s.nav.name : null;
+  const inSnapshot = s.nav.kind === "snapshot" ? s.nav.name : null;
 
   const favorite = s.favorites.includes(family.name);
   const items: MenuItem[] = [
@@ -353,7 +462,7 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
           ...AVAILABLE_ADOBE_APPS.map(
             (app): MenuItem => ({
               label: t("menu.applyInApp", { app: t(`adobe.${app}`) }),
-              icon: <PenTool size={14} strokeWidth={1.5} />,
+              icon: <AppBadge app={app} />,
               action: () => void useFontStore.getState().applyFamilyInApp(family.name, app),
             }),
           ),
@@ -462,11 +571,34 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
     },
   ];
 
+  if (inCollection) {
+    items.push(
+      { kind: "separator" },
+      {
+        label: t("menu.removeFromCollection", { name: inCollection }),
+        icon: <Minus size={14} strokeWidth={1.5} />,
+        action: () => void s.removeFamiliesFromCollection(inCollection, [family.name]),
+      },
+    );
+  }
+  if (inSnapshot) {
+    items.push(
+      { kind: "separator" },
+      {
+        label: t("menu.removeFromSnapshot", { name: inSnapshot }),
+        icon: <Minus size={14} strokeWidth={1.5} />,
+        action: () => void s.removeFamiliesFromSnapshot(inSnapshot, [family.name]),
+      },
+    );
+  }
+
   if (canUninstall) {
     items.push(
       { kind: "separator" },
       {
-        label: t("menu.moveToTrash"),
+        // 在分组/快照里已经有一条「移出」了，这里说清楚这条是真删
+        label:
+          inCollection || inSnapshot ? t("menu.moveToTrashAnyway") : t("menu.moveToTrash"),
         icon: <Trash2 size={14} strokeWidth={1.5} />,
         danger: true,
         action: () => void s.uninstallFamily(family.name),

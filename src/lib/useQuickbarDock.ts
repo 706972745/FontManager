@@ -343,6 +343,28 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       el.removeAttribute("data-anim");
     };
 
+    /**
+     * 「动画已落定」信号（§5 第 21 条）。
+     * collapse() / expand() 都是「启动动画就返回」，串行队列只把**开始**串起来了：
+     * 第二下立刻执行、撞上 `animating` 又被丢弃，用户看到"按两下只反应一下"。
+     * 队列任务结束时等这个 Promise，才能真正做到一下一下地 toggle。
+     */
+    let animWaiters: Array<() => void> = [];
+    const animSettled = () =>
+      new Promise<void>((resolve) => {
+        if (!animating) {
+          resolve();
+          return;
+        }
+        animWaiters.push(resolve);
+      });
+    const notifyAnimSettled = () => {
+      if (!animWaiters.length) return;
+      const list = animWaiters;
+      animWaiters = [];
+      for (const fn of list) fn();
+    };
+
     /** 光标此刻是否落在窗口矩形里（热键呼出时鼠标往往不动，只能主动问系统） */
     const cursorInsideWindow = async (): Promise<boolean> => {
       try {
@@ -407,6 +429,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       animating = false;
       // 取消也得把行内高度 / data-anim 摘掉，否则 qb-frame 停在中断那一帧
       clearFrameDom();
+      // 取消也算落定：排队等着的下一次 toggle 不能被一个不会结束的动画堵死
+      notifyAnimSettled();
     };
 
     /**
@@ -468,6 +492,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           finishTimer = undefined;
         }
         animating = false;
+        notifyAnimSettled();
         clearFrameHeight();
         if (writeFinal) {
           // 兜底路径也把最终几何写一次，保证窗口和状态机一致
@@ -543,6 +568,9 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
 
     const shrinkToBar = async () => {
       if (animating || mutating || !dockedRef.current || phaseRef.current !== "hint") return;
+      // 细线滑出会整块把窗口搬到屏幕外再搬回来，拖动的 rAF 同时在写位置时两边会互相覆盖：
+      // 拖动中先把这一步让出去，松手后 onDragEnd 会重新走 evaluate（§5 第 15 条）。
+      if (document.body.classList.contains("is-dragging")) return;
       mutating = true;
       try {
         const s = await win.scaleFactor();
@@ -709,10 +737,13 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
             // 鼠标已经不在窗口里的话，静置一会儿自动收回
             if (hoverExpanded && !pointerInside) scheduleRecall();
             // 动画期间失焦过的：几何落定了才补收起，否则 setSize 会被动画线程覆盖（§5 第 4 条）
+            // 关掉「贴顶自动隐藏」时不该再自动收回去（§5 第 1 条：这条旁路以前漏了门控，
+            // 结果是关了开关照样会在失焦时收成 34px 提示条）
             if (blurPending) {
               blurPending = false;
               void measure().then((m) => {
                 if (!alive || dockedRef.current || !m?.near) return;
+                if (!autoHideOn()) return;
                 void collapse();
               });
             }
@@ -836,6 +867,9 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       if (!dockedRef.current) {
         setContentHeight(null);
         setBar(null);
+        // 展开动画中途被打断时，窗口停在半截高度、状态却已说「展开」。
+        // 只重置 React 状态不写几何的话，要等到下一次 focus / 点击自愈（§5 第 5 条）。
+        void healGeometry();
         return;
       }
       const scale = await win.scaleFactor();
@@ -1058,6 +1092,9 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         settleTimer = undefined;
         if (!alive || animating || mutating || dockedRef.current) return;
         if (!autoHideOn()) return;
+        // 用户还按着鼠标在拖：这一帧的 setPosition 会和拖动的 rAF 抢位置，
+        // 松手后窗口跳到旧坐标去。拖动结束会派发 zfm:window-drag-end 再判一次（§5 第 15 条）。
+        if (document.body.classList.contains("is-dragging")) return;
         // 收起前把窗口稍微对齐到顶边，避免抓手被拖到屏幕外看不见
         void win
           .setPosition(new LogicalPosition(left, Math.round(edge)))
@@ -1096,6 +1133,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       if (animating || mutating) return;
       void measure().then((m) => {
         if (!alive || !m?.near || dockedRef.current) return;
+        // 关掉「贴顶自动隐藏」= 不再有任何自动收起（§5 第 1 条）
+        if (!autoHideOn()) return;
         // 鼠标已经到别的窗口去了：解锁「靠近就展开」，回来时正常弹开，不用先点一下
         hoverArmed = true;
         void collapse();
@@ -1130,8 +1169,18 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
      * 这条路径是收成细线后唯一的展开入口（连同 Alt+` 和点击）。
      */
     const onDockNear = () => {
-      if (!alive || !dockedRef.current || animating || mutating) return;
-      if (!hoverArmed || Date.now() - blurredAt < REVEAL_AFTER_BLUR_MS) return;
+      if (!alive || !dockedRef.current) return;
+      // 原生侧是**上升沿锁存**（window_dock.rs 只在 hit 由 false 变 true 时 emit 一次），
+      // 这里丢掉一次、光标又不动，就再也不会有第二次。所以门控拦下的要排重试，不能直接 return（§5 第 20 条）。
+      if (animating || mutating) {
+        scheduleRevealRetry(120, true);
+        return;
+      }
+      if (!hoverArmed || Date.now() - blurredAt < REVEAL_AFTER_BLUR_MS) {
+        const left = REVEAL_AFTER_BLUR_MS - (Date.now() - blurredAt);
+        scheduleRevealRetry(left > 0 ? left + 30 : 80, true);
+        return;
+      }
       if (phaseRef.current === "bar") {
         growToHint(() => {
           scheduleShrink();
@@ -1179,7 +1228,16 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
      * 热键 toggle 走串行链：连按时第二下会撞上 animating / mutating 被静默丢掉，
      * 用户看到「按了两下只反应一下」。排队执行，执行时才读最新 docked（§5 第 21 条）。
      */
-    const queueToggle = (run: () => Promise<void>): Promise<void> => toggleQueue.run(run);
+    const queueToggle = (run: () => Promise<void>): Promise<void> =>
+      toggleQueue.run(async () => {
+        await run();
+        // 等这一步的动画真正落定再交棒 —— 只串「开始」等于没串（§5 第 21 条）。
+        // 超时兜底：几何被系统吞掉时 finish 可能永远不来，队列不能一起堵死。
+        await Promise.race([
+          animSettled(),
+          new Promise<void>((resolve) => setTimeout(resolve, ANIM_MS + 600)),
+        ]);
+      });
 
     // 配置的快捷键收起 / 展开（界面内：有焦点时原生热键不会把按键送进来，这里是兜底）
     const onKeyDown = (e: KeyboardEvent) => {

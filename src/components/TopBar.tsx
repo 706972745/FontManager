@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   List,
   RefreshCw,
+  Rows3,
   Search,
   Type,
   X,
@@ -78,6 +79,7 @@ export function SortMenu() {
   return (
     <div className="sort-wrap">
       <motion.button
+        data-hint="hint.sort"
         ref={triggerRef}
         className={`sort-btn ${open ? "sort-open" : ""}`}
         onClick={toggle}
@@ -190,6 +192,7 @@ export function FilterMenu() {
   return (
     <div className="sort-wrap">
       <motion.button
+        data-hint="hint.filter"
         ref={triggerRef}
         data-tour="filters"
         className={`sort-btn ${open ? "sort-open" : ""} ${activeCount > 0 ? "filter-live" : ""}`}
@@ -352,6 +355,7 @@ export function FilterMenu() {
               <li className="sort-sep" role="none" />
               <li>
                 <button
+                  data-hint="hint.variableOnly"
                   role="option"
                   aria-selected={variableOnly}
                   className={variableOnly ? "sort-item sort-active" : "sort-item"}
@@ -363,6 +367,7 @@ export function FilterMenu() {
               </li>
               <li>
                 <button
+                  data-hint="hint.toggleableOnly"
                   role="option"
                   aria-selected={toggleableOnly}
                   className={toggleableOnly ? "sort-item sort-active" : "sort-item"}
@@ -374,6 +379,7 @@ export function FilterMenu() {
               </li>
               <li>
                 <button
+                  data-hint="hint.incompleteOnly"
                   role="option"
                   aria-selected={incompleteOnly}
                   className={incompleteOnly ? "sort-item sort-active" : "sort-item"}
@@ -397,6 +403,7 @@ function RescanButton() {
   const scanning = useFontStore((s) => s.phase === "scanning");
   return (
     <motion.button
+      data-hint="hint.rescan"
       className="rescan-btn"
       aria-label={t("top.rescan")}
       disabled={scanning}
@@ -424,9 +431,9 @@ function ImportFolderButton() {
   const [busy, setBusy] = useState(false);
   return (
     <motion.button
+      data-hint="hint.importFolder"
       className="rescan-btn"
       aria-label={t("top.importFolder")}
-      title={t("top.importFolder")}
       disabled={busy}
       onClick={async () => {
         const dir = await open({
@@ -460,6 +467,7 @@ function CompareButton() {
   const armed = selection.length >= 2;
   return (
     <motion.button
+      data-hint="hint.compare"
       className={`compare-btn ${armed ? "compare-armed" : picking ? "compare-picking" : ""}`}
       aria-label={
         armed
@@ -540,6 +548,8 @@ export function TopBar() {
         <Search size={14} strokeWidth={1.5} className="field-icon" />
         <input
           id="global-search"
+          // 输入框也挂说明：光看占位符「搜索…」不知道能搜到什么
+          data-hint="hint.search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t("top.searchPlaceholder")}
@@ -560,6 +570,7 @@ export function TopBar() {
       <div className="topbar-field topbar-sample">
         <Type size={14} strokeWidth={1.5} className="field-icon" />
         <input
+          data-hint="hint.sample"
           value={sampleText}
           onChange={(e) => setSampleText(e.target.value)}
           placeholder={t("top.samplePlaceholder")}
@@ -572,6 +583,7 @@ export function TopBar() {
       <div className="topbar-size" style={{ "--fill": `${fill}%` } as CSSProperties}>
         <input
           type="range"
+          data-hint="hint.size"
           min={0}
           max={SIZES.length - 1}
           step={1}
@@ -597,11 +609,11 @@ export function TopBar() {
         role="tablist"
         aria-label={t("top.viewMode")}
         onKeyDown={(e) => {
-          // 两个 tab 之间用左右键切换（同时激活），否则这两个按钮键盘够不到
+          // 三个 tab 之间用左右键切换（同时激活），否则这几个按钮键盘够不到
           if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
           e.preventDefault();
           e.stopPropagation();
-          const modes = ["grid", "list"] as const;
+          const modes = ["grid", "list", "waterfall"] as const;
           const cur = modes.findIndex((m) => m === viewMode);
           const next = modes[(cur + (e.key === "ArrowRight" ? 1 : -1) + modes.length) % modes.length];
           setViewMode(next);
@@ -610,19 +622,24 @@ export function TopBar() {
           ]?.focus();
         }}
       >
-        {(["grid", "list"] as const).map((mode) => (
+        {(["grid", "list", "waterfall"] as const).map((mode) => (
           <motion.button
+            data-hint="hint.viewMode"
             key={mode}
             role="tab"
             aria-selected={viewMode === mode}
+            // roving tabindex：Tab 只在当前视图按钮上停一次（§5 第 30 条残留）
+            tabIndex={viewMode === mode ? 0 : -1}
             className={`view-btn ${viewMode === mode ? "view-btn-active" : ""}`}
             onClick={() => setViewMode(mode)}
             whileTap={{ scale: 0.94 }}
           >
             {mode === "grid" ? (
               <LayoutGrid size={15} strokeWidth={1.5} />
-            ) : (
+            ) : mode === "list" ? (
               <List size={15} strokeWidth={1.5} />
+            ) : (
+              <Rows3 size={15} strokeWidth={1.5} />
             )}
           </motion.button>
         ))}

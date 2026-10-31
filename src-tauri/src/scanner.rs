@@ -93,6 +93,8 @@ pub fn discover_managed(dir: &std::path::Path, known: &std::collections::HashSet
     for e in WalkDir::new(dir)
         .follow_links(true)
         .into_iter()
+        // 归置过的重复字体不再收编回来，否则用户挪了等于没挪
+        .filter_entry(|e| !in_dup_dir(e))
         .filter_map(|e| e.ok())
     {
         if !e.file_type().is_file() {
@@ -119,6 +121,405 @@ pub fn discover_managed(dir: &std::path::Path, known: &std::collections::HashSet
     }
     out.sort();
     out
+}
+
+/// 库内「与系统字体重复」的文件归置到这个目录；扫描时整体跳过。
+///
+/// 用户 2026-10-31 定：既然系统已经装了这个字体，库里那份就是多余的 ——
+/// 挪进这个目录留档（不删），软件不再扫描/展示它。名字以下划线开头，
+/// 和字体库里 `_02_其他字体` 这类内部命名保持一致，排序时也会沉到下面。
+pub const DUPLICATE_DIR: &str = "_重复字体";
+
+/// `discover_managed` 用：路径里是否带着「重复字体」这一层
+fn in_dup_dir(e: &walkdir::DirEntry) -> bool {
+    e.file_name()
+        .to_str()
+        .map(|s| s.eq_ignore_ascii_case(DUPLICATE_DIR))
+        .unwrap_or(false)
+}
+
+/// 系统已安装字体的 PostScript 名（小写），进程内只算一次。
+///
+/// 导入时要按它挡掉「系统已经有了、还要再往库里复制一份」的操作（用户 2026-10-31：
+/// 「以后的系统字体还会不会自动再复制一份」）。扫一次系统目录约 1~2 秒，缓存住即可。
+pub fn system_postscript_names() -> &'static std::collections::HashSet<String> {
+    static CACHE: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| {
+        let mut set = std::collections::HashSet::new();
+        let Some(dir) = system_font_dir() else {
+            return set;
+        };
+        for e in WalkDir::new(&dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if !e.file_type().is_file() {
+                continue;
+            }
+            let p = e.into_path();
+            if !parser::is_font_file(&p) {
+                continue;
+            }
+            for f in parser::parse_font_file(&p, FontSource::System) {
+                if let Some(ps) = f.postscript_name {
+                    set.insert(ps.to_lowercase());
+                }
+            }
+        }
+        set
+    })
+}
+
+/// 归置记录里的一条：从哪来、到哪去
+#[derive(Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DedupeItem {
+    pub from: String,
+    pub to: String,
+}
+
+/// `_重复字体/_归置记录.json`：每次归置都往里追加，支持「一键还原」。
+///
+/// 归置本身是移动、不删文件，但没有清单的话用户只能自己去目录里翻。
+/// 有了它，误归置（比如两个字体真的同名但不是同一份）也能原路退回。
+#[derive(Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DedupeLog {
+    #[serde(default = "one")]
+    pub version: u32,
+    #[serde(default)]
+    pub items: Vec<DedupeItem>,
+}
+
+fn one() -> u32 {
+    1
+}
+
+pub fn dedupe_log_path(library: &Path) -> PathBuf {
+    library.join(DUPLICATE_DIR).join("_归置记录.json")
+}
+
+/// 读已有清单；坏文件当成空（不能因为一条记录读不出来就拒绝归置）
+pub fn read_dedupe_log(library: &Path) -> DedupeLog {
+    std::fs::read_to_string(dedupe_log_path(library))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// 把归置过的字体全部搬回原位；原位已被占用就跳过（不覆盖任何东西）。
+pub fn restore_deduped(library: &Path) -> DedupeReport {
+    let log = read_dedupe_log(library);
+    let mut report = DedupeReport {
+        moved: 0,
+        failed: 0,
+        bytes: 0,
+        dest: library.to_string_lossy().to_string(),
+        dry_run: false,
+        samples: Vec::new(),
+        skipped_different: 0,
+        skipped_partial: 0,
+    };
+    let mut remain: Vec<DedupeItem> = Vec::new();
+    for item in log.items {
+        let from = PathBuf::from(&item.from);
+        let to = PathBuf::from(&item.to);
+        if !to.is_file() {
+            continue; // 文件已经不在了，记录也就没意义
+        }
+        if from.exists() {
+            remain.push(item); // 原位被占，保留记录让用户自己决定
+            report.failed += 1;
+            continue;
+        }
+        if let Some(parent) = from.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let ok = std::fs::rename(&to, &from).is_ok()
+            || (std::fs::copy(&to, &from).is_ok() && std::fs::remove_file(&to).is_ok());
+        if ok {
+            report.moved += 1;
+        } else {
+            remain.push(item);
+            report.failed += 1;
+        }
+    }
+    let left = DedupeLog {
+        version: 1,
+        items: remain,
+    };
+    if let Ok(s) = serde_json::to_string_pretty(&left) {
+        let _ = std::fs::write(dedupe_log_path(library), s);
+    }
+    report
+}
+
+/// 一次「归置重复字体」的结果
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DedupeReport {
+    /// 计划 / 实际移动的文件数
+    pub moved: usize,
+    pub failed: usize,
+    pub bytes: u64,
+    /// 归置目标目录（绝对路径）
+    pub dest: String,
+    /// true = 只是试算，没有真的动文件
+    pub dry_run: bool,
+    /// 前几个被归置的文件名（提示里给用户看一眼）
+    pub samples: Vec<String>,
+    /// 名字对上了，但**内容和系统那份不一样**（多半是另一个版本）→ 保留不动，由用户自己决定
+    #[serde(default)]
+    pub skipped_different: usize,
+    /// **整个文件都能被系统替代**这个条件不成立 → 保留不动。
+    /// 两种来源：文件里夹着系统没有的字族（TTC），或 PS 名对不上 ——
+    /// 后者最常见的其实是「文件名撞车，其实是完全不同的两个字体」（实测 arialn.ttf
+    /// 在系统里是 ArialNarrow、库里那份是 LiHeiPro）。
+    #[serde(default)]
+    pub skipped_partial: usize,
+}
+
+/// 系统字体目录（只有 Windows 有「系统已经装了一份」这个概念）
+fn system_font_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let d = PathBuf::from(r"C:\Windows\Fonts");
+        if d.is_dir() {
+            return Some(d);
+        }
+    }
+    None
+}
+
+/// 两个文件是否**逐字节相同**（先比长度，再分块比对，不整份读进内存）。
+///
+/// 归置前必须过这一关：PostScript 名只说明「同一个字体谱系」，不说明「同一份文件」——
+/// 系统里是 v7、库里是 v5，名字一模一样但笔画细节不同，替用户挪走就是毁资料。
+fn same_bytes(a: &Path, b: &Path) -> bool {
+    use std::io::Read;
+    let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) else {
+        return false;
+    };
+    if ma.len() != mb.len() {
+        return false;
+    }
+    let (Ok(mut fa), Ok(mut fb)) = (std::fs::File::open(a), std::fs::File::open(b)) else {
+        return false;
+    };
+    let mut ba = vec![0u8; 64 * 1024];
+    let mut bb = vec![0u8; 64 * 1024];
+    loop {
+        let na = match fa.read(&mut ba) {
+            Ok(n) => n,
+            Err(_) => return false,
+        };
+        let nb = match fb.read(&mut bb) {
+            Ok(n) => n,
+            Err(_) => return false,
+        };
+        if na != nb {
+            return false;
+        }
+        if na == 0 {
+            return true;
+        }
+        if ba[..na] != bb[..nb] {
+            return false;
+        }
+    }
+}
+
+/// 把字体库里「与系统已安装字体重复」的文件挪进 `<库>/_重复字体/`。
+///
+/// 判重比的是 **PostScript 名**（系统里叫 arial.ttf、库里可能被改成别的文件名），
+/// 但全量解析 6000 个文件太慢。所以先用**文件名**筛候选（库里的重复大多是原样拷过来的，
+/// 文件名和系统一致），只解析这些候选 —— 实测候选三百来个，两三秒能跑完。
+///
+/// `dry_run = true` 只统计不移动，先给用户一个「这次会动多少个文件」的预览。
+/// 移动时保留相对目录结构，方便日后原样找回（不删任何文件）。
+///
+/// **判重口径（0.9.9-13 收紧）**：光「PostScript 名撞上」不算重复，必须同时满足
+/// ① 文件里每个字面都能在系统找到同名字面；② 缺 PostScript 名的不碰；
+/// ③ 与系统那份**逐字节相同**。见循环里的注释与 `same_bytes`。
+pub fn dedupe_library(library: &Path, dry_run: bool) -> DedupeReport {
+    let mut report = DedupeReport {
+        moved: 0,
+        failed: 0,
+        bytes: 0,
+        dest: library.join(DUPLICATE_DIR).to_string_lossy().to_string(),
+        dry_run,
+        samples: Vec::new(),
+        skipped_different: 0,
+        skipped_partial: 0,
+    };
+    let Some(sys_dir) = system_font_dir() else {
+        return report;
+    };
+    if !library.is_dir() {
+        return report;
+    }
+
+    // 1) 系统侧：PostScript 名 + 文件名 + 名→系统文件路径，三份索引都留着
+    //    （路径那份用于「内容是否真的逐字节相同」的复核，见第 2 步）
+    let mut sys_ps: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut sys_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut sys_by_ps: std::collections::HashMap<String, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+    for e in WalkDir::new(&sys_dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if !e.file_type().is_file() {
+            continue;
+        }
+        let p = e.into_path();
+        if !parser::is_font_file(&p) {
+            continue;
+        }
+        if let Some(n) = p.file_name().and_then(|s| s.to_str()) {
+            sys_names.insert(n.to_lowercase());
+        }
+        for f in parser::parse_font_file(&p, FontSource::System) {
+            if let Some(ps) = f.postscript_name {
+                let k = ps.to_lowercase();
+                sys_ps.insert(k.clone());
+                sys_by_ps.entry(k).or_default().push(p.clone());
+            }
+        }
+    }
+    if sys_ps.is_empty() {
+        return report;
+    }
+    // 库目录万一是指向系统目录的链接，挪动它就等于挪系统字体 —— 这种一律不动
+    let sys_root = sys_dir.canonicalize().unwrap_or_else(|_| sys_dir.clone());
+
+    // 2) 库内候选：文件名与系统重合的才解析确认，避免全库重解析
+    let dest_root = library.join(DUPLICATE_DIR);
+    let mut todo: Vec<(PathBuf, u64)> = Vec::new();
+    let mut skipped_different = 0usize;
+    let mut skipped_partial = 0usize;
+    for e in WalkDir::new(library)
+        .follow_links(true)
+        .into_iter()
+        .filter_entry(|e| !in_dup_dir(e))
+        .filter_map(|e| e.ok())
+    {
+        if !e.file_type().is_file() {
+            continue;
+        }
+        let p = e.into_path();
+        if !parser::is_font_file(&p) {
+            continue;
+        }
+        let same_name = p
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|n| sys_names.contains(&n.to_lowercase()))
+            .unwrap_or(false);
+        if !same_name {
+            continue;
+        }
+        // 文件本身就在系统目录里（库目录是指向 C:\Windows\Fonts 的链接）→ 绝不动
+        let canon = p.canonicalize().unwrap_or_else(|_| p.clone());
+        if canon.starts_with(&sys_root) {
+            skipped_partial += 1;
+            continue;
+        }
+        // 严格三条（0.9.9-13，用户问「怎么防止归置错误」）：
+        // ① 文件里**每一个**字面都要能在系统里找到同 PostScript 名的字体
+        //    —— 原来只要命中任意一个就整份搬走，TTC 里夹着的别的字族会被连坐搬走；
+        // ② 缺 PostScript 名的一律不碰（没法确认它是谁）；
+        // ③ 内容必须与系统那份**逐字节相同** —— 只是同名不同版本（旧版 / 子集 / 重导出）
+        //    的留在库里，不替用户决定「哪个版本更好」。
+        let faces = parser::parse_font_file(&p, FontSource::User);
+        if faces.is_empty() {
+            skipped_partial += 1;
+            continue;
+        }
+        let mut keys: Vec<String> = Vec::with_capacity(faces.len());
+        let mut all_known = true;
+        for f in &faces {
+            match f.postscript_name.as_ref().map(|s| s.to_lowercase()) {
+                Some(k) if sys_ps.contains(&k) => keys.push(k),
+                _ => {
+                    all_known = false;
+                    break;
+                }
+            }
+        }
+        if !all_known {
+            skipped_partial += 1;
+            continue;
+        }
+        // 只要有一个字面能对上「内容完全一样的系统文件」就够：整份文件逐字节相同，
+        // 意味着这个文件里的所有字面系统都装了一份一模一样的。
+        let identical = keys.iter().any(|k| {
+            sys_by_ps
+                .get(k)
+                .map(|paths| paths.iter().any(|sp| same_bytes(&p, sp)))
+                .unwrap_or(false)
+        });
+        if !identical {
+            skipped_different += 1;
+            continue;
+        }
+        let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+        todo.push((p, size));
+    }
+    // 上面两个计数器：分别代表「版本不同已保留」「整包不完全重复已保留」
+    report.skipped_different = skipped_different;
+    report.skipped_partial = skipped_partial;
+
+    report.moved = todo.len();
+    report.bytes = todo.iter().map(|(_, s)| s).sum();
+    for (p, _) in todo.iter().take(5) {
+        if let Some(n) = p.file_name().and_then(|s| s.to_str()) {
+            report.samples.push(n.to_string());
+        }
+    }
+    if dry_run {
+        return report;
+    }
+
+    // 3) 真移动：保留相对目录结构，跨盘时退化成「复制 + 删除」。
+    //    每成功一个就记进清单，事后能原路还原。
+    let mut moved_ok = 0usize;
+    let mut failed = 0usize;
+    let mut items: Vec<DedupeItem> = Vec::new();
+    for (p, _) in todo {
+        let rel = p.strip_prefix(library).unwrap_or(&p).to_path_buf();
+        let target = dest_root.join(rel);
+        if let Some(parent) = target.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                failed += 1;
+                continue;
+            }
+        }
+        let ok = std::fs::rename(&p, &target).is_ok()
+            || (std::fs::copy(&p, &target).is_ok() && std::fs::remove_file(&p).is_ok());
+        if ok {
+            moved_ok += 1;
+            items.push(DedupeItem {
+                from: p.to_string_lossy().to_string(),
+                to: target.to_string_lossy().to_string(),
+            });
+        } else {
+            failed += 1;
+        }
+    }
+    if !items.is_empty() {
+        let mut log = read_dedupe_log(library);
+        log.version = 1;
+        log.items.extend(items);
+        if let Ok(s) = serde_json::to_string_pretty(&log) {
+            let _ = std::fs::write(dedupe_log_path(library), s);
+        }
+    }
+    report.moved = moved_ok;
+    report.failed = failed;
+    report
 }
 
 pub fn all_dirs(extra: &[String]) -> Vec<(PathBuf, FontSource)> {
@@ -155,6 +556,7 @@ pub fn scan_all(
             WalkDir::new(dir)
                 .follow_links(true)
                 .into_iter()
+                .filter_entry(|e| !in_dup_dir(e))
                 .filter_map(|e| e.ok())
                 .filter(|e| e.file_type().is_file())
                 .map(move |e| (e.into_path(), source))

@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { createFaceLru } from "./faceRegistry";
 import { ipc } from "./ipc";
 import type { FontFace as ZFontFace } from "./ipc";
 
@@ -19,15 +20,27 @@ export function setUnpreviewableHook(fn: (id: string, on: boolean) => void) {
 }
 const cache = new Map<string, LoadState>();
 const listeners = new Map<string, Set<() => void>>();
-/**
- * 已加载 FontFace 的引用，按「最近使用」排序（Map 迭代顺序 = 插入顺序，touch 时挪到末尾）。
- * FontFace 一旦 add 进 document.fonts 就会被渲染进程常驻持有——字体文件动辄几 MB，
- * 长时间滚动浏览会把内存慢慢吃满，WebView2 渲染进程就会突然崩掉（表现为「用一会儿就闪退」）。
- * 所以这里做 LRU 淘汰：超过上限就把最久没用的字体从 document.fonts 里删掉，下次用到再重载。
- */
-const loadedFaces = new Map<string, FontFace>();
 /** 常驻字体上限。200 张卡片 × 平均 1~2 MB ≈ 200~400 MB，留有余量 */
 const MAX_LOADED_FACES = 200;
+/**
+ * 已加载 FontFace 的 LRU（实现在 lib/faceRegistry.ts），按「最近使用」淘汰。
+ * FontFace 一旦 add 进 document.fonts 就会被渲染进程常驻持有——字体文件动辄几 MB，
+ * 长时间滚动浏览会把内存慢慢吃满，WebView2 渲染进程就会突然崩掉（表现为「用一会儿就闪退」）。
+ *
+ * 0.9.9-13 的老实现是 `const loadedFaces = new Map()` + tryLoad 里只 `document.fonts.add(ff)`，
+ * 从没往 Map 里写过东西 → 淘汰分支是死代码，上限从来没生效过。
+ */
+const loadedFaces = createFaceLru<FontFace>(document.fonts, {
+  max: MAX_LOADED_FACES,
+  onEvict: (name) => {
+    // 被淘汰的字体可能还在屏幕上：清掉状态缓存并唤醒等待者，让组件重新走一次加载自愈，
+    // 否则卡片会静默退回系统字体（cache 还有 "loaded"）或永久停在空白（cache 已被删）。
+    cache.delete(name);
+    const waiting = listeners.get(name);
+    listeners.delete(name);
+    waiting?.forEach((fn) => fn());
+  },
+});
 
 function cssName(face: ZFontFace): string {
   return `zfm-${hash(face.id)}`;
@@ -41,23 +54,7 @@ function hash(s: string): string {
 
 /** 记一次「用到这个字体」：存在就挪到 LRU 末尾，顺便按上限淘汰最旧的 */
 function touch(name: string): void {
-  const ff = loadedFaces.get(name);
-  if (ff) {
-    loadedFaces.delete(name);
-    loadedFaces.set(name, ff);
-  }
-  while (loadedFaces.size > MAX_LOADED_FACES) {
-    const [oldest, oldFf] = loadedFaces.entries().next().value as [string, FontFace];
-    loadedFaces.delete(oldest);
-    try {
-      document.fonts.delete(oldFf);
-    } catch {
-      /* 重复删除无所谓 */
-    }
-    cache.delete(oldest);
-    listeners.get(oldest)?.forEach((fn) => fn());
-    listeners.delete(oldest);
-  }
+  loadedFaces.touch(name);
 }
 
 function ensureLoaded(face: ZFontFace): void {
@@ -73,6 +70,11 @@ function ensureLoaded(face: ZFontFace): void {
  * 值可能是 null（修不出来），也要记：不然每次 LRU 淘汰后重载都要再跑一趟。
  */
 const repaired = new Map<string, string | null>();
+/**
+ * 修复结果的条数上限。每个字面最多记 2 条（两档修复），6295 个字面全走过就是 1.2 万条，
+ * 值本身很小但没理由一直涨；超了丢最早的，代价只是那一次多问后端一趟。
+ */
+const MAX_REPAIRED = 2000;
 
 /**
  * 加载失败后的两段修复：
@@ -91,6 +93,11 @@ async function repairLoad(name: string, hint: RepairHint): Promise<boolean> {
         path = null;
       }
       repaired.set(key, path);
+      if (repaired.size > MAX_REPAIRED) {
+        // Map 保持插入顺序，第一个就是最早记下的
+        const first = repaired.keys().next();
+        if (!first.done) repaired.delete(first.value);
+      }
     }
     if (path && (await tryLoad(name, path))) {
       // 修一下就能显示 → 不算损坏，摘掉标记
@@ -108,7 +115,9 @@ function tryLoad(name: string, path: string): Promise<boolean> {
     const ff = new FontFace(name, `url("${convertFileSrc(path)}")`);
     ff.load()
       .then(() => {
-        document.fonts.add(ff);
+        // 登记进 LRU —— 这一步才真正 add 进 document.fonts，同时兑现 200 上限的淘汰。
+        // 之前这里直接 `document.fonts.add(ff)` 而没有登记，淘汰逻辑等于没写。
+        loadedFaces.register(name, ff);
         resolve(true);
       })
       .catch(() => resolve(false));
@@ -141,9 +150,12 @@ export function useFontCss(face: ZFontFace | null): {
 } {
   const name = face ? cssName(face) : null;
   const [, bump] = useState(0);
+  const state = name ? cache.get(name) : undefined;
 
   useEffect(() => {
     if (!face || !name) return;
+    // 依赖里带上 state：被 LRU 淘汰后 cache 里没有这个名字、state 变 undefined，
+    // effect 会重跑并重新加载。少了这一条，淘汰正在显示的字体会让它永久停在系统字体上。
     ensureLoaded(face);
     if (cache.get(name) === "loading") {
       const set = listeners.get(name) ?? new Set();
@@ -154,9 +166,8 @@ export function useFontCss(face: ZFontFace | null): {
         set.delete(fn);
       };
     }
-  }, [face, name]);
+  }, [face, name, state]);
 
-  const state = name ? cache.get(name) : undefined;
   return {
     fontFamily: state === "loaded" && name ? name : null,
     failed: state === "failed",
@@ -166,6 +177,7 @@ export function useFontCss(face: ZFontFace | null): {
 export function usePathFontCss(key: string | null, path: string | null): string | null {
   const name = key ? `zfm-p-${hash(key)}` : null;
   const [, bump] = useState(0);
+  const state = name ? cache.get(name) : undefined;
 
   useEffect(() => {
     if (!name || !path) return;
@@ -179,9 +191,9 @@ export function usePathFontCss(key: string | null, path: string | null): string 
         set.delete(fn);
       };
     }
-  }, [name, path]);
+  }, [name, path, state]);
 
-  return name && path && cache.get(name) === "loaded" ? name : null;
+  return name && path && state === "loaded" ? name : null;
 }
 
 export function loadFaceCss(face: ZFontFace): Promise<string> {

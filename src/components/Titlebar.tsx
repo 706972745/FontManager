@@ -50,14 +50,15 @@ export function Titlebar() {
       </div>
       <div className="titlebar-controls">
         <button
+          data-hint="hint.enterQuickbar"
           data-tour="quickbar"
           aria-label={t("quickbar.enter")}
-          title={t("quickbar.enter")}
           onClick={() => void setQuickbar(true)}
         >
           <PanelTop size={14} strokeWidth={1.5} />
         </button>
         <button
+          data-hint="hint.settings"
           data-tour="settings"
           aria-label={t("titlebar.settings")}
           onClick={() => setSettingsOpen(true)}
@@ -65,13 +66,13 @@ export function Titlebar() {
           <SettingsGlyph />
         </button>
         <span className="titlebar-sep" />
-        <button aria-label={t("titlebar.minimize")} onClick={() => void win.minimize()}>
+        <button aria-label={t("titlebar.minimize")} onClick={() => void win.minimize()} data-hint="hint.minimize">
           <Minus size={13} strokeWidth={1.5} />
         </button>
-        <button aria-label={t("titlebar.maximize")} onClick={() => void win.toggleMaximize()}>
+        <button aria-label={t("titlebar.maximize")} onClick={() => void win.toggleMaximize()} data-hint="hint.maximize">
           <Square size={10} strokeWidth={1.5} />
         </button>
-        <button className="tc-close" aria-label={t("titlebar.close")} onClick={() => void win.close()}>
+        <button className="tc-close" aria-label={t("titlebar.close")} onClick={() => void win.close()} data-hint="hint.close">
           <X size={13} strokeWidth={1.5} />
         </button>
       </div>

@@ -52,6 +52,28 @@ export function usePopoverMenu(id: string) {
     wasOpen.current = open;
   }, [open]);
 
+  // roving tabindex：菜单里只保留一个 Tab 停点（当前项），其余 -1。
+  // 否则按 Tab 会逐个经过十几个选项才出得去（§5 第 30 条残留）。
+  useEffect(() => {
+    if (!open) return;
+    const list = listRef.current;
+    if (!list) return;
+    const rows = () =>
+      [...list.querySelectorAll<HTMLElement>("[role='option']")].filter(
+        (el) => el.offsetParent !== null,
+      );
+    const sync = (target?: HTMLElement | null) => {
+      const items = rows();
+      if (items.length === 0) return;
+      const active = target && items.includes(target) ? target : items[0];
+      for (const el of items) el.tabIndex = el === active ? 0 : -1;
+    };
+    sync(list.querySelector<HTMLElement>("[role='option'][aria-selected='true']"));
+    const onFocusIn = (e: FocusEvent) => sync(e.target as HTMLElement);
+    list.addEventListener("focusin", onFocusIn);
+    return () => list.removeEventListener("focusin", onFocusIn);
+  }, [open]);
+
   // Escape 只关菜单。用 capture 阶段拿住，避免继续冒到 App 的全局 handler
   // （那边会用 Escape 清空选择，看起来就像「菜单和选择一起没了」）。
   useEffect(() => {

@@ -5,7 +5,7 @@ import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plug
 import { openContextMenu, type MenuItem } from "../design/primitives/ContextMenu";
 import { spring, springSoft, staggerDelay } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
-import { allTags, familiesFor, useFontStore, type Family, type Nav } from "../state/fontStore";
+import { allTags, familiesFor, isSystemFamily, useFontStore, type Family, type Nav } from "../state/fontStore";
 import { faceKey } from "../lib/snapshotKey";
 import { exportFontList, snapshotToggleAction } from "../lib/menus";
 import { t as translate, useT } from "../lib/i18n";
@@ -24,6 +24,7 @@ function NavRow({
   label,
   count,
   index,
+  hint,
   onContextMenu,
 }: {
   nav: Nav;
@@ -31,6 +32,8 @@ function NavRow({
   label: string;
   count?: number;
   index: number;
+  /** i18n key：悬停 1 秒解释这一行的数字是「字族数」还是别的口径 */
+  hint?: string;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const intro = useIntro();
@@ -40,6 +43,14 @@ function NavRow({
   return (
     <motion.button
       className={`nav-row ${active ? "nav-active" : ""}`}
+      // 给全局 Delete 用：焦点停在这一行时才知道要删哪个分组/快照。
+      // NavRow 是原生 button，点击和 Tab 都会让它成为 activeElement，
+      // 所以 App.tsx 用 closest("[data-nav-kind]") 就能定位，不需要额外的焦点状态。
+      data-nav-kind={nav.kind}
+      data-nav-name={
+        nav.kind === "collection" || nav.kind === "snapshot" ? nav.name : undefined
+      }
+      data-hint={hint}
       onClick={() => setNav(nav)}
       onContextMenu={onContextMenu}
       initial={intro ? { opacity: 0, x: -12 } : false}
@@ -173,6 +184,20 @@ export function Sidebar() {
   const t = useT();
   const intro = useIntro();
   const fonts = useFontStore((s) => s.fonts);
+  const collectionFaces = useFontStore((s) => s.collectionFaces);
+  /**
+   * 分组成员数 = 字族级成员 ∪ 字重级成员所在的字族（0.9.9-13）。
+   * 只把某个字重放进分组时，计数也要算上那个字族，否则侧栏显示 0、点进去却有卡片。
+   */
+  const collectionCount = (name: string) => {
+    const fams = new Set(collections[name] ?? []);
+    const keys = collectionFaces[name] ?? [];
+    if (keys.length > 0) {
+      const set = new Set(keys);
+      for (const f of fonts) if (!fams.has(f.family) && set.has(faceKey(f))) fams.add(f.family);
+    }
+    return fams.size;
+  };
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
   const favorites = useFontStore((s) => s.favorites);
@@ -181,7 +206,6 @@ export function Sidebar() {
   const onlineEnabled = useFontStore((s) => s.settings.onlineFontsEnabled);
   const deleteCollection = useFontStore((s) => s.deleteCollection);
   const renameCollection = useFontStore((s) => s.renameCollection);
-  const setFamilyTags = useFontStore((s) => s.setFamilyTags);
   const pendingCollectionFor = useFontStore((s) => s.pendingCollectionFor);
   const snapshots = useFontStore((s) => s.snapshots);
   const deleteSnapshot = useFontStore((s) => s.deleteSnapshot);
@@ -215,9 +239,8 @@ export function Sidebar() {
     sessionActivated.includes(f.name),
   ).length;
   const deactivatedCount = allFamilies.filter((f) => !f.active).length;
-  const systemCount = allFamilies.filter(
-    (f) => f.faces.length > 0 && f.faces.every((face) => face.source === "system"),
-  ).length;
+  // 与「系统字体」列表用同一个口径（isSystemFamily），否则计数和点进去看到的数量对不上
+  const systemCount = allFamilies.filter(isSystemFamily).length;
   const tagCounts = allTags(tags);
   const collapsed = useFontStore((s) => s.collapsedSections);
   const toggleSection = useFontStore((s) => s.toggleSection);
@@ -248,11 +271,9 @@ export function Sidebar() {
   };
 
   const removeTagEverywhere = (tag: string) => {
-    for (const [family, list] of Object.entries(tags)) {
-      if (list.includes(tag)) {
-        void setFamilyTags(family, list.filter((t) => t !== tag));
-      }
-    }
+    // 交给 store：它按最新状态逐族串行写、失败只报一次（§5 第 36 条）。
+    // 以前在这里遍历渲染期的 tags 快照并发、失败逐族弹 toast，会把期间新加的标签覆盖掉。
+    void useFontStore.getState().removeTagEverywhere(tag);
   };
 
   let i = 0;
@@ -267,6 +288,7 @@ export function Sidebar() {
         <div className={`sidebar-section ${collapsed.includes("browse") ? "sidebar-collapsed" : ""}`}>
           <div className="sidebar-heading sidebar-heading-row">
             <button
+              data-hint="hint.collapse"
               className="sidebar-toggle"
               onClick={() => toggleSection("browse")}
               aria-expanded={!collapsed.includes("browse")}
@@ -274,7 +296,8 @@ export function Sidebar() {
               <span className="sidebar-chevron">
                 <ChevronDown size={12} strokeWidth={2} />
               </span>
-              <span>{t("side.browse")}</span>
+              {/* 计数口径说明走悬停提示（用户 2026-10-31：不要占一行位置，悬停「浏览」时出现） */}
+              <span data-hint="side.countNote">{t("side.browse")}</span>
             </button>
           </div>
           {!collapsed.includes("browse") && (
@@ -284,6 +307,7 @@ export function Sidebar() {
             icon={<Library size={15} strokeWidth={1.5} />}
             label={t("side.library")}
             count={familyCount}
+            hint="hint.sideLibrary"
             index={i++}
           />
           <NavRow
@@ -305,6 +329,7 @@ export function Sidebar() {
             icon={<Power size={15} strokeWidth={1.5} />}
             label={t("side.activated")}
             count={activatedCount}
+            hint="hint.sideActivated"
             index={i++}
           />
           <NavRow
@@ -319,6 +344,7 @@ export function Sidebar() {
             icon={<PowerOff size={15} strokeWidth={1.5} />}
             label={t("side.deactivated")}
             count={deactivatedCount}
+            hint="hint.sideDeactivated"
             index={i++}
           />
           <NavRow
@@ -326,6 +352,7 @@ export function Sidebar() {
             icon={<Monitor size={15} strokeWidth={1.5} />}
             label={t("side.system")}
             count={systemCount}
+            hint="hint.sideSystem"
             index={i++}
           />
           </>
@@ -335,6 +362,7 @@ export function Sidebar() {
         <div className={`sidebar-section ${collapsed.includes("collections") ? "sidebar-collapsed" : ""}`}>
           <div className="sidebar-heading sidebar-heading-row">
             <button
+              data-hint="hint.collectionsSection"
               className="sidebar-toggle"
               onClick={() => toggleSection("collections")}
               aria-expanded={!collapsed.includes("collections")}
@@ -345,6 +373,7 @@ export function Sidebar() {
               <span>{t("side.collections")}</span>
             </button>
             <motion.button
+              data-hint="hint.newCollection"
               className="sidebar-add"
               aria-label={t("side.newCollection")}
               onClick={() => setCreating(true)}
@@ -359,7 +388,7 @@ export function Sidebar() {
             <NewCollectionInput
               onDone={() => {
                 setCreating(false);
-                useFontStore.setState({ pendingCollectionFor: null });
+                useFontStore.setState({ pendingCollectionFor: null, pendingCollectionFace: null });
               }}
             />
           )}
@@ -380,7 +409,7 @@ export function Sidebar() {
                 nav={{ kind: "collection", name }}
                 icon={<FolderOpen size={15} strokeWidth={1.5} />}
                 label={name}
-                count={(collections[name] ?? []).length}
+                count={collectionCount(name)}
                 index={i++}
                 onContextMenu={(e) => {
                   const members = collections[name] ?? [];
@@ -444,6 +473,7 @@ export function Sidebar() {
         <div className={`sidebar-section ${collapsed.includes("snapshots") ? "sidebar-collapsed" : ""}`}>
           <div className="sidebar-heading sidebar-heading-row">
             <button
+              data-hint="hint.snapshotsSection"
               className="sidebar-toggle"
               onClick={() => toggleSection("snapshots")}
               aria-expanded={!collapsed.includes("snapshots")}
@@ -454,9 +484,9 @@ export function Sidebar() {
               <span>{t("side.snapshots")}</span>
             </button>
             <motion.button
+              data-hint="hint.importSnapshots"
               className="sidebar-add"
               aria-label={t("side.importSnapshots")}
-              title={t("side.importSnapshots")}
               onClick={(e) =>
                 openContextMenu(e, [
                   {
@@ -478,6 +508,7 @@ export function Sidebar() {
               <FileUp size={13} strokeWidth={2} />
             </motion.button>
             <motion.button
+              data-hint="hint.newSnapshot"
               className="sidebar-add"
               aria-label={t("side.newSnapshot")}
               onClick={() => setCreatingSnapshot(true)}
@@ -558,6 +589,7 @@ export function Sidebar() {
           <div className={`sidebar-section ${collapsed.includes("tags") ? "sidebar-collapsed" : ""}`}>
             <div className="sidebar-heading sidebar-heading-row">
               <button
+                data-hint="hint.collapse"
                 className="sidebar-toggle"
                 onClick={() => toggleSection("tags")}
                 aria-expanded={!collapsed.includes("tags")}

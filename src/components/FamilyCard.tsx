@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, Camera, ChevronRight, Folder, Lock, Star } from "lucide-react";
-import { memo, useState, type CSSProperties } from "react";
+import { memo, useMemo, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { spring, springSnappy, springSoft } from "../design/springs";
 import { useFontCss } from "../lib/fontLoader";
@@ -13,6 +13,8 @@ import { FaceLine, faceLineFontSize } from "./FaceLine";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
 import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
+import { faceKey } from "../lib/snapshotKey";
+import { collectionFaceScope } from "../lib/collectionScope";
 import { playStar } from "../lib/sound";
 import type { FontFace } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
@@ -74,9 +76,61 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const [expanded, setExpanded] = useState(false);
   /** 鼠标正悬停的字重行：大预览临时用它渲染，移开恢复 Regular（不持久，纯跟随鼠标） */
   const [hoverFaceId, setHoverFaceId] = useState<string | null>(null);
+  const nav = useFontStore((s) => s.nav);
+  const snapshots = useFontStore((s) => s.snapshots);
+  const collectionFaces = useFontStore((s) => s.collectionFaces);
+  const collections = useFontStore((s) => s.collections);
 
-  const size = SIZES[sizeIndex];
-  const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
+  /**
+   * 分组 / 快照里只放了这一族的**部分字重**时，展开后的字重列表只显示那几个。
+   *
+   * 用户 2026-10-31：「如果是单独加入了字重到分组或者快照中，这里应该只显示单独加入的字重，
+   * 上面保持不变」—— 卡片头部（名称、标签、N 种样式）说的是这个字族本身，不动；
+   * 只把展开后的字重列表收窄，否则「只加了一个 Bold」看起来像整族都进去了。
+   */
+  const shownFaces = useMemo(() => {
+    const norm = (s: string) => (s ?? "").trim().toLowerCase();
+    let keep: Set<string> | null = null;
+    if (nav.kind === "snapshot") {
+      const snap = snapshots.find((s) => s.name === nav.name);
+      if (snap) {
+        const keys = new Set(snap.entries.map((e) => e.key));
+        const styles = new Set(
+          snap.entries.filter((e) => e.family === family.name).map((e) => norm(e.style)),
+        );
+        const hit = family.faces.filter(
+          (f) => keys.has(faceKey(f)) || (!!f.style && styles.has(norm(f.style))),
+        );
+        if (hit.length > 0 && hit.length < family.faces.length) {
+          keep = new Set(hit.map((f) => f.id));
+        }
+      }
+    } else if (nav.kind === "collection") {
+      // 整族已经在组里时显示整族；只有「整族不在组里、只加了部分字重」才收窄。
+      // 0.9.9-13 只看字重成员，先加「標準體」再加整族会让整族被错误收窄（BUG-2）。
+      keep = collectionFaceScope(
+        family.name,
+        family.faces,
+        faceKey,
+        collectionFaces[nav.name] ?? [],
+        collections[nav.name] ?? [],
+      );
+    }
+    return keep ? family.faces.filter((f) => keep!.has(f.id)) : family.faces;
+  }, [nav, snapshots, collectionFaces, collections, family.faces, family.name]);
+
+  /**
+   * 这个字族是不是「只启用了其中几个字重」（0.9.9-13）。
+   *
+   * 用户 2026-10-31：「如果单独启用了哪一个字体，最好是让用户知道字重单独启用了」——
+   * 单独启用一个字重只改文件级启停，卡片看上去和「整族启用」没区别，容易误判。
+   * 口径跟详情面板的「部分启用 · x/y 个样式」一致（`family.activeCount` / `faces.length`），
+   * 免得同一屏出现两个不一样的数。
+   */
+  const onCount = family.activeCount ?? family.faces.filter((f) => f.active).length;
+  const partial = onCount > 0 && onCount < family.faces.length;
+
+  const size = SIZES[sizeIndex];  const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   // 示例文字用到哪些语言文字、这款字体画不画得出（用户没输入时不标注）
   const probeText = sampleText.trim();
   const scriptStatus = useScriptStatus(lead, probeText);
@@ -144,8 +198,9 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
               : t("card.brokenSome", { count: family.brokenFaces, total: family.faces.length })}
           </span>
         )}
-        {family.faces.length > 1 && (
+        {(family.uniqueFaces ?? family.faces).length > 1 && (
           <motion.button
+            data-hint={partial ? "hint.partialStyles" : "hint.expandStyles"}
             className="card-expand"
             aria-label={t(expanded ? "card.collapseStyles" : "card.expandStyles")}
             aria-expanded={expanded}
@@ -164,7 +219,11 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
               <ChevronRight size={13} strokeWidth={1.5} />
             </motion.span>
             <span className="tabular">
-              {t("card.stylesCount", { count: family.faces.length })}
+              {/* 同名字面在系统 + 库里各一份时只算一种样式，否则会写「6 种样式」实际只有 3 种 */}
+              {partial
+                ? /* 只启用了其中几个字重：写「5/34 已启用」，比「34 种样式」更能说明当前状态 */
+                  t("card.stylesPartial", { active: onCount, total: family.faces.length })
+                : t("card.stylesCount", { count: (family.uniqueFaces ?? family.faces).length })}
             </span>
           </motion.button>
         )}
@@ -305,7 +364,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
             exit={{ height: 0, opacity: 0, transition: { ...springSnappy } }}
             transition={springSoft}
           >
-            {family.faces.map((face, i) => (
+            {shownFaces.map((face, i) => (
               <FacePreview
                 key={face.id}
                 family={family}

@@ -30,24 +30,25 @@ pub const DOCK_NEAR_EVENT: &str = "quickbar://dock-near";
 /// 感应线程轮询间隔（毫秒）
 #[cfg(windows)]
 const SENSOR_POLL_MS: u64 = 90;
-/// 命中判定容差（物理像素）：只吸收光标坐标取整的误差，不再向下扩一条感应带。
+/// 命中判定容差（**逻辑像素**，用之前按窗口 DPI 换算成物理像素）。
 ///
-/// 这里原来是 `22`：窗口下沿再往下 22 物理像素都算「靠近」。两个问题：
-/// 1. 细线只有几像素高，往下 22px 意味着鼠标还在桌面空白处、离那条线挺远就弹开，
-///    用户的原话是「区域要抓手线那么高那么宽就行，不要太宽」；
-/// 2. 22 是写死的物理像素，不随 DPI / 分辨率缩放 —— 150% 缩放下这 22px 视觉上只剩
-///    2/3 高，换台机器手感就变了。
+/// 这里经历过两次过头：
+/// 1. 最早写死 `22` 物理像素 —— 细线只有几像素高，鼠标还在桌面空白处就弹开，
+///    而且 22 不随 DPI 缩放，换台机器手感就变；
+/// 2. 之后直接砍到 `1`（"就用窗口矩形本身"）—— 等于要求光标**精确压在细线上**，
+///    细线态窗口只有 15 物理像素高，手抖两像素就失效，用户反馈「靠近根本不展开」。
 ///
-/// 改成「就用窗口矩形本身」：细线态窗口高度就是那条线加一点透明靶区（12 逻辑像素），
-/// 宽度也等于线宽，天然跟着 DPI 走，各分辨率下都是「贴着线才算靠近」。
+/// 现在取 6 逻辑像素：足够吸收手抖和光标取整误差，又远小于当年那 22；
+/// 乘上窗口 DPI 缩放后，125% / 150% 缩放下视觉上都是同一个厚度。
 #[cfg(windows)]
-const SENSOR_SLOP_PX: i32 = 1;
+const SENSOR_SLOP_LOGIC: i32 = 6;
 
 #[cfg(windows)]
 mod platform {
-    use super::{PREV_PROC, QUICKBAR_MODE, SENSOR_SLOP_PX};
+    use super::{PREV_PROC, QUICKBAR_MODE, SENSOR_SLOP_LOGIC};
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+    use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, LOGPIXELSX};
     use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         BringWindowToTop, CallWindowProcW, DefWindowProcW, GetCursorPos, GetForegroundWindow,
@@ -137,9 +138,23 @@ mod platform {
         }
     }
 
-    /// 光标是否落在窗口矩形里（外扩一个取整容差）。
+    /// 把逻辑像素容差按窗口 DPI 换成物理像素（96 DPI = 1.0）。
+    unsafe fn slop_px(hwnd: HWND) -> i32 {
+        let hdc = GetDC(hwnd);
+        if hdc.is_null() {
+            return SENSOR_SLOP_LOGIC;
+        }
+        let dpi = GetDeviceCaps(hdc, LOGPIXELSX as i32);
+        ReleaseDC(hwnd, hdc);
+        if dpi <= 0 {
+            return SENSOR_SLOP_LOGIC;
+        }
+        ((SENSOR_SLOP_LOGIC as f32) * (dpi as f32) / 96.0).round() as i32
+    }
+
+    /// 光标是否落在窗口矩形里（外扩一点随 DPI 缩放的容差）。
     /// 收成细线后鼠标几乎不可能「进入窗口」，这条判定就是细线唯一的 hover 入口；
-    /// 范围严格等于窗口本身（= 抓手线的宽高），不再向下加感应带。
+    /// 容差不能是 1（精确压线，手抖就废），也不能是写死的 22（离得老远就弹开）。
     pub fn cursor_near(raw_hwnd: isize) -> bool {
         if raw_hwnd == 0 {
             return false;
@@ -156,10 +171,11 @@ mod platform {
             if rect.right <= rect.left || rect.bottom <= rect.top {
                 return false;
             }
-            pt.y >= rect.top - SENSOR_SLOP_PX
-                && pt.y <= rect.bottom + SENSOR_SLOP_PX
-                && pt.x >= rect.left - SENSOR_SLOP_PX
-                && pt.x <= rect.right + SENSOR_SLOP_PX
+            let slop = slop_px(raw_hwnd as HWND);
+            pt.y >= rect.top - slop
+                && pt.y <= rect.bottom + slop
+                && pt.x >= rect.left - slop
+                && pt.x <= rect.right + slop
         }
     }
 

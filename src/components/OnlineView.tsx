@@ -8,6 +8,7 @@ import { SIZES, useFontStore } from "../state/fontStore";
 import { useT, type TKey } from "../lib/i18n";
 import { usePathFontCss } from "../lib/fontLoader";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { useModalLayer } from "../lib/modalLayer";
 import { ipc, type FontFace, type OnlineFamily } from "../lib/ipc";
 import {
   expectationFromCatalogue,
@@ -75,10 +76,13 @@ export function OnlineView() {
    * 关掉时 useFocusTrap 会自动把焦点还给打开它的那张卡片。
    */
   const detailRef = useFocusTrap<HTMLDivElement>(Boolean(detail || detailLoading));
+  const isTopLayer = useModalLayer(Boolean(detail || detailLoading));
   useEffect(() => {
     if (!detail && !detailLoading) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // 上面还压着别的弹层（比如重复字体提示）时让路，别把下层的详情关掉（§5 第 8 条）
+      if (!isTopLayer()) return;
       e.preventDefault();
       // 最上层先吃：别让全局快捷键顺手把主界面的选择也清了
       e.stopImmediatePropagation();
@@ -88,7 +92,7 @@ export function OnlineView() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [detail, detailLoading, downloading, closeFamily]);
+  }, [detail, detailLoading, downloading, closeFamily, isTopLayer]);
   const install = useFontStore((s) => s.installOnlineFamily);
   const setSettingsOpen = useFontStore((s) => s.setSettingsOpen);
 

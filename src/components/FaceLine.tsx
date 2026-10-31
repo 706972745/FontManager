@@ -1,15 +1,15 @@
-import { PenTool } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { motion } from "motion/react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useT } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
-import { buildFaceMenu } from "../lib/menus";
+import { buildFaceMenu, canToggleFace } from "../lib/menus";
 import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
 import { spring, staggerDelay } from "../design/springs";
 import { useScriptStatus } from "../lib/scriptCoverage";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import type { FontFace } from "../lib/ipc";
-import type { Family } from "../state/fontStore";
+import { useFontStore, type Family } from "../state/fontStore";
 import { ScriptChip } from "./ScriptChip";
 
 /**
@@ -63,6 +63,16 @@ export function FaceLine({
     e.stopPropagation();
     openContextMenu(e, buildFaceMenu(family, face));
   };
+  /**
+   * 行尾那颗按钮从「打开菜单」改成「启用 / 停用这一个字重」（用户 2026-10-31：
+   * 「如果单独启用了哪一个字体，最好是让用户知道字重单独启用了」「这里也可以改，或者替换这个」）。
+   *
+   * 眼睛图标本身就是状态：睁眼 = 已启用、闭眼 = 已停用。原来那颗钢笔图标只是菜单入口，
+   * 点开才知道这个字重是开还是关。完整菜单仍在**右键**这一行上（`onContext`），
+   * 应用 PS/AI/CDR、复制、快照、分组一个都不少。
+   */
+  const toggleable = canToggleFace(face);
+  const setFaceActive = useFontStore((s) => s.setFaceActive);
   const body = (
     <>
       <span className="face-line-name" title={title}>
@@ -77,16 +87,28 @@ export function FaceLine({
       )}
       <button
         type="button"
-        className="face-line-apply"
-        aria-label={t("menu.faceActions", { name: styleLabel })}
-        title={t("menu.faceActions", { name: styleLabel })}
+        className={`face-line-apply face-line-toggle ${face.active ? "on" : "off"}`}
+        disabled={!toggleable}
+        aria-pressed={face.active}
+        aria-label={t(face.active ? "menu.deactivate" : "menu.activate")}
+        title={t(face.active ? "menu.deactivate" : "menu.activate")}
+        data-hint={face.active ? "hint.faceToggleOn" : "hint.faceToggleOff"}
         onClick={(e) => {
+          e.stopPropagation();
+          void setFaceActive(face.id, !face.active);
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
           e.stopPropagation();
           const r = e.currentTarget.getBoundingClientRect();
           openContextMenuAt(r.left, r.bottom + 4, buildFaceMenu(family, face));
         }}
       >
-        <PenTool size={11} strokeWidth={1.75} />
+        {face.active ? (
+          <Eye size={11} strokeWidth={1.75} />
+        ) : (
+          <EyeOff size={11} strokeWidth={1.75} />
+        )}
       </button>
     </>
   );

@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { LoaderCircle } from "lucide-react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { springSoft } from "../design/springs";
@@ -24,6 +24,7 @@ import { ipc } from "../lib/ipc";
 import { toast } from "../design/primitives/Toast";
 import { useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { useModalLayer } from "../lib/modalLayer";
 import { useT } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { APP_LICENSE, APP_VERSION } from "../lib/version";
@@ -37,9 +38,31 @@ const TRANSLATE_GUIDE_URL =
 const REQUEST_LANGUAGE_URL =
   "https://github.com/TheHolyOneZ/ZFontManager/issues/new?title=Language%20request%3A%20";
 
+/**
+ * radiogroup 的方向键 + roving tabindex（§5 第 30 条残留）。
+ * 全局方向键是「换选中字族」的，不拦住的话在设置里按 ←/→ 动的是背后看不见的列表。
+ * 焦点移动即选中（原生 radio 语义），Tab 只在当前选项上停一次。
+ */
+function radioKeys(e: ReactKeyboardEvent<HTMLDivElement>) {
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+  const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>("button")].filter(
+    (b) => !b.disabled && b.offsetParent !== null,
+  );
+  if (items.length === 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const cur = items.indexOf(document.activeElement as HTMLButtonElement);
+  const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+  const next = items[(cur + dir + items.length) % items.length];
+  next.focus();
+  next.click();
+}
+
 export function SettingsOverlay() {
   const t = useT();
   const openState = useFontStore((s) => s.settingsOpen);
+  // 只有本层在弹层栈顶时才吃 Escape（§5 第 8 条：上层弹窗开着不能把下层关掉）
+  const isTopLayer = useModalLayer(openState);
   const setSettingsOpen = useFontStore((s) => s.setSettingsOpen);
   const settings = useFontStore((s) => s.settings);
   const updateSettings = useFontStore((s) => s.updateSettings);
@@ -75,6 +98,8 @@ export function SettingsOverlay() {
   const autostartReadGen = useRef(0);
   /** 开机自启的保存代次：只回滚「最后一次」的失败，别把后来成功的值拨回去 */
   const autostartSaveGen = useRef(0);
+  /** 保存串行链：连点两下时落盘顺序必须跟点击顺序一致（§5 第 25 条残留） */
+  const autostartSaveChain = useRef<Promise<void>>(Promise.resolve());
   const affinityConnection = useFontStore((s) => s.affinityConnection);
   const refreshAffinityConnection = useFontStore((s) => s.refreshAffinityConnection);
   const pollAffinityLink = useFontStore((s) => s.pollAffinityLink);
@@ -114,6 +139,7 @@ export function SettingsOverlay() {
     // （否则关设置的同时，主界面的 Escape 还会顺手把选择清掉）。
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (!isTopLayer()) return;
       if (recording) return; // 录制中由录制监听器处理（它自己会退出录制）
       if (e.defaultPrevented) return;
       e.preventDefault();
@@ -122,7 +148,7 @@ export function SettingsOverlay() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [openState, setSettingsOpen, recording]);
+  }, [openState, setSettingsOpen, recording, isTopLayer]);
 
   // 设置关掉就一定要退出快捷键录制：录制监听器是 capture 阶段拦全应用按键的，
   // 面板都没了它还在，整个界面会「所有键都打不进去」（§5 第 10 条）。
@@ -185,6 +211,56 @@ export function SettingsOverlay() {
     : affinityConnection.reachable
       ? "affinity-dot-on"
       : "affinity-dot-off";
+
+  /**
+   * 归置「与系统重复」的库内字体：先干跑拿到数量，用户确认后再真移。
+   * dryRun 只统计不动文件；真移动后必须重扫一次，把已挪走的条目从库里剔掉。
+   */
+  const runDedupe = async (dryRun: boolean) => {
+    try {
+      const r = await ipc.dedupeFontLibrary(dryRun);
+      // 归置口径收紧后，会有文件被保留下来，两类原因要分别说清楚：
+      // ① 同名不同版本（PS 名对上、字节不同）；② 只是文件名撞车，其实不是同一个字体
+      const notes: string[] = [];
+      if (r.skippedDifferent > 0) {
+        notes.push(t("settings.dedupeSkippedSub", { count: r.skippedDifferent }));
+      }
+      if (r.skippedPartial > 0) {
+        notes.push(t("settings.dedupeSkippedPartial", { count: r.skippedPartial }));
+      }
+      const skippedNote = notes.length > 0 ? notes.join("；") : undefined;
+      if (r.moved === 0 && r.failed === 0) {
+        toast.info(t("settings.dedupeNone"), skippedNote);
+        return;
+      }
+      if (dryRun) {
+        toast.info(t("settings.dedupePreviewResult", { count: r.moved }), skippedNote);
+        return;
+      }
+      toast.success(t("settings.dedupeDone", { count: r.moved }), r.dest);
+      void useFontStore.getState().rescan();
+    } catch (e) {
+      toast.error(t("settings.dedupeFailed"), String(e));
+    }
+  };
+
+  /** 按归置清单把搬走的字体退回去（误归置时的后悔药） */
+  const restoreDedupe = async () => {
+    try {
+      const r = await ipc.restoreDedupedFonts();
+      if (r.moved === 0) {
+        toast.info(t("settings.dedupeRestoreNone"));
+        return;
+      }
+      toast.success(
+        t("settings.dedupeRestoreDone", { count: r.moved }),
+        r.failed > 0 ? t("settings.dedupeRestorePartial", { count: r.failed }) : undefined,
+      );
+      void useFontStore.getState().rescan();
+    } catch (e) {
+      toast.error(t("settings.dedupeFailed"), String(e));
+    }
+  };
 
   const exportData = async () => {
     const dest = await save({
@@ -302,11 +378,24 @@ export function SettingsOverlay() {
                     // 用户已经表达了新意图：让在飞的旧读取作废
                     autostartReadGen.current++;
                     const gen = ++autostartSaveGen.current;
-                    void ipc.setAutostart(on).catch((e) => {
-                      // 只回滚最后一次：连点两下时，先失败的那次不该把后来的值改回去
-                      if (gen !== autostartSaveGen.current) return;
-                      setAutostart(!on);
-                      toast.error(t("toast.autostartFailed"), String(e));
+                    // 串行化：两次开关的落盘顺序必须跟点击顺序一致，否则重启后读到的
+                    // 可能是先点的那一次（§5 第 25 条残留）
+                    autostartSaveChain.current = autostartSaveChain.current.then(async () => {
+                      try {
+                        await ipc.setAutostart(on);
+                      } catch (e) {
+                        // 只回滚最后一次：连点两下时，先失败的那次不该把后来的值改回去
+                        if (gen !== autostartSaveGen.current) return;
+                        // 回填真实状态，而不是简单取反 —— 前一次写失败时取反是错的
+                        try {
+                          const real = await ipc.getAutostart();
+                          autostartReadGen.current++;
+                          setAutostart(real);
+                        } catch {
+                          setAutostart(!on);
+                        }
+                        toast.error(t("toast.autostartFailed"), String(e));
+                      }
                     });
                   }}
                   label={t("settings.autostart")}
@@ -419,6 +508,7 @@ export function SettingsOverlay() {
                       <FolderOpen size={13} strokeWidth={1.5} />
                       <span className="detail-mono settings-folder-path">{dir}</span>
                       <button
+                        data-hint="hint.removeFolder"
                         aria-label={t("settings.removeFolder", { dir })}
                         onClick={() =>
                           void updateSettings({
@@ -471,13 +561,16 @@ export function SettingsOverlay() {
                     </button>
                   </div>
                   <div className={`settings-row ${customDirActive ? "" : "settings-dim"}`}>
-                    <div className="settings-label">
-                      <PillToggle
-                        on={settings.libraryDirEnabled}
-                        onChange={(on) => setCustomDirEnabled(on)}
-                        label={t("settings.libraryCustom")}
-                      />
-                      <span className="settings-folder-path">{t("settings.libraryCustom")}</span>
+                    <div>
+                      <div className="settings-label">
+                        <PillToggle
+                          on={settings.libraryDirEnabled}
+                          onChange={(on) => setCustomDirEnabled(on)}
+                          label={t("settings.libraryCustom")}
+                        />
+                        <span className="settings-folder-path">{t("settings.libraryCustom")}</span>
+                      </div>
+                      <div className="settings-sub">{t("settings.libraryCustomSub")}</div>
                     </div>
                     <button className="settings-add-folder" onClick={() => void pickLibraryDir()}>
                       <FolderPlus size={13} strokeWidth={1.5} />
@@ -584,6 +677,37 @@ export function SettingsOverlay() {
                   </button>
                 </div>
               </div>
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">{t("settings.dedupe")}</div>
+                  <div className="settings-sub">{t("settings.dedupeSub")}</div>
+                  <div className="settings-sub">{t("settings.dedupeWhy")}</div>
+                  <div className="settings-sub">{t("settings.dedupeRule")}</div>
+                </div>
+                <div className="settings-data-actions">
+                  <button
+                    className="settings-data-btn"
+                    data-hint="hint.dedupePreview"
+                    onClick={() => void runDedupe(true)}
+                  >
+                    {t("settings.dedupePreview")}
+                  </button>
+                  <button
+                    className="settings-data-btn"
+                    data-hint="hint.dedupeRun"
+                    onClick={() => void runDedupe(false)}
+                  >
+                    {t("settings.dedupeRun")}
+                  </button>
+                  <button
+                    className="settings-data-btn"
+                    data-hint="hint.dedupeRestore"
+                    onClick={() => void restoreDedupe()}
+                  >
+                    {t("settings.dedupeRestore")}
+                  </button>
+                </div>
+              </div>
             </section>
 
             <section className="settings-section">
@@ -599,12 +723,14 @@ export function SettingsOverlay() {
                   className="view-toggle sound-toggle"
                   role="radiogroup"
                   aria-label={t("settings.theme")}
+                  onKeyDown={radioKeys}
                 >
                   {(["dark", "light", "system"] as const).map((mode) => (
                     <button
                       key={mode}
                       role="radio"
                       aria-checked={themePref === mode}
+                      tabIndex={themePref === mode ? 0 : -1}
                       className={`view-btn sound-btn ${themePref === mode ? "view-btn-active" : ""}`}
                       onClick={() => setThemePref(mode)}
                     >
@@ -654,12 +780,14 @@ export function SettingsOverlay() {
                   className="view-toggle sound-toggle scale-toggle"
                   role="radiogroup"
                   aria-label={t("settings.uiScale")}
+                  onKeyDown={radioKeys}
                 >
                   {(["auto", 0.8, 0.9, 1, 1.1, 1.25] as const).map((step) => (
                     <button
                       key={String(step)}
                       role="radio"
                       aria-checked={uiScale === step}
+                      tabIndex={uiScale === step ? 0 : -1}
                       className={`view-btn sound-btn ${uiScale === step ? "view-btn-active" : ""}`}
                       onClick={() => setUiScale(step)}
                     >
@@ -683,12 +811,14 @@ export function SettingsOverlay() {
                   className="view-toggle sound-toggle"
                   role="radiogroup"
                   aria-label={t("settings.soundLevelAria")}
+                  onKeyDown={radioKeys}
                 >
                   {(["off", "subtle", "on"] as const).map((lvl) => (
                     <button
                       key={lvl}
                       role="radio"
                       aria-checked={soundPref === lvl}
+                      tabIndex={soundPref === lvl ? 0 : -1}
                       className={`view-btn sound-btn ${soundPref === lvl ? "view-btn-active" : ""}`}
                       onClick={() => setSoundPref(lvl)}
                     >

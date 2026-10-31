@@ -327,6 +327,32 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
     Ok(faces)
 }
 
+/// 把「重复字体归置」搬走的文件按清单原路退回（原位已被占用则跳过，不覆盖）。
+#[tauri::command]
+fn restore_deduped_fonts(store: State<Store>) -> Result<scanner::DedupeReport, String> {
+    let library = {
+        let st = store.0.lock().map_err(|e| e.to_string())?;
+        st.active_library_dir().map(std::path::PathBuf::from)
+    };
+    let dir = library.unwrap_or_else(scanner::managed_font_dir);
+    Ok(scanner::restore_deduped(&dir))
+}
+
+/// 把字体库里与系统已安装字体重复的文件归置到 `<库>/_重复字体/`。
+/// `dry_run = true` 时只统计不移动 —— 前端先拿它做一次「会动多少个文件」的确认。
+#[tauri::command]
+fn dedupe_font_library(
+    store: State<Store>,
+    dry_run: bool,
+) -> Result<scanner::DedupeReport, String> {
+    let library = {
+        let st = store.0.lock().map_err(|e| e.to_string())?;
+        st.active_library_dir().map(std::path::PathBuf::from)
+    };
+    let dir = library.unwrap_or_else(scanner::managed_font_dir);
+    Ok(scanner::dedupe_library(&dir, dry_run))
+}
+
 #[tauri::command]
 fn set_font_active(store: State<Store>, path: String, active: bool) -> Result<(), String> {
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
@@ -339,13 +365,18 @@ fn set_font_active(store: State<Store>, path: String, active: bool) -> Result<()
  * 批量启停放在后台线程：同步命令跑在主线程上，几千个字体时界面会整个「无响应」
  * （GDI 装载 + 注册表写入，实测 5000 级要二三十分钟）。
  */
-async fn set_fonts_active(store: State<'_, Store>, paths: Vec<String>, active: bool) -> Result<(), String> {
+async fn set_fonts_active(store: State<'_, Store>, paths: Vec<String>, active: bool, no_save: Option<bool>) -> Result<(), String> {
     let total = paths.len();
+    let no_save = no_save.unwrap_or(false);
     let store = store.inner().clone();
     let failed = tauri::async_runtime::spawn_blocking(move || {
         let mut state = store.0.lock().map_err(|e| e.to_string())?;
         let failed = activation::sync_batch(&mut state, &paths, active);
-        store::save(&state)?;
+        // 快照切换等大批量场景：中间批次跳过存盘（每次写 2.4MB 的 state.json，
+        // 100 批 = 240MB 磁盘 IO），只在最后一批落盘。
+        if !no_save {
+            store::save(&state)?;
+        }
         Ok::<Vec<String>, String>(failed)
     })
     .await
@@ -1480,7 +1511,19 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
-static SESSION_ACTIVATED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+/// 本次运行里由「启用直到关闭」打开的字体文件，退出时统一还原。
+///
+/// 用 `HashSet` 而不是 `Vec`：同一路径反复「启用直到关闭 → 停用 → 再启用」时，
+/// `Vec::extend` 会不停 append 同一批路径，清单和内存都跟着涨，退出时还要对同一批
+/// 文件重复停用（BUG-8）。`HashSet` 天然幂等。
+/// 用 OnceLock 而不是 `Mutex::new(HashSet::new())`：后者不是 const fn，不能当 static 初始化。
+static SESSION_ACTIVATED: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashSet<String>>,
+> = std::sync::OnceLock::new();
+
+fn session_activated() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    SESSION_ACTIVATED.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
 
 #[tauri::command]
 fn set_fonts_active_session(store: State<Store>, paths: Vec<String>) -> Result<(), String> {
@@ -1496,7 +1539,8 @@ fn set_fonts_active_session(store: State<Store>, paths: Vec<String>) -> Result<(
     }
     store::save(&state)?;
     diag::batch(true, total, failed.len());
-    if let Ok(mut session) = SESSION_ACTIVATED.lock() {
+    if let Ok(mut session) = session_activated().lock() {
+        // 重复的路径只会占一份
         session.extend(activated);
     }
     activation::batch_error(&failed, total)
@@ -1504,8 +1548,8 @@ fn set_fonts_active_session(store: State<Store>, paths: Vec<String>) -> Result<(
 
 fn revert_session_activations(app: &tauri::AppHandle) {
     use tauri::Manager;
-    let paths: Vec<String> = match SESSION_ACTIVATED.lock() {
-        Ok(mut s) => std::mem::take(&mut *s),
+    let paths: Vec<String> = match session_activated().lock() {
+        Ok(mut s) => std::mem::take(&mut *s).into_iter().collect(),
         Err(_) => return,
     };
     if paths.is_empty() {
@@ -1955,6 +1999,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_autostart,
             get_autostart,
+            dedupe_font_library,
+            restore_deduped_fonts,
             scan_fonts,
             set_font_active,
             set_fonts_active,
@@ -2037,4 +2083,31 @@ pub fn run() {
                 comhost::shutdown();
             }
         });
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+
+    /// BUG-8 回归：同一路径反复「启用直到关闭」只应占一份。
+    /// 原来用 `Vec::extend`，同一路径会被 append 多次，退出时重复停用同一批文件。
+    #[test]
+    fn session_activation_dedupes_paths() {
+        let gate = session_activated();
+        gate.lock().unwrap().clear();
+
+        {
+            let mut session = gate.lock().unwrap();
+            session.extend(vec![
+                "C:/Fonts/a.ttf".to_string(),
+                "C:/Fonts/a.ttf".to_string(),
+                "C:/Fonts/b.ttf".to_string(),
+            ]);
+            // 再走一轮「停用 → 又启用」
+            session.extend(vec!["C:/Fonts/a.ttf".to_string()]);
+        }
+
+        assert_eq!(gate.lock().unwrap().len(), 2, "同一路径只应占一份");
+        gate.lock().unwrap().clear();
+    }
 }

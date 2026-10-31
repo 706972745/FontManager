@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { CheckCircle2, Info, XCircle } from "lucide-react";
+import { useEffect } from "react";
 import { create } from "zustand";
 import { springBouncy } from "../springs";
 import { playError, playKind } from "../../lib/sound";
@@ -25,10 +26,20 @@ interface ToastStore {
   dismiss: (id: number) => void;
   pause: (id: number) => void;
   resume: (id: number) => void;
+  /** Toaster 卸载时调用：把仍处于暂停的提示重新计时（见 pausedIds 的注释） */
+  resumePaused: () => void;
 }
 
 let nextId = 1;
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
+/**
+ * 正在「暂停」的提示（鼠标悬停 / 键盘焦点进入）。
+ *
+ * 为什么要单独记：完整界面和速览各挂一个 Toaster，Alt+` 切换时组件被直接卸载，
+ * 不会触发 mouseleave / blur。0.9.9-13 的 pause 只 clearTimeout，`resume` 又没人调，
+ * 于是这条提示再也不会自动关闭，带「撤销」的还会一直占着闭包（BUG-6）。
+ */
+const pausedIds = new Set<number>();
 
 function arm(id: number, ms: number, dismiss: (id: number) => void) {
   clearTimeout(timers.get(id));
@@ -54,11 +65,26 @@ const useToastStore = create<ToastStore>((set, get) => ({
   dismiss: (id) => {
     clearTimeout(timers.get(id));
     timers.delete(id);
+    pausedIds.delete(id);
     set({ toasts: get().toasts.filter((t) => t.id !== id) });
   },
 
-  pause: (id) => clearTimeout(timers.get(id)),
-  resume: (id) => arm(id, 1600, get().dismiss),
+  pause: (id) => {
+    pausedIds.add(id);
+    clearTimeout(timers.get(id));
+  },
+  resume: (id) => {
+    pausedIds.delete(id);
+    arm(id, 1600, get().dismiss);
+  },
+  resumePaused: () => {
+    const live = new Set(get().toasts.map((t) => t.id));
+    for (const id of [...pausedIds]) {
+      pausedIds.delete(id);
+      // 已经点掉的不用管；还在的补上计时器
+      if (live.has(id)) arm(id, 1600, get().dismiss);
+    }
+  },
 }));
 
 export const toast = {
@@ -72,6 +98,13 @@ export const toast = {
 
 export function Toaster() {
   const { toasts, dismiss, pause, resume } = useToastStore();
+  /**
+   * 卸载前把暂停中的提示恢复计时。
+   * 完整界面 ⇄ 速览是两个 Toaster，切换时这个组件被卸载、不会发生 mouseleave，
+   * 少了这一下，悬停过的提示会永久留在屏幕上（BUG-6）。
+   * 用 getState 取最新 store，避免闭包拿到旧引用。
+   */
+  useEffect(() => () => useToastStore.getState().resumePaused(), []);
   return (
     <div className="toaster">
       <AnimatePresence>
