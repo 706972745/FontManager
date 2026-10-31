@@ -89,8 +89,23 @@ export const experiment = {
   quickbarOverscan: () => expNumber("qbOverscan", 4, 0, 20),
   /** 速览的 IO 预取边距（现状 240px；§11.2 试 360 / 480） */
   quickbarRootMargin: () => expString("qbRoot", "240px"),
-  /** 列表专用子集通道（§12，需 Rust 侧就位后才有效） */
-  listSubset: () => expBool("listSubset", false),
+  /**
+   * 列表专用子集通道（§12）。**1.0.0-1 起默认开启。**
+   *
+   * 和上面几项不同，它不再是「默认等于现状」的实验项：产物只含屏上真正用到的字符，
+   * 解码成本从「整个字体」降到「几十 KB」。任何一步失败都会自动回退完整链路
+   * （`list_preview_font` 返回 null 或产物加载失败 → 走 `useFontCss`），
+   * 所以关掉它只在排查「某字体卡片预览缺字」时用。
+   */
+  listSubset: () => expBool("listSubset", true),
+  /**
+   * 卡片缩略图缓存（§13）。**默认关闭。**
+   *
+   * 它把「实时渲染」换成静态图，字重切换 / 主题色 / 字号档 / 缩放比任一变化
+   * 都可能暴露差异 —— 而 0.9.9-24 的教训正是「任何先不加载的优化都会显示成界面坏了」。
+   * 按文档判定秩序，它要等 §10.5 的数据指向「回滚痛」才启用。
+   */
+  thumbnail: () => expBool("thumb", false),
   /** 主动预取（§14，默认关闭：前置条件尚未由数据确认） */
   prefetch: () => expBool("prefetch", false),
   /** 预取窗口：视口外各留几屏 */

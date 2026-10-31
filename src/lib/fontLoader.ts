@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { experiment } from "./experiment";
 import { createFaceLru } from "./faceRegistry";
 import { createLoaderStats } from "./loaderStats";
 import { ipc } from "./ipc";
@@ -236,17 +237,17 @@ function ensurePathLoaded(
   path: string,
   repair?: RepairHint,
   bytes = 0,
-): void {
+): Promise<boolean> {
   if (cache.has(name)) {
     // 可见加载撞上了预取（已完成或仍在途）→ 记一次命中。
     // 这是判断「预取值不值得做」的唯一硬指标（交付标准 ≥ 40%，见 §14.3）。
     notePrefetchHit(name);
     touch(name);
-    return;
+    return Promise.resolve(cache.get(name) === "loaded");
   }
   cache.set(name, "loading");
 
-  void (async () => {
+  return (async () => {
     let ok = await tryLoad(name, path, bytes);
     if (!ok && repair) {
       // 首次失败先试普通路径；还不行就问后端要副本（ttc 抽面 / cmap 重建 / 去提示程序）
@@ -256,6 +257,7 @@ function ensurePathLoaded(
     if (ok) touch(name);
     listeners.get(name)?.forEach((fn) => fn());
     listeners.delete(name);
+    return ok;
   })();
 }
 
@@ -388,6 +390,12 @@ const MAX_INFLIGHT_PREFETCH = 3;
  * - **不触发 `incompleteHook`**：预取失败不代表字体损坏，不能给用户持久化「无法预览」标记。
  */
 export function prefetchFace(face: ZFontFace): void {
+  // 列表子集通道开着时预取没有意义：它加载的是完整字体，会和子集产物抢同一份
+  // 160MB 字节预算，而卡片实际渲染用的是几十 KB 的子集。
+  if (experiment.listSubset()) {
+    stats.countPrefetch("skipSubset");
+    return;
+  }
   const name = cssName(face);
   if (cache.has(name)) {
     // 已加载 / 在加载 / 曾失败，都跳过 —— 失败的那次留给可见加载去 repair
@@ -426,6 +434,177 @@ export function prefetchFace(face: ZFontFace): void {
     .finally(() => {
       inflightPrefetch -= 1;
     });
+}
+
+// ===== 列表专用子集通道（§12，1.0.0-1 起默认开启）=====
+
+/**
+ * 后端明确说过「这份字体不适合子集」的字面 id（CFF / TTC / 可变字体 / 体积本来就小 /
+ * 目标字符一个都不命中）。记下来，别每次滚过都问一趟 IPC。
+ */
+const subsetUnavailable = new Set<string>();
+/** 已确认「这份字体能子集」的字面 id：用来跳过完整字体的兜底加载 */
+const subsetCapable = new Set<string>();
+/** variant → 产物。`bytes` 是**产物**大小，LRU 记账按它算，不按 `face.fileSize`。 */
+const subsetArtifacts = new Map<string, { path: string; bytes: number }>();
+/** 同一 variant 的并发请求只发一次（一屏十几张卡可能同族同字符集） */
+const subsetInflight = new Map<string, Promise<boolean>>();
+const MAX_SUBSET_MEMO = 3000;
+
+function listVariant(face: ZFontFace, chars: string): string {
+  return `${face.id}#${chars}`;
+}
+
+function listCssName(variant: string): string {
+  return `zfm-l-${hash(variant)}`;
+}
+
+function memoBounded<T>(map: Map<string, T>, key: string, value: T): void {
+  map.set(key, value);
+  if (map.size <= MAX_SUBSET_MEMO) return;
+  const first = map.keys().next();
+  if (!first.done) map.delete(first.value);
+}
+
+/**
+ * 让「该字面 + 该字符集」的子集产物进 LRU，等它真的 load 完才 resolve true。
+ *
+ * **计账用 `artifact.bytes`（产物，几十 KB），不用 `face.fileSize`（原文件，几十 MB）**
+ * —— 交接文档 §12.3 坑①：不改计量的话「160MB 预算能装百倍字面」的整个推理都不成立，
+ * 账面上会以为一次子集吃掉 30MB，预算一满就触发淘汰风暴。
+ *
+ * 失败一律返回 false 让调用方回退完整链路：宁可慢，也绝不能缺字。
+ */
+async function ensureListSubset(face: ZFontFace, chars: string, name: string): Promise<boolean> {
+  if (subsetUnavailable.has(face.id)) return false;
+  const variant = listVariant(face, chars);
+  const known = subsetArtifacts.get(variant);
+  if (known) {
+    const ok = await ensurePathLoaded(name, known.path, undefined, known.bytes);
+    if (ok) subsetCapable.add(face.id);
+    return ok;
+  }
+  const running = subsetInflight.get(variant);
+  if (running) return running;
+
+  const task = (async () => {
+    try {
+      const got = await ipc.listPreviewFont(face.path, face.faceIndex ?? 0, chars);
+      if (!got) {
+        subsetUnavailable.add(face.id);
+        if (subsetUnavailable.size > MAX_SUBSET_MEMO) {
+          const first = subsetUnavailable.values().next();
+          if (!first.done) subsetUnavailable.delete(first.value);
+        }
+        return false;
+      }
+      memoBounded(subsetArtifacts, variant, got);
+      // 子集产物**不带 repair**：它本身就是我们重建出来的，坏不到哪去；
+      // 真加载失败就回退完整字体（那条链路有 repair 兜底）
+      const ok = await ensurePathLoaded(name, got.path, undefined, got.bytes);
+      if (ok) subsetCapable.add(face.id);
+      return ok;
+    } catch {
+      // 命令不存在 / 后端忙：静默回退。不写 unavailable，下次还能再试
+      return false;
+    } finally {
+      subsetInflight.delete(variant);
+    }
+  })();
+  subsetInflight.set(variant, task);
+  return task;
+}
+
+/**
+ * 列表预览专用的字体 CSS（卡片主预览、速览条目）。
+ *
+ * 与 `useFontCss` 的唯一差别是「给浏览器加载哪份文件」：这里只含屏上真正用到的字符，
+ * `useFontCss` 是完整字体。**详情 GlyphMap / OpenType 特性 / specimen 导出继续用
+ * `useFontCss`** —— 它们要看全部字形，塞子集会直接变成缺字（§12.2 坑③）。
+ *
+ * 三段兜底，保证任何一步出问题都退回 0.9.9-25 的行为：
+ *   1. `chars` 为 null（用户自定义示例文字）→ 直接完整链路；
+ *   2. 后端说这份字体不适合子集 → 完整链路；
+ *   3. 子集产物加载失败 → 完整链路（含 repair）。
+ */
+export function useListFontCss(
+  face: ZFontFace | null,
+  chars: string | null,
+): { fontFamily: string | null; failed: boolean } {
+  const enabled = experiment.listSubset();
+  const variant = face && chars && enabled ? listVariant(face, chars) : null;
+  const listName = variant ? listCssName(variant) : null;
+  const fullName = face ? cssName(face) : null;
+  const [, bump] = useState(0);
+  /** 子集已经 load 完 → 切通道。没就绪时用完整字体顶着，绝不出现空白。 */
+  const [listReady, setListReady] = useState(false);
+
+  useEffect(() => {
+    if (!face || !listName || !chars) {
+      setListReady(false);
+      return;
+    }
+    let alive = true;
+    void ensureListSubset(face, chars, listName).then((ok) => {
+      if (alive) setListReady(ok);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [face, listName, chars]);
+
+  /**
+   * 完整链路的兜底加载：**只在「还不确定这字体能不能子集」时做**。
+   * 已确认能子集的字面不再拉完整字体 —— 那一次解码正是子集要省掉的。
+   */
+  useEffect(() => {
+    if (!face || !fullName) return;
+    if (listReady) return;
+    if (subsetCapable.has(face.id)) return;
+    ensureLoaded(face);
+  }, [face, fullName, listReady]);
+
+  // 子集被 LRU 淘汰后要能立刻退回完整字体，而不是闪一下空白
+  const listLoaded = !!(listReady && listName && cache.get(listName) === "loaded");
+  const name = listLoaded ? listName : fullName;
+  const state = name ? cache.get(name) : undefined;
+
+  useEffect(() => {
+    if (!name) return;
+    pinFace(name);
+    return () => unpinFace(name);
+  }, [name]);
+
+  useEffect(() => {
+    if (!name || !face) return;
+    // listName 的加载由 ensureListSubset 发起；这里只管完整链路（含淘汰后重载）
+    if (name === fullName) ensureLoaded(face);
+    if (cache.get(name) === "loading") {
+      const set = listeners.get(name) ?? new Set();
+      const fn = () => bump((n) => n + 1);
+      set.add(fn);
+      listeners.set(name, set);
+      return () => {
+        set.delete(fn);
+      };
+    }
+  }, [name, fullName, face, state]);
+
+  // time-to-ink：与 useFontCss 同口径，只记第一次
+  useEffect(() => {
+    if (!name || state !== "loaded") return;
+    const at = loadedAt.get(name);
+    if (at === undefined) return;
+    loadedAt.delete(name);
+    if (typeof requestAnimationFrame !== "function") return;
+    const id = requestAnimationFrame(() => stats.recordInk(performance.now() - at));
+    return () => cancelAnimationFrame(id);
+  }, [name, state]);
+
+  return {
+    fontFamily: state === "loaded" && name ? name : null,
+    failed: state === "failed",
+  };
 }
 
 /** 实验脚本切档时清空样本，避免上一档的数字混进这一档 */
@@ -472,9 +651,16 @@ export function faceStats() {
     prefetchSkipBudget: p.skipBudget,
     prefetchSkipInflight: p.skipInflight,
     prefetchSkipKnown: p.skipKnown,
+    prefetchSkipSubset: p.skipSubset,
     inflightPrefetch,
+    /** 列表子集通道：已确认能子集 / 明确不适用 / 拿到产物的变体数 */
+    subsetCapable: subsetCapable.size,
+    subsetUnavailable: subsetUnavailable.size,
+    subsetArtifacts: subsetArtifacts.size,
   };
-}export function formatBytes(bytes: number): string {
+}
+
+export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

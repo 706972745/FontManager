@@ -40,6 +40,7 @@ import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./st
 import { useT } from "./lib/i18n";
 import { DiagHud } from "./components/DiagHud";
 import { experiment } from "./lib/experiment";
+import { ensureThumbIndex } from "./lib/thumb";
 
 /**
  * 诊断 HUD 开关。只在 `?diag=1` 时挂载：它每 500ms 刷一次文本、常驻一个 rAF 采样循环，
@@ -221,6 +222,14 @@ function MainContent() {
   useEffect(() => {
     useFontStore.setState({ visibleOrder: browsable ? families.map((f) => f.name) : [] });
   }, [families, browsable]);
+
+  /**
+   * 缩略图索引（§13）：启动时拉一次 key 列表，卡片才能**同步**判断「有没有现成的图」。
+   * 不能等卡片自己异步查 —— 那样首帧渲染文字、随后换成图片，用户看到的就是闪烁。
+   */
+  useEffect(() => {
+    if (experiment.thumbnail()) void ensureThumbIndex();
+  }, []);
 
   if (nav.kind === "trash") return <TrashView />;
   if (nav.kind === "about") return <AboutView />;

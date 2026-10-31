@@ -421,7 +421,18 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    */
   fontPreviewFile: (path: string, faceIndex: number, level = 0) =>
     invoke<string | null>("font_preview_file", { path, faceIndex, level }),
+  /** 列表预览专用子集：只含 `chars` 的字体副本。null = 这份字体不适合子集（CFF/TTC/可变/太小/0 命中） */
+  listPreviewFont: (path: string, faceIndex: number, chars: string) =>
+    invoke<{ path: string; bytes: number } | null>("list_preview_font", {
+      path,
+      faceIndex,
+      chars,
+    }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
+  /** 缩略图索引：目录 + 已有 key（§13）。启动时拉一次，卡片才能同步判断有没有图 */
+  thumbIndex: () => invoke<{ dir: string; keys: string[] }>("thumb_index"),
+  thumbPut: (key: string, data: number[]) =>
+    invoke<string | null>("thumb_put", { key, data }),
   writeBinaryFile: (path: string, data: number[]) =>
     invoke<void>("write_binary_file", { path, data }),
   getCollections: () => invoke<Record<string, string[]>>("get_collections"),

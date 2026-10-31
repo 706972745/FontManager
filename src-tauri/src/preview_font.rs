@@ -27,6 +27,12 @@ const CACHE_DIR: &str = "preview-cache";
 const CACHE_LIMIT: u64 = 384 * 1024 * 1024;
 /// 修复算法的版本号。改了重建逻辑就加一，老的缓存文件自动失效
 const CACHE_TAG: &str = "v5";
+/// 列表子集算法的版本号。子集的「字符闭包 / loca 布局 / cmap 重建」任何一处变了就加一，
+/// 老产物自动失效（缓存 key 里编了它）。
+const SUBSET_TAG: &str = "S1";
+/// 小于这个体积不走子集：解码本来就快，做子集只是多一次 IPC + 一次磁盘写。
+/// 库内 >8MB 的字体有 218 个，它们才是真痛点。
+const SUBSET_MIN_BYTES: u64 = 1 << 20;
 
 // ───────────────────────── 二进制读工具 ─────────────────────────
 
@@ -536,6 +542,86 @@ fn build_cmap(pairs: &[(u32, u16)]) -> Vec<u8> {
 
 // ───────────────────────── 字体重建 ─────────────────────────
 
+/// 把字体的 cmap 归一成「Unicode 码点 → gid」。
+///
+/// 优先 Unicode 子表；没有就按旧编码子表 + 系统代码页翻。脏映射（gid 越界 / 0）
+/// 一律滤掉 —— OTS 会因为 `cmap: Range glyph reference too high` 整份拒收。
+///
+/// 修复通道和列表子集通道都用它，两边的「认字集」必须完全一致，否则会出现
+/// 「卡片能预览但子集里查不到这个字」的分裂。
+fn unicode_pairs(
+    data: &[u8],
+    tables: &[TableRec],
+) -> Option<std::collections::BTreeMap<u32, u16>> {
+    let cmap_rec = tables.iter().find(|t| &t.tag == b"cmap")?;
+    let subs = cmap_subtables(data, cmap_rec.offset);
+    if subs.is_empty() {
+        return None;
+    }
+    // 挑一个子表：有 Unicode 子表就直接用（码值就是码点），
+    // 否则挑一个旧编码子表，靠系统代码页翻成 Unicode。
+    let mut pick: Option<(&Subtable, Option<u32>)> = None;
+    let mut best_rank = u8::MAX;
+    for sub in &subs {
+        if let Some(rank) = unicode_rank(sub.platform, sub.encoding, sub.format) {
+            if rank < best_rank {
+                best_rank = rank;
+                pick = Some((sub, None));
+            }
+        }
+    }
+    if pick.is_none() {
+        let mut best: Option<&Subtable> = None;
+        for sub in &subs {
+            let Some(rank) = subtable_rank(sub.platform, sub.encoding) else {
+                continue;
+            };
+            match best {
+                Some(b) if subtable_rank(b.platform, b.encoding).unwrap_or(99) <= rank => {}
+                _ => best = Some(sub),
+            }
+        }
+        if let Some(best) = best {
+            // 认不出对应代码页就别硬当 Unicode 用，那会得到一表乱码
+            if let Some(cp) = code_page_for(best.platform, best.encoding) {
+                pick = Some((best, Some(cp)));
+            }
+        }
+    }
+    let (sub, code_page) = pick?;
+    let raw = parse_subtable(data, sub);
+    if raw.is_empty() {
+        return None;
+    }
+    let num_glyphs = tables
+        .iter()
+        .find(|t| &t.tag == b"maxp")
+        .and_then(|t| u16_at(data, t.offset + 4))
+        .unwrap_or(u16::MAX);
+    // 多个旧编码可能落到同一个 Unicode，必须去重，否则重建的 cmap 段会重叠
+    let mut map: std::collections::BTreeMap<u32, u16> = std::collections::BTreeMap::new();
+    for (code, gid) in raw {
+        if gid == 0 || gid >= num_glyphs {
+            continue;
+        }
+        let unicode = match code_page {
+            Some(cp) => match legacy_to_unicode(cp, code) {
+                Some(u) => u,
+                None => continue,
+            },
+            None => code,
+        };
+        if unicode <= 0x10FFFF && !map.contains_key(&unicode) {
+            map.insert(unicode, gid);
+        }
+    }
+    if map.is_empty() {
+        None
+    } else {
+        Some(map)
+    }
+}
+
 fn checksum(data: &[u8]) -> u32 {
     let mut sum = 0u32;
     let mut i = 0;
@@ -549,13 +635,17 @@ fn checksum(data: &[u8]) -> u32 {
     sum
 }
 
-/// 用给定的 cmap 重新拼一个单字面的 sfnt
+/// 用给定的 cmap 重新拼一个单字面的 sfnt。
+///
+/// `overrides`：按 tag 整表替换（列表子集路线用它换掉 glyf / loca / head）。
+/// `None` 时行为与 0.9.9 系列完全一致。
 fn rebuild(
     data: &[u8],
     sfnt: usize,
     tables: &[TableRec],
     new_cmap: Option<&[u8]>,
     strip_hinting: bool,
+    overrides: Option<&std::collections::HashMap<[u8; 4], Vec<u8>>>,
 ) -> Option<Vec<u8>> {
     // 收表：丢掉 DSIG（老字体的签名表经常是坏的，OTS 会因此整份拒收）、
     // 零长度表、竖向度量表（OTS 会检查 vmtx 是否覆盖全部字形，老字体常常对不上；
@@ -566,12 +656,19 @@ fn rebuild(
         .find(|t| &t.tag == b"maxp")
         .and_then(|t| u16_at(data, t.offset + 4))
         .unwrap_or(0);
-    let loca_long = tables
-        .iter()
-        .find(|t| &t.tag == b"head")
-        .and_then(|t| i16_at(data, t.offset + 50))
-        .unwrap_or(0)
-        != 0;
+    // head 可能被 overrides 换掉（列表子集在 loca 切成 long 时改 indexToLocFormat），
+    // 必须认替换后的那份，否则下面按旧格式算 loca 期望长度会把新 loca 截断。
+    let loca_long = match overrides.and_then(|m| m.get(b"head")) {
+        Some(h) => i16_at(h, 50).unwrap_or(0) != 0,
+        None => {
+            tables
+                .iter()
+                .find(|t| &t.tag == b"head")
+                .and_then(|t| i16_at(data, t.offset + 50))
+                .unwrap_or(0)
+                != 0
+        }
+    };
     let mut items: Vec<([u8; 4], Vec<u8>)> = Vec::new();
     let mut saw_cmap = false;
     for t in tables {
@@ -592,6 +689,12 @@ fn rebuild(
                 Some(c) => items.push((t.tag, c.to_vec())),
                 None => items.push((t.tag, data[t.offset..t.offset + t.len].to_vec())),
             }
+            continue;
+        }
+        // 列表子集路线：整表替换（glyf / loca / head）。放在 cmap 之后，
+        // 因为 cmap 有自己的 new_cmap 通道。
+        if let Some(ov) = overrides.and_then(|m| m.get(&t.tag)) {
+            items.push((t.tag, ov.clone()));
             continue;
         }
         items.push((t.tag, data[t.offset..t.offset + t.len].to_vec()));
@@ -907,74 +1010,10 @@ pub fn ensure_preview_font(path: &Path, face_index: u32, level: u8) -> Option<Pa
     let target = dir.join(format!("{CACHE_TAG}-L{level}-{key:016x}.{ext}"));
 
     let tables = tables_of(&data, sfnt)?;
-    let cmap_rec = tables.iter().find(|t| &t.tag == b"cmap")?;
-    let subs = cmap_subtables(&data, cmap_rec.offset);
-
-    // 挑一个子表来重建：有 Unicode 子表就直接用（码值就是码点），
-    // 否则挑一个旧编码子表，靠系统代码页翻成 Unicode。
-    let mut pick: Option<(&Subtable, Option<u32>)> = None;
-    let mut best_rank = u8::MAX;
-    for sub in &subs {
-        if let Some(rank) = unicode_rank(sub.platform, sub.encoding, sub.format) {
-            if rank < best_rank {
-                best_rank = rank;
-                pick = Some((sub, None));
-            }
-        }
-    }
-    if pick.is_none() {
-        let mut best: Option<&Subtable> = None;
-        for sub in &subs {
-            let Some(rank) = subtable_rank(sub.platform, sub.encoding) else {
-                continue;
-            };
-            match best {
-                Some(b) if subtable_rank(b.platform, b.encoding).unwrap_or(99) <= rank => {}
-                _ => best = Some(sub),
-            }
-        }
-        if let Some(best) = best {
-            // 认不出对应代码页就别硬当 Unicode 用，那会得到一表乱码
-            if let Some(cp) = code_page_for(best.platform, best.encoding) {
-                pick = Some((best, Some(cp)));
-            }
-        }
-    }
-    let (sub, code_page) = pick?;
-    let raw = parse_subtable(&data, sub);
-    if raw.is_empty() {
-        return None;
-    }
-    let num_glyphs = tables
-        .iter()
-        .find(|t| &t.tag == b"maxp")
-        .and_then(|t| u16_at(&data, t.offset + 4))
-        .unwrap_or(u16::MAX);
-    // 多个旧编码可能落到同一个 Unicode，必须去重，否则重建的 cmap 段会重叠
-    let mut map: std::collections::BTreeMap<u32, u16> = std::collections::BTreeMap::new();
-    for (code, gid) in raw {
-        // 旧字体里常有指到 numGlyphs 甚至更远的脏映射，OTS 会判
-        // 「cmap: Range glyph reference too high」，必须滤掉
-        if gid == 0 || gid >= num_glyphs {
-            continue;
-        }
-        let unicode = match code_page {
-            Some(cp) => match legacy_to_unicode(cp, code) {
-                Some(u) => u,
-                None => continue,
-            },
-            None => code,
-        };
-        if unicode <= 0x10FFFF && !map.contains_key(&unicode) {
-            map.insert(unicode, gid);
-        }
-    }
-    if map.is_empty() {
-        return None;
-    }
+    let map = unicode_pairs(&data, &tables)?;
     let pairs: Vec<(u32, u16)> = map.into_iter().collect();
     let cmap = build_cmap(&pairs);
-    let rebuilt = rebuild(&data, sfnt, &tables, Some(&cmap), level >= 2)?;
+    let rebuilt = rebuild(&data, sfnt, &tables, Some(&cmap), level >= 2, None)?;
 
     // 先写临时文件再改名，避免并发下读到半个文件
     let tmp = dir.join(format!(".{CACHE_TAG}-{key:016x}.{}.tmp", std::process::id()));
@@ -987,11 +1026,365 @@ pub fn ensure_preview_font(path: &Path, face_index: u32, level: u8) -> Option<Pa
     Some(target)
 }
 
+// ─────────────── 列表专用子集（保留 GID，不重编号） ───────────────
+//
+// 卡片和速览条目只渲染十几个字符，却要为它解码整个字体：库内 >8MB 的字体有 218 个，
+// 一个中文大盘字解一次几百毫秒。这里把「非目标字形的 glyf 数据」丢掉 ——
+// **保留原 GID 不重编号**，从而绕开重编号的全部难点（复合字形引用、GSUB/GPOS 索引、
+// hmtx/post 对齐），实测产物只有原大的 0.65%~4.20%。
+//
+// 两条边界是有意保守的：
+//   1. 只做 glyf 路线（TTF）。CFF/OTF 要裁 charstrings 得解析 CFF INDEX，风险与收益不成比例；
+//      TTC 容器 OTS 本来就不收（它走修复通道）。这些一律 None → 调用方回退完整链路。
+//   2. 可变字体（fvar）不做。gvar/HVAR 与 gid 强耦合，动 glyf 会让变体失效。
+
+/// 复合字形里直接引用的 gid（不递归，调用方用队列展开）
+fn composite_gids(data: &[u8], glyf_off: usize, start: usize, end: usize) -> Vec<u16> {
+    let mut out = Vec::new();
+    // 字形头 10 字节：numberOfContours(int16) + xMin/yMin/xMax/yMax
+    if end < start + 10 {
+        return out;
+    }
+    let Some(nc) = i16_at(data, glyf_off + start) else {
+        return out;
+    };
+    if nc >= 0 {
+        return out; // 简单字形，没有组件
+    }
+    let mut p = start + 10;
+    while p + 4 <= end {
+        let (Some(flags), Some(gid)) =
+            (u16_at(data, glyf_off + p), u16_at(data, glyf_off + p + 2))
+        else {
+            break;
+        };
+        out.push(gid);
+        p += 4;
+        // ARG_1_AND_2_ARE_WORDS
+        p += if flags & 0x0001 != 0 { 4 } else { 2 };
+        if flags & 0x0008 != 0 {
+            p += 2; // WE_HAVE_A_SCALE
+        } else if flags & 0x0040 != 0 {
+            p += 4; // WE_HAVE_AN_X_AND_Y_SCALE
+        } else if flags & 0x0080 != 0 {
+            p += 8; // WE_HAVE_A_TWO_BY_TWO
+        }
+        if flags & 0x0020 == 0 {
+            break; // MORE_COMPONENTS
+        }
+    }
+    out
+}
+
+/// 读 loca：返回每个 gid 的字节偏移（short 格式的偏移值要乘 2 才是字节）
+fn read_loca(data: &[u8], tables: &[TableRec], num_glyphs: u16) -> Option<(Vec<u32>, bool)> {
+    let head = tables.iter().find(|t| &t.tag == b"head")?;
+    let loca = tables.iter().find(|t| &t.tag == b"loca")?;
+    let long = i16_at(data, head.offset + 50)? != 0;
+    let n = num_glyphs as usize;
+    let need = n.checked_add(1)?.checked_mul(if long { 4 } else { 2 })?;
+    if loca.len < need {
+        return None; // 表不全就别猜，交给修复通道
+    }
+    let mut out = Vec::with_capacity(n + 1);
+    for i in 0..=n {
+        let v = if long {
+            u32_at(data, loca.offset + i * 4)?
+        } else {
+            u16_at(data, loca.offset + i * 2)? as u32 * 2
+        };
+        out.push(v);
+    }
+    Some((out, long))
+}
+
+/// 目标字符的 gid 闭包：种子 ∪ 复合字形递归引用 ∪ .notdef
+fn glyph_closure(
+    data: &[u8],
+    glyf_off: usize,
+    glyf_len: usize,
+    loca: &[u32],
+    seeds: &[u16],
+    num_glyphs: u16,
+) -> std::collections::HashSet<u16> {
+    use std::collections::{HashSet, VecDeque};
+    let n = num_glyphs as usize;
+    let mut keep: HashSet<u16> = HashSet::new();
+    let mut queue: VecDeque<u16> = VecDeque::with_capacity(seeds.len() + 1);
+    queue.push_back(0); // .notdef 必须留：OTS 和渲染器都拿它当兜底
+    queue.extend(seeds.iter().copied());
+    while let Some(g) = queue.pop_front() {
+        let gi = g as usize;
+        if gi >= n || gi + 1 >= loca.len() {
+            continue;
+        }
+        if !keep.insert(g) {
+            continue;
+        }
+        let start = (loca[gi] as usize).min(glyf_len);
+        let end = (loca[gi + 1] as usize).min(glyf_len);
+        for c in composite_gids(data, glyf_off, start, end) {
+            if (c as usize) < n && !keep.contains(&c) {
+                queue.push_back(c);
+            }
+        }
+    }
+    keep
+}
+
+/// 拼新的 glyf + loca。保留的 gid 原样搬，其余长度为 0（空轮廓，不是删除 gid）
+fn build_subset_glyf(
+    data: &[u8],
+    glyf_off: usize,
+    glyf_len: usize,
+    loca: &[u32],
+    keep: &std::collections::HashSet<u16>,
+    num_glyphs: u16,
+) -> Option<(Vec<u8>, Vec<u8>, bool)> {
+    let n = num_glyphs as usize;
+    let mut glyf: Vec<u8> = Vec::new();
+    let mut offsets: Vec<u32> = Vec::with_capacity(n + 1);
+    offsets.push(0);
+    for g in 0..n {
+        if keep.contains(&(g as u16)) {
+            let start = (*loca.get(g)? as usize).min(glyf_len);
+            let end = (*loca.get(g + 1)? as usize).min(glyf_len);
+            if end > start {
+                glyf.extend_from_slice(data.get(glyf_off + start..glyf_off + end)?);
+                // 4 字节对齐：short loca 的偏移必须是偶数
+                let pad = (4 - glyf.len() % 4) % 4;
+                glyf.extend(std::iter::repeat(0u8).take(pad));
+            }
+        }
+        offsets.push(glyf.len() as u32);
+    }
+    // short loca 用 u16 存「偏移 / 2」，上限 0x1FFFE；超了必须切 long
+    let long = glyf.len() > 0x1FFFE;
+    let mut out_loca: Vec<u8> = Vec::with_capacity((n + 1) * if long { 4 } else { 2 });
+    for &o in &offsets {
+        if long {
+            push_u32(&mut out_loca, o);
+        } else {
+            push_u16(&mut out_loca, (o / 2) as u16);
+        }
+    }
+    Some((glyf, out_loca, long))
+}
+
+/// 给「列表卡片 / 速览条目」生成只含 `chars` 的字体副本。
+///
+/// 返回 `(产物路径, 产物字节数)`。**字节数是给前端 LRU 记账用的** ——
+/// 常驻渲染进程的是产物，不是原文件；按 `face.fileSize` 记账会把预算虚增几十倍，
+/// 「160MB 能装更多字面」这条推理也就不成立了（交接文档 §12.3 坑①）。
+///
+/// 返回 `None` 表示这条路不适合这份字体（CFF / TTC / 可变字体 / 体积本来就小 /
+/// 目标字符一个都不命中），调用方一律回退完整的 `useFontCss` 链路。
+pub fn ensure_list_subset_font(path: &Path, face_index: u32, chars: &str) -> Option<(PathBuf, u64)> {
+    // 规范化字符集：去重 + 排序。同一批字符换个顺序必须命中同一份缓存，
+    // 否则「示例文字改回来」会白重新生成一遍。
+    let mut cps: Vec<u32> = chars.chars().map(|c| c as u32).collect();
+    cps.sort_unstable();
+    cps.dedup();
+    if cps.is_empty() {
+        return None;
+    }
+
+    let md = fs::metadata(path).ok()?;
+    if md.len() < SUBSET_MIN_BYTES {
+        return None;
+    }
+    let mtime = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let mut chars_hash = fnv1a(0xCBF2_9CE4_8422_2325, SUBSET_TAG.as_bytes());
+    for cp in &cps {
+        chars_hash = fnv1a(chars_hash, &cp.to_be_bytes());
+    }
+    let key = fnv1a(0xCBF2_9CE4_8422_2325, path.to_string_lossy().as_bytes());
+    let key = fnv1a(key, &mtime.to_be_bytes());
+    let key = fnv1a(key, &md.len().to_be_bytes());
+    let key = fnv1a(key, &(face_index as u64).to_be_bytes());
+    let key = fnv1a(key, &chars_hash.to_be_bytes());
+    let dir = cache_dir()?;
+    // 前缀 `L` 与修复通道的 `v5-L0-…` 区分；SUBSET_TAG 进文件名，改算法老产物自动失效
+    let target = dir.join(format!("{CACHE_TAG}-L-{SUBSET_TAG}-{key:016x}.ttf"));
+    if target.exists() {
+        touch(&target);
+        let bytes = fs::metadata(&target).ok()?.len();
+        return Some((target, bytes));
+    }
+
+    let data = fs::read(path).ok()?;
+    if data.len() < 12 || &data[0..4] == b"ttcf" {
+        return None;
+    }
+    let offsets = face_offsets(&data)?;
+    let index = (face_index as usize).min(offsets.len().saturating_sub(1));
+    let sfnt = *offsets.get(index)?;
+    let tables = tables_of(&data, sfnt)?;
+    if tables
+        .iter()
+        .any(|t| &t.tag == b"CFF " || &t.tag == b"CFF2")
+    {
+        return None;
+    }
+    if !tables.iter().any(|t| &t.tag == b"glyf") {
+        return None;
+    }
+    if tables.iter().any(|t| &t.tag == b"fvar") {
+        return None;
+    }
+    let glyf_rec = tables.iter().find(|t| &t.tag == b"glyf")?;
+    let num_glyphs = tables
+        .iter()
+        .find(|t| &t.tag == b"maxp")
+        .and_then(|t| u16_at(&data, t.offset + 4))?;
+    if num_glyphs == 0 {
+        return None;
+    }
+    let (loca, _) = read_loca(&data, &tables, num_glyphs)?;
+
+    let full = unicode_pairs(&data, &tables)?;
+    let mut subset: std::collections::BTreeMap<u32, u16> = std::collections::BTreeMap::new();
+    let mut seeds: Vec<u16> = Vec::new();
+    for cp in &cps {
+        if let Some(&gid) = full.get(cp) {
+            subset.insert(*cp, gid);
+            seeds.push(gid);
+        }
+    }
+    // 一个字符都没命中：不是「子集失败」，是这字体本来就缺这些字。
+    // 交回完整链路去显示缺字提示 —— 子集产物会是一片空白，反而更难解释。
+    if seeds.is_empty() {
+        return None;
+    }
+
+    let keep = glyph_closure(
+        &data,
+        glyf_rec.offset,
+        glyf_rec.len,
+        &loca,
+        &seeds,
+        num_glyphs,
+    );
+    let (glyf, loca_bytes, long_loca) = build_subset_glyf(
+        &data,
+        glyf_rec.offset,
+        glyf_rec.len,
+        &loca,
+        &keep,
+        num_glyphs,
+    )?;
+
+    // head 副本：loca 切 long 时必须同步改 indexToLocFormat，否则整份字体读不出字形
+    let head_rec = tables.iter().find(|t| &t.tag == b"head")?;
+    let mut head_bytes = data[head_rec.offset..head_rec.offset + head_rec.len].to_vec();
+    if head_bytes.len() >= 52 {
+        let flag: i16 = if long_loca { 1 } else { 0 };
+        head_bytes[50..52].copy_from_slice(&flag.to_be_bytes());
+    }
+
+    let pairs: Vec<(u32, u16)> = subset.into_iter().collect();
+    let cmap = build_cmap(&pairs);
+    let mut ov: std::collections::HashMap<[u8; 4], Vec<u8>> = std::collections::HashMap::new();
+    ov.insert(*b"glyf", glyf);
+    ov.insert(*b"loca", loca_bytes);
+    ov.insert(*b"head", head_bytes);
+    // strip_hinting = false：子集本身已经很小，去掉 fpgm/prep 会改变字形轮廓观感
+    let out = rebuild(&data, sfnt, &tables, Some(&cmap), false, Some(&ov))?;
+    // 没变小就别用：个别字体的字形集中在一批复合字形里，子集可能反而更碎
+    if out.len() as u64 >= md.len() {
+        return None;
+    }
+
+    let tmp = dir.join(format!(".{CACHE_TAG}-{key:016x}.{}.tmp", std::process::id()));
+    fs::write(&tmp, &out).ok()?;
+    if fs::rename(&tmp, &target).is_err() {
+        let _ = fs::remove_file(&tmp);
+        return None;
+    }
+    trim_cache(&dir);
+    Some((target, out.len() as u64))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// 手工冒烟：`ZFM_REPAIR_TEST="字体路径#字面序号" cargo test repair_smoke -- --ignored --nocapture`
+    /// 列表子集冒烟：`ZFM_SUBSET_TEST="字体路径" cargo test subset_smoke -- --ignored --nocapture`
+    /// 批量：`ZFM_SUBSET_LIST=清单文件 cargo test subset_smoke -- --ignored --nocapture`
+    ///
+    /// 验证三件事（都是「肉眼看不出来但一定会坏」的）：
+    ///   1. 产物比原文件小（否则这条路线没意义）；
+    ///   2. 产物自己能被重新解析出表目录与 cmap（loca 切 long / head 改标记是否写对）；
+    ///   3. 每个目标字符在产物的 cmap 里都有 gid（否则卡片直接缺字）。
+    #[test]
+    #[ignore]
+    fn subset_smoke() {
+        let mut targets: Vec<String> = Vec::new();
+        if let Ok(one) = std::env::var("ZFM_SUBSET_TEST") {
+            targets.push(one);
+        }
+        if let Ok(list) = std::env::var("ZFM_SUBSET_LIST") {
+            let text = fs::read_to_string(&list).expect("读不到清单");
+            for line in text.lines() {
+                let line = line.trim();
+                if !line.is_empty() {
+                    targets.push(line.to_string());
+                }
+            }
+        }
+        if targets.is_empty() {
+            return;
+        }
+        let chars = "Hello IIEOzoAa";
+        let (mut ok, mut skip, mut fail) = (0usize, 0usize, 0usize);
+        for path in &targets {
+            let p = Path::new(path);
+            let orig = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+            let t0 = std::time::Instant::now();
+            let got = ensure_list_subset_font(p, 0, chars);
+            let ms = t0.elapsed().as_millis();
+            let Some((out, bytes)) = got else {
+                skip += 1;
+                // 区分两种 SKIP：格式不适用（CFF/TTC/可变）与「一个字符都不命中」。
+                // 后者对纯汉字字体是正常的 —— 它的 cmap 里没有任何拉丁字形。
+                let hits = fs::read(p)
+                    .ok()
+                    .and_then(|d| tables_of(&d, 0).map(|t| (d, t)))
+                    .and_then(|(d, t)| unicode_pairs(&d, &t))
+                    .map(|m| {
+                        chars
+                            .chars()
+                            .filter(|c| m.contains_key(&(*c as u32)))
+                            .count()
+                    })
+                    .unwrap_or(0);
+                println!("SKIP {path} ({orig} bytes, {ms}ms) hit={hits}");
+                continue;
+            };
+            assert!(bytes < orig, "产物没变小: {path}");
+            let data = fs::read(&out).expect("读不到产物");
+            let tables = tables_of(&data, 0).expect("产物表目录读不出来");
+            let map = unicode_pairs(&data, &tables).expect("产物 cmap 读不出来");
+            for c in chars.chars() {
+                assert!(map.contains_key(&(c as u32)), "子集缺字 {c}: {path}");
+            }
+            ok += 1;
+            println!(
+                "OK   {path} {orig} -> {bytes} ({:.2}%) {ms}ms cmap={}",
+                bytes as f64 * 100.0 / orig as f64,
+                map.len()
+            );
+        }
+        println!("汇总 ok={ok} skip={skip} fail={fail}");
+        assert_eq!(fail, 0);
+    }
+
     /// 批量：`ZFM_REPAIR_LIST=清单文件 cargo test ...`，文件里每行 `路径#序号`。
     /// 只验证「修得出来、写进了缓存」，是否真能被 WebView2 加载要在应用里看。
     #[test]

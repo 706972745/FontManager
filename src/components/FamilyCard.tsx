@@ -3,7 +3,9 @@ import { AlertTriangle, ChevronRight, Lock, Star } from "lucide-react";
 import { memo, useMemo, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { spring, springSnappy, springSoft } from "../design/springs";
-import { useFontCss } from "../lib/fontLoader";
+import { useListFontCss } from "../lib/fontLoader";
+import { listChars } from "../lib/listChars";
+import { useCardThumb, useThumbGenerate } from "../lib/thumb";
 import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
@@ -149,8 +151,29 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const cjkSibling = useCjkSibling(family.name, needsCjkSibling);
   const scriptHint = cjkSibling ? t("card.seeCjkVersion", { family: cjkSibling }) : null;
   const previewFace = family.faces.find((f) => f.id === hoverFaceId) ?? lead;
-  const { fontFamily, failed } = useFontCss(previewFace);
   const text = sampleText.trim() || family.name;
+  /**
+   * 列表子集通道（§12）：卡片主预览只渲染示例文字 + 字重名，
+   * 没必要为它解码整个字体（库里 >8MB 的有 218 个，中文大盘字解一次几百毫秒）。
+   *
+   * 自定义示例文字时 `listChars` 返回 null → 自动回退 `useFontCss` 的完整链路，
+   * 与 0.9.9-25 的行为完全一致。字重行（FaceLine）不走这条路：它是独立组件，
+   * 一个族展开后要同时挂几个字面，切过去的收益不如风险。
+   */
+  const listCharSet = listChars(family, sampleText, t("preview.defaultSample"));
+  /**
+   * 缩略图缓存（§13，默认关闭）：有现成的图就**不加载字体** —— 这是它唯一的真收益
+   * （滚回来时省掉一次 FontFace 加载）。没有图时完全不影响下面这条链路。
+   */
+  const thumb = useCardThumb({
+    enabled: !!previewFace,
+    faceId: previewFace?.id ?? null,
+    chars: listCharSet,
+    sizePx: size,
+  });
+  const { fontFamily, failed } = useListFontCss(thumb.src ? null : previewFace, listCharSet);
+  // 缺语言文字的格子显示的是标注、不是字形，别为它生成缩略图
+  useThumbGenerate(thumb, hasScriptNote(scriptStatus) ? null : fontFamily, text, size);
   // 权重：手动设置 > 字体自带版权信息 > 文件夹备注 / 版权信息文件判定的版权
   // 与筛选同一口径（`familyCopyrightClass`），否则「勾了商用免费却筛出标着未知的卡」
   const licCls = familyCopyrightClass(family.faces, copyrightOverride);
@@ -304,9 +327,21 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
         </div>
       )}
 
-      <div className="card-preview" style={{ minHeight: size * 1.35 }}>
+      <div className="card-preview" ref={thumb.ref} style={{ minHeight: size * 1.35 }}>
         <AnimatePresence mode="wait">
-          {fontFamily ? (
+          {thumb.src && !hasScriptNote(scriptStatus) ? (
+            /* 缩略图：像素尺寸按实际预览宽度 × DPR 渲染，这里 1:1 显示，不缩放 */
+            <motion.img
+              key="thumb"
+              className="preview-text preview-thumb"
+              src={thumb.src}
+              alt=""
+              draggable={false}
+              initial={intro ? { opacity: 0, y: 5 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={intro ? spring : INTRO_OFF}
+            />
+          ) : fontFamily ? (
             hasScriptNote(scriptStatus) ? (
               /* 画不出示例文字的语言：这一格直接换成「无中文」这类标注（0.9.3-5）
                  缺中文时若同族另有中文版，补一句「中文见 XXX」指路（0.9.3-7） */

@@ -4,6 +4,81 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-1] — 2026-11-01
+
+> 开发版。把交接文档里两条「条件路线」落地：**列表专用子集化（§12，默认开启）** 与
+> **卡片缩略图缓存（§13，默认关闭）**。子集化是这一版的重点 ——
+> 卡片只渲染十几个字符，却一直为它解码整个字体（库内 >8MB 的有 218 个）。
+>
+> **风险边界**：子集失败一律回退完整字体链路（含 repair），最坏情况等于回到 1.0.0 的行为；
+> 想关掉它用 `?listSubset=0` 或 `localStorage["zfm.exp.listSubset"]="0"`。
+
+### 新增：列表专用子集化（§12，默认开启）
+
+**离线先算了一遍账**（`.workbuddy/qa-2026-11-01/subset_probe.py`，库内真实大字体）：
+
+| 口径 | 结果 |
+|---|---|
+| glyf 路线产物 / 原文件 | **0.65% ~ 4.20%**（14 个样本里 5 个 glyf 字体） |
+| 422.9 MB 的样本合计 | 压到 **2.39 MB** |
+| 库内 >8MB 的 218 个文件 | glyf **138 个（56.2% 体积）**、CFF 68 个、TTC 12 个 |
+
+**实现方式：保留原 GID，不重编号。**
+
+这是故意的保守选择。真子集化通常要重编号 gid，随之而来的是复合字形引用、GSUB/GPOS 索引、
+hmtx/post 对齐全部要改 —— 那是 1~2 周的活，且每一处写错都表现为「某些字变成豆腐」。
+这里走另一条路：**把非目标字形的 glyf 数据长度置 0，gid 序号一个都不动**。
+于是：
+
+- 复合字形只需递归它的 component gid 做闭包，不需要改写引用；
+- GSUB/GPOS 引用旧 gid 也不会炸（指向空字形而已）；
+- hmtx / post / maxp 全都对得上，不用动。
+
+**关键实现点**
+
+- `preview_font.rs::rebuild()` 新增 `overrides` 参数，可按 tag 整表替换（换掉 glyf / loca / head）。
+  顺序上放在 cmap 分支之后——cmap 有自己的 `new_cmap` 通道。
+- `read_loca` / `glyph_closure` / `build_subset_glyf` / `composite_gids` 四个纯函数，
+  各自可单独核对。闭包必含 `.notdef`（ld 第 0 个 gid），否则 OTS 那边没有兜底字形。
+- **loca 切 long 时必须同步改 head.indexToLocFormat**：short 格式用 u16 存「偏移 / 2」，
+  上限 0x1FFFE；超过就得切 long。`rebuild` 里计算 loca 期望长度的地方也要认 overrides 的 head，
+  否则按旧格式算会把新 loca 截断一半 —— 这是本轮最容易踩的坑。
+- 新命令 `list_preview_font`，返回 `{ path, bytes }`；`bytes` 是**产物**大小。
+
+### 新增：`useListFontCss` 列表通道（§12.2 / §12.3）
+
+- CSS family 名带 variant：`zfm-l-${hash(face.id + "#" + chars)}`。同一字面在不同字符集下
+  是两个不同的 FontFace，不会互相污染（§12.5 坑②）。
+- **LRU 按产物字节记账**，不按 `face.fileSize`（§12.3 坑①）。不改计量的话，
+  「160MB 预算能装百倍字面」的推理不成立——账面上一次子集就像吃了 30MB。
+- 只切两处消费方：`FamilyCard` 主预览、`QuickBar` 条目。
+  **详情 GlyphMap / OpenType 特性 / 可变字体 / specimen 导出继续吃完整字体**
+  （§12.2 坑③：它们要看全部字形，塞子集就是全部缺字）。
+- 字符集按 §12.6 组装（`lib/listChars.ts`）：示例文字 ∪ 字族名 ∪ 各 style 名 ∪ `Aa`。
+  **字族名必须在内**——纯汉字字体的 cmap 里一个拉丁字符都没有，只用默认示例文字会 0 命中，
+  而中文大盘字恰好是库里最多最贵的那批。
+- 用户自定义示例文字时返回 `null` → 回退完整链路（§12.7-C：否则变体会爆炸）。
+
+### 新增：卡片缩略图缓存（§13，默认关闭）
+
+- Rust 新模块 `thumb.rs`：`%APPDATA%\ZFontManager\thumb-cache`，独立 256MB LRU，
+  启动时 `allow_dir`（新目录不放行会报 asset 读不到）。
+- key 含**所有影响像素的输入**：字面 id、字符集、字号、DPR、预览宽度（8px 分档）、文字颜色（主题）。
+- 前端 `useCardThumb` 在 `useLayoutEffect` 里量宽度（绘制前完成，不会闪），
+  `thumb_index` 启动时拉一次 key 列表进内存 Set —— 卡片**同步**判断有没有图，
+  有图就完全不加载字体。
+- 生成在字体加载完成后后台做，结果**不触发本次渲染**：本次继续用文本，滚回来重新挂载才用图。
+- 默认关闭：静态图与实时渲染在字重悬停、主题切换、宽度变化三处都会产生像素差异，
+  而 0.9.9-24 的教训正是「任何先不加载的优化都会显示成界面坏了」。
+  按文档判定秩序，等 §10.5 的数据指向「回滚痛」再启用。
+
+### 验证
+
+- `tsc --noEmit` 干净；`node --test` **194 pass / 0 fail**（原 187 + `listChars` 7 组）。
+- Rust `cargo test subset_smoke`（真实字体，12 个样本）：8 个 OK、4 个 SKIP、0 fail。
+  子集产物最小 **0.26%**、最大 **3.26%**，全部能重新解析出表目录与 cmap，目标字符无缺失。
+  4 个 SKIP 里 2 个是 CFF（按设计回退），2 个是纯汉字字体（cmap 里没有任何拉丁字符，0 命中）。
+
 ## [1.0.0] — 2026-11-01
 
 > **1.0.0 里程碑**：万级字体库（14,211 字族实测）、速览列表虚拟化、右键菜单收口、字重级操作，
