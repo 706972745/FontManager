@@ -21,3 +21,4 @@ strip-comments.mjs
 # local session / machine-specific env
 .workbuddy/
 src-tauri/.cargo/
+_tauri.nobuild.json
