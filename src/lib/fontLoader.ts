@@ -2,6 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { createFaceLru } from "./faceRegistry";
 import { ipc } from "./ipc";
+import { useScrollActivity } from "./scrollActivity";
 import type { FontFace as ZFontFace } from "./ipc";
 
 /** 加载失败时用来「找后端修一份」的定位信息 */
@@ -20,8 +21,39 @@ export function setUnpreviewableHook(fn: (id: string, on: boolean) => void) {
 }
 const cache = new Map<string, LoadState>();
 const listeners = new Map<string, Set<() => void>>();
-/** 常驻字体上限。200 张卡片 × 平均 1~2 MB ≈ 200~400 MB，留有余量 */
+/**
+ * 常驻字体上限 —— **条数 + 字节双上限**。
+ *
+ * 只限条数（0.9.9-22 及以前）在真实字体库上不成立：用户库里 p90 = 4 MB、
+ * 88 个字体超过 15 MB，200 个字面能吃出 855 MB（2026-10-31 实测），
+ * 理论最坏 1.5 GB —— 16 GB 机器会直接被挤到换页。
+ *
+ * 160 MB ≈ 40 个中文字面，或 ~200 个普通拉丁字面（后者先撞到条数上限）。
+ * 屏幕上一屏 6~12 张卡片，回滚 3~4 屏不会触发重新加载，够用。
+ */
 const MAX_LOADED_FACES = 200;
+const MAX_LOADED_BYTES = 160 * 1024 * 1024;
+
+/**
+ * 正在屏上渲染的字面（引用计数）。
+ *
+ * 被淘汰的那个「最久没用」的字体，很可能正是屏幕最上面那张卡片在用的。
+ * 淘汰它会清掉状态缓存 → 卡片立刻重新加载 → 又超预算 → 再淘汰一条，
+ * 一次滚动就能打出上百次加载/淘汰（0.9.9-23 用诊断 HUD 实测：180 格滚动加载 235 次、淘汰 206 次）。
+ * 而 `document.fonts.delete()` 并不会把字体数据还给系统，重新加载只会让渲染进程再多留一份。
+ * 所以挂载期间给名字加一，卸载时减一，淘汰跳过它们。
+ */
+const pinned = new Map<string, number>();
+
+function pinFace(name: string): void {
+  pinned.set(name, (pinned.get(name) ?? 0) + 1);
+}
+
+function unpinFace(name: string): void {
+  const left = (pinned.get(name) ?? 0) - 1;
+  if (left > 0) pinned.set(name, left);
+  else pinned.delete(name);
+}
 /**
  * 已加载 FontFace 的 LRU（实现在 lib/faceRegistry.ts），按「最近使用」淘汰。
  * FontFace 一旦 add 进 document.fonts 就会被渲染进程常驻持有——字体文件动辄几 MB，
@@ -32,7 +64,10 @@ const MAX_LOADED_FACES = 200;
  */
 const loadedFaces = createFaceLru<FontFace>(document.fonts, {
   max: MAX_LOADED_FACES,
+  maxBytes: MAX_LOADED_BYTES,
+  canEvict: (name) => !pinned.has(name),
   onEvict: (name) => {
+    evictCount += 1;
     // 被淘汰的字体可能还在屏幕上：清掉状态缓存并唤醒等待者，让组件重新走一次加载自愈，
     // 否则卡片会静默退回系统字体（cache 还有 "loaded"）或永久停在空白（cache 已被删）。
     cache.delete(name);
@@ -58,11 +93,16 @@ function touch(name: string): void {
 }
 
 function ensureLoaded(face: ZFontFace): void {
-  ensurePathLoaded(cssName(face), face.previewPath ?? face.path, {
-    id: face.id,
-    path: face.previewPath ?? face.path,
-    index: face.faceIndex ?? 0,
-  });
+  ensurePathLoaded(
+    cssName(face),
+    face.previewPath ?? face.path,
+    {
+      id: face.id,
+      path: face.previewPath ?? face.path,
+      index: face.faceIndex ?? 0,
+    },
+    face.fileSize ?? 0,
+  );
 }
 
 /**
@@ -82,7 +122,7 @@ const MAX_REPAIRED = 2000;
  *   2 档 = 再额外去掉提示程序（fpgm / prep / cvt）。
  * 有的老字体 OTS 就是不说明原因地整份拒收（652-CAI978 那批），2 档能把它们救回来。
  */
-async function repairLoad(name: string, hint: RepairHint): Promise<boolean> {
+async function repairLoad(name: string, hint: RepairHint, bytes: number): Promise<boolean> {
   for (const level of [1, 2]) {
     const key = `${hint.id}#${level}`;
     let path = repaired.get(key);
@@ -99,7 +139,7 @@ async function repairLoad(name: string, hint: RepairHint): Promise<boolean> {
         if (!first.done) repaired.delete(first.value);
       }
     }
-    if (path && (await tryLoad(name, path))) {
+    if (path && (await tryLoad(name, path, bytes))) {
       // 修一下就能显示 → 不算损坏，摘掉标记
       incompleteHook?.(hint.id, false);
       return true;
@@ -110,21 +150,27 @@ async function repairLoad(name: string, hint: RepairHint): Promise<boolean> {
   return false;
 }
 
-function tryLoad(name: string, path: string): Promise<boolean> {
+function tryLoad(name: string, path: string, bytes = 0): Promise<boolean> {
   return new Promise((resolve) => {
     const ff = new FontFace(name, `url("${convertFileSrc(path)}")`);
     ff.load()
       .then(() => {
-        // 登记进 LRU —— 这一步才真正 add 进 document.fonts，同时兑现 200 上限的淘汰。
-        // 之前这里直接 `document.fonts.add(ff)` 而没有登记，淘汰逻辑等于没写。
-        loadedFaces.register(name, ff);
+        // 登记进 LRU —— 这一步才真正 add 进 document.fonts，同时兑现「条数 + 字节」双上限的淘汰。
+        // bytes 是这个字面文件的实际体积，字节预算靠它算（不认识体积就传 0，只受条数约束）。
+        loadedFaces.register(name, ff, bytes);
+        loadCount += 1;
         resolve(true);
       })
       .catch(() => resolve(false));
   });
 }
 
-function ensurePathLoaded(name: string, path: string, repair?: RepairHint): void {
+function ensurePathLoaded(
+  name: string,
+  path: string,
+  repair?: RepairHint,
+  bytes = 0,
+): void {
   if (cache.has(name)) {
     touch(name);
     return;
@@ -132,10 +178,10 @@ function ensurePathLoaded(name: string, path: string, repair?: RepairHint): void
   cache.set(name, "loading");
 
   void (async () => {
-    let ok = await tryLoad(name, path);
+    let ok = await tryLoad(name, path, bytes);
     if (!ok && repair) {
       // 首次失败先试普通路径；还不行就问后端要副本（ttc 抽面 / cmap 重建 / 去提示程序）
-      ok = await repairLoad(name, repair);
+      ok = await repairLoad(name, repair, bytes);
     }
     cache.set(name, ok ? "loaded" : "failed");
     if (ok) touch(name);
@@ -144,16 +190,38 @@ function ensurePathLoaded(name: string, path: string, repair?: RepairHint): void
   })();
 }
 
-export function useFontCss(face: ZFontFace | null): {
+export function useFontCss(
+  face: ZFontFace | null,
+  opts?: {
+    /**
+     * 列表里滚动的卡片传 true：滚动期间先不加载真字体（退回系统字体），
+     * 停手 180 ms 后再加载。理由见 lib/scrollActivity.ts —— 淘汰根本还不掉内存，
+     * 只能靠「不加载」。
+     */
+    deferWhileScrolling?: boolean;
+  },
+): {
   fontFamily: string | null;
   failed: boolean;
 } {
+  const defer = opts?.deferWhileScrolling === true;
+  const scrolling = useScrollActivity();
+  const blocked = defer && scrolling;
   const name = face ? cssName(face) : null;
   const [, bump] = useState(0);
   const state = name ? cache.get(name) : undefined;
 
+  // 挂载期间把它标记为「屏上在用」，LRU 淘汰会跳过（见 pinned 的注释）
+  useEffect(() => {
+    if (!name) return;
+    pinFace(name);
+    return () => unpinFace(name);
+  }, [name]);
+
   useEffect(() => {
     if (!face || !name) return;
+    // 滚动中先不碰：等停稳后这个 effect 会因为 scrolling 变 false 再跑一次
+    if (blocked) return;
     // 依赖里带上 state：被 LRU 淘汰后 cache 里没有这个名字、state 变 undefined，
     // effect 会重跑并重新加载。少了这一条，淘汰正在显示的字体会让它永久停在系统字体上。
     ensureLoaded(face);
@@ -166,10 +234,10 @@ export function useFontCss(face: ZFontFace | null): {
         set.delete(fn);
       };
     }
-  }, [face, name, state]);
+  }, [face, name, state, blocked]);
 
   return {
-    fontFamily: state === "loaded" && name ? name : null,
+    fontFamily: !blocked && state === "loaded" && name ? name : null,
     failed: state === "failed",
   };
 }
@@ -178,6 +246,13 @@ export function usePathFontCss(key: string | null, path: string | null): string 
   const name = key ? `zfm-p-${hash(key)}` : null;
   const [, bump] = useState(0);
   const state = name ? cache.get(name) : undefined;
+
+  // 挂载期间把它标记为「屏上在用」，LRU 淘汰会跳过（见 pinned 的注释）
+  useEffect(() => {
+    if (!name) return;
+    pinFace(name);
+    return () => unpinFace(name);
+  }, [name]);
 
   useEffect(() => {
     if (!name || !path) return;
@@ -216,7 +291,28 @@ export function pathBasename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-export function formatBytes(bytes: number): string {
+/**
+ * 诊断用计数（临时）：排查「滚动时内存为什么一直涨」时用来核对
+ * 「到底加载了多少个 FontFace、现在常驻几个、账面上多少字节」。
+ */
+let loadCount = 0;
+let evictCount = 0;
+
+export function faceStats(): {
+  resident: number;
+  bytes: number;
+  loads: number;
+  evictions: number;
+  cached: number;
+} {
+  return {
+    resident: loadedFaces.size,
+    bytes: loadedFaces.bytes,
+    loads: loadCount,
+    evictions: evictCount,
+    cached: cache.size,
+  };
+}export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

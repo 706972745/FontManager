@@ -148,3 +148,117 @@ test("被淘汰后重新 register 回到最近使用的位置", () => {
   assert.equal(lru.get("a"), a2);
   assert.equal(col.live.has(a2), true);
 });
+
+/**
+ * 字节预算（0.9.9-23）：只按条数的 200 上限在真实字体库上会吃出 855 MB，
+ * 因为 p90 的字体文件是 4 MB、还有 88 个超过 15 MB。这里锁住「先按体积淘汰」。
+ */
+test("字节超预算时淘汰最久没用的，即使条数还没到上限", () => {
+  const col = fakeCollection<object>();
+  const MB = 1024 * 1024;
+  const lru = createFaceLru(col, { max: 200, maxBytes: 10 * MB });
+  const a = {};
+  const b = {};
+  const c = {};
+
+  lru.register("a", a, 4 * MB);
+  lru.register("b", b, 4 * MB);
+  assert.equal(lru.bytes, 8 * MB);
+
+  lru.register("c", c, 4 * MB); // 12 MB > 10 MB
+  assert.equal(lru.has("a"), false, "最久没用的 a 先走");
+  assert.deepEqual(lru.names(), ["b", "c"]);
+  assert.equal(lru.bytes, 8 * MB, "体积必须跟着降下来");
+  assert.equal(col.live.has(a), false);
+});
+
+test("小字体不会因为字节预算被误杀（条数上限仍然生效）", () => {
+  const col = fakeCollection<object>();
+  const MB = 1024 * 1024;
+  const lru = createFaceLru(col, { max: 3, maxBytes: 100 * MB });
+
+  for (const name of ["a", "b", "c", "d"]) lru.register(name, {}, 60 * 1024);
+  assert.deepEqual(lru.names(), ["b", "c", "d"], "总量才 240 KB，淘汰只由条数决定");
+});
+
+test("单个字体大于字节预算时仍然保留它（至少留 1 条）", () => {
+  const col = fakeCollection<object>();
+  const MB = 1024 * 1024;
+  const lru = createFaceLru(col, { max: 200, maxBytes: 8 * MB });
+  const huge = {};
+
+  lru.register("huge", huge, 30 * MB);
+  assert.equal(lru.size, 1, "否则大字体永远登不进来，卡片会一直空白");
+  assert.equal(lru.get("huge"), huge);
+});
+
+test("同名重新登记会更新体积，不重复计账", () => {
+  const col = fakeCollection<object>();
+  const MB = 1024 * 1024;
+  const lru = createFaceLru(col, { max: 200, maxBytes: 100 * MB });
+  const a = {};
+
+  lru.register("a", a, 3 * MB);
+  assert.equal(lru.bytes, 3 * MB);
+  lru.register("a", a, 5 * MB);
+  assert.equal(lru.size, 1);
+  assert.equal(lru.bytes, 5 * MB);
+  // 不传 bytes 时不能把已知体积抹成 0
+  lru.register("a", a);
+  assert.equal(lru.bytes, 5 * MB);
+});
+
+/**
+ * 0.9.9-23 的「淘汰风暴」回归：被淘汰的往往正是屏幕最上面那张卡片在用的字体，
+ * 淘汰它 → 卡片重新加载 → 又超预算 → 再淘汰一条。这里锁住「屏上的不淘汰」。
+ */
+test("在屏上的条目跳过，淘汰下一条可淘汰的", () => {
+  const col = fakeCollection<object>();
+  const pinned = new Set<string>();
+  const lru = createFaceLru(col, { max: 2, canEvict: (name) => !pinned.has(name) });
+  const a = {};
+  const b = {};
+  const c = {};
+
+  lru.register("a", a);
+  lru.register("b", b);
+  pinned.add("a"); // a 正在屏上渲染
+
+  lru.register("c", c);
+  assert.equal(lru.has("a"), true, "屏上的 a 不能被淘汰");
+  assert.equal(lru.has("b"), false, "应该淘汰没在屏上的 b");
+  assert.equal(lru.size, 2);
+});
+
+test("全都在屏上时宁可暂时超上限，也不淘汰（否则就是加载/淘汰风暴）", () => {
+  const col = fakeCollection<object>();
+  const lru = createFaceLru(col, { max: 1, canEvict: () => false });
+
+  lru.register("a", {});
+  lru.register("b", {});
+  assert.equal(lru.size, 2);
+  assert.deepEqual(lru.names(), ["a", "b"]);
+});
+
+test("字节预算同样跳过在屏上的条目", () => {
+  const col = fakeCollection<object>();
+  const MB = 1024 * 1024;
+  const pinned = new Set(["big"]);
+  const lru = createFaceLru(col, {
+    max: 200,
+    maxBytes: 10 * MB,
+    canEvict: (name) => !pinned.has(name),
+  });
+  const big = {};
+  const small1 = {};
+  const small2 = {};
+
+  lru.register("big", big, 8 * MB);
+  lru.register("s1", small1, 4 * MB);
+  lru.register("s2", small2, 4 * MB);
+
+  assert.equal(lru.has("big"), true, "在屏的大字体保留");
+  assert.equal(lru.has("s1"), false, "先淘汰没在屏上的");
+  assert.equal(lru.has("s2"), true);
+  assert.equal(lru.size, 2);
+});

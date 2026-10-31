@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
@@ -533,6 +533,22 @@ export function TopBar() {
   const setViewMode = useFontStore((s) => s.setViewMode);
   const search = useFontStore((s) => s.search);
   const setSearch = useFontStore((s) => s.setSearch);
+  /**
+   * 搜索框自己维护输入值，125 ms 后才推给 store。
+   *
+   * 为什么：`search` 一变，`App` 里那次 `selectVisibleFamilies` 就会把全部字族重新筛一遍
+   * 再排序（`localeCompare`）。4211 族时勉强，字体上万时每敲一个字都会卡一下 ——
+   * 输入框必须跟手，筛选慢一点没关系。清空按钮仍是立即生效。
+   */
+  const [searchText, setSearchText] = useState(search);
+  useEffect(() => {
+    setSearchText(search);
+  }, [search]);
+  useEffect(() => {
+    if (searchText === search) return;
+    const id = window.setTimeout(() => setSearch(searchText), 125);
+    return () => window.clearTimeout(id);
+  }, [searchText, search, setSearch]);
 
   const intro = useIntro();
   const fill = (sizeIndex / (SIZES.length - 1)) * 100;
@@ -550,16 +566,19 @@ export function TopBar() {
           id="global-search"
           // 输入框也挂说明：光看占位符「搜索…」不知道能搜到什么
           data-hint="hint.search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
           placeholder={t("top.searchPlaceholder")}
           aria-label={t("top.searchAria")}
           spellCheck={false}
         />
-        {search.length > 0 && (
+        {searchText.length > 0 && (
           <button
             className="search-clear"
-            onClick={() => setSearch("")}
+            onClick={() => {
+              setSearchText("");
+              setSearch("");
+            }}
             aria-label={t("top.searchClear")}
           >
             <X size={13} strokeWidth={2} />
