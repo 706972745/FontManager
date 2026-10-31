@@ -29,7 +29,8 @@ const CACHE_LIMIT: u64 = 384 * 1024 * 1024;
 const CACHE_TAG: &str = "v5";
 /// 列表子集算法的版本号。子集的「字符闭包 / loca 布局 / cmap 重建」任何一处变了就加一，
 /// 老产物自动失效（缓存 key 里编了它）。
-const SUBSET_TAG: &str = "S1";
+/// S1 → S2：post 降级成 3.0（丢掉按 gid 排的字形名数组，产物小 60%）。
+const SUBSET_TAG: &str = "S2";
 /// 小于这个体积不走子集：解码本来就快，做子集只是多一次 IPC + 一次磁盘写。
 /// 库内 >8MB 的字体有 218 个，它们才是真痛点。
 const SUBSET_MIN_BYTES: u64 = 1 << 20;
@@ -1279,6 +1280,25 @@ pub fn ensure_list_subset_font(path: &Path, face_index: u32, chars: &str) -> Opt
         num_glyphs,
     )?;
 
+    // post 副本：**降级成 3.0，丢掉字形名数组**。
+    //
+    // post 2.0 是「numGlyphs 个字形名字符串」，按 gid 一一对应。我们不重编号 → numGlyphs
+    // 不变 → rebuild 那边「名字数量 == numGlyphs」的校验会通过 → 整份 435 KB 的字形名被原样留下。
+    // 实测它占产物 **60~65%**（宝马黑体 435 KB / 721 KB、刻石录 543 KB / 838 KB），
+    // 而卡片预览一个字都用不到字形名（CSS 用的是我们自造的 family 名）。
+    // 降级成 3.0 只留 32 字节固定头，同时保留 italicAngle / underline 这些真正有用的字段。
+    let post_rec = tables.iter().find(|t| &t.tag == b"post");
+    let post_bytes = post_rec.and_then(|t| {
+        let raw = data.get(t.offset..t.offset + t.len)?;
+        if raw.len() < 32 {
+            return None;
+        }
+        let mut minimal = raw[..32].to_vec();
+        // version 3.0：没有字形名数组（2.0 / 2.5 都要求按 gid 排名字）
+        minimal[0..4].copy_from_slice(&0x0003_0000u32.to_be_bytes());
+        Some(minimal)
+    });
+
     // head 副本：loca 切 long 时必须同步改 indexToLocFormat，否则整份字体读不出字形
     let head_rec = tables.iter().find(|t| &t.tag == b"head")?;
     let mut head_bytes = data[head_rec.offset..head_rec.offset + head_rec.len].to_vec();
@@ -1293,6 +1313,9 @@ pub fn ensure_list_subset_font(path: &Path, face_index: u32, chars: &str) -> Opt
     ov.insert(*b"glyf", glyf);
     ov.insert(*b"loca", loca_bytes);
     ov.insert(*b"head", head_bytes);
+    if let Some(p) = post_bytes {
+        ov.insert(*b"post", p);
+    }
     // strip_hinting = false：子集本身已经很小，去掉 fpgm/prep 会改变字形轮廓观感
     let out = rebuild(&data, sfnt, &tables, Some(&cmap), false, Some(&ov))?;
     // 没变小就别用：个别字体的字形集中在一批复合字形里，子集可能反而更碎
