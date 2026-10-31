@@ -915,6 +915,15 @@ body,
   flex: 1 1 auto;
   min-width: 0;
 }
+/* 卡片缩略图（§13）。像素尺寸 = 实际预览宽度 × DPR，这里 1:1 显示，不缩放不失真 */
+.preview-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  flex: 0 0 auto;
+  object-fit: contain;
+  object-position: left center;
+}
 /* 这一格被「无中文」这类标注替换掉时：垂直居中，胶囊按预览行字号略放大一点 */
 .preview-script {
   display: flex;

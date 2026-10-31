@@ -54,6 +54,8 @@ export type PrefetchCounters = {
   skipInflight: number;
   /** 因为已有状态（已加载/在加载/曾失败）跳过 */
   skipKnown: number;
+  /** 列表子集通道开启时跳过：预取会把完整字体塞进 LRU，与子集争同一份字节预算 */
+  skipSubset: number;
 };
 
 /**
@@ -87,6 +89,7 @@ export function createLoaderStats(maxSamples = 2000) {
     skipBudget: 0,
     skipInflight: 0,
     skipKnown: 0,
+    skipSubset: 0,
   };
 
   /** 环形：超上限丢最早的。丢的是最旧样本，对分位影响可忽略 */

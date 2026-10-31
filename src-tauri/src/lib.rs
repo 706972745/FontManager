@@ -12,6 +12,7 @@ mod net;
 mod online;
 mod parser;
 mod preview_font;
+mod thumb;
 mod webfonts;
 #[cfg(target_os = "windows")]
 mod procs;
@@ -723,6 +724,90 @@ async fn font_preview_file(
     tauri::async_runtime::spawn_blocking(move || {
         preview_font::ensure_preview_font(std::path::Path::new(&path), face_index, level.unwrap_or(0)).map(|p| {
             // 单独放行这一份（目录级放行在启动时做过，这里兜住运行期新建的文件）
+            let _ = scope.allow_file(&p);
+            p.to_string_lossy().into_owned()
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/** 列表预览用的字体副本（只含目标字符）。
+ *
+ * `bytes` 是**产物**大小，不是原文件大小 —— 前端 LRU 按它记账。
+ */
+#[derive(serde::Serialize)]
+struct ListPreview {
+    path: String,
+    bytes: u64,
+}
+
+/** 给卡片 / 速览条目生成「只含这些字符」的字体副本，让解码成本跟屏幕内容走。
+ *
+ * 与 `font_preview_file` 的分工是硬的：
+ *   - 这个**只给列表预览**用（卡片主预览、速览条目、字重行）；
+ *   - 详情 GlyphMap、OpenType 特性、可变字体、specimen 导出继续吃完整字体，
+ *     因为它们要看的是**全部**字形，塞子集会直接变成缺字。
+ *
+ * 返回 `None` 表示这条路不适用于这份字体（CFF / TTC / 可变字体 / 体积小 /
+ * 目标字符不命中），前端据此回退 `useFontCss` 的完整链路。
+ */
+#[tauri::command]
+async fn list_preview_font(
+    app: tauri::AppHandle,
+    path: String,
+    face_index: u32,
+    chars: String,
+) -> Result<Option<ListPreview>, String> {
+    let scope = app.asset_protocol_scope();
+    tauri::async_runtime::spawn_blocking(move || {
+        preview_font::ensure_list_subset_font(std::path::Path::new(&path), face_index, &chars).map(
+            |(p, bytes)| {
+                let _ = scope.allow_file(&p);
+                ListPreview {
+                    path: p.to_string_lossy().into_owned(),
+                    bytes,
+                }
+            },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/** 缩略图索引：目录 + 已有 key。
+ *
+ * 前端启动时拉一次放进内存 Set，卡片就能**同步**判断有没有图 ——
+ * 异步查会让首帧渲染成文字、随后切成图片，用户看到的就是闪烁。
+ */
+#[derive(serde::Serialize)]
+struct ThumbIndex {
+    dir: String,
+    keys: Vec<String>,
+}
+
+#[tauri::command]
+async fn thumb_index() -> Result<ThumbIndex, String> {
+    tauri::async_runtime::spawn_blocking(move || match thumb::root() {
+        Some(dir) => ThumbIndex {
+            dir: dir.to_string_lossy().into_owned(),
+            keys: thumb::list(),
+        },
+        None => ThumbIndex {
+            dir: String::new(),
+            keys: Vec::new(),
+        },
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/** 落盘一张缩略图（前端 canvas 渲染好的 PNG）。返回最终路径。 */
+#[tauri::command]
+async fn thumb_put(app: tauri::AppHandle, key: String, data: Vec<u8>) -> Result<Option<String>, String> {
+    let scope = app.asset_protocol_scope();
+    tauri::async_runtime::spawn_blocking(move || {
+        thumb::put(&key, &data).map(|p| {
             let _ = scope.allow_file(&p);
             p.to_string_lossy().into_owned()
         })
@@ -1962,6 +2047,10 @@ pub fn run() {
             if let Some(dir) = preview_font::cache_root() {
                 allow_dir(app.handle(), &dir);
             }
+            // 缩略图目录同理：它也在应用数据目录下，asset scope 覆盖不到
+            if let Some(dir) = thumb::root() {
+                allow_dir(app.handle(), &dir);
+            }
             if watch_enabled {
                 let _ = apply_watch(app.handle(), true, &extra_dirs);
             }
@@ -2048,6 +2137,9 @@ pub fn run() {
             font_charset,
             font_coverage,
             font_preview_file,
+            list_preview_font,
+            thumb_index,
+            thumb_put,
             get_favorites,
             set_favorite,
             get_notes,
