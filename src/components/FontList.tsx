@@ -5,12 +5,13 @@ import { formatBytes } from "../lib/fontLoader";
 import { useFontStore, type Family } from "../state/fontStore";
 import { FormatBadge } from "./FamilyCard";
 import { MemberChip } from "./MemberChip";
-import { faceLabel, memberBadge, type MemberBadge } from "../lib/memberBadges";
+import { buildMembership } from "../lib/familyMembership";
 import { faceKey } from "../lib/snapshotKey";
 import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useT } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
+import { notifyScrollActivity } from "../lib/scrollActivity";
 
 export function FontList({ families }: { families: Family[] }) {
   const t = useT();
@@ -25,44 +26,13 @@ export function FontList({ families }: { families: Family[] }) {
 
   /**
    * 字族 → 所属快照/分组胶囊（列表行是虚拟化的，批量算一次避免行内调 hook）。
-   * 胶囊除了名字还要带上「放进去几个字重」与具体字重清单，所以这里算的是 MemberBadge。
+   * 胶囊除了名字还要带上「放进去几个字重」与具体字重清单，所以算的是 MemberBadge。
+   * 具体实现抽到 lib/familyMembership.ts（纯函数、可单测），这里只负责传数据。
    */
-  const membership = useMemo(() => {
-    const map = new Map<string, { snaps: MemberBadge[]; colls: MemberBadge[] }>();
-    const ensure = (fam: string) => {
-      let rec = map.get(fam);
-      if (!rec) {
-        rec = { snaps: [], colls: [] };
-        map.set(fam, rec);
-      }
-      return rec;
-    };
-
-    for (const sn of snapshots) {
-      const byFamily = new Map<string, string[]>();
-      for (const e of sn.entries) {
-        const arr = byFamily.get(e.family) ?? [];
-        arr.push(faceLabel(e.style, e.key));
-        byFamily.set(e.family, arr);
-      }
-      for (const [fam, styles] of byFamily) ensure(fam).snaps.push(memberBadge(sn.name, styles));
-    }
-
-    for (const name of Object.keys(collections).sort((a, b) => a.localeCompare(b))) {
-      const whole = new Set(collections[name] ?? []);
-      const keys = new Set(collectionFaces[name] ?? []);
-      if (whole.size === 0 && keys.size === 0) continue;
-      for (const fam of families) {
-        const isWhole = whole.has(fam.name);
-        const styles = fam.faces
-          .filter((f) => isWhole || keys.has(faceKey(f)))
-          .map((f) => faceLabel(f.style, f.postscriptName));
-        if (!isWhole && styles.length === 0) continue;
-        ensure(fam.name).colls.push(memberBadge(name, styles));
-      }
-    }
-    return map;
-  }, [snapshots, collections, collectionFaces, families]);
+  const membership = useMemo(
+    () => buildMembership(families, snapshots, collections, collectionFaces, faceKey),
+    [snapshots, collections, collectionFaces, families],
+  );
 
   const virtualizer = useVirtualizer({
     count: families.length,
@@ -88,7 +58,7 @@ export function FontList({ families }: { families: Family[] }) {
         <span className="col-size">{t("list.size")}</span>
         <span className="col-status">{t("list.active")}</span>
       </div>
-      <div ref={parentRef} className="list-scroll">
+      <div ref={parentRef} className="list-scroll" onScroll={notifyScrollActivity}>
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((item) => {
             const fam = families[item.index];
