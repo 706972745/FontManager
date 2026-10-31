@@ -4,6 +4,52 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-2] — 2026-11-01
+
+> 开发版。把子集化剩下的空间补掉：**CFF/OTF 子集（覆盖 38.8% 体积）**、**hmtx 截断**，
+> 以及一个更重要的**行为修正**：自定义示例文字不再让整条子集路线失效。
+
+### 新增：CFF / OTF 列表子集
+
+- 与 glyf 同一思路：非目标 charstring 换成单字节 `endchar`，**gid 一个都不动**。
+  于是 charset / FDSelect / hmtx / cmap 里的 gid 全部不用重建，只重算 CFF 内部绝对偏移。
+- 实测（真实字体，FreeType 渲染逐像素 0/68400）：
+
+  | 字体 | 原 | 产物 | 占比 | 解码 |
+  |---|---|---|---|---|
+  | 康熙字典体 | 54.9 MB | 250 KB | 0.43% | 9.10 → 0.41 ms（22.5×） |
+  | 思源宋 Bold | 24.3 MB | 1.84 MB | 7.4% | 4.67 → 0.89 ms（5.3×） |
+  | 苹方黑体-极细 | 10.5 MB | 225 KB | 2.1% | 1.94 → 0.33 ms（5.9×） |
+  | Adobe Ming Std | 9.7 MB | 106 KB | 1.1% | 1.96 → 0.20 ms（9.9×） |
+
+- 保守边界：CFF2（可变字体）、`FDArray` 在 CharStrings 之前的排列、目标字符用 seac、
+  以及任何长度不收敛的情况，一律返回 None 回退完整链路。
+
+### 新增：hmtx 截断
+
+- `numberOfHMetrics` 截到「最大目标 gid + 1」，被截掉的都是空字形；同时改 `hhea` offset 34。
+- 省 15%~50%，取决于字符集里有没有中文族名。宝马 glyf 产物 286 KB → **199 KB**。
+
+### 修复：自定义示例文字导致整条子集失效
+
+- 旧规则是「示例文字与默认值不同 → 不走子集」。用户把默认的 `Hello IIEOzo` 改成
+  `Hello IIEOzoa` 之后，**所有大字体又回到 15ms 级首帧，且没有任何提示**。
+- 现在自定义文字照常走子集，只用 32 字符上限兜住「整段句子」那种输入。
+
+### 修复：速览里的族名回退成系统字体
+
+- 速览族名按界面语言从 `localizedNames` 取，可能就是另一串（`family.name` 之外）。
+  原来只把 `family.name` 放进字符集 → 中文界面下那串中文不在子集里。
+- 现在把所有语言的 `localizedNames`、以及 `style` 为空时字重行用的 `postscriptName` 都收进去。
+
+### 内部
+
+- 子集算法版本 `SUBSET_TAG` S2 → S5（老产物自动失效）。
+- 冒烟测试新增三条结构断言：产物 CFF 的 Top DICT 必须有 CharStrings 算子且数量 == numGlyphs、
+  `hmtx` 长度与 `numberOfHMetrics` 自洽、CharStrings 不能全空。
+  —— 缺了这些，`usize::to_be_bytes()` 是 8 字节这种错误会让「体积和 cmap 断言全过、字体其实是坏的」。
+- 单测 194 → 197。
+
 ## [1.0.0-1] — 2026-11-01
 
 > 开发版。把交接文档里两条「条件路线」落地：**列表专用子集化（§12，默认开启）** 与
