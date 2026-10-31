@@ -5439,6 +5439,8 @@ body.ui-fade-out .app-frame {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 17px;
+  /* 与完整界面 .card-name 同口径：界面字体 + 600，不跟随字体本身 */
+  font-weight: 600;
   line-height: 1.3;
 }
 /* 预览文本：与完整界面主列表 card-preview 同款（示例文本 + 可调字号），右缘渐隐 */

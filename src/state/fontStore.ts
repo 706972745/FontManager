@@ -2544,23 +2544,75 @@ export const useFontStore = create<FontStore>((set, get) => ({
       ),
       sessionActivated: prevSession.filter((n) => !families.includes(n)),
     });
+
+    // 和快照应用走同一条分批路（§12 高压测试发现）：
+    // 一次 `AddFontResourceW` 约 0.3~0.5 秒，245 族 588 个字面若一次性丢给后端，
+    // 窗口会连续 160 秒不响应（实测 UI 探测 144/158 次超时）。
+    // 分批后每批之间让出事件循环，进度条 + 取消也一并复用快照那套。
+    const batches = planBatches(active ? [] : paths, active ? paths : []);
+    const total = paths.length;
+    const applied: ApplyBatch[] = [];
+    useFontStore.setState({
+      applyBusy: true,
+      applyProgress: { done: 0, total, undo: false },
+      applyCancelled: false,
+    });
+    let outcome: Awaited<ReturnType<typeof runBatches>>;
     try {
-      await ipc.setFontsActive(paths, active);
+      outcome = await runBatches({
+        batches,
+        apply: async (batch, noSave) => {
+          await ipc.setFontsActive(batch.paths, batch.active, noSave);
+          applied.push(batch);
+        },
+        // 中间批次都跳过了存盘，取消/失败时必须补这一次
+        flush: () => ipc.setFontsActive([], true, false),
+        onProgress: (done, all) =>
+          useFontStore.setState({ applyProgress: { done, total: all, undo: false } }),
+        isCancelled: () => useFontStore.getState().applyCancelled,
+      });
+    } finally {
+      useFontStore.setState({ applyBusy: false, applyProgress: null });
+    }
+
+    if (outcome.status === "cancelled") {
+      // 取消只停下的话，系统里会停在「一半启用一半没有」的中途状态：
+      // 已做过的保留（记住批次以便一键回退），没轮到的就地退回原值。
+      const touched = new Set<string>();
+      for (const b of applied) for (const p of b.paths) touched.add(p);
+      set({
+        fonts: get().fonts.map((f) =>
+          paths.includes(f.path) && !touched.has(f.path) ? { ...f, active: !active } : f,
+        ),
+      });
+      undoPending = applied;
+      useFontStore.setState({
+        applyNotice: {
+          done: applied.reduce((n, b) => n + b.paths.length, 0),
+          total,
+        },
+      });
       persistPrefs(get);
-      toast.success(
-        t(active ? "toast.activatedCount" : "toast.deactivatedCount", {
-          count: families.length,
-        }),
-        undefined,
-        undefined,
-        { label: t("toast.undo"), run: () => void get().setFamiliesActiveBulk(families, !active) },
-      );
-    } catch (e) {
+      return;
+    }
+
+    if (outcome.status === "failed") {
       set({ sessionActivated: prevSession });
-      toast.error(t("toast.bulkUpdateFailed"), String(e));
+      toast.error(t("toast.bulkUpdateFailed"), String(outcome.error));
       await get().rescan();
       persistPrefs(get);
+      return;
     }
+
+    persistPrefs(get);
+    toast.success(
+      t(active ? "toast.activatedCount" : "toast.deactivatedCount", {
+        count: families.length,
+      }),
+      undefined,
+      undefined,
+      { label: t("toast.undo"), run: () => void get().setFamiliesActiveBulk(families, !active) },
+    );
   },
 
   applyFamilyInApp: async (family, app) => {
