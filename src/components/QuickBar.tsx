@@ -10,7 +10,8 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { easeTop, staggerDelay, spring } from "../design/springs";
 import { MemberChip } from "./MemberChip";
@@ -403,6 +404,23 @@ export function QuickBar() {
     charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus,
   ]);
 
+  /**
+   * 速览列表虚拟化。
+   *
+   * 以前这里是 `families.map(...)` —— 字体库 4211 个族就是 **4211 个 QuickItem 全部挂载**：
+   * 每个组件有 6 个 store 订阅、十几个 DOM 节点，只靠 CSS `content-visibility` 跳过绘制。
+   * 现在只渲染视口 + 上下各 4 条，DOM、React 组件、字体加载都跟着视口走。
+   * 行高不固定（有的带成员胶囊、有的带版权原文），用 measureElement 实测。
+   */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: families.length,
+    getScrollElement: () => bodyRef.current,
+    estimateSize: () => 104,
+    overscan: 4,
+    getItemKey: (i) => families[i].name,
+  });
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -590,16 +608,37 @@ export function QuickBar() {
 
           {/* 滚动容器是 .qb-body（overflow-y:auto）；.qb-list 只是 flex 列，
               事件挂在它身上收不到 scroll —— 0.9.9-23 第一次接就踩了这个坑 */}
-          <div className="qb-body" >
+          <div className="qb-body" ref={bodyRef}>
             {families.length === 0 ? (
               <p className="qb-empty">
                 {enabledCount > 0 ? t("empty.search.title") : t("quickbar.empty")}
               </p>
             ) : (
-              <div className="qb-list">
-                {families.map((family, i) => (
-                  <QuickItem key={family.name} family={family} index={i} />
-                ))}
+              <div
+                className="qb-list"
+                style={{ height: virtualizer.getTotalSize() }}
+              >
+                {virtualizer.getVirtualItems().map((row) => {
+                  const family = families[row.index];
+                  if (!family) return null;
+                  return (
+                    <div
+                      key={row.key}
+                      data-index={row.index}
+                      ref={virtualizer.measureElement}
+                      className="qb-row"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${row.start}px)`,
+                      }}
+                    >
+                      <QuickItem family={family} index={row.index} />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -4,6 +4,36 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.9-25] — 2026-10-31
+
+### 性能：速览列表虚拟化 —— 4211 个字族只挂载视口内的十几行
+
+用户拒绝恢复快照，点名要「展示只渲染部分需要，后面的需要再渲染」。这次把这条路走完：
+
+**改动**
+
+- `QuickBar.tsx` 接入 `@tanstack/react-virtual`（主界面的 `FontGrid`/`FontList` 早已虚拟化，
+  速览是最后一个全量挂载的地方）：以前 `families.map(...)` 把 4211 个 `QuickItem`
+  （每个 6 个 store 订阅 + 十几个 DOM 节点）全部挂上，只靠 CSS `content-visibility` 跳过绘制；
+  现在只渲染视口 ±4 行（`overscan: 4`），DOM、React 组件、字体加载全部跟着视口走。
+- 行高不固定（有的带成员胶囊、有的带版权原文），用 `measureElement` 实测；
+  `.qb-list` 从 `flex` 列改成 `position: relative` + 子项绝对定位（`translateY(row.start)`），
+  行间距挪进 `.qb-row { padding-bottom: 8px }`，保证实测行高已含间距。
+- **坑（0.9.9-23 第一次接时踩过）**：滚动容器是 `.qb-body`（`overflow-y:auto`），
+  `.qb-list` 只是内容层，滚动事件必须挂 `bodyRef`。
+
+**真机验证**（`qa-2026-10-31/v25_*.json`，NSIS 安装版）
+
+- 速览展开后 UIA 只见到 11~16 个字族行；连滚 75 格，行名字从 Sitka/Segoe UI 一路换到
+  Clarendon BT/Microsoft New Tai Lue，行数始终恒定 —— 内容跟着视口走，不是跟着历史走。
+- 主界面卡片数同样恒定：滚动前后 12/19/18/12 张，回到顶部首屏与最初完全一致。
+- **预览无空白**：视口内每张卡的示例行墨水量 249~4205 px，各卡片预览位图两两差异均值 32.4
+  （全部回退系统字体的话会趋近 0）。「空白」的卡片全部位于视口外（虚拟列表 overscan 渲染了 DOM
+  但被窗口裁剪），属正常；「无拉丁文」提示顶替示例文字也是 0.9.3 起的既定交互。
+- 内存：静止基线 ~830 MB（9 进程）→ 重滚面板峰值 1747 MB → 静置 75 秒回落到 1093 MB。
+  峰值是 Chromium 字形缓存，压力下会吐，不随历史单调上涨，无泄漏迹象。
+- `npx tsc --noEmit` 干净；`node --test` 163 条全过；9 个 locale 全部齐键。
+
 ## [0.9.9-24] — 2026-10-31
 
 ### 修复：0.9.9-23 引入的「卡片预览一直是空的」
