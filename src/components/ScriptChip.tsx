@@ -39,7 +39,7 @@ export function ScriptChip({
     : t("card.partialScriptTitle", { script: names.join(" / ") });
 
   return (
-    <span className={`script-note ${className ?? ""}`.trim()} title={title}>
+    <span className={`script-note ${className ?? ""}`.trim()} data-hint-text={title}>
       {label}
       {hint ? <span className="script-hint">{hint}</span> : null}
     </span>

@@ -356,21 +356,27 @@ export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
     items.push({ kind: "separator" });
   }
 
-  if (snapshots.length > 0) {
-    items.push(
-      { kind: "heading", label: t("menu.snapshots") },
-      ...[...snapshots]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map(
-          (sn): MenuItem => ({
-            kind: "check",
-            label: sn.name,
-            checked: sn.entries.some((e) => e.key === key),
-            action: () => void s.toggleFaceInSnapshot(sn.name, face.id),
-          }),
-        ),
-      { kind: "separator" },
-    );
+  // 和分组同一套：即使一个快照都没有，也给「新建快照…」入口（速览里不给新建）
+  if (snapshots.length > 0 || !s.quickbar) {
+    items.push({ kind: "heading", label: t("menu.snapshots") });
+    for (const sn of [...snapshots].sort((a, b) => a.name.localeCompare(b.name))) {
+      items.push({
+        kind: "check",
+        label: sn.name,
+        checked: sn.entries.some((e) => e.key === key),
+        action: () => void s.toggleFaceInSnapshot(sn.name, face.id),
+      });
+    }
+    if (!s.quickbar) {
+      items.push({
+        label: t("menu.newSnapshot"),
+        icon: <Plus size={14} strokeWidth={1.5} />,
+        // 从字重进来的「新建快照」只放这个字重，不把整族拖进去
+        action: () =>
+          useFontStore.setState({ pendingSnapshotFor: face.family, pendingSnapshotFace: key }),
+      });
+    }
+    items.push({ kind: "separator" });
   }
 
   if (s.adobeAvailable) {

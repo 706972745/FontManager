@@ -1,10 +1,12 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Camera, Folder } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { formatBytes } from "../lib/fontLoader";
 import { useFontStore, type Family } from "../state/fontStore";
 import { FormatBadge } from "./FamilyCard";
+import { MemberChip } from "./MemberChip";
+import { faceLabel, memberBadge, type MemberBadge } from "../lib/memberBadges";
+import { faceKey } from "../lib/snapshotKey";
 import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useT } from "../lib/i18n";
@@ -19,26 +21,48 @@ export function FontList({ families }: { families: Family[] }) {
   const selection = useFontStore((s) => s.selection);
   const snapshots = useFontStore((s) => s.snapshots);
   const collections = useFontStore((s) => s.collections);
+  const collectionFaces = useFontStore((s) => s.collectionFaces);
 
-  // 字族 → 所属快照/分组（列表行是虚拟化的，批量算一次避免行内调 hook）
+  /**
+   * 字族 → 所属快照/分组胶囊（列表行是虚拟化的，批量算一次避免行内调 hook）。
+   * 胶囊除了名字还要带上「放进去几个字重」与具体字重清单，所以这里算的是 MemberBadge。
+   */
   const membership = useMemo(() => {
-    const map = new Map<string, { snaps: string[]; colls: string[] }>();
-    for (const sn of snapshots) {
-      for (const e of sn.entries) {
-        const rec = map.get(e.family) ?? { snaps: [], colls: [] };
-        if (!rec.snaps.includes(sn.name)) rec.snaps.push(sn.name);
-        map.set(e.family, rec);
-      }
-    }
-    for (const [name, members] of Object.entries(collections)) {
-      for (const fam of members) {
-        const rec = map.get(fam) ?? { snaps: [], colls: [] };
-        if (!rec.colls.includes(name)) rec.colls.push(name);
+    const map = new Map<string, { snaps: MemberBadge[]; colls: MemberBadge[] }>();
+    const ensure = (fam: string) => {
+      let rec = map.get(fam);
+      if (!rec) {
+        rec = { snaps: [], colls: [] };
         map.set(fam, rec);
+      }
+      return rec;
+    };
+
+    for (const sn of snapshots) {
+      const byFamily = new Map<string, string[]>();
+      for (const e of sn.entries) {
+        const arr = byFamily.get(e.family) ?? [];
+        arr.push(faceLabel(e.style, e.key));
+        byFamily.set(e.family, arr);
+      }
+      for (const [fam, styles] of byFamily) ensure(fam).snaps.push(memberBadge(sn.name, styles));
+    }
+
+    for (const name of Object.keys(collections).sort((a, b) => a.localeCompare(b))) {
+      const whole = new Set(collections[name] ?? []);
+      const keys = new Set(collectionFaces[name] ?? []);
+      if (whole.size === 0 && keys.size === 0) continue;
+      for (const fam of families) {
+        const isWhole = whole.has(fam.name);
+        const styles = fam.faces
+          .filter((f) => isWhole || keys.has(faceKey(f)))
+          .map((f) => faceLabel(f.style, f.postscriptName));
+        if (!isWhole && styles.length === 0) continue;
+        ensure(fam.name).colls.push(memberBadge(name, styles));
       }
     }
     return map;
-  }, [snapshots, collections]);
+  }, [snapshots, collections, collectionFaces, families]);
 
   const virtualizer = useVirtualizer({
     count: families.length,
@@ -118,25 +142,11 @@ export function FontList({ families }: { families: Family[] }) {
                   <span className="row-name-text">{displayName(fam)}</span>
                   {hasMem && (
                     <span className="row-members">
-                      {mem!.snaps.map((n) => (
-                        <span
-                          key={`snap-${n}`}
-                          className="member-chip member-chip-snap"
-                          title={t("card.inSnapshot", { name: n })}
-                        >
-                          <Camera size={9} strokeWidth={1.75} />
-                          {n}
-                        </span>
+                      {mem!.snaps.map((b) => (
+                        <MemberChip key={`snap-${b.name}`} badge={b} kind="snap" iconSize={9} />
                       ))}
-                      {mem!.colls.map((n) => (
-                        <span
-                          key={`coll-${n}`}
-                          className="member-chip member-chip-coll"
-                          title={t("card.inCollection", { name: n })}
-                        >
-                          <Folder size={9} strokeWidth={1.75} />
-                          {n}
-                        </span>
+                      {mem!.colls.map((b) => (
+                        <MemberChip key={`coll-${b.name}`} badge={b} kind="coll" iconSize={9} />
                       ))}
                     </span>
                   )}

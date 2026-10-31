@@ -46,6 +46,8 @@ interface Shown {
  * 会直接压住输入内容 —— 所以焦点在里面时不弹。滑条 / 勾选框不算「打字」，
  * 它们获得焦点后照样该能看到说明。
  */
+const HINT_SELECTOR = "[data-hint],[data-hint-text]";
+
 function isTypingTarget(el: Element | null): boolean {
   if (!el) return false;
   if (el instanceof HTMLTextAreaElement) return true;
@@ -143,11 +145,13 @@ export function HoverHintHost() {
       if (suppressed()) return;
       // 悬停的正是用户正在输入的那个框：别弹，会挡住正在敲的字
       if (el === document.activeElement && isTypingTarget(el)) return;
+      // data-hint 是 i18n 键；data-hint-text 是**已经拼好的动态文案**（例：胶囊里塞了哪几个字重）
       const key = el.getAttribute("data-hint");
-      if (!key) return;
+      const literal = el.getAttribute("data-hint-text");
+      if (!key && !literal) return;
       const r = el.getBoundingClientRect();
       const next: Shown = {
-        text: t(key as TKey),
+        text: literal ?? t(key as TKey),
         rect: { left: r.left, top: r.top, width: r.width, height: r.height },
       };
       shownEl = el;
@@ -158,7 +162,7 @@ export function HoverHintHost() {
     const onOver = (e: PointerEvent) => {
       // 触屏 / 触控笔没有"悬停"概念，弹出来反而挡视线
       if (e.pointerType && e.pointerType !== "mouse") return;
-      const el = (e.target as Element | null)?.closest?.("[data-hint]") as HTMLElement | null;
+      const el = (e.target as Element | null)?.closest?.(HINT_SELECTOR) as HTMLElement | null;
 
       // 在同一个按钮内部（图标 → 文字）移动：不算离开，也不重新计时
       const from = e.relatedTarget as Element | null;
@@ -183,8 +187,8 @@ export function HoverHintHost() {
       const to = e.relatedTarget as Element | null;
       const keep =
         to &&
-        ((pending && to.closest?.("[data-hint]") === pending) ||
-          (shownEl && to.closest?.("[data-hint]") === shownEl));
+        ((pending && to.closest?.(HINT_SELECTOR) === pending) ||
+          (shownEl && to.closest?.(HINT_SELECTOR) === shownEl));
       if (keep) return;
       hide();
     };

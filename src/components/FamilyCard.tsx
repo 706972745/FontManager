@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Camera, ChevronRight, Folder, Lock, Star } from "lucide-react";
+import { AlertTriangle, ChevronRight, Lock, Star } from "lucide-react";
 import { memo, useMemo, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { spring, springSnappy, springSoft } from "../design/springs";
@@ -10,11 +10,14 @@ import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
 import { useCjkSibling } from "../lib/cjkSiblings";
 import { ScriptChip } from "./ScriptChip";
 import { FaceLine, faceLineFontSize } from "./FaceLine";
+import { MemberChip } from "./MemberChip";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
-import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
+import { copyrightExpired } from "../lib/license";
+import { familyCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
 import { faceKey } from "../lib/snapshotKey";
 import { collectionFaceScope } from "../lib/collectionScope";
+import { styleScope, styleScopeLabel } from "../lib/styleScope";
 import { playStar } from "../lib/sound";
 import type { FontFace } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
@@ -70,7 +73,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const toggleFavorite = useFontStore((s) => s.toggleFavorite);
   const hasActiveConflict = useFontStore((s) => activeConflictsFor(s.fonts).has(family.name));
   const hasDormantConflict = useFontStore((s) => conflictsFor(s.fonts).has(family.name));
-  const { inSnapshots, inCollections } = useFamilyMembership(family.name);
+  const { snapshotBadges, collectionBadges } = useFamilyMembership(family.name, family.faces);
   const copyrightOverride = useFontStore((s) => s.copyrightStatus[family.name]);
   const copyrightExpiry = useFontStore((s) => s.copyrightExpiry[family.name]);
   const [expanded, setExpanded] = useState(false);
@@ -130,6 +133,12 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const onCount = family.activeCount ?? family.faces.filter((f) => f.active).length;
   const partial = onCount > 0 && onCount < family.faces.length;
 
+  /**
+   * 「N 种样式」的数字口径（用户 2026-10-31：快照里只有 1 个字重，头部却写「4 种样式」）。
+   * 收窄时写「1/4 种样式」，全部字重都在时才写「4 种样式」。
+   */
+  const scope = useMemo(() => styleScope(shownFaces, family.faces), [shownFaces, family.faces]);
+
   const size = SIZES[sizeIndex];  const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   // 示例文字用到哪些语言文字、这款字体画不画得出（用户没输入时不标注）
   const probeText = sampleText.trim();
@@ -143,11 +152,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const { fontFamily, failed } = useFontCss(previewFace);
   const text = sampleText.trim() || family.name;
   // 权重：手动设置 > 字体自带版权信息 > 文件夹备注 / 版权信息文件判定的版权
-  const licCls = effectiveCopyrightClass(
-    lead.license ?? null,
-    copyrightOverride,
-    lead.copyrightClass ?? null,
-  );
+  // 与筛选同一口径（`familyCopyrightClass`），否则「勾了商用免费却筛出标着未知的卡」
+  const licCls = familyCopyrightClass(family.faces, copyrightOverride);
   const licExpired = licCls === "timelimited" && copyrightExpired(copyrightExpiry);
   const licKey = `copyright.${licCls}` as TKey;
   const licTitle = licExpired
@@ -192,13 +198,13 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
         <span className="card-name">{displayName(family)}</span>
         {/* 字面级损坏：部分字重坏了要标出来，但字族本身还能用 */}
         {family.brokenFaces > 0 && (
-          <span className="card-broken" title={family.incompleteReason ?? undefined}>
+          <span className="card-broken" data-hint-text={family.incompleteReason ?? undefined}>
             {family.brokenAll
               ? t("card.brokenAll")
               : t("card.brokenSome", { count: family.brokenFaces, total: family.faces.length })}
           </span>
         )}
-        {(family.uniqueFaces ?? family.faces).length > 1 && (
+        {scope.total > 1 && (
           <motion.button
             data-hint={partial ? "hint.partialStyles" : "hint.expandStyles"}
             className="card-expand"
@@ -219,25 +225,31 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
               <ChevronRight size={13} strokeWidth={1.5} />
             </motion.span>
             <span className="tabular">
-              {/* 同名字面在系统 + 库里各一份时只算一种样式，否则会写「6 种样式」实际只有 3 种 */}
-              {partial
-                ? /* 只启用了其中几个字重：写「5/34 已启用」，比「34 种样式」更能说明当前状态 */
-                  t("card.stylesPartial", { active: onCount, total: family.faces.length })
-                : t("card.stylesCount", { count: (family.uniqueFaces ?? family.faces).length })}
+              {/* 同名字面在系统 + 库里各一份时只算一种样式，否则会写「6 种样式」实际只有 3 种；
+                  被快照 / 分组收窄时写「1/4 种样式」，与下面实际列出的行数对上 */}
+              {styleScopeLabel(
+                scope,
+                partial ? { active: onCount, total: family.faces.length } : null,
+                {
+                  scoped: (shown, total) => t("card.stylesScoped", { shown, total }),
+                  partial: (active, total) => t("card.stylesPartial", { active, total }),
+                  count: (count) => t("card.stylesCount", { count }),
+                },
+              )}
             </span>
           </motion.button>
         )}
         <span className="card-spacer" />
         <span
           className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`}
-          title={licTitle}
+          data-hint-text={licTitle}
         >
           {t(licKey)}
         </span>
         {hasActiveConflict ? (
           <span
             className="conflict-badge"
-            title=""
+           
             aria-label={t("card.conflict")}
           >
             <AlertTriangle size={13} strokeWidth={1.5} />
@@ -246,7 +258,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
           hasDormantConflict && (
             <span
               className="conflict-badge conflict-badge-dormant"
-              title=""
+             
               aria-label={t("card.conflictResolved")}
             >
               <AlertTriangle size={13} strokeWidth={1.5} />
@@ -274,34 +286,20 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
             label={t(family.active ? "card.deactivate" : "card.activate", { name: family.name })}
           />
         ) : (
-          <span className="card-os-lock" title={t("card.osManaged")} aria-label={t("card.osManaged")}>
+          <span className="card-os-lock" data-hint-text={t("card.osManaged")} aria-label={t("card.osManaged")}>
             <Lock size={11} strokeWidth={1.75} />
             {t("card.osManagedShort")}
           </span>
         )}
       </header>
 
-      {(inSnapshots.length > 0 || inCollections.length > 0) && (
+      {(snapshotBadges.length > 0 || collectionBadges.length > 0) && (
         <div className="card-members" onClick={(e) => e.stopPropagation()}>
-          {inSnapshots.map((n) => (
-            <span
-              key={`snap-${n}`}
-              className="member-chip member-chip-snap"
-              title={t("card.inSnapshot", { name: n })}
-            >
-              <Camera size={10} strokeWidth={1.75} />
-              {n}
-            </span>
+          {snapshotBadges.map((b) => (
+            <MemberChip key={`snap-${b.name}`} badge={b} kind="snap" />
           ))}
-          {inCollections.map((n) => (
-            <span
-              key={`coll-${n}`}
-              className="member-chip member-chip-coll"
-              title={t("card.inCollection", { name: n })}
-            >
-              <Folder size={10} strokeWidth={1.75} />
-              {n}
-            </span>
+          {collectionBadges.map((b) => (
+            <MemberChip key={`coll-${b.name}`} badge={b} kind="coll" />
           ))}
         </div>
       )}
@@ -357,6 +355,9 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
         {expanded && (
           <motion.div
             className="card-styles"
+            /* 字重区里的点击不要冒泡到卡片（用户 2026-10-31）：这里是逐字重操作的区域，
+               点空白/点行都会把卡片选中或取消，导致详情面板被反复开关，没法在这儿多选 */
+            onClick={(e) => e.stopPropagation()}
             /* 字重名的大小跟着上面的示例字号走（完整界面取 1/4） */
             style={{ "--face-line-size": faceLineFontSize(size, 4) } as CSSProperties}
             initial={{ height: 0, opacity: 0 }}

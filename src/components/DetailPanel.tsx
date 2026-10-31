@@ -111,7 +111,7 @@ function StyleRow({
         tabIndex={0}
         className="style-export"
         aria-label={t("menu.faceActions", { name: face.style })}
-        title={t("menu.faceActions", { name: face.style })}
+        data-hint-text={t("menu.faceActions", { name: face.style })}
         onClick={(e) => {
           e.stopPropagation();
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -190,7 +190,7 @@ function FeatureChips({
               key={tag}
               className={`feat-chip ${on ? "feat-on" : ""}`}
               aria-pressed={on}
-              title={tag}
+              data-hint-text={tag}
               onClick={() => onToggle(tag)}
               whileTap={{ scale: 0.96 }}
             >
@@ -472,7 +472,7 @@ function CopyrightStatusSection({ family }: { family: string }) {
               className="copyright-expiry-clear"
               onClick={() => setCopyrightExpiry(family, null)}
               aria-label={t("copyright.clearExpiry")}
-              title={t("copyright.clearExpiry")}
+              data-hint-text={t("copyright.clearExpiry")}
             >
               <X size={12} strokeWidth={1.5} />
             </button>
@@ -602,7 +602,7 @@ function ConflictFileCard({ path }: { path: string }) {
         onClick={() =>
           revealItemInDir(path).catch(() => toast.error(t("toast.couldntOpenFileManager")))
         }
-        title={path}
+        data-hint-text={path}
       >
         <FolderOpen size={11} strokeWidth={1.5} />
         <span className="conflict-file-name">{pathBasename(path)}</span>
@@ -939,7 +939,7 @@ export function DetailPanel() {
               <button
                 className="detail-title copy-name"
                 onClick={() => copyName(family.name, t("copy.familyName"))}
-                title={t("detail.copyNameHint")}
+                data-hint-text={t("detail.copyNameHint")}
               >
                 {displayName(family)}
               </button>
@@ -1028,7 +1028,7 @@ export function DetailPanel() {
                 <div className="detail-snap-list">
                   {snapshotToggles.map((sn) => (
                     <div key={sn.name} className="detail-snap-row">
-                      <span className="detail-snap-name" title={sn.name}>
+                      <span className="detail-snap-name" data-hint-text={sn.name}>
                         {sn.name}
                       </span>
                       <PillToggle
@@ -1162,7 +1162,7 @@ export function DetailPanel() {
                         onClick={() =>
                           copyName(lead.postscriptName as string, t("copy.postscriptName"))
                         }
-                        title={t("detail.copyNameHint")}
+                        data-hint-text={t("detail.copyNameHint")}
                       >
                         {lead.postscriptName}
                       </button>
@@ -1180,7 +1180,7 @@ export function DetailPanel() {
                           key={`${f.dir}|${f.name}`}
                           type="button"
                           className="license-file-link"
-                          title={t("detail.licenseFileOpen", { file: f.name })}
+                          data-hint-text={t("detail.licenseFileOpen", { file: f.name })}
                           onClick={() => void openLicenseFile(f)}
                         >
                           {f.name}
@@ -1196,7 +1196,7 @@ export function DetailPanel() {
                         className="license-file-search"
                         onClick={() => void searchLicense()}
                         disabled={licenseSearching}
-                        title={t("detail.licenseSearchHint")}
+                        data-hint-text={t("detail.licenseSearchHint")}
                       >
                         <Search size={11} strokeWidth={1.5} />
                         {licenseSearching ? t("detail.licenseSearching") : t("detail.licenseSearch")}
@@ -1211,7 +1211,7 @@ export function DetailPanel() {
                     onClick={() =>
                       revealItemInDir(lead.path).catch(() => toast.error(t("toast.couldntOpenFileManager")))
                     }
-                    title={lead.path}
+                    data-hint-text={lead.path}
                   >
                     <FolderOpen size={11} strokeWidth={1.5} />
                     <span>{lead.path}</span>

@@ -2,9 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { motion } from "motion/react";
 import {
-  Camera,
   ChevronRight,
-  Folder,
   Minimize2,
   Pin,
   PinOff,
@@ -15,13 +13,16 @@ import {
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { easeTop, staggerDelay, spring } from "../design/springs";
+import { MemberChip } from "./MemberChip";
 import { useFontCss } from "../lib/fontLoader";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
+import { styleScope } from "../lib/styleScope";
 import { ScriptChip } from "./ScriptChip";
 import { FaceLine, faceLineFontSize } from "./FaceLine";
 import { useT, type TKey } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
-import { copyrightExpired, effectiveCopyrightClass } from "../lib/license";
+import { copyrightExpired } from "../lib/license";
+import { familyCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
 import { buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
@@ -82,7 +83,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   // 版权状态：手动设置优先，否则按版权信息自动识别（与完整界面卡片一致）
   const copyrightOverride = useFontStore((s) => s.copyrightStatus[family.name]);
   const copyrightExpiry = useFontStore((s) => s.copyrightExpiry[family.name]);
-  const { inSnapshots, inCollections } = useFamilyMembership(family.name);
+  const { snapshotBadges, collectionBadges } = useFamilyMembership(family.name, family.faces);
   const size = SIZES[sizeIndex];
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   /**
@@ -92,6 +93,8 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
    */
   const enabledFaces = family.faces.filter((f) => f.active);
   const visibleFaces = enabledFaces.length > 0 ? enabledFaces : family.faces;
+  /** 与完整界面同一口径：只列出部分字重时，旁边的数字写成「1/4」而不是光一个「1」 */
+  const scope = styleScope(visibleFaces, family.faces);
   // 首屏这几张立刻加载字体；其余等滚动到附近再说，避免上千个 FontFace 一起加载
   const [itemRef, inView] = useInView<HTMLDivElement>();
   /** 鼠标正悬停的字重行：卡片预览临时用它渲染，移开恢复 Regular（与完整界面一致） */
@@ -107,11 +110,8 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const scriptStatus = useScriptStatus(lead, probeText);
 
   // 权重：手动设置 > 字体自带版权信息 > 文件夹备注 / 版权信息文件判定的版权
-  const licCls = effectiveCopyrightClass(
-    lead.license ?? null,
-    copyrightOverride,
-    lead.copyrightClass ?? null,
-  );
+  // 与筛选同一口径（`familyCopyrightClass`），否则「勾了商用免费却筛出标着未知的卡」
+  const licCls = familyCopyrightClass(family.faces, copyrightOverride);
   const licExpired = licCls === "timelimited" && copyrightExpired(copyrightExpiry);
   const licTitle = licExpired
     ? `${t("copyright.expiryDate")}: ${copyrightExpiry} — ${t("copyright.expired")}`
@@ -121,7 +121,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   // 版权原文：优先字形版权声明，退回到许可文本（与详情面板「版权信息」一致）
   const copyright = family.copyright || family.license || lead.copyright || lead.license || "";
   const hasChips =
-    family.tags.length > 0 || inSnapshots.length > 0 || inCollections.length > 0;
+    family.tags.length > 0 || snapshotBadges.length > 0 || collectionBadges.length > 0;
 
   // 窗口形变期间一律不动：此时只有窗口自己在变大变小，内容再逐个入场会显得抖
   const intro = useIntro();
@@ -147,7 +147,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       role="button"
       tabIndex={0}
       className="qb-item"
-      title={t("quickbar.copyHint", { name: family.name })}
+      data-hint-text={t("quickbar.copyHint", { name: family.name })}
       onClick={() => copyText(family.name, t("copy.familyName"))}
       onKeyDown={(e) => {
         // div[role=button] 不会自己响应键盘：Enter / Space 得手动接（§5 第 31 条）。
@@ -199,10 +199,10 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
           )}
         </span>
         <span className="qb-item-aside">
-          <span className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`} title={licTitle}>
+          <span className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`} data-hint-text={licTitle}>
             {t(`copyright.${licCls}` as TKey)}
           </span>
-          {visibleFaces.length > 1 && (
+          {scope.total > 1 && (
             <button
               data-hint="hint.qbExpand"
               type="button"
@@ -226,7 +226,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
                   transition: "transform 140ms ease",
                 }}
               />
-              {visibleFaces.length}
+              {scope.narrowed ? `${scope.shown}/${scope.total}` : scope.shown}
             </button>
           )}
         </span>
@@ -239,17 +239,11 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
               {tag}
             </span>
           ))}
-          {inSnapshots.map((name) => (
-            <span key={`snap-${name}`} className="member-chip member-chip-snap qb-chip" title={t("card.inSnapshot", { name })}>
-              <Camera size={10} strokeWidth={1.75} />
-              {name}
-            </span>
+          {snapshotBadges.map((b) => (
+            <MemberChip key={`snap-${b.name}`} badge={b} kind="snap" className="qb-chip" />
           ))}
-          {inCollections.map((name) => (
-            <span key={`coll-${name}`} className="member-chip member-chip-coll qb-chip" title={t("card.inCollection", { name })}>
-              <Folder size={10} strokeWidth={1.75} />
-              {name}
-            </span>
+          {collectionBadges.map((b) => (
+            <MemberChip key={`coll-${b.name}`} badge={b} kind="coll" className="qb-chip" />
           ))}
         </span>
       )}
@@ -464,7 +458,7 @@ export function QuickBar() {
         className="qb-grip"
         onPointerDown={dragWindow}
         data-collapsed={docked ? "true" : undefined}
-        title={docked ? dockHint : undefined}
+        data-hint-text={docked ? dockHint : undefined}
       >
         <span className="qb-grip-bar" />
       </div>
@@ -475,7 +469,7 @@ export function QuickBar() {
           role="button"
           tabIndex={0}
           onPointerDown={dragWindow}
-          title={dockHint}
+          data-hint-text={dockHint}
           onKeyDown={(e) => {
             // 收起态这条也是「入口」：键盘用户必须能把它叫出来（§5 第 31 条）
             if (e.key !== "Enter" && e.key !== " ") return;

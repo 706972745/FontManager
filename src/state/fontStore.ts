@@ -40,7 +40,7 @@ import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
 import { familyActivation, pathsToToggle } from "../lib/familyState";
 import { DEFAULT_HOTKEY, normalizeHotkey, type HotkeySpec } from "../lib/hotkey";
 import { cjkKnown } from "../lib/cjk";
-import { effectiveCopyrightClass } from "../lib/license";
+import { familyCopyrightClass } from "../lib/license";
 import {
   dropRedundantCopies,
   planBatches,
@@ -331,6 +331,8 @@ interface FontStore {
   pendingCollectionFace: string | null;
 
   pendingSnapshotFor: string | null;
+  /** 从字重菜单「新建快照…」进来的那个字重（faceKey）：建快照时只放它，不放整族 */
+  pendingSnapshotFace: string | null;
 
   duplicateReport: { names: string[]; at: number } | null;
 
@@ -1183,6 +1185,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   pendingCollectionFor: null,
   pendingCollectionFace: null,
   pendingSnapshotFor: null,
+  pendingSnapshotFace: null,
   duplicateReport: null,
 
   init: async () => {
@@ -2064,36 +2067,56 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // 最多 5 个（用户 2026-10-30）：满了就明确提醒，不再悄悄淘汰最旧的
     if (get().snapshots.length >= SNAPSHOT_LIMIT) {
       toast.error(t("toast.snapshotLimitReached"), t("toast.snapshotLimitSub", { max: SNAPSHOT_LIMIT }));
-      useFontStore.setState({ pendingSnapshotFor: null });
+      useFontStore.setState({ pendingSnapshotFor: null, pendingSnapshotFace: null });
       return;
     }
     const prev = get().snapshots;
     const prevPending = get().pendingSnapshotFor;
+    const prevPendingFace = get().pendingSnapshotFace;
     const family = prevPending;
+    // 从字重菜单「新建快照…」进来时只放这个字重（pendingSnapshotFor 只用来唤起侧栏输入框），
+    // 语义与 createCollection 的 pendingCollectionFace 一致
+    const pendingFaceKey = prevPendingFace;
     const seen = new Set<string>();
     const entries: SnapshotEntry[] = [];
     for (const f of get().fonts) {
-      const wanted = family ? f.family === family && f.deactivatable : f.active;
+      const wanted = pendingFaceKey
+        ? faceKey(f) === pendingFaceKey
+        : family
+          ? f.family === family && f.deactivatable
+          : f.active;
       const entry = entryFromFace(f);
       if (!wanted || seen.has(entry.key)) continue;
       seen.add(entry.key);
       entries.push(entry);
     }
-    set({ snapshots: [...prev, { name: clean, createdAt: Date.now(), entries }], pendingSnapshotFor: null });
+    set({
+      snapshots: [...prev, { name: clean, createdAt: Date.now(), entries }],
+      pendingSnapshotFor: null,
+      pendingSnapshotFace: null,
+    });
     try {
       const saved = await ipc.saveSnapshot({ name: clean, createdAt: Date.now(), entries });
       set({ snapshots: saved });
       const systemCount = systemBackedEntries(entries, buildFaceIndex(get().fonts)).length;
+      const faceObj = pendingFaceKey
+        ? get().fonts.find((f) => faceKey(f) === pendingFaceKey)
+        : undefined;
       toast.success(
         t("toast.createdSnapshot", { name: clean }),
-        family
-          ? t("toast.familyAdded", { name: family })
-          : systemCount > 0
-            ? t("snap.systemNote", { count: systemCount })
-            : t("toast.rightClickToAdd"),
+        faceObj
+          ? t("toast.faceAddedToSnapshot", {
+              style: faceObj.style || faceObj.postscriptName || faceObj.family,
+              name: clean,
+            })
+          : family
+            ? t("toast.familyAdded", { name: family })
+            : systemCount > 0
+              ? t("snap.systemNote", { count: systemCount })
+              : t("toast.rightClickToAdd"),
       );
     } catch (e) {
-      set({ snapshots: prev, pendingSnapshotFor: prevPending });
+      set({ snapshots: prev, pendingSnapshotFor: prevPending, pendingSnapshotFace: prevPendingFace });
       toast.error(t("toast.couldntCreateSnapshot"), String(e));
     }
   },
@@ -2613,6 +2636,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   selectWith: (family, mode, order) => {
     const { selection, selectedFamily, rangeAnchor } = get();
+    // 点已选中的卡片 = 取消选中并关掉详情面板（用户 2026-10-31 明确要保留这个开关行为）。
+    // 当时报的「点了没反应」真因是**字重区**的点击冒泡到卡片，见 FamilyCard 的 `.card-styles`。
     if (mode === "single" && selectedFamily === family && selection.length <= 1) {
       set({ selection: [], selectedFamily: null, rangeAnchor: null });
       return;
@@ -3406,7 +3431,10 @@ export function applyFamilyFilters(out: Family[], s: FamilyFilterState): Family[
     out = out.filter((f) => s.featureFilter.every((tag) => f.features.includes(tag)));
   }
   if (s.sourceFilter === "system") {
-    out = out.filter((f) => f.faces.length > 0 && f.faces.every((fc) => fc.source === "system"));
+    // 与侧栏「系统字体」同一个口径（`isSystemFamily`：**有**系统字面就算）。
+    // 旧代码要求 `every` —— 那会把「系统里有一份、字体库里也有同名副本」的族全部排除，
+    // 侧栏数出 166 个，点筛选却只剩几十个（用户 2026-10-31 报「筛选有错误」）。
+    out = out.filter(isSystemFamily);
   }
   if (s.sourceFilter === "user") {
     out = out.filter((f) => f.faces.some((fc) => fc.source !== "system"));
@@ -3425,10 +3453,12 @@ export function applyFamilyFilters(out: Family[], s: FamilyFilterState): Family[
     out = out.filter((f) => f.incomplete);
   }
   if (s.licenseFilter.length > 0) {
+    // 必须与卡片 / 速览上的版权徽标**同一口径**（`familyCopyrightClass` 看的是代表字面）。
+    // 以前这里读字族聚合的 `license` / `dirCopyrightClass`，那是「第一个非空字面」的值，
+    // 遇到 Regular 没版权信息、别的字面有时就和徽标不一致：勾「商用免费」筛出这张卡，
+    // 卡上却写着「未知」（用户 2026-10-31 报）。
     out = out.filter((f) =>
-      s.licenseFilter.includes(
-        effectiveCopyrightClass(f.license, s.copyrightStatus[f.name], f.dirCopyrightClass),
-      ),
+      s.licenseFilter.includes(familyCopyrightClass(f.faces, s.copyrightStatus[f.name])),
     );
   }
   return out;

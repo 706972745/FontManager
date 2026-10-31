@@ -328,7 +328,7 @@ export function OnlineView() {
               key={l}
               className={`online-chip${license === l ? " online-chip-on" : ""}`}
               onClick={() => setLicense(license === l ? null : l)}
-              title={l}
+              data-hint-text={l}
             >
               {licenseShort(l)}
             </button>
@@ -501,7 +501,7 @@ export function OnlineView() {
                           className={`online-redownload${armReinstall ? " online-redownload-armed" : ""}`}
                           onClick={onRedownload}
                           disabled={!!downloading}
-                          title={t("online.redownloadHint")}
+                          data-hint-text={t("online.redownloadHint")}
                         >
                           <RotateCcw size={14} strokeWidth={1.5} />
                           {armReinstall ? t("online.confirmRedownload") : t("online.redownload")}
@@ -559,12 +559,12 @@ function OnlineCard({
         <span className="card-spacer" />
         {f.variable && <span className="badge badge-variable">VAR</span>}
         {coverage === "complete" && (
-          <span className="badge online-badge-have" title={t("online.inLibraryCompleteHint")}>
+          <span className="badge online-badge-have" data-hint-text={t("online.inLibraryCompleteHint")}>
             {t("online.inLibraryComplete")}
           </span>
         )}
         {coverage === "partial" && (
-          <span className="badge online-badge-partial" title={t("online.inLibraryPartialHint")}>
+          <span className="badge online-badge-partial" data-hint-text={t("online.inLibraryPartialHint")}>
             {t("online.inLibraryPartial")}
           </span>
         )}
