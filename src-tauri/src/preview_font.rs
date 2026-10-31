@@ -30,7 +30,7 @@ const CACHE_TAG: &str = "v5";
 /// 列表子集算法的版本号。子集的「字符闭包 / loca 布局 / cmap 重建」任何一处变了就加一，
 /// 老产物自动失效（缓存 key 里编了它）。
 /// S1 → S2：post 降级成 3.0（丢掉按 gid 排的字形名数组，产物小 60%）。
-const SUBSET_TAG: &str = "S2";
+const SUBSET_TAG: &str = "S5";
 /// 小于这个体积不走子集：解码本来就快，做子集只是多一次 IPC + 一次磁盘写。
 /// 库内 >8MB 的字体有 218 个，它们才是真痛点。
 const SUBSET_MIN_BYTES: u64 = 1 << 20;
@@ -1226,19 +1226,19 @@ pub fn ensure_list_subset_font(path: &Path, face_index: u32, chars: &str) -> Opt
     let index = (face_index as usize).min(offsets.len().saturating_sub(1));
     let sfnt = *offsets.get(index)?;
     let tables = tables_of(&data, sfnt)?;
-    if tables
-        .iter()
-        .any(|t| &t.tag == b"CFF " || &t.tag == b"CFF2")
-    {
+    // CFF2（可变字体）没有 endchar、靠长度界定 charstring，本轮不做
+    if tables.iter().any(|t| &t.tag == b"CFF2") {
         return None;
     }
-    if !tables.iter().any(|t| &t.tag == b"glyf") {
-        return None;
-    }
+    // 可变字体：gvar/HVAR 与 gid 强耦合，动字形会让所有变体失效
     if tables.iter().any(|t| &t.tag == b"fvar") {
         return None;
     }
-    let glyf_rec = tables.iter().find(|t| &t.tag == b"glyf")?;
+    let cff_rec = tables.iter().find(|t| &t.tag == b"CFF ");
+    let glyf_rec = tables.iter().find(|t| &t.tag == b"glyf");
+    if cff_rec.is_none() && glyf_rec.is_none() {
+        return None;
+    }
     let num_glyphs = tables
         .iter()
         .find(|t| &t.tag == b"maxp")
@@ -1246,7 +1246,6 @@ pub fn ensure_list_subset_font(path: &Path, face_index: u32, chars: &str) -> Opt
     if num_glyphs == 0 {
         return None;
     }
-    let (loca, _) = read_loca(&data, &tables, num_glyphs)?;
 
     let full = unicode_pairs(&data, &tables)?;
     let mut subset: std::collections::BTreeMap<u32, u16> = std::collections::BTreeMap::new();
@@ -1263,6 +1262,32 @@ pub fn ensure_list_subset_font(path: &Path, face_index: u32, chars: &str) -> Opt
         return None;
     }
 
+    // ── CFF / OTF（1.0.0-1 之后新增）：保留 GID，非目标 charstring 换成 endchar ──
+    if let Some(rec) = cff_rec {
+        let cff = data.get(rec.offset..rec.offset + rec.len)?;
+        let keep: std::collections::HashSet<u16> = seeds.iter().copied().collect();
+        let new_cff = subset_cff_table(cff, num_glyphs, &keep)?;
+        let pairs: Vec<(u32, u16)> = subset.into_iter().collect();
+        let cmap = build_cmap(&pairs);
+        let mut ov: std::collections::HashMap<[u8; 4], Vec<u8>> = std::collections::HashMap::new();
+        ov.insert(*b"CFF ", new_cff);
+        // hmtx 截断：CFF 产物里它占 11%（思源）~ 55%（康熙），是第二大块
+        if let Some(max_gid) = keep.iter().copied().max() {
+            if let Some((hmtx, hhea)) = truncate_hmtx(&data, &tables, num_glyphs, max_gid) {
+                ov.insert(*b"hmtx", hmtx);
+                ov.insert(*b"hhea", hhea);
+            }
+        }
+        // strip_hinting = false：同上，子集已经很小，去提示程序会改变轮廓观感
+        let out = rebuild(&data, sfnt, &tables, Some(&cmap), false, Some(&ov))?;
+        if out.len() as u64 >= md.len() {
+            return None;
+        }
+        return store_subset(&dir, &target, key, &out);
+    }
+
+    let glyf_rec = glyf_rec?;
+    let (loca, _) = read_loca(&data, &tables, num_glyphs)?;
     let keep = glyph_closure(
         &data,
         glyf_rec.offset,
@@ -1316,21 +1341,515 @@ pub fn ensure_list_subset_font(path: &Path, face_index: u32, chars: &str) -> Opt
     if let Some(p) = post_bytes {
         ov.insert(*b"post", p);
     }
+    // hmtx 截断：它占 glyf 产物 60.8%（宝马 174KB/286KB），是最大的一块索引表
+    if let Some(max_gid) = keep.iter().copied().max() {
+        if let Some((hmtx, hhea)) = truncate_hmtx(&data, &tables, num_glyphs, max_gid) {
+            ov.insert(*b"hmtx", hmtx);
+            ov.insert(*b"hhea", hhea);
+        }
+    }
     // strip_hinting = false：子集本身已经很小，去掉 fpgm/prep 会改变字形轮廓观感
     let out = rebuild(&data, sfnt, &tables, Some(&cmap), false, Some(&ov))?;
     // 没变小就别用：个别字体的字形集中在一批复合字形里，子集可能反而更碎
     if out.len() as u64 >= md.len() {
         return None;
     }
+    store_subset(&dir, &target, key, &out)
+}
 
+/// 按「最大的目标 gid」截断 hmtx。
+///
+/// 规范允许 `hhea.numberOfHMetrics < maxp.numGlyphs`：超出的字形全部沿用**最后一条**
+/// advanceWidth。被截掉的那些字形正是我们清空的（不渲染），所以字宽不影响观感，
+/// 而目标字符的字宽一条不少。
+///
+/// 实测（2026-11-01，按真实字符集含中文族名）：省 15%（宝马，max gid 30288）
+/// ~ 50%（max gid 91）。hmtx 占 glyf 产物的 60%、康熙 CFF 产物的 55%，
+/// 所以这一刀对两条路线都是最划算的。
+///
+/// 返回 (新 hmtx, 新 hhea)；任何一步对不上就返回 None，调用方照原样输出。
+fn truncate_hmtx(
+    data: &[u8],
+    tables: &[TableRec],
+    num_glyphs: u16,
+    max_gid: u16,
+) -> Option<(Vec<u8>, Vec<u8>)> {
+    let hhea = tables.iter().find(|t| &t.tag == b"hhea")?;
+    let hmtx = tables.iter().find(|t| &t.tag == b"hmtx")?;
+    if num_glyphs == 0 || hhea.len < 36 {
+        return None;
+    }
+    let old_n = u16_at(data, hhea.offset + 34)? as usize;
+    if old_n == 0 || old_n > num_glyphs as usize {
+        return None;
+    }
+    let src = data.get(hmtx.offset..hmtx.offset + hmtx.len)?;
+    let need = old_n * 4 + (num_glyphs as usize - old_n) * 2;
+    if src.len() < need {
+        return None;
+    }
+    let new_n = (max_gid as usize + 1).min(num_glyphs as usize);
+    if new_n >= num_glyphs as usize {
+        return None; // 没得省
+    }
+    let last_width = u16::from_be_bytes([src[(old_n - 1) * 4], src[(old_n - 1) * 4 + 1]]);
+    let mut out = Vec::with_capacity(new_n * 4 + (num_glyphs as usize - new_n) * 2);
+    for gid in 0..new_n {
+        if gid < old_n {
+            out.extend_from_slice(&src[gid * 4..gid * 4 + 4]);
+        } else {
+            // 原表没这么长的 hMetrics，沿用最后一条宽度，lsb 取原数组对应项
+            out.extend_from_slice(&last_width.to_be_bytes());
+            let at = old_n * 4 + (gid - old_n) * 2;
+            out.extend_from_slice(&src[at..at + 2]);
+        }
+    }
+    for gid in new_n..num_glyphs as usize {
+        let at = if gid < old_n {
+            gid * 4 + 2
+        } else {
+            old_n * 4 + (gid - old_n) * 2
+        };
+        out.extend_from_slice(&src[at..at + 2]);
+    }
+    if out.len() >= src.len() {
+        return None;
+    }
+    let mut hhea_bytes = data[hhea.offset..hhea.offset + hhea.len].to_vec();
+    hhea_bytes[34..36].copy_from_slice(&(new_n as u16).to_be_bytes());
+    Some((out, hhea_bytes))
+}
+
+/// 把子集产物原子落到缓存目录（tmp + rename），并维护 384MB 的 LRU。
+fn store_subset(dir: &Path, target: &Path, key: u64, out: &[u8]) -> Option<(PathBuf, u64)> {
     let tmp = dir.join(format!(".{CACHE_TAG}-{key:016x}.{}.tmp", std::process::id()));
-    fs::write(&tmp, &out).ok()?;
-    if fs::rename(&tmp, &target).is_err() {
+    fs::write(&tmp, out).ok()?;
+    if fs::rename(&tmp, target).is_err() {
         let _ = fs::remove_file(&tmp);
         return None;
     }
-    trim_cache(&dir);
-    Some((target, out.len() as u64))
+    trim_cache(dir);
+    Some((target.to_path_buf(), out.len() as u64))
+}
+
+// ───────────────────── CFF / OTF 列表子集 ─────────────────────
+//
+// 和 glyf 同思路：**保留 GID 不重编号**，把非目标 charstring 换成单字节 endchar(0x0e)。
+// 于是 charset（gid→SID）、FDSelect（gid→FD）、hmtx（按 gid 排）、cmap 里的 gid
+// 全都不用重建，只需要把 CFF 内部的绝对偏移重算一遍。
+//
+// 实测布局（康熙 / 思源 / 苹方 / Adobe / Noto 一致）：
+//   Header → Name INDEX → Top DICT INDEX → String INDEX → GSubr INDEX
+//         → charset → FDSelect → CharStrings → FDArray → Private DICT + Local Subrs
+// 所以缩小 CharStrings 只会平移 FDArray 及其后的一切。
+//
+// 三个「静默出错」点（原型里全踩过，产物都是 fontTools 能读、字体变坏）：
+//   1. FDArray 里每个 Font DICT 带 [size, offset] 指向 Private DICT，那个 offset 是**绝对**的。
+//      只改 Top DICT 不改它 → 产物 fontTools 能解析、FreeType 直接 unknown file format。
+//   2. DICT 操作数可能是浮点（FontMatrix 0.001 …），重建时只能**原样复制字节**；
+//      一律当整数重编码会把字宽/变换全搞乱。
+//   3. 原样复制时的切片基准：Top DICT 是独立字节串，下标相对它自己，**不是相对整段 CFF**。
+//      用错基准会吞掉 ROS 这类算子带的操作数（fontTools 报 IndexError，长度偏移却全对）。
+
+const CFF_ENDCHAR_BYTE: [u8; 1] = [0x0E];
+const CFF_OP_CHARSET: u16 = 15;
+const CFF_OP_ENCODING: u16 = 16;
+const CFF_OP_CHARSTRINGS: u16 = 17;
+const CFF_OP_PRIVATE: u16 = 18;
+const CFF_OP_FDARRAY: u16 = 1236;
+const CFF_OP_FDSELECT: u16 = 1237;
+
+struct CffIndex {
+    items: Vec<(usize, usize)>,
+    end: usize,
+}
+
+fn cff_index(data: &[u8], off: usize) -> Option<CffIndex> {
+    let count = u16_at(data, off)? as usize;
+    if count == 0 {
+        return Some(CffIndex { items: Vec::new(), end: off + 2 });
+    }
+    let off_size = *data.get(off + 2)? as usize;
+    if !(1..=4).contains(&off_size) {
+        return None;
+    }
+    let p = off + 3;
+    if p + (count + 1) * off_size > data.len() {
+        return None;
+    }
+    let read = |i: usize| -> usize {
+        let s = p + i * off_size;
+        let mut v = 0usize;
+        for k in 0..off_size {
+            v = (v << 8) | data[s + k] as usize;
+        }
+        v
+    };
+    // INDEX 的 offset 是 1-based，所以数据区起点 = 偏移数组末字节
+    let data_start = p + (count + 1) * off_size - 1;
+    let mut items = Vec::with_capacity(count);
+    for i in 0..count {
+        let (a, b) = (read(i), read(i + 1));
+        if b < a {
+            return None;
+        }
+        items.push((data_start + a, data_start + b));
+    }
+    Some(CffIndex { items, end: data_start + read(count) })
+}
+
+fn cff_push_offset(out: &mut Vec<u8>, v: usize, size: usize) {
+    // 必须转成 u32 再取字节：usize 在 64 位上是 **8 字节**，
+    // 直接 to_be_bytes 后按 &b[4 - size..] 切片会每个偏移多写 4 个字节，
+    // 整个 INDEX 错位、字典变空 —— 产物 fontTools 报「AttributeError charset」、
+    // FreeType 报 broken table，而长度校验全部通过。
+    let b = (v as u32).to_be_bytes();
+    out.extend_from_slice(&b[4 - size..]);
+}
+
+fn write_cff_index(items: &[&[u8]]) -> Vec<u8> {
+    let count = items.len();
+    if count == 0 {
+        return vec![0, 0];
+    }
+    let total: usize = items.iter().map(|x| x.len()).sum::<usize>() + 1;
+    let off_size: usize = if total < 0x100 {
+        1
+    } else if total < 0x1_0000 {
+        2
+    } else if total < 0x100_0000 {
+        3
+    } else {
+        4
+    };
+    let mut out = Vec::with_capacity(total + 4 + (count + 1) * off_size);
+    out.extend_from_slice(&(count as u16).to_be_bytes());
+    out.push(off_size as u8);
+    let mut cur: usize = 1;
+    cff_push_offset(&mut out, cur, off_size);
+    for it in items {
+        cur += it.len();
+        cff_push_offset(&mut out, cur, off_size);
+    }
+    for it in items {
+        out.extend_from_slice(it);
+    }
+    out
+}
+
+struct CffEntry {
+    op: u16,
+    operands: Vec<i32>,
+    opnd_start: Option<usize>,
+    op_start: usize,
+}
+
+/// 读一个 DICT 操作数；浮点只跳过、值记 0（重建时原样复制，不需要真值）。
+fn cff_dict_operand(data: &[u8], i: &mut usize) -> Option<i32> {
+    let b = *data.get(*i)?;
+    match b {
+        28 => {
+            let v = i16::from_be_bytes([*data.get(*i + 1)?, *data.get(*i + 2)?]) as i32;
+            *i += 3;
+            Some(v)
+        }
+        29 => {
+            let mut buf = [0u8; 4];
+            for k in 0..4 {
+                buf[k] = *data.get(*i + 1 + k)?;
+            }
+            *i += 5;
+            Some(i32::from_be_bytes(buf))
+        }
+        30 => {
+            let mut j = *i + 1;
+            loop {
+                let c = *data.get(j)?;
+                let done = (c & 0x0F) == 0x0F || (c >> 4) == 0x0F;
+                j += 1;
+                if done {
+                    break;
+                }
+            }
+            *i = j;
+            Some(0)
+        }
+        32..=246 => {
+            *i += 1;
+            Some(b as i32 - 139)
+        }
+        247..=250 => {
+            let v = (b as i32 - 247) * 256 + *data.get(*i + 1)? as i32 + 108;
+            *i += 2;
+            Some(v)
+        }
+        251..=254 => {
+            let v = -(b as i32 - 251) * 256 - *data.get(*i + 1)? as i32 - 108;
+            *i += 2;
+            Some(v)
+        }
+        _ => None,
+    }
+}
+
+fn cff_dict(data: &[u8], start: usize, end: usize) -> Vec<CffEntry> {
+    let mut out = Vec::new();
+    let mut operands: Vec<i32> = Vec::new();
+    let mut opnd_start: Option<usize> = None;
+    let mut i = start;
+    while i < end {
+        let b = data[i];
+        if b <= 21 {
+            let op_start = i;
+            let mut op = b as u16;
+            i += 1;
+            if b == 12 {
+                if i < end {
+                    op = 1200 + data[i] as u16;
+                    i += 1;
+                }
+            }
+            out.push(CffEntry {
+                op,
+                operands: std::mem::take(&mut operands),
+                opnd_start,
+                op_start,
+            });
+            opnd_start = None;
+        } else {
+            let before = i;
+            match cff_dict_operand(data, &mut i) {
+                Some(v) => {
+                    if opnd_start.is_none() {
+                        opnd_start = Some(before);
+                    }
+                    operands.push(v);
+                }
+                None => i = before + 1,
+            }
+        }
+    }
+    out
+}
+
+/// 固定 5 字节整数（0x1d + int32）：**长度与数值无关**，这是「两遍法」能收敛的前提。
+fn cff_push_int(out: &mut Vec<u8>, v: i32) {
+    out.push(0x1d);
+    out.extend_from_slice(&v.to_be_bytes());
+}
+
+/// 重建 DICT：offset 型算子换成新值，其余操作数**原样复制字节**（保住浮点）。
+fn rebuild_cff_dict(raw: &[u8], entries: &[CffEntry], map: &dyn Fn(i32) -> i32) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len());
+    for e in entries {
+        let is_offset_op = matches!(
+            e.op,
+            CFF_OP_CHARSET | CFF_OP_ENCODING | CFF_OP_CHARSTRINGS | CFF_OP_FDARRAY | CFF_OP_FDSELECT
+        );
+        if is_offset_op && !e.operands.is_empty() {
+            for v in &e.operands[..e.operands.len() - 1] {
+                cff_push_int(&mut out, *v);
+            }
+            cff_push_int(&mut out, map(*e.operands.last().unwrap()));
+        } else if e.op == CFF_OP_PRIVATE && e.operands.len() == 2 {
+            cff_push_int(&mut out, e.operands[0]);
+            cff_push_int(&mut out, map(e.operands[1]));
+        } else if let Some(s) = e.opnd_start {
+            out.extend_from_slice(&raw[s..e.op_start]);
+        }
+        if e.op >= 1200 {
+            out.push(12);
+            out.push((e.op - 1200) as u8);
+        } else {
+            out.push(e.op as u8);
+        }
+    }
+    out
+}
+
+/// 目标 charstring 是否用了 seac（endchar 执行时栈上有 4 个操作数）。
+/// 用了就得连带保留组件字形，而组件是按 SID 引用的 —— 本轮不处理，直接回退完整链路。
+fn cff_charstring_has_seac(cs: &[u8]) -> bool {
+    let mut stack: usize = 0;
+    let mut stems: usize = 0;
+    let mut i = 0usize;
+    while i < cs.len() {
+        let b = cs[i];
+        match b {
+            28 => {
+                stack += 1;
+                i += 3;
+            }
+            255 => {
+                stack += 1;
+                i += 5;
+            }
+            32..=246 => {
+                stack += 1;
+                i += 1;
+            }
+            247..=254 => {
+                stack += 1;
+                i += 2;
+            }
+            12 => {
+                stack = 0;
+                i += 2;
+            }
+            14 => return stack >= 4,
+            1 | 3 | 18 | 23 => {
+                stems += stack / 2;
+                stack = 0;
+                i += 1;
+            }
+            19 | 20 => {
+                stems += stack / 2;
+                stack = 0;
+                i += 1 + (stems + 7) / 8;
+            }
+            _ => {
+                stack = 0;
+                i += 1;
+            }
+        }
+    }
+    false
+}
+
+/// 生成一份「保留 GID」的 CFF 表。失败一律返回 None（调用方回退完整字体）。
+fn subset_cff_table(
+    cff: &[u8],
+    num_glyphs: u16,
+    keep: &std::collections::HashSet<u16>,
+) -> Option<Vec<u8>> {
+    if cff.len() < 8 {
+        return None;
+    }
+    let hdr = *cff.get(2)? as usize;
+    if hdr < 4 || hdr > cff.len() {
+        return None;
+    }
+    let name_idx = cff_index(cff, hdr)?;
+    let top_start = name_idx.end;
+    let top_idx = cff_index(cff, top_start)?;
+    let str_idx = cff_index(cff, top_idx.end)?;
+    let gsubr_idx = cff_index(cff, str_idx.end)?;
+    let prefix_end = gsubr_idx.end;
+
+    let (ts, te) = *top_idx.items.first()?;
+    let top_raw = cff.get(ts..te)?;
+    let top = cff_dict(top_raw, 0, top_raw.len());
+    let dict_val = |op: u16| -> Option<i32> {
+        top.iter().find(|e| e.op == op).and_then(|e| e.operands.last().copied())
+    };
+
+    let old_cs = dict_val(CFF_OP_CHARSTRINGS)? as usize;
+    let old_fda = dict_val(CFF_OP_FDARRAY).map(|v| v as usize).filter(|v| *v > 0);
+    let cs_idx = cff_index(cff, old_cs)?;
+    if cs_idx.items.len() != num_glyphs as usize {
+        return None;
+    }
+    let old_cs_end = cs_idx.end;
+
+    for gid in keep {
+        let (a, b) = *cs_idx.items.get(*gid as usize)?;
+        if cff_charstring_has_seac(cff.get(a..b)?) {
+            return None;
+        }
+    }
+
+    let mut new_items: Vec<&[u8]> = Vec::with_capacity(num_glyphs as usize);
+    for gid in 0..num_glyphs as usize {
+        let (a, b) = cs_idx.items[gid];
+        if gid == 0 || keep.contains(&(gid as u16)) {
+            new_items.push(cff.get(a..b)?);
+        } else {
+            new_items.push(&CFF_ENDCHAR_BYTE);
+        }
+    }
+    let new_cs = write_cff_index(&new_items);
+    let d_cs = new_cs.len() as i64 - (old_cs_end - old_cs) as i64;
+
+    // FDArray：重建每个 Font DICT（Private 偏移跟着平移）
+    let mut fda_items: Vec<(usize, usize)> = Vec::new();
+    let mut old_fda_end = old_fda.unwrap_or(0);
+    let mut d_fda: i64 = 0;
+    if let Some(fda_off) = old_fda {
+        let fda = cff_index(cff, fda_off)?;
+        // 只支持「FDArray 在 CharStrings 之后」这一种（实测覆盖全部样本）。
+        // 别的排列（如 shaoluwenziw7）交回完整链路，绝不错位产出坏字体。
+        if fda.items.first()?.0 < old_cs_end {
+            return None;
+        }
+        old_fda_end = fda.end;
+        fda_items = fda.items.clone();
+        let mut dummy: Vec<Vec<u8>> = Vec::with_capacity(fda_items.len());
+        for (a, b) in &fda_items {
+            let raw = cff.get(*a..*b)?;
+            let ents = cff_dict(raw, 0, raw.len());
+            dummy.push(rebuild_cff_dict(raw, &ents, &|_v| 0));
+        }
+        let refs: Vec<&[u8]> = dummy.iter().map(|v| v.as_slice()).collect();
+        d_fda = write_cff_index(&refs).len() as i64 - (old_fda_end - fda_off) as i64;
+    }
+
+    // Top DICT 长度与数值无关（固定 5 字节）→ 先算出位移量
+    let dummy_top = rebuild_cff_dict(top_raw, &top, &|_v| 0);
+    let l_top = write_cff_index(&[dummy_top.as_slice()]).len();
+    let d_top = l_top as i64 - (top_idx.end - top_start) as i64;
+
+    // 旧偏移 → 新偏移：CharStrings 之前只受 Top DICT 长度变化影响；
+    // CharStrings 之后要先跨过 Δcs，再跨过 Δfda（Private / Local Subrs 在 FDArray 之后）。
+    let old_fda_is_some = old_fda.is_some();
+    let map = move |old: i32| -> i32 {
+        let o = old as usize;
+        let add = if o < old_cs_end {
+            d_top
+        } else if old_fda_is_some && o >= old_fda_end {
+            d_top + d_cs + d_fda
+        } else {
+            d_top + d_cs
+        };
+        (old as i64 + add) as i32
+    };
+
+    let new_top = rebuild_cff_dict(top_raw, &top, &map);
+    let new_top_index = write_cff_index(&[new_top.as_slice()]);
+    if new_top_index.len() != l_top {
+        return None; // 长度没收敛就说明假设错了，宁可不产出
+    }
+
+    let mut new_fda: Vec<u8> = Vec::new();
+    if !fda_items.is_empty() {
+        let mut items: Vec<Vec<u8>> = Vec::with_capacity(fda_items.len());
+        for (a, b) in &fda_items {
+            let raw = cff.get(*a..*b)?;
+            let ents = cff_dict(raw, 0, raw.len());
+            items.push(rebuild_cff_dict(raw, &ents, &map));
+        }
+        let refs: Vec<&[u8]> = items.iter().map(|v| v.as_slice()).collect();
+        new_fda = write_cff_index(&refs);
+        let expect = (old_fda_end - old_fda.unwrap()) as i64 + d_fda;
+        if new_fda.len() as i64 != expect {
+            return None;
+        }
+    }
+
+    let mut out = Vec::with_capacity(cff.len());
+    out.extend_from_slice(cff.get(..hdr)?);
+    out.extend_from_slice(cff.get(hdr..name_idx.end)?);
+    out.extend_from_slice(&new_top_index);
+    out.extend_from_slice(cff.get(top_idx.end..prefix_end)?);
+    out.extend_from_slice(cff.get(prefix_end..old_cs)?);
+    out.extend_from_slice(&new_cs);
+    if let Some(fda_off) = old_fda {
+        out.extend_from_slice(cff.get(old_cs_end..fda_off)?);
+        out.extend_from_slice(&new_fda);
+        out.extend_from_slice(cff.get(old_fda_end..)?);
+    } else {
+        out.extend_from_slice(cff.get(old_cs_end..)?);
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -1396,6 +1915,57 @@ mod tests {
             let map = unicode_pairs(&data, &tables).expect("产物 cmap 读不出来");
             for c in chars.chars() {
                 assert!(map.contains_key(&(c as u32)), "子集缺字 {c}: {path}");
+            }
+            // CFF 产物必须自己再解析一遍：**这一条不能省**。
+            // 曾经因为 usize 的 to_be_bytes 是 8 字节，INDEX 偏移每个多写 4 字节，
+            // Top DICT 变成空字典 —— 而 cmap 与体积断言全部通过，只有真正去解析
+            // CFF 才能发现（FreeType 报 broken table）。
+            if tables.iter().any(|t| &t.tag == b"CFF ") {
+                let rec = tables.iter().find(|t| &t.tag == b"CFF ").unwrap();
+                let cff = &data[rec.offset..rec.offset + rec.len];
+                let hdr = cff[2] as usize;
+                let name_idx = cff_index(cff, hdr).expect("产物 CFF name INDEX 读不出来");
+                let top_idx = cff_index(cff, name_idx.end).expect("产物 CFF top INDEX 读不出来");
+                let (a, b) = *top_idx.items.first().expect("产物 Top DICT 为空");
+                let ents = cff_dict(cff, a, b);
+                let cs_off = ents
+                    .iter()
+                    .rev()
+                    .find(|e| e.op == CFF_OP_CHARSTRINGS)
+                    .and_then(|e| e.operands.last().copied())
+                    .expect("产物 Top DICT 里没有 CharStrings 算子");
+                let cs = cff_index(cff, cs_off as usize).expect("产物 CharStrings INDEX 读不出来");
+                let want = tables
+                    .iter()
+                    .find(|t| &t.tag == b"maxp")
+                    .and_then(|t| u16_at(&data, t.offset + 4))
+                    .unwrap_or(0) as usize;
+                assert_eq!(
+                    cs.items.len(),
+                    want,
+                    "产物 CharStrings 数量与 numGlyphs 不一致: {path}"
+                );
+                assert!(
+                    cs.items.iter().filter(|(x, y)| y - x > 1).count() >= 1,
+                    "产物 CharStrings 全被清空了: {path}"
+                );
+            }
+            // hmtx 截断后必须自洽：hmtx 长度 == n*4 + (numGlyphs-n)*2
+            if let (Some(hh), Some(hm), Some(mp)) = (
+                tables.iter().find(|t| &t.tag == b"hhea"),
+                tables.iter().find(|t| &t.tag == b"hmtx"),
+                tables.iter().find(|t| &t.tag == b"maxp"),
+            ) {
+                let total = u16_at(&data, mp.offset + 4).unwrap_or(0) as usize;
+                if hh.len >= 36 {
+                    let n = u16_at(&data, hh.offset + 34).unwrap_or(0) as usize;
+                    assert!(n >= 1 && n <= total, "hhea numberOfHMetrics 越界: {path}");
+                    assert_eq!(
+                        hm.len,
+                        n * 4 + (total - n) * 2,
+                        "hmtx 长度与 numberOfHMetrics 对不上: {path}"
+                    );
+                }
             }
             ok += 1;
             println!(
