@@ -70,6 +70,7 @@ export function TrashView() {
                 <span className="trash-path detail-mono">{entry.originalPath}</span>
               </div>
               <motion.button
+                data-hint="hint.trashRestore"
                 className="trash-action"
                 onClick={() => void restoreTrash(entry.id)}
                 whileHover={{ y: -1 }}
@@ -79,6 +80,7 @@ export function TrashView() {
                 {t("trash.restore")}
               </motion.button>
               <motion.button
+                data-hint="hint.trashDelete"
                 className="trash-action trash-delete"
                 onClick={() => void deleteTrashEntry(entry.id)}
                 whileHover={{ y: -1 }}

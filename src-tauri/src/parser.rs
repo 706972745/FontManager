@@ -39,7 +39,12 @@ fn name_string(face: &ttf_parser::Face, id: u16) -> Option<String> {
     face.names()
         .into_iter()
         .filter(|n| n.name_id == id)
-        .find_map(|n| n.to_string())
+        .filter_map(|n| n.to_string())
+        // 空串 / 全空白不算「有名字」：有字体把 name 记录写成空串（如 ALLMYHAN、Wartorn、
+        // 苏新诗古印宋简），直接采信会让字族名变成 ""，前端按名归组时把若干互不相干的
+        // 字体并成一个字族（卡片显示「6 种样式」、详情打不开、中文判定取错字面）。
+        .map(|s| s.trim().to_string())
+        .find(|s| !s.is_empty())
 }
 
 /// 常见的 name 表主语言 → BCP-47 语言标签。

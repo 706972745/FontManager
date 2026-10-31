@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { spring, springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { t as translate, useT, type TKey } from "../lib/i18n";
+import { useModalLayer } from "../lib/modalLayer";
 
 interface TourStep {
   target?: string;
@@ -108,12 +109,17 @@ const STEPS: TourStep[] = [
 
 function useTargetRect(selector: string | undefined, step: number) {
   const [rect, setRect] = useState<DOMRect | null>(null);
+  // 目标元素压根不存在（空字库 / 筛选后 / 该面板没打开）：调用方据此跳过这一步，
+  // 而不是把卡片摆在屏幕中间对着一片空气讲（§5 第 29 条）。
+  const [missing, setMissing] = useState(false);
 
   useLayoutEffect(() => {
     if (!selector) {
       setRect(null);
+      setMissing(false);
       return;
     }
+    setMissing(false);
     let tries = 0;
     let raf = 0;
     const find = () => {
@@ -125,6 +131,7 @@ function useTargetRect(selector: string | undefined, step: number) {
         raf = requestAnimationFrame(find);
       } else {
         setRect(null);
+        setMissing(true);
       }
     };
     find();
@@ -139,7 +146,7 @@ function useTargetRect(selector: string | undefined, step: number) {
     };
   }, [selector, step]);
 
-  return rect;
+  return { rect, missing };
 }
 
 const PAD = 8;
@@ -184,9 +191,11 @@ export function Onboarding() {
   const fontsReady = useFontStore((s) => s.fonts.length > 0);
 
   const step = tourStep !== null ? STEPS[tourStep] : null;
-  const rect = useTargetRect(step?.target, tourStep ?? -1);
+  const { rect, missing } = useTargetRect(step?.target, tourStep ?? -1);
   const cardRef = useRef<HTMLDivElement>(null);
   const [cardH, setCardH] = useState(180);
+  // 导览是模态层：登记进弹层栈，上面压着别的弹层时把按键让出去（§5 第 8 / 29 条）
+  const isTopLayer = useModalLayer(tourStep !== null);
 
   useLayoutEffect(() => {
     if (cardRef.current) setCardH(cardRef.current.offsetHeight);
@@ -197,11 +206,44 @@ export function Onboarding() {
   }, [tourStep]);
 
   useEffect(() => {
+    if (tourStep === null || !missing) return;
+    // 这一步要高亮的元素不存在（空字库 / 筛选后 / 面板没开）：跳过它，别对着空气讲（§5 第 29 条）
+    if (tourStep < STEPS.length - 1) setTourStep(tourStep + 1);
+    else endTour();
+  }, [missing, tourStep, setTourStep, endTour]);
+
+  useEffect(() => {
     if (tourStep === null) return;
     const onKey = (e: KeyboardEvent) => {
+      if (!isTopLayer()) return;
       // 导览是模态的：用 stopImmediatePropagation 才压得住同一 target 上的其他 window 监听
       // （stopPropagation 只挡住往上层传播，App 的全局快捷键照样会被触发 —— §5 第 29 条）
       e.stopImmediatePropagation();
+      if (e.key === "Tab") {
+        // Tab 必须关在导览卡片里：卡片自己是 tabIndex=-1，不拦的话下一步就跑到背后被遮住的界面上
+        const card = cardRef.current;
+        if (!card) return;
+        const items = [
+          ...card.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+          ),
+        ].filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
+        if (items.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = items[0];
+        const last = items[items.length - 1];
+        const cur = document.activeElement;
+        if (!e.shiftKey && (cur === last || !card.contains(cur))) {
+          e.preventDefault();
+          first.focus();
+        } else if (e.shiftKey && (cur === first || !card.contains(cur))) {
+          e.preventDefault();
+          last.focus();
+        }
+        return;
+      }
       if (e.key === "Escape") endTour();
       if ((e.key === "ArrowRight" || e.key === "Enter") && tourStep < STEPS.length - 1) {
         setTourStep(tourStep + 1);
@@ -212,7 +254,7 @@ export function Onboarding() {
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [tourStep, setTourStep, endTour]);
+  }, [tourStep, setTourStep, endTour, isTopLayer]);
 
   /**
    * 每一步都把焦点收进导览卡片：键盘用户按 Tab 不会跑到背后被高亮遮住的界面上

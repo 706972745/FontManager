@@ -273,6 +273,8 @@ body,
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* flex 列容器必须允许收缩，否则子级（网格/列表）撑着高度，滚动条会被推出窗口 */
+  min-height: 0;
 }
 
 /* 底部预热指示条：只显示正在运行的目标软件，百分比 = 预热进度。
@@ -332,7 +334,12 @@ body,
   align-items: center;
   gap: 10px;
   padding: 5px 16px;
-  border-top: 1px solid rgba(var(--ink-rgb), 0.05);
+  /* 这条是贴底的浮层：以前没有背景色，字体卡片会「透」到进度条下面，
+     看起来像文字和进度条糊在一起。给它一个不透明的画布色 + 顶部细分隔线。 */
+  position: relative;
+  z-index: 3;
+  background: var(--canvas);
+  border-top: 1px solid rgba(var(--ink-rgb), 0.09);
   font-size: var(--fs-10);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -742,6 +749,9 @@ body,
 }
 
 .grid-scroll {
+  /* 高度必须**有界**，虚拟列表靠它算视口：无界（height:auto / flex 撑开）时会一次性
+     渲染全部卡片——实测 6000 张卡片能把内存吃到 1.8GB，界面看起来就是「扫描永远 86%、卡住」。
+     height:100% 在 .app-main 里是有效的；快照视图由 .snapshot-view 用 grid 行分配保证有界。 */
   height: 100%;
   overflow-y: auto;
   padding: 18px 20px;
@@ -937,7 +947,9 @@ body,
   background: rgba(var(--ink-rgb), 0.015);
 }
 .list-scroll {
-  flex: 1;
+  /* 同上：父级是块级容器，flex:1 不生效，必须给确定高度，否则列表视图也会滚不动 */
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
 }
 .list-row {
@@ -1976,6 +1988,31 @@ h2.detail-title.copy-name {
   color: var(--text-tertiary);
   flex-shrink: 0;
 }
+/* 「在 … 中应用」前面的软件缩写：Ps / Ai / CDR。
+   原来这三行共用同一个画笔图标，菜单里根本分不出是哪个软件。
+   做成纯字母（不加边框/框底），min-width 固定住宽度，三行的文字起始位置才能对齐。 */
+.app-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 22px;
+  height: 15px;
+  padding: 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  line-height: 1;
+  color: var(--text-tertiary);
+}
+.ctx-item:hover:not(:disabled) .app-badge {
+  color: var(--text-primary);
+}
+/* CDR 三个字母，字号收一点，宽度尽量贴着 22px */
+.app-badge-wide {
+  font-size: 8px;
+  letter-spacing: 0;
+}
 .ctx-item:hover .ctx-icon {
   color: inherit;
 }
@@ -2677,6 +2714,7 @@ h2.detail-title.copy-name {
 }
 
 .waterfall-view {
+  /* 同 .grid-scroll：高度必须有界，否则虚拟列表退化成全量渲染 */
   height: 100%;
   overflow-y: auto;
   padding: 18px 24px 32px;
@@ -4430,16 +4468,30 @@ h2.detail-title.copy-name {
 
 /* ---------- Snapshot bar ---------- */
 .snapshot-view {
-  display: flex;
-  flex-direction: column;
+  /* 父级 .app-content 是**块级**容器（不是 flex），所以这里绝不能用 flex:1 ——
+     在块级父容器里 flex 属性完全不生效，高度会退化成 auto：
+     列表 height:100% 跟着变成"内容高度"，容器永不滚动、超出部分被窗口裁掉。
+     这就是「快照视图里滚轮怎么都不动」的真正根因。 */
+  height: 100%;
+  display: grid;
+  /* 显式给出列宽上限：只写 grid-template-rows 时，列宽在某些父宽度下会退化成内容的
+     min-content，快照栏就被压成一条十几像素宽的竖条（文字只好一个字占一行）。 */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
-  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 .snapshot-bar {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* 0.9.9-7 曾改成「单行 + 横向滚动」，怕换行后按钮竖着堆成一条（顶到屏幕底部）。
+     根因其实是当时按钮能被压扁、文字在按钮里面折行；现在按钮一律 `flex: 0 0 auto`
+     且 `white-space: nowrap`，换行只会多出一行按钮，不会变竖条。
+     用户 2026-10-31：「这里太长可以换行，不要这个拉的」——去掉横向滚动。 */
   flex-wrap: wrap;
+  min-width: 0;
   padding: 10px 24px;
   border-bottom: 1px solid rgba(var(--ink-rgb), 0.08);
   background: var(--e1);
@@ -4448,6 +4500,8 @@ h2.detail-title.copy-name {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-size: var(--fs-13);
   font-weight: 600;
   color: var(--text-primary);
@@ -4460,6 +4514,9 @@ h2.detail-title.copy-name {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* 不许被压缩、不许内部换行：窄容器里按钮一旦能缩，就会被挤成一列竖排文字 */
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 5px 10px;
   border-radius: 6px;
   border: 1px solid rgba(var(--ink-rgb), 0.1);
@@ -4473,6 +4530,12 @@ h2.detail-title.copy-name {
 .snapshot-btn:hover {
   background: rgba(var(--ink-rgb), 0.08);
   color: var(--text-primary);
+}
+/* 正在应用快照时锁住应用按钮：视觉上要能看出「点了不会有反应」，否则用户会以为按钮坏了 */
+.snapshot-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
 }
 .snapshot-btn.snapshot-warn {
   border-color: color-mix(in srgb, #a1a1aa 45%, transparent);
@@ -5416,6 +5479,23 @@ body.ui-fade-out .app-frame {
   color: var(--text-primary);
   border-color: rgba(var(--ink-rgb), 0.12);
 }
+/* 字重行尾巴那颗按钮是「这个字重的开关」：睁眼＝已启用、闭眼＝已停用（0.9.9-13）。
+   停用态故意压暗，一眼就能看出这个字族里哪几个是可用的。 */
+.face-line-toggle.on {
+  color: var(--text-primary);
+}
+.face-line-toggle.off {
+  color: var(--text-tertiary);
+  opacity: 0.45;
+}
+.face-line-toggle.off:hover {
+  opacity: 0.85;
+}
+/* 系统字体（动不了的那份）不给按，但也不能看不出来是颗按钮 */
+.face-line-toggle:disabled {
+  opacity: 0.22;
+  cursor: default;
+}
 
 
 /* ---------------------------------------------------------------------------
@@ -5437,4 +5517,52 @@ body.ui-fade-out .app-frame {
 :root[data-motion="reduced"] .spin,
 :root[data-motion="reduced"] .load-fill-indeterminate {
   animation: none;
+}
+
+/* ------------------------------------------------------------------------- *
+ * 悬停说明气泡（0.9.9-1）
+ *
+ * 元素只要带 data-hint="i18n.key"，悬停 1 秒后由 <HoverHintHost> 统一显示说明。
+ * 走事件委托而不是给每个按钮包一层组件：全项目一百多个按钮，包组件会破坏
+ * motion 的布局动画，也会让 JSX 变得没法看。
+ * ------------------------------------------------------------------------- */
+.hover-hint {
+  position: fixed;
+  /* 现有最高的浮层是 91（ctx-menu / toast 那一层），气泡取 95 保证永远在最上面 */
+  z-index: 95;
+  max-width: 280px;
+  padding: 6px 10px;
+  /* 元素级圆角，与浮层一致；不要用 --qb-radius，那是窗口圆角（8 物理像素） */
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+  /* 关键：气泡不能吃鼠标。否则"鼠标移到气泡上 → 离开按钮 → 气泡收起 →
+     指针又落到按钮上 → 重新计时"会不停闪 */
+  pointer-events: none;
+}
+
+/* 快照应用进度条里的取消按钮（0.9.9-1 追加） */
+.load-cancel {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--border, rgba(255,255,255,.12));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.load-cancel:hover {
+  background: var(--bg-hover, rgba(255,255,255,.06));
+  color: var(--text-primary);
+}
+.load-cancel:active {
+  background: var(--bg-active, rgba(255,255,255,.1));
 }

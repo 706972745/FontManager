@@ -14,7 +14,7 @@
 This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) with Chinese localization and new features. **[🇨🇳 完整中文文档请看这里 →](README.zh-CN.md)**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.9.9-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-0.9.9--14-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 
@@ -30,12 +30,17 @@ This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZF
 
 ## 🍴 What this fork adds
 
-- **Font snapshots** — save your currently activated fonts as a named snapshot and restore it in one click
-  - Up to 5 snapshots, oldest evicted automatically
-  - Two apply modes: **switch to snapshot** (deactivate the rest) or **merge into currently enabled**
-  - System fonts are recorded and clearly annotated — **never deactivated** when applying a snapshot
-  - Import/export (export filename auto-generated as `ZFontManager_<snapshot>_<timestamp>.json`); importing offers import-only / import & switch / import & merge
-  - Per-family toggles in the detail panel, plus fine-grained right-click control
+- **Font snapshots** — save your currently activated fonts as a named snapshot and restore it in one click; up to 5 snapshots, oldest evicted automatically. What each button on the snapshot bar does:
+  - **Switch to this snapshot** — deactivate every other active font (system fonts are never touched) and keep only this snapshot's fonts
+  - **Merge into current** — add this snapshot's fonts on top of what is already enabled, without deactivating anything first
+  - **Add active to snapshot** — capture every font that is enabled right now into this snapshot (deduplicated)
+  - **Clean up N missing files** — remove the entries this snapshot remembers but this machine no longer has
+  - **Export** — write a JSON file, auto-named `ZFontManager_<snapshot>_<timestamp>.json`
+  - **Delete snapshot** — drop the snapshot record; the font files themselves are untouched
+  - Applying shows a **progress bar with a cancel button** at the bottom: activating hundreds of faces takes minutes, and you can stop at any point.
+    The toast that follows offers **Undo**, which reverts exactly what was already applied, so you never end up half-switched
+  - The **"N system fonts"** chip tells you how many system-installed fonts the snapshot records — those are **never deactivated** when applying
+  - Import offers import-only / import & switch / import & merge; per-family toggles in the detail panel, plus fine-grained right-click control
 - **Restore on launch** — automatically re-activates the fonts you had enabled in your last session
 - **QuickBar peek** — collapse the window into a transparent hairline docked at a screen edge; hover to expand, leave to retract. **Alt + ` is a system-wide hotkey** (Win32 `RegisterHotKey`), so the panel drops down even while another app has focus — and it's **rebindable** in Settings (record any combo, reset to default), with a toggle for whether the shortcut jumps to QuickBar from the main window When docked at the **top edge**, clicking Minimize skips the system "fly to taskbar" animation — the window simply rolls up and vanishes, and restoring shows the hairline in place
 - **CorelDRAW support** — apply fonts to selected text in CorelDRAW, in addition to Photoshop and Illustrator

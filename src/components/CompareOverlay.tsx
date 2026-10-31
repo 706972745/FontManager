@@ -5,6 +5,7 @@ import { springSoft } from "../design/springs";
 import { useFontCss } from "../lib/fontLoader";
 import { familiesFor, useFontStore, type Family } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { useModalLayer } from "../lib/modalLayer";
 import { FormatBadge } from "./FamilyCard";
 import { useT } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
@@ -66,13 +67,21 @@ export function CompareOverlay() {
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
   const trapRef = useFocusTrap<HTMLDivElement>(Boolean(compare));
+  const isTopLayer = useModalLayer(Boolean(compare));
 
   useEffect(() => {
     if (!compare) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeCompare();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [compare, closeCompare]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // 只有栈顶那一层能关自己（§5 第 8 条）
+      if (!isTopLayer()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeCompare();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [compare, closeCompare, isTopLayer]);
 
   const familyMap = familiesFor(fonts, tags);
   const families = (compare ?? [])

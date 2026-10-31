@@ -29,6 +29,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { springSnappy } from "../design/springs";
 import { familiesFor, useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { useModalLayer } from "../lib/modalLayer";
 import { LOCALES, useLocalePref, useT, type LocalePref } from "../lib/i18n";
 import { AVAILABLE_ADOBE_APPS } from "../lib/ipc";
 
@@ -59,6 +60,7 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const isTopLayer = useModalLayer(open);
 
   useEffect(() => {
     if (open) {
@@ -273,7 +275,15 @@ export function CommandPalette() {
   }, [cursor]);
 
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") setOpen(false);
+    if (e.key === "Escape") {
+      // 上面压着别的弹层时，Esc 归那一层（§5 第 8 条）
+      if (!isTopLayer()) return;
+      e.preventDefault();
+      // 必须挡住往 window 冒泡：App 的全局 Esc 分支在面板关掉之后照样会跑，
+      // 顺手把主界面的选中也清了（§5 第 8 条残留）。
+      e.stopPropagation();
+      setOpen(false);
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setCursor((c) => Math.min(c + 1, commands.length - 1));

@@ -117,7 +117,7 @@ pub fn morph_window(window: WebviewWindow, from: MorphRect, to: MorphRect, ms: u
     // 无需动画：直接落到终点。
     // 但必须先把上一段动画取消——否则那个线程下一帧还会按旧轨迹把窗口拖走，
     // 看起来就是「已经落位了又自己动起来」（§5 第 17 条）。
-    cancel_previous();
+    let cancel = cancel_previous();
     if ms == 0
         || (from.x == to.x && from.y == to.y && from.width == to.width && from.height == to.height)
     {
@@ -125,7 +125,6 @@ pub fn morph_window(window: WebviewWindow, from: MorphRect, to: MorphRect, ms: u
         return;
     }
 
-    let cancel = cancel_previous();
     // 线程要拥有自己的窗口句柄（WebviewWindow 可以廉价克隆，内部是共享的派发器）
     let win = window.clone();
     thread::spawn(move || {

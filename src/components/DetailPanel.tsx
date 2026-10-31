@@ -6,6 +6,7 @@ import { easeTop, spring } from "../design/springs";
 import { useFontCss, formatBytes, pathBasename } from "../lib/fontLoader";
 import { familiesFor, conflictsFor, useFontStore, type Family } from "../state/fontStore";
 import { ipc, type CharsetStats, type FontFace, type VariationAxis } from "../lib/ipc";
+import { createBoundedMap } from "../lib/boundedMap";
 import { toast } from "../design/primitives/Toast";
 import { FormatBadge } from "./FamilyCard";
 import { buildFaceMenu, exportFace, exportFamily } from "../lib/menus";
@@ -199,7 +200,7 @@ function FeatureChips({
         })}
       </div>
       {dirty && (
-        <button className="feat-reset" onClick={onReset}>
+        <button className="feat-reset" onClick={onReset} data-hint="hint.featReset">
           <RotateCcw size={11} strokeWidth={1.5} /> {t("detail.reset")}
         </button>
       )}
@@ -278,7 +279,7 @@ function AxisSliders({
         );
       })}
       {dirty && (
-        <button className="detail-heading-action axis-reset" onClick={onReset}>
+        <button className="detail-heading-action axis-reset" onClick={onReset} data-hint="hint.axisReset">
           <RotateCcw size={11} strokeWidth={1.5} />
           {t("detail.reset")}
         </button>
@@ -287,7 +288,12 @@ function AxisSliders({
   );
 }
 
-const charsetCache = new Map<string, number[]>();
+/**
+ * 字符集缓存：单个字面最多 4096 个码位（后端 `get_charset` 有上限），
+ * 但**条数**原来是无界的 —— 翻过 100 个字体的详情、关掉面板，缓存仍然全留着（BUG-7）。
+ * 这里给 100 条上限（约等于一次会话可能回看的详情数量），超出丢最早的。
+ */
+const charsetCache = createBoundedMap<string, number[]>(100);
 const GLYPH_LIMIT = 512;
 
 function GlyphMap({
@@ -360,7 +366,7 @@ function GlyphMap({
         })}
       </div>
       {cps.length > GLYPH_LIMIT && !showAll && (
-        <button className="glyph-more" onClick={() => setShowAll(true)}>
+        <button className="glyph-more" onClick={() => setShowAll(true)} data-hint="hint.glyphMore">
           {t("glyph.showAll", { count: cps.length })}
         </button>
       )}
@@ -436,6 +442,7 @@ function CopyrightStatusSection({ family }: { family: string }) {
       >
         {COPYRIGHT_STATUS_OPTIONS.map((opt) => (
           <button
+            data-hint="hint.copyrightStatus"
             key={opt}
             role="radio"
             aria-checked={status === opt}
@@ -791,6 +798,10 @@ export function DetailPanel() {
   const licenseReqGen = useRef(0);
   useEffect(() => {
     licenseReqGen.current++;
+    // 切族 = 上一个族的搜索一定作废。这里必须顺手把「搜索中」复位：
+    // 在飞请求的 finally 因为代次不符不会写回，不复位就永久卡在「搜索中…」、
+    // 按钮永久禁用，只能刷新页面才能恢复（§5 第 24 条）。
+    setLicenseSearching(false);
     return () => {
       licenseReqGen.current++;
     };
@@ -944,7 +955,7 @@ export function DetailPanel() {
               >
                 <Star size={15} strokeWidth={1.5} />
               </motion.button>
-              <button className="detail-close" aria-label={t("detail.close")} onClick={() => select(null)}>
+              <button className="detail-close" aria-label={t("detail.close")} onClick={() => select(null)} data-hint="hint.closeDetail">
                 <X size={15} strokeWidth={1.5} />
               </button>
             </motion.header>
@@ -1225,6 +1236,7 @@ export function DetailPanel() {
               <div className="detail-heading detail-heading-row">
                 <span>{t("detail.styles")}</span>
                 <button
+                  data-hint="hint.exportFace"
                   className="detail-heading-action"
                   onClick={() => void exportFamily(family)}
                 >
@@ -1233,7 +1245,7 @@ export function DetailPanel() {
                 </button>
               </div>
               <div className="style-list">
-                {family.faces.map((face) => (
+                {(family.uniqueFaces ?? family.faces).map((face) => (
                   <StyleRow
                     key={face.id}
                     face={face}
@@ -1316,6 +1328,7 @@ export function DetailPanel() {
 
             {canUninstall && (
               <motion.button
+                data-hint="hint.uninstall"
                 className="detail-uninstall"
                 onClick={() => void uninstallFamily(family.name)}
                 variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}

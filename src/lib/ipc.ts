@@ -138,6 +138,21 @@ export const AVAILABLE_ADOBE_APPS: readonly AdobeApp[] = ADOBE_APPS.filter(
   (app) => app !== "coreldraw" || IS_WINDOWS,
 );
 
+/** 「归置重复字体」的结果（见 src-tauri/src/scanner.rs::DedupeReport） */
+export interface DedupeReport {
+  moved: number;
+  failed: number;
+  bytes: number;
+  /** 归置目标目录（绝对路径） */
+  dest: string;
+  dryRun: boolean;
+  samples: string[];
+  /** 名字对上了但内容和系统那份不一样（多半是另一个版本）→ 保留未动 */
+  skippedDifferent: number;
+  /** 文件名撞车但其实不是同一个字体（PS 名对不上 / 文件里夹着系统没有的字族）→ 保留未动 */
+  skippedPartial: number;
+}
+
 /** 目标软件的预热进度（底部指示条用）：百分比到 100 表示随时可以立刻应用字体 */
 export interface AppWarm {
   id: AdobeApp;
@@ -248,8 +263,24 @@ export interface AffinityConnection {
 /** copy = 复制进字体库（源文件夹保留）；move = 搬进字体库；link = 只登记路径 */
 export type InstallMode = "link" | "move" | "copy";
 
-export const ipc = {
-  getSettings: () => invoke<AppSettings>("get_settings"),
+/**
+ * 字族名为空时补一个可用的名字。
+ *
+ * 少数字体把 name 表的字族名写成空串（ALLMYHAN、Wartorn、EXCEL、苏新诗古印宋简…）。
+ * 后端解析已改成「空名回退文件名」，这里再兜一层：只要 family 是空的，就用
+ * PostScript 名 → 文件名兜底，保证前端所有按 family 名的比较（启用/停用、选中、
+ * 标签、快照条目）不会因为空串把所有这类字体串成一个族。
+ */
+export function withFamilyName(f: FontFace): FontFace {
+  if ((f.family ?? "").trim()) return f;
+  const ps = (f.postscriptName ?? "").trim();
+  const base = (f.path.split(/[\\/]/).pop() ?? f.path).replace(/\.[^.]+$/, "");
+  return { ...f, family: ps || base || "Unknown" };
+}
+
+export const normalizeFaces = (list: FontFace[]): FontFace[] => list.map(withFamilyName);
+
+export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   setSettings: (settings: AppSettings) => invoke<void>("set_settings", { settings }),
   /** 进入 / 退出速览界面：原生侧借此屏蔽「拖到屏幕顶部就最大化」 */
   setQuickbarMode: (mode: boolean) => invoke<void>("set_quickbar_mode", { mode }),
@@ -300,11 +331,11 @@ export const ipc = {
    */
   fontLicenseFetch: (family: string, postscripts: string[], dirs: string[]) =>
     invoke<LicenseSaved | null>("font_license_fetch", { family, postscripts, dirs }),
-  scanFonts: () => invoke<FontFace[]>("scan_fonts"),
+  scanFonts: () => invoke<FontFace[]>("scan_fonts").then(normalizeFaces),
   setFontActive: (path: string, active: boolean) =>
     invoke<void>("set_font_active", { path, active }),
-  setFontsActive: (paths: string[], active: boolean) =>
-    invoke<void>("set_fonts_active", { paths, active }),
+  setFontsActive: (paths: string[], active: boolean, noSave?: boolean) =>
+    invoke<void>("set_fonts_active", { paths, active, noSave: noSave ?? false }),
   setFontsActiveSession: (paths: string[]) =>
     invoke<void>("set_fonts_active_session", { paths }),
   installFonts: (paths: string[], existing: string[], mode: InstallMode) =>
@@ -411,6 +442,14 @@ export const ipc = {
   exportFonts: (paths: string[], destDir: string) =>
     invoke<number>("export_fonts", { paths, destDir }),
   adobeAvailable: () => invoke<boolean>("adobe_available"),
+  /**
+   * 把字体库里与系统已安装字体重复的文件归置到 `<库>/_重复字体/`。
+   * dryRun = true 只统计不移动（先给用户看「会动多少个」）。
+   */
+  dedupeFontLibrary: (dryRun: boolean) =>
+    invoke<DedupeReport>("dedupe_font_library", { dryRun }),
+  /** 按归置清单把搬走的字体原路退回（原位被占用则跳过，不覆盖） */
+  restoreDedupedFonts: () => invoke<DedupeReport>("restore_deduped_fonts"),
   /**
    * 把字体应用到目标软件。
    * aliases 是「本地化族名」的候选串（如「思源宋体 CN」「思源宋体 CN Bold」）：

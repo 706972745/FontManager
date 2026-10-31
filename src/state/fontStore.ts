@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { setUnpreviewableHook } from "../lib/fontLoader";
+import { pickRemovedFamilyNames, withoutFamilies } from "../lib/containerRemove";
 
 /** 快照数量上限（与后端 MAX_SNAPSHOTS 一致）：超过就拒绝，不再悄悄淘汰最旧的 */
 export const SNAPSHOT_LIMIT = 5;
@@ -34,20 +35,31 @@ import {
   type SnapshotEntry,
   type TrashEntry,
 } from "../lib/ipc";
+import { normalizeFaces } from "../lib/ipc";
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
 import { familyActivation, pathsToToggle } from "../lib/familyState";
 import { DEFAULT_HOTKEY, normalizeHotkey, type HotkeySpec } from "../lib/hotkey";
 import { cjkKnown } from "../lib/cjk";
 import { effectiveCopyrightClass } from "../lib/license";
+import {
+  dropRedundantCopies,
+  planBatches,
+  reverseBatches,
+  runBatches,
+  type ApplyBatch,
+} from "../lib/applyPlan";
 import { contextMenuSize } from "../lib/menuMetrics";
 import { parentDir } from "../lib/onlineCoverage";
 import {
   buildFaceIndex,
+  buildFaceIndexCached,
   entryFromFace,
   entryPaths,
+  entryFaceIds,
   faceKey,
   migrateEntry,
   missingEntries,
+  systemBackedEntries,
 } from "../lib/snapshotKey";
 import { toast } from "../design/primitives/Toast";
 import { setSoundLevel, type SoundLevel } from "../lib/sound";
@@ -113,6 +125,14 @@ export type Nav =
 export interface Family {
   name: string;
   faces: FontFace[];
+  /**
+   * 同一个字面在本机出现两份时（系统目录一份 + 字体库里一份，PostScript 名相同）
+   * 只留一条，用于**展示**：详情面板「每种样式」和卡片上的「N 种样式」。
+   *
+   * 不直接对 `faces` 去重是因为启停、部分启用判定都按文件走，两份文件都得留着。
+   * 优先保留可启停的那一份（库内副本），这样点样式能真的动到它。
+   */
+  uniqueFaces?: FontFace[];
   formats: string[];
   isVariable: boolean;
   active: boolean;
@@ -157,6 +177,33 @@ interface FontStore {
   phase: "scanning" | "ready" | "error";
   scanProgress: ScanProgress;
   /**
+   * 应用快照（启用/停用一大批字体）的进度。
+   *
+   * 为什么需要它：切换快照要动上千个字面，Windows 上 `AddFontResourceW` 在字体表
+   * 很大时单次就要 0.4 秒左右，整批要几分钟。以前是一个 IPC 调用把上千个一起丢给
+   * 后端、整批持锁，界面在这几分钟里完全不响应 —— 用户看到的就是「点一下就卡死」。
+   * 现在前端分批调用、每批之间让出事件循环，并把这个进度摆到底部，用户能看到
+   * 「正在应用 320 / 1349」，不会以为程序死了。
+   */
+  applyProgress: { done: number; total: number; undo?: boolean } | null;
+  /** 是否有一次快照应用正在跑（含撤销）：用于互斥，避免两次操作抢同一个进度条 */
+  applyBusy: boolean;
+  /**
+   * 「刚才那次应用被取消了」的常驻提示。
+   *
+   * 为什么不用 toast：取消往往发生在一个几分钟的操作之后，用户的眼睛在字体列表上，
+   * 6 秒就消失的提示根本来不及点；而且 toast 只是个浮层，撤销这种「要改系统状态」
+   * 的动作需要一个看得见、点得到、不会自己跑掉的落点。
+   */
+  applyNotice: { done: number; total: number } | null;
+  /** 撤销「被取消的那次应用」已经做过的部分 */
+  undoLastApply: () => void;
+  dismissApplyNotice: () => void;
+  /** 快照应用过程中用户点了「取消」 */
+  applyCancelled: boolean;
+  /** 请求取消正在进行的快照应用 */
+  cancelApply: () => void;
+  /**
    * 扫描途中陆续到达的字体（原生侧每解析一批就推过来）。
    * 只用于「边读边显示」，扫描结束会被权威结果整体覆盖。
    */
@@ -164,6 +211,14 @@ interface FontStore {
   fonts: FontFace[];
   tags: Record<string, string[]>;
   collections: Record<string, string[]>;
+  /**
+   * 分组里的**字重级**成员（0.9.9-13）：分组名 → `faceKey` 列表。
+   *
+   * 分组本身按字族记（`collections`），但用户会想「只把这一族的某个字重放进去」。
+   * 取并集：字族在 `collections` 里、或它的某个字面在 `collectionFaces` 里，这个字族就属于该分组。
+   * 存在 prefs（`prefs.collectionFaces`）里，不动 state.json 的结构。
+   */
+  collectionFaces: Record<string, string[]>;
   favorites: string[];
   sessionActivated: string[];
   lastImported: string[];
@@ -173,6 +228,15 @@ interface FontStore {
   panelWidth: number;
 
   selection: string[];
+
+  /**
+   * Shift+方向键连续选取时的锚点（第一次扩展前选中的那个字族）。
+   *
+   * 没有它就只能做并集 —— 按 Shift+↑ 往回缩时区间其实变小了，但并集永远不减，
+   * 表现就是「只能越选越多，缩不回去」（0.9.9-1 实测确认）。有锚点才能把
+   * 每次 Shift+方向解释成「从锚点到当前项的区间」并整体替换。
+   */
+  rangeAnchor: string | null;
 
   visibleOrder: string[];
 
@@ -263,6 +327,8 @@ interface FontStore {
   selectedFamily: string | null;
 
   pendingCollectionFor: string | null;
+  /** 从字重菜单「新建分组…」进来的那个字重（faceKey）：建组时只放它，不放整族 */
+  pendingCollectionFace: string | null;
 
   pendingSnapshotFor: string | null;
 
@@ -274,6 +340,14 @@ interface FontStore {
   setFamilyActive: (family: string, active: boolean) => Promise<void>;
   activateFamilySession: (family: string) => Promise<void>;
   setFontFileActive: (path: string, active: boolean) => Promise<void>;
+  /**
+   * 单独启用 / 停用某个字重（`faceId` = `FontFace.id`）。
+   *
+   * 启停真源是**文件级**（`state.deactivated` 按路径记，GDI 也是按文件注册的），
+   * 所以这里先把「用户点的这一行」翻译成能动的那个文件：
+   * 详情面板里展示的可能是系统那一份（`uniqueFaces` 系统优先），真正能动的是同 PS 名的库内副本。
+   */
+  setFaceActive: (faceId: string, active: boolean) => Promise<void>;
   uninstallFontFile: (path: string) => Promise<void>;
   installPaths: (paths: string[], mode: InstallMode) => Promise<void>;
   uninstallFamily: (family: string, opts?: { silent?: boolean; keepMeta?: boolean }) => Promise<void>;
@@ -281,14 +355,23 @@ interface FontStore {
   deleteTrashEntry: (entryId: string) => Promise<void>;
   emptyTrash: () => Promise<void>;
   setFamilyTags: (family: string, tags: string[]) => Promise<void>;
+  removeTagEverywhere: (tag: string) => Promise<void>;
   createCollection: (name: string) => Promise<void>;
   deleteCollection: (name: string) => Promise<void>;
   renameCollection: (from: string, to: string) => Promise<void>;
   toggleFamilyInCollection: (collection: string, family: string) => Promise<void>;
+  /** 批量把字族移出分组（只删成员关系，不删字体）。一条都没命中时静默返回。 */
+  removeFamiliesFromCollection: (collection: string, families: string[]) => Promise<void>;
   createSnapshot: (name: string) => Promise<void>;
   deleteSnapshot: (name: string) => Promise<void>;
   renameSnapshot: (from: string, to: string) => Promise<void>;
   toggleFamilyInSnapshot: (snapshot: string, family: string) => Promise<void>;
+  /** 单独把某个字重加入 / 移出快照（不改同族其它字重） */
+  toggleFaceInSnapshot: (snapshot: string, faceId: string) => Promise<void>;
+  /** 单独把某个字重加入 / 移出分组（不改同族其它字重） */
+  toggleFaceInCollection: (collection: string, faceId: string) => Promise<void>;
+  /** 批量把字族移出快照（按 entry.family 删，不依赖字体是否还在库里） */
+  removeFamiliesFromSnapshot: (snapshot: string, families: string[]) => Promise<void>;
   addActiveToSnapshot: (snapshot: string) => Promise<void>;
   /** 应用快照：switch = 关掉其他字体只留快照内的；merge = 在当前启用基础上叠加快照内的字体 */
   applySnapshot: (name: string, mode: SnapshotApplyMode) => Promise<void>;
@@ -437,6 +520,8 @@ let quickbarWant: boolean | null = null;
 let quickbarChain: Promise<void> = Promise.resolve();
 /** 正在进行的那一次扫描（single-flight：并发扫描会让旧结果覆盖新结果） */
 let scanInflight: Promise<void> | null = null;
+/** 设置写盘串行链：后端 set_settings 是整包覆盖，并发写的落盘顺序不保证（§5 第 12 条） */
+let settingsSaveChain: Promise<void> = Promise.resolve();
 /**
  * 在线详情的代次。关闭详情 / 切到别的字族时递增，让还在飞的
  * `onlineFamily` / `onlinePreview` 回来时认出自己已经过期，不再写回。
@@ -704,12 +789,40 @@ function persistPrefs(get: () => FontStore) {
       copyrightExpiry: s.copyrightExpiry,
       quickbarHotkey: s.quickbarHotkey,
       quickbarHotkeyOpens: s.quickbarHotkeyOpens,
+      collectionFaces: s.collectionFaces,
     });
   }, 600);
-}/**
+}/** 被取消那次应用里「已经跑完的批次」，供底部那条常驻提示的「撤销」使用 */
+let undoPending: ApplyBatch[] = [];
+
+/**
+ * 把「已经真正执行过的批次」就地写回前端的 active 标记。
+ *
+ * 以前这里走的是整库 `rescan()`：批次只改了「启用/停用」这一个字段，却要重新读 4203 个
+ * 字体文件（约 6 秒），侧栏计数会当着用户的面清零再跳回来 —— 用户看到的就是
+ * 「点了取消，怎么又开始读字体库了」。`restoreLastActivation` 早就用了同样的就地更新法。
+ */
+function patchActiveLocally(batches: ApplyBatch[]): void {
+  if (batches.length === 0) return;
+  const want = new Map<string, boolean>();
+  for (const b of batches) for (const p of b.paths) want.set(p, b.active);
+  if (want.size === 0) return;
+  const fonts = useFontStore.getState().fonts;
+  useFontStore.setState({
+    fonts: fonts.map((f) => {
+      const v = want.get(f.path);
+      return v === undefined || v === f.active ? f : { ...f, active: v };
+    }),
+  });
+}
+
+/**
  * 应用一组快照条目（applySnapshot 与导入后应用共用）。
  * 条目本身不含路径，先按可移植标识解析到本机字体，再执行启用/停用。
  * 系统安装的字体（system=true）只做记录与标注，无论何种模式都绝不会被停用。
+ *
+ * 分批、跳过存盘、三个出口（完成/取消/失败）补落盘这些约束都在 `lib/applyPlan.ts`，
+ * 那里有单测；这里只负责「算要动哪些字体」和「把结果讲给用户」。
  */
 async function applyEntries(
   entries: SnapshotEntry[],
@@ -717,28 +830,83 @@ async function applyEntries(
   label: string,
 ): Promise<void> {
   const s = useFontStore.getState();
-  const paths = entryPaths(entries, buildFaceIndex(s.fonts));
-  if (paths.length === 0) return;
-  const byPath = new Map(s.fonts.map((f) => [f.path, f] as const));
+  // 互斥：两个入口（切换/合并、导入后应用）同时点会让两条批次流抢同一个进度条和取消标志
+  if (s.applyBusy) return;
+  const index = buildFaceIndex(s.fonts);
+  const paths = entryPaths(entries, index);
+  if (paths.length === 0) {
+    // 以前这里静默返回：快照条目全都在本机找不到时，用户点了「切换」完全没反应
+    toast.info(t("snap.nothingToApply"));
+    return;
+  }
+  const facesByPath = new Map(s.fonts.map((f) => [f.path, f] as const));
   const snapshotSet = new Set(paths);
-  const toActivate = paths.filter((p) => {
-    const f = byPath.get(p);
-    return !!f && f.deactivatable && !f.active;
-  });
   const toDeactivate =
     mode === "switch"
       ? s.fonts
           .filter((f) => f.active && f.deactivatable && !snapshotSet.has(f.path))
           .map((f) => f.path)
       : [];
+  const deactivating = new Set(toDeactivate);
+  // 同一字面（同一 postscriptName）在系统目录和字体库里各有一份时，只启用一份就够了。
+  // 这里先记下「本次不会被动到、仍然处于启用状态」的字面，再据此跳过重复副本。
+  const activeKeys = new Set(
+    s.fonts.filter((f) => f.active && !deactivating.has(f.path)).map((f) => faceKey(f)),
+  );
+  const candidates = paths.filter((p) => {
+    const f = facesByPath.get(p);
+    return !!f && f.deactivatable && !f.active;
+  });
+  const { keep: toActivate, skipped } = dropRedundantCopies(
+    candidates,
+    facesByPath,
+    activeKeys,
+    faceKey,
+  );
   if (toActivate.length === 0 && toDeactivate.length === 0) {
     toast.success(t("snap.alreadyActive"));
     return;
   }
+  const batches = planBatches(toDeactivate, toActivate);
+  const total = toDeactivate.length + toActivate.length;
+  /** 已经跑完的批次，取消后可以原路撤销 */
+  const applied: ApplyBatch[] = [];
+  undoPending = [];
+  useFontStore.setState({
+    applyBusy: true,
+    applyProgress: { done: 0, total, undo: false },
+    applyNotice: null,
+    applyCancelled: false,
+  });
   try {
-    if (toDeactivate.length > 0) await ipc.setFontsActive(toDeactivate, false);
-    if (toActivate.length > 0) await ipc.setFontsActive(toActivate, true);
-    await useFontStore.getState().rescan();
+    const outcome = await runBatches({
+      batches,
+      apply: async (batch, noSave) => {
+        await ipc.setFontsActive(batch.paths, batch.active, noSave);
+        applied.push(batch);
+      },
+      // 空列表 = 只落盘：中间批次都跳过了存盘，取消/失败时必须补这一次
+      flush: () => ipc.setFontsActive([], true, false),
+      onProgress: (done, total) =>
+        useFontStore.setState({ applyProgress: { done, total, undo: false } }),
+      isCancelled: () => useFontStore.getState().applyCancelled,
+    });
+    // 收掉进度条，再就把这次真正改过的字面就地标好 —— 不整库重扫
+    useFontStore.setState({ applyProgress: null });
+    patchActiveLocally(applied);
+    if (outcome.status === "cancelled") {
+      // 常驻一条底部提示，而不是 6 秒就消失的 toast：用户得来得及决定要不要撤销
+      undoPending = applied;
+      useFontStore.setState({
+        applyNotice: { done: outcome.done, total },
+        applyProgress: null,
+      });
+      return;
+    }
+    if (outcome.status === "failed") {
+      toast.error(t("toast.couldntActivate"), String(outcome.error));
+      return;
+    }
     persistPrefs(useFontStore.getState);
     toast.success(
       mode === "switch"
@@ -748,11 +916,47 @@ async function applyEntries(
             name: label,
           })
         : t("snap.mergeDone", { count: toActivate.length, name: label }),
-      undefined,
+      skipped > 0 ? t("snap.skippedCopies", { count: skipped }) : undefined,
       "activate",
     );
-  } catch (e) {
-    toast.error(t("toast.couldntActivate"), String(e));
+  } finally {
+    // 中途失败也要把进度条收掉，否则它会永远挂在底部
+    useFontStore.setState({ applyBusy: false, applyProgress: null });
+  }
+}
+
+/**
+ * 撤销「取消掉的那次应用」已经做过的部分：批次倒序、动作取反。
+ *
+ * 为什么要它：取消只「停下」的话，系统里会停在一个谁也不认识的中途状态；
+ * 用户点取消往往是因为「选错快照了」，那就应该能一键回到动手之前。
+ */
+async function undoAppliedBatches(applied: ApplyBatch[]): Promise<void> {
+  const batches = reverseBatches(applied);
+  if (batches.length === 0) return;
+  const total = batches.reduce((n, b) => n + b.paths.length, 0);
+  useFontStore.setState({
+    applyBusy: true,
+    applyCancelled: false,
+    applyProgress: { done: 0, total, undo: true },
+  });
+  try {
+    const outcome = await runBatches({
+      batches,
+      apply: (batch, noSave) => ipc.setFontsActive(batch.paths, batch.active, noSave),
+      flush: () => ipc.setFontsActive([], true, false),
+      onProgress: (done, total) =>
+        useFontStore.setState({ applyProgress: { done, total, undo: true } }),
+    });
+    if (outcome.status === "failed") {
+      toast.error(t("toast.couldntActivate"), String(outcome.error));
+    } else {
+      toast.success(t("snap.undoDone"), undefined, "activate");
+    }
+  } finally {
+    useFontStore.setState({ applyBusy: false, applyProgress: null });
+    // 撤销过的部分同样就地写回，避免又触发一次整库重扫
+    patchActiveLocally(batches);
   }
 }
 
@@ -883,10 +1087,26 @@ async function warnIfNoCjk(face: { path: string; faceIndex: number }, name: stri
 export const useFontStore = create<FontStore>((set, get) => ({
   phase: "scanning",
   scanProgress: { done: 0, total: 0 },
+  applyProgress: null,
+  applyBusy: false,
+  applyNotice: null,
+  dismissApplyNotice: () => set({ applyNotice: null }),
+  undoLastApply: () => {
+    const pending = undoPending;
+    if (!pending.length) {
+      set({ applyNotice: null });
+      return;
+    }
+    set({ applyNotice: null });
+    void undoAppliedBatches(pending);
+  },
+  applyCancelled: false,
+  cancelApply: () => set({ applyCancelled: true }),
   scanFonts: [],
   fonts: [],
   tags: {},
   collections: {},
+  collectionFaces: {},
   snapshots: [],
   favorites: [],
   sessionActivated: [],
@@ -895,6 +1115,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   trash: [],
   panelWidth: 348,
   selection: [],
+  rangeAnchor: null,
   visibleOrder: [],
   compare: null,
   comparePicking: false,
@@ -960,6 +1181,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   nav: { kind: "library" },
   selectedFamily: null,
   pendingCollectionFor: null,
+  pendingCollectionFace: null,
   pendingSnapshotFor: null,
   duplicateReport: null,
 
@@ -971,9 +1193,22 @@ export const useFontStore = create<FontStore>((set, get) => ({
     });
     // 边扫边显示：原生侧每解析一批就推一批过来，界面立刻能铺卡片，
     // 不用等整库扫完（几千个字体要好几秒）才「啪」地一次性出现。
+    //
+    // 但不能来一批就 set 一次：每次 set 都会让 App 重算「可见字族」（6000 个字面排序 + 过滤），
+    // 6170 个文件约 50 批，等于启动时白做 50 次全量计算 —— 用户感知就是「越用越慢、扫描像卡住」。
+    // 这里把批次攒起来，每 150ms 合并刷新一次（≈6 次/秒），肉眼看仍是连续铺开。
+    let pendingBatch: FontFace[] = [];
+    let batchTimer: ReturnType<typeof setTimeout> | undefined;
     await listen<FontFace[]>("scan:batch", (e) => {
-      const cur = get().scanFonts;
-      set({ scanFonts: cur.concat(e.payload) });
+      pendingBatch = pendingBatch.concat(normalizeFaces(e.payload));
+      if (batchTimer !== undefined) return;
+      batchTimer = setTimeout(() => {
+        batchTimer = undefined;
+        if (pendingBatch.length === 0) return;
+        const add = pendingBatch;
+        pendingBatch = [];
+        set({ scanFonts: get().scanFonts.concat(add) });
+      }, 150);
     });
     try {
       const prefs = (await ipc.getPrefs()) ?? {};
@@ -1039,6 +1274,18 @@ export const useFontStore = create<FontStore>((set, get) => ({
             : get().copyrightExpiry,
         quickbarHotkey: normalizeHotkey(prefs.quickbarHotkey),
         quickbarHotkeyOpens: prefs.quickbarHotkeyOpens !== false,
+        // 分组里的字重级成员（0.9.9-13）：只保留「分组名 → 字符串数组」这种形状
+        collectionFaces: (() => {
+          const raw = prefs.collectionFaces;
+          if (!raw || typeof raw !== "object") return {};
+          const out: Record<string, string[]> = {};
+          for (const [name, v] of Object.entries(raw as Record<string, unknown>)) {
+            if (!Array.isArray(v)) continue;
+            const keys = v.filter((k): k is string => typeof k === "string");
+            if (keys.length > 0) out[name] = keys;
+          }
+          return out;
+        })(),
       });
       setSoundLevel(get().soundPref);
       hydrateLocalePref(get().localePref);
@@ -1069,6 +1316,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
     await listen("fonts:changed", () => {
       clearTimeout(watchTimer);
       watchTimer = setTimeout(() => {
+        // 扫描期间的文件事件直接忽略：这一次扫描刚把磁盘读了一遍，期间的变化
+        // 已经包含在这份结果里（watcher 在扫描期间本来就会因为自身读取而触发）。
+        // 之前改成"排队补扫"实测代价很大：每次启动白扫一整遍（十几秒）+ 假报
+        // 「发现 N 个新字体」。要补扫的是用户主动改目录这类显式请求（走 rescan）。
         if (get().phase === "scanning") return;
         const before = get().fonts.length;
         void get()
@@ -1159,6 +1410,11 @@ export const useFontStore = create<FontStore>((set, get) => ({
   rescan: async () => {
     // 并发扫描会互相覆盖（先发起的可能后回来，把新结果擦掉）：改成 single-flight，
     // 同一时刻只有一次真正在扫，后来者等同一份结果（§5 第 11 条）。
+    //
+    // 注意：**不能**"记一笔、扫完补扫"。试过一版，后果是请求在扫描期间不断到来
+    // （看门狗事件 / 设置落盘 / 界面刷新都会触发），补扫一结束又被记一笔 → 无限续扫：
+    // 界面永远停在"正在读取字库 xx%"，侧栏计数全是 0，用户感知就是"变慢、卡住"。
+    // 接受这里的语义：扫描期间的新意图合并到当前这一次（结果是从磁盘刚读的，本来就不旧）。
     if (scanInflight) return scanInflight;
     const run = (async () => {
     set({ phase: "scanning", scanFonts: [] });
@@ -1223,6 +1479,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
       // 浮层一关（画面里没有任何可见项）却还在拦快捷键，Delete 会删到不可见的东西（§5 第 18 条）。
       const sel = get().selection.filter((n) => names.has(n));
       if (sel.length !== get().selection.length) set({ selection: sel });
+      // 详情面板选中的那一族被删掉时也必须清：否则 Delete 会打到一个查不到的幽灵族上
+      // （后端报「不能卸载系统字体」之类），面板又静默消失看不出问题（§5 第 18 条残留）。
+      const curFam = get().selectedFamily;
+      if (curFam && !names.has(curFam)) set({ selectedFamily: null, rangeAnchor: null });
       const cmp = get().compare;
       if (cmp) {
         const keptCmp = cmp.filter((n) => names.has(n));
@@ -1313,6 +1573,83 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
   },
 
+  /**
+   * 单独启用 / 停用某个字重（0.9.9-13）。
+   *
+   * 启停的真源是**文件级**（`state.deactivated` 按路径记，GDI 也是按文件注册），
+   * 所以先把「用户点的这一行」翻译成真正能动的那个文件：
+   * 1. 系统那一份动不了 → 换成同 PostScript 名的库内副本（用户要的是「这个字重失效」）；
+   * 2. 一个文件里装了几个字重（TTC）时只能整份启停 → 先提示再动，别让人以为只动了一个。
+   */
+  setFaceActive: async (faceId, active) => {
+    const fonts = get().fonts;
+    const face = fonts.find((f) => f.id === faceId);
+    if (!face) return;
+    const ps = (face.postscriptName ?? "").toLowerCase();
+    let target: FontFace | undefined;
+    if (face.deactivatable) target = face;
+    if (!target && ps) {
+      target = fonts.find(
+        (f) => f.deactivatable && (f.postscriptName ?? "").toLowerCase() === ps,
+      );
+    }
+    if (!target) {
+      target = fonts.find(
+        (f) => f.deactivatable && f.family === face.family && f.style === face.style,
+      );
+    }
+    if (!target) {
+      toast.error(t("toast.cantUninstallSystem"), t("toast.cantUninstallSystemSub"));
+      return;
+    }
+    const sharing = fonts.filter((f) => f.path === target.path);
+    if (sharing.length > 1) {
+      toast.info(
+        t("toast.faceSharedFile", { count: sharing.length }),
+        sharing
+          .map((f) => f.style || f.postscriptName || "")
+          .filter(Boolean)
+          .join(" / "),
+      );
+    }
+    await get().setFontFileActive(target.path, active);
+    // 用户 2026-10-31：「如果单独启用了哪一个字体，最好是让用户知道字重单独启用了」。
+    // 文件级启停原本是静默的，点了眼睛看不出发生了什么，这里明确告诉他只动了这一个字重、
+    // 同族其它字重还是原样。启停失败时 setFontFileActive 自己会报错，这里不再重复提示。
+    const after = get().fonts;
+    const targetNow = after.find((f) => f.id === target.id);
+    if (!targetNow || targetNow.active !== active) return;
+    const keyOf = (f: FontFace) =>
+      (f.postscriptName ?? `${f.family}|${f.style}`).toLowerCase();
+    const targetKey = keyOf(targetNow);
+    // 同一个字面在系统目录和库里各有一份时只算一个，否则会说「另外 2 个」其实只有 1 个
+    const siblingsOn = new Set(
+      after
+        .filter(
+          (f) => f.family === targetNow.family && f.active && keyOf(f) !== targetKey,
+        )
+        .map(keyOf),
+    ).size;
+    const label =
+      targetNow.style?.trim() || targetNow.postscriptName || targetNow.family;
+    const detail = active
+      ? siblingsOn === 0
+        ? t("toast.faceActivatedSolo")
+        : t("toast.faceActivatedSub", { count: siblingsOn })
+      : siblingsOn === 0
+        ? t("toast.faceDeactivatedSolo")
+        : t("toast.faceDeactivatedSub", { count: siblingsOn });
+    /**
+     * 用户看到的这一行是系统目录那份（去重后系统优先展示），实际停用的是字体库副本。
+     * 不说清楚的话，界面状态看起来没变、toast 却说「已单独停用」，两句自相矛盾（BUG-4）。
+     */
+    const copyNote = targetNow.path !== face.path ? t("toast.faceSystemCopy") : null;
+    toast.success(
+      t(active ? "toast.faceActivated" : "toast.faceDeactivated", { style: label }),
+      copyNote ? `${copyNote} · ${detail}` : detail,
+    );
+  },
+
   uninstallFontFile: async (path) => {
     const faces = get().fonts.filter((f) => f.path === path);
     if (faces.length === 0) return;
@@ -1374,8 +1711,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
       const existing = get().fonts.map(dupKeyOf);
       const result = await ipc.installFonts(paths, existing, mode);
       if (result.installed.length > 0) {
-        const families = [...new Set(result.installed.map((f) => f.family))];
-        set({ fonts: [...get().fonts, ...result.installed], lastImported: families });
+        const installed = normalizeFaces(result.installed);
+        const families = [...new Set(installed.map((f) => f.family))];
+        set({ fonts: [...get().fonts, ...installed], lastImported: families });
         persistPrefs(get);
         toast.success(
           families.length === 1
@@ -1430,6 +1768,14 @@ export const useFontStore = create<FontStore>((set, get) => ({
         selectedFamily: get().selectedFamily === family ? null : get().selectedFamily,
         selection: get().selection.filter((f) => f !== family),
         lastImported: get().lastImported.filter((f) => f !== family),
+        // 被比较的那一族卸载了：比较项里留着失效名字会退化成单列、还继续拦快捷键，
+        // 而且以前要等下一次扫描才清（§5 第 18 条残留）
+        compare: (() => {
+          const cmp = get().compare;
+          if (!cmp || !cmp.includes(family)) return cmp;
+          const next = cmp.filter((n) => n !== family);
+          return next.length < 2 ? null : next;
+        })(),
       });
 
       if (!keepMeta) {
@@ -1514,6 +1860,47 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
   },
 
+  /**
+   * 把某个标签从所有字族上摘掉（侧栏右键「从所有字体移除」）。
+   * 不能在 Sidebar 里拿渲染期快照逐族各发一次 IPC：
+   * ① 快照过时会把期间新加的标签一起覆盖掉；② 每个失败的族各弹一条 toast 会刷屏。
+   * 这里按最新的 store 状态逐族串行写，失败只报一次（§5 第 36 条）。
+   */
+  removeTagEverywhere: async (tag) => {
+    const targets = Object.entries(get().tags)
+      .filter(([, list]) => list.includes(tag))
+      .map(([family, list]) => ({ family, next: list.filter((t) => t !== tag) }));
+    if (targets.length === 0) return;
+    // 一次 set 完成乐观更新，界面不要闪 N 次
+    const optimistic = { ...get().tags };
+    for (const { family, next } of targets) {
+      if (next.length === 0) delete optimistic[family];
+      else optimistic[family] = next;
+    }
+    set({ tags: optimistic });
+    let failed = 0;
+    for (const { family, next } of targets) {
+      try {
+        await ipc.setTags(family, next);
+      } catch {
+        failed++;
+      }
+    }
+    if (failed === 0) {
+      // 标签已经不存在了，导航还停在它上面只会落到空列表
+      const nav = get().nav;
+      if (nav.kind === "tag" && nav.tag === tag) set({ nav: { kind: "library" } });
+      return;
+    }
+    // 失败的回退以磁盘真值为准，只影响真的没写成功的那些族
+    try {
+      set({ tags: await ipc.getTags() });
+    } catch {
+      /* 拿不到就以内存状态为准，下次扫描会对齐 */
+    }
+    toast.error(t("toast.couldntSaveTags"), t("tag.removeEverywhereFailed", { count: failed }));
+  },
+
   createCollection: async (name) => {
     const clean = name.trim();
     if (!clean) return;
@@ -1522,37 +1909,71 @@ export const useFontStore = create<FontStore>((set, get) => ({
       return;
     }
     const prev = get().collections;
+    const prevFaces = get().collectionFaces;
     const pending = get().pendingCollectionFor;
-    const families = pending ? [pending] : [];
+    const pendingFaceKey = get().pendingCollectionFace;
+    // 从字重菜单「新建分组…」进来时只放这个字重（pendingCollectionFor 只是用来唤起侧栏输入框）
+    const families = pendingFaceKey ? [] : pending ? [pending] : [];
+    const faces = { ...prevFaces };
+    if (pendingFaceKey) faces[clean] = [pendingFaceKey];
     set({
       collections: { ...prev, [clean]: families },
+      collectionFaces: faces,
       pendingCollectionFor: null,
+      pendingCollectionFace: null,
     });
     try {
       await ipc.setCollection(clean, families);
+      const faceObj = pendingFaceKey
+        ? get().fonts.find((f) => faceKey(f) === pendingFaceKey)
+        : undefined;
       toast.success(
         t("toast.createdCollection", { name: clean }),
-        pending ? t("toast.familyAdded", { name: pending }) : t("toast.rightClickToAdd"),
+        faceObj
+          ? t("toast.faceAddedToCollection", {
+              style: faceObj.style || faceObj.postscriptName || faceObj.family,
+              name: clean,
+            })
+          : pending
+            ? t("toast.familyAdded", { name: pending })
+            : t("toast.rightClickToAdd"),
       );
+      // 字重级成员不走 state.json，只存在 prefs 里：不写这一下，重启后这个分组就空了
+      persistPrefs(get);
     } catch (e) {
-      set({ collections: prev });
+      // 分组没建成就把字重级成员一起退掉，否则 prefs 里留着一个不存在的分组的成员，
+      // 下次碰巧建成同名分组时会冒出上次没成功的那个字重
+      set({ collections: prev, collectionFaces: prevFaces, pendingCollectionFace: null });
+      persistPrefs(get);
       toast.error(t("toast.couldntCreateCollection"), String(e));
     }
   },
 
   deleteCollection: async (name) => {
     const prev = get().collections;
+    const prevFaces = get().collectionFaces;
+    // 记下成员数：删除是不可撤销的，提示里带上"少了几项"信息量更高。
+    // 分组有两种成员（整族 collections + 字重 collectionFaces），只数整族的话，
+    // 纯字重分组会显示「含 0 项」而侧栏明明写着 1（BUG-5）。
+    const memberCount = (prev[name] ?? []).length + (prevFaces[name] ?? []).length;
     const next = { ...prev };
     delete next[name];
+    // 字重级成员跟着分组一起消失，否则下次建同名分组会冒出旧成员
+    const faces = { ...prevFaces };
+    delete faces[name];
     const nav = get().nav;
     set({
       collections: next,
+      collectionFaces: faces,
       nav: nav.kind === "collection" && nav.name === name ? { kind: "library" } : nav,
     });
     try {
       await ipc.deleteCollection(name);
+      persistPrefs(get);
+      toast.success(t("toast.deletedCollection", { name, count: memberCount }));
     } catch (e) {
-      set({ collections: prev });
+      set({ collections: prev, collectionFaces: prevFaces });
+      persistPrefs(get);
       toast.error(t("toast.couldntDeleteCollection"), String(e));
     }
   },
@@ -1567,9 +1988,17 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
     const next = { ...prev, [clean]: prev[from] ?? [] };
     delete next[from];
+    // 字重级成员跟着改名搬过去
+    const prevFaces = get().collectionFaces;
+    const faces = { ...prevFaces };
+    if (faces[from]) {
+      faces[clean] = faces[from];
+      delete faces[from];
+    }
     const nav = get().nav;
     set({
       collections: next,
+      collectionFaces: faces,
       nav:
         nav.kind === "collection" && nav.name === from
           ? { kind: "collection", name: clean }
@@ -1577,8 +2006,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
     });
     try {
       await ipc.renameCollection(from, clean);
+      persistPrefs(get);
     } catch (e) {
-      set({ collections: prev });
+      set({ collections: prev, collectionFaces: prevFaces });
+      persistPrefs(get);
       toast.error(t("toast.couldntRenameCollection"), String(e));
     }
   },
@@ -1592,6 +2023,31 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({ collections: { ...prev, [collection]: families } });
     try {
       await ipc.setCollection(collection, families);
+    } catch (e) {
+      set({ collections: prev });
+      toast.error(t("toast.couldntUpdateCollection"), String(e));
+    }
+  },
+
+  /**
+   * 批量移出分组。**不能用 toggleFamilyInCollection 替代**：那个是开关，
+   * 成员不在分组里时会把字体加进去 —— 拿它做"移除"会出现"删了反而加回来"。
+   */
+  removeFamiliesFromCollection: async (collection, families) => {
+    const prev = get().collections;
+    const current = prev[collection];
+    if (!current) return;
+    const drop = new Set(families);
+    const removedNames = pickRemovedFamilyNames(current, families);
+    // 一条都没命中就静默返回：连按 Delete 不该刷一排提示
+    if (removedNames.length === 0) return;
+    const next = current.filter((f) => !drop.has(f));
+    set({ collections: { ...prev, [collection]: next } });
+    try {
+      await ipc.setCollection(collection, next);
+      toast.success(
+        t("toast.removedFromCollection", { count: removedNames.length, name: collection }),
+      );
     } catch (e) {
       set({ collections: prev });
       toast.error(t("toast.couldntUpdateCollection"), String(e));
@@ -1627,7 +2083,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     try {
       const saved = await ipc.saveSnapshot({ name: clean, createdAt: Date.now(), entries });
       set({ snapshots: saved });
-      const systemCount = entries.filter((e) => e.system).length;
+      const systemCount = systemBackedEntries(entries, buildFaceIndex(get().fonts)).length;
       toast.success(
         t("toast.createdSnapshot", { name: clean }),
         family
@@ -1644,6 +2100,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   deleteSnapshot: async (name) => {
     const prev = get().snapshots;
+    const entryCount = prev.find((s) => s.name === name)?.entries.length ?? 0;
     const next = prev.filter((s) => s.name !== name);
     const nav = get().nav;
     set({
@@ -1652,6 +2109,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     });
     try {
       await ipc.deleteSnapshot(name);
+      toast.success(t("toast.deletedSnapshot", { name, count: entryCount }));
     } catch (e) {
       set({ snapshots: prev });
       toast.error(t("toast.couldntDeleteSnapshot"), String(e));
@@ -1706,6 +2164,101 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
   },
 
+  /**
+   * 单独把某个字重加入 / 移出快照（0.9.9-13）。
+   *
+   * 用户 2026-10-31：「可以单独将字族中的某个字重加入到快照中去」。
+   * 快照条目本来就是**字面级**的（key = postScriptName），所以这里只动这一条，
+   * 不会像 `toggleFamilyInSnapshot` 那样把同族其它字重一起带进来。
+   */
+  toggleFaceInSnapshot: async (snapshot, faceId) => {
+    const prev = get().snapshots;
+    const snap = prev.find((s) => s.name === snapshot);
+    if (!snap) return;
+    const face = get().fonts.find((f) => f.id === faceId);
+    if (!face) return;
+    const key = faceKey(face);
+    const exists = snap.entries.some((e) => e.key === key);
+    const entries = exists
+      ? snap.entries.filter((e) => e.key !== key)
+      : [...snap.entries, entryFromFace(face)];
+    set({ snapshots: prev.map((s) => (s.name === snapshot ? { ...s, entries } : s)) });
+    try {
+      const saved = await ipc.saveSnapshot({ ...snap, entries });
+      set({ snapshots: saved });
+      const style = face.style || face.postscriptName || face.family;
+      toast.success(
+        t(exists ? "toast.faceRemovedFromSnapshot" : "toast.faceAddedToSnapshot", {
+          style,
+          name: snapshot,
+        }),
+        undefined,
+        exists ? undefined : "install",
+      );
+    } catch (e) {
+      set({ snapshots: prev });
+      toast.error(t("toast.couldntUpdateSnapshot"), String(e));
+    }
+  },
+
+  /**
+   * 单独把某个字重加入 / 移出分组（0.9.9-13）。
+   *
+   * 分组本身按字族记，这里记的是「字重级」成员：字族在分组里、或者它某个字面在
+   * `collectionFaces[分组]` 里，这个字族就会出现在该分组视图中。
+   * 只是把字重挂进分组（不改文件、不改启停），所以不需要动 state.json。
+   */
+  toggleFaceInCollection: async (collection, faceId) => {
+    const face = get().fonts.find((f) => f.id === faceId);
+    if (!face) return;
+    // 分组可能已经被删掉（右键菜单是打开那一刻的状态快照）：不要在 prefs 里
+    // 写出一条属于不存在分组的字重成员，否则下次建同名分组会冒出上次的残留
+    if (!get().collections[collection]) return;
+    const key = faceKey(face);
+    const cur = get().collectionFaces[collection] ?? [];
+    const exists = cur.includes(key);
+    const next = exists ? cur.filter((k) => k !== key) : [...cur, key];
+    const map = { ...get().collectionFaces };
+    if (next.length === 0) delete map[collection];
+    else map[collection] = next;
+    set({ collectionFaces: map });
+    persistPrefs(get);
+    const style = face.style || face.postscriptName || face.family;
+    toast.success(
+      t(exists ? "toast.faceRemovedFromCollection" : "toast.faceAddedToCollection", {
+        style,
+        name: collection,
+      }),
+      undefined,
+      exists ? undefined : "install",
+    );
+  },
+
+  /**
+   * 批量移出快照。
+   *
+   * 按 `entry.family` 删，**不走 faceKey 反查 fonts**：快照里的字体可能已经不在
+   * 本机字库里（卸载过 / 换了机器），按 key 反查会一条都删不掉，留下永远清不掉的
+   * 幽灵条目。条目本身带 family 字段，直接用它判断最稳。
+   */
+  removeFamiliesFromSnapshot: async (snapshot, families) => {
+    const prev = get().snapshots;
+    const snap = prev.find((s) => s.name === snapshot);
+    if (!snap) return;
+    const entries = withoutFamilies(snap.entries, families);
+    const removed = snap.entries.length - entries.length;
+    if (removed === 0) return;
+    set({ snapshots: prev.map((s) => (s.name === snapshot ? { ...s, entries } : s)) });
+    try {
+      const saved = await ipc.saveSnapshot({ ...snap, entries });
+      set({ snapshots: saved });
+      toast.success(t("toast.removedFromSnapshot", { count: removed, name: snapshot }));
+    } catch (e) {
+      set({ snapshots: prev });
+      toast.error(t("toast.couldntUpdateSnapshot"), String(e));
+    }
+  },
+
   addActiveToSnapshot: async (snapshot) => {
     const prev = get().snapshots;
     const snap = prev.find((s) => s.name === snapshot);
@@ -1742,7 +2295,15 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   removeMissingFromSnapshot: async (name) => {
-    const prev = get().snapshots;
+    const st = get();
+    // 扫描没跑完时 `fonts` 只是「已经扫到的那一部分」。这时候按「解析不到」判定缺失，
+    // 会把还没加载进来的条目整批当成「本机找不到」删掉 —— 实测扫描到 71% 时点一下，
+    // 320 条的快照被削到只剩 7 条。宁可让用户等扫描完再清理，也不能悄悄吃掉数据。
+    if (st.phase === "scanning") {
+      toast.info(t("snap.waitScan"));
+      return;
+    }
+    const prev = st.snapshots;
     const snap = prev.find((s) => s.name === name);
     if (!snap) return;
     const missing = new Set(missingEntries(snap.entries, buildFaceIndex(get().fonts)));
@@ -2051,34 +2612,41 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   selectWith: (family, mode, order) => {
-    const { selection, selectedFamily } = get();
+    const { selection, selectedFamily, rangeAnchor } = get();
     if (mode === "single" && selectedFamily === family && selection.length <= 1) {
-      set({ selection: [], selectedFamily: null });
+      set({ selection: [], selectedFamily: null, rangeAnchor: null });
       return;
     }
     if (mode === "toggle") {
       const next = selection.includes(family)
         ? selection.filter((f) => f !== family)
         : [...selection, family];
-      set({ selection: next, selectedFamily: family });
+      set({ selection: next, selectedFamily: family, rangeAnchor: null });
       return;
     }
-    if (mode === "range" && selectedFamily) {
-      const a = order.indexOf(selectedFamily);
+    if (mode === "range") {
+      // 锚点 = 这一轮 Shift 扩展开始前选中的那个；第一次扩展时就是当前选中项。
+      // 每次都算「锚点 ↔ 当前项」的完整区间并**整体替换**，所以按 Shift+↑ 往回缩时
+      // 选区会真的变小 —— 旧实现用并集，只能越选越多（0.9.9-1 实测确认）。
+      const anchor = rangeAnchor ?? selectedFamily;
+      const a = anchor ? order.indexOf(anchor) : -1;
       const b = order.indexOf(family);
       if (a !== -1 && b !== -1) {
-        const range = order.slice(Math.min(a, b), Math.max(a, b) + 1);
-        set({ selection: [...new Set([...selection, ...range])], selectedFamily: family });
+        set({
+          selection: order.slice(Math.min(a, b), Math.max(a, b) + 1),
+          selectedFamily: family,
+          rangeAnchor: anchor,
+        });
         return;
       }
     }
-    set({ selection: [family], selectedFamily: family });
+    set({ selection: [family], selectedFamily: family, rangeAnchor: null });
   },
 
   selectAll: () => {
     const order = get().visibleOrder;
     if (order.length === 0) return;
-    set({ selection: [...order], selectedFamily: order[order.length - 1] });
+    set({ selection: [...order], selectedFamily: order[order.length - 1], rangeAnchor: null });
   },
 
   openCompare: (families) => set({ compare: families.slice(0, 4), comparePicking: false }),
@@ -2098,9 +2666,20 @@ export const useFontStore = create<FontStore>((set, get) => ({
   updateSettings: async (settings) => {
     const prev = get().settings;
     set({ settings });
-    try {
-      await ipc.setSettings(settings);
-    } catch (e) {
+    // 写盘串行 + 执行时才取当前状态：后端 set_settings 是整包覆盖，
+    // 两次并发写若乱序落盘，先发起那一份会把后一次的字段写回旧值（§5 第 12 条残留）。
+    let saveError: unknown = null;
+    const job = settingsSaveChain.then(async () => {
+      try {
+        await ipc.setSettings(get().settings);
+      } catch (e) {
+        saveError = e;
+      }
+    });
+    settingsSaveChain = job;
+    await job;
+    if (saveError !== null) {
+      const e = saveError;
       // 只回滚「本次真正要写、且界面上还是这次值」的字段。
       // 整包回滚成 prev 会把并发成功的其他修改一起擦掉（§5 第 12 条）。
       const cur = get().settings;
@@ -2120,7 +2699,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
       prev.extraDirs.some((d, i) => d !== settings.extraDirs[i]) ||
       prev.libraryDir !== settings.libraryDir ||
       prev.libraryDirEnabled !== settings.libraryDirEnabled;
-    if (!dirsChanged || get().phase === "scanning") return;
+    if (!dirsChanged) return;
     const before = get().fonts.length;
     await get().rescan();
     if (get().phase !== "ready") return;
@@ -2239,7 +2818,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
         licenseDirs,
       );
       if (result.installed.length > 0) {
-        set({ fonts: [...get().fonts, ...result.installed], lastImported: [res.family] });
+        set({ fonts: [...get().fonts, ...normalizeFaces(result.installed)], lastImported: [res.family] });
         persistPrefs(get);
         toast.success(t("toast.installedOne", { name: res.family }), undefined, "install");
       }
@@ -2646,12 +3225,40 @@ export const useFontStore = create<FontStore>((set, get) => ({
       toast.error(t("toast.importFailed"), String(e));
     }
   },
-  setNav: (nav) => set({ nav, selectedFamily: null, selection: [] }),
+  setNav: (nav) => {
+    // 离开「在线」页时详情必须一起关：OnlineView 卸载后 onlineDetail 还留在 store 里，
+    // App 的 topLayerOpen() 就恒为真 → Ctrl+K / ? / Delete / 方向键全失效，
+    // 暂存目录也不会清；再进在线页旧详情还会自己弹回来（§5 第 9 条残留）。
+    if (nav.kind !== "online" && get().onlineDetail) get().closeOnlineFamily();
+    set({ nav, selectedFamily: null, selection: [] });
+  },
   select: (selectedFamily) =>
-    set({ selectedFamily, selection: selectedFamily ? [selectedFamily] : [] }),
+    set({
+      selectedFamily,
+      selection: selectedFamily ? [selectedFamily] : [],
+      rangeAnchor: null,
+    }),
 }));
 
 const styleOrder = (f: FontFace) => f.weight * 2 + (f.italic ? 1 : 0);
+
+/**
+ * 字族的归组键 / 显示名。
+ *
+ * 正常情况就是字体自报的 family。少数文件的 name 表把字族名写成空串（ALLMYHAN、
+ * Wartorn、EXCEL、苏新诗古印宋简…），旧逻辑直接拿 "" 当键，这些互不相干的字体会被
+ * 并进同一个字族：卡片显示成「N 种样式」、详情面板打不开（name 为空被判成没选中）、
+ * 中文判定还取到另一个字体的字面。后端已经改成「空名回退文件名」，这里再兜一层，
+ * 保证旧缓存里的空名也不会再串族。
+ */
+const familyKeyOf = (f: FontFace): string => {
+  const direct = (f.family ?? "").trim();
+  if (direct) return direct;
+  const ps = (f.postscriptName ?? "").trim();
+  if (ps) return ps;
+  const base = f.path.split(/[\\/]/).pop() ?? f.path;
+  return base.replace(/\.[^.]+$/, "") || "Unknown";
+};
 
 export function computeFamilies(
   fonts: FontFace[],
@@ -2659,10 +3266,11 @@ export function computeFamilies(
 ): Map<string, Family> {
   const map = new Map<string, Family>();
   for (const f of fonts) {
-    let fam = map.get(f.family);
+    const key = familyKeyOf(f);
+    let fam = map.get(key);
     if (!fam) {
       fam = {
-        name: f.family,
+        name: key,
         faces: [],
         formats: [],
         isVariable: false,
@@ -2670,7 +3278,7 @@ export function computeFamilies(
         partial: false,
         activeCount: 0,
         deactivatable: false,
-        tags: tags[f.family] ?? [],
+        tags: tags[key] ?? [],
         totalSize: 0,
         foundry: null,
         classification: "unknown",
@@ -2686,9 +3294,28 @@ export function computeFamilies(
         brokenFaces: 0,
         brokenAll: false,
       };
-      map.set(f.family, fam);
+      map.set(key, fam);
     }
     fam.faces.push(f);
+    {
+      // 同一字面（PostScript 名相同）在系统和字体库各有一份时只展示一条，
+      // 否则详情面板会出现「Light / Light / Normal / Normal / Negreta / Negreta」这种成对重复
+      const pk = (f.postscriptName ?? "").toLowerCase() || `style:${f.style}`;
+      const uniq = (fam.uniqueFaces ??= []);
+      const at = uniq.findIndex(
+        (u) => ((u.postscriptName ?? "").toLowerCase() || `style:${u.style}`) === pk,
+      );
+      if (at === -1) uniq.push(f);
+      else {
+        // 系统里已经装了这个字面 → 库里那份不必再列一行（用户 2026-10-31：系统有了库就不需要）。
+        // 两边都同源时，才优先保留能启停的那一份。
+        const cur = uniq[at];
+        const preferSystem = cur.source !== "system" && f.source === "system";
+        const preferToggleable =
+          cur.source === f.source && !cur.deactivatable && f.deactivatable;
+        if (preferSystem || preferToggleable) uniq[at] = f;
+      }
+    }
     if (!fam.formats.includes(f.format)) fam.formats.push(f.format);
     fam.isVariable ||= f.isVariable;
     fam.foundry ??= f.foundry;
@@ -2807,10 +3434,21 @@ export function applyFamilyFilters(out: Family[], s: FamilyFilterState): Family[
   return out;
 }
 
-export function selectVisibleFamilies(s: {
-  fonts: FontFace[];
+/**
+ * 「系统字体」的口径（侧栏计数与列表过滤共用一份，避免两处不一致）。
+ *
+ * 用户的理解是「C:\Windows\Fonts 里有的字体」——所以只要该字族在系统目录里
+ * 有**至少一个**字面就算。旧口径要求「整族的字面全都来自系统」，
+ * 于是字体库里存了同名副本的族（Arial、Book Antiqua…）全被排除，166 个系统字族只显示 10 个。
+ */
+export function isSystemFamily(f: Family): boolean {
+  return f.faces.some((face) => face.source === "system");
+}
+
+export function selectVisibleFamilies(s: {  fonts: FontFace[];
   tags: Record<string, string[]>;
   collections: Record<string, string[]>;
+  collectionFaces?: Record<string, string[]>;
   snapshots: Snapshot[];
   favorites: string[];
   sessionActivated: string[];
@@ -2841,20 +3479,27 @@ export function selectVisibleFamilies(s: {
     out = out.filter((f) => f.tags.includes(tag));
   }
   if (s.nav.kind === "collection") {
-    const members = s.collections[s.nav.name] ?? [];
-    out = out.filter((f) => members.includes(f.name));
+    const name = s.nav.name;
+    const members = s.collections[name] ?? [];
+    const faceKeys = new Set(s.collectionFaces?.[name] ?? []);
+    // 字族级成员 + 字重级成员（0.9.9-13：可以只把某个字重放进分组）
+    out = out.filter(
+      (f) => members.includes(f.name) || f.faces.some((fc) => faceKeys.has(faceKey(fc))),
+    );
   }
   if (s.nav.kind === "snapshot") {
     const snapshotName = s.nav.name;
     const snap = s.snapshots.find((sn) => sn.name === snapshotName);
     // 条目是可移植标识，需先解析成当前机器上的字体路径
-    const members = entryPaths(snap?.entries ?? [], buildFaceIndex(s.fonts));
+    // 用**字面 id** 而不是路径：TTC 一个文件里可能有多个 family（msjh.ttc 里的
+    // Microsoft JhengHei / Microsoft JhengHei UI），按路径会把同文件的另一个族也拉进来。
+    const members = entryFaceIds(snap?.entries ?? [], buildFaceIndexCached(s.fonts));
     const memberSet = new Set(members);
-    out = out.filter((f) => f.faces.some((fc) => memberSet.has(fc.path)));
+    out = out.filter((f) => f.faces.some((fc) => memberSet.has(fc.id)));
     const order = new Map(members.map((p, i) => [p, i] as const));
     const firstIndex = (f: Family) =>
       f.faces.reduce(
-        (min, fc) => Math.min(min, order.get(fc.path) ?? Number.MAX_SAFE_INTEGER),
+        (min, fc) => Math.min(min, order.get(fc.id) ?? Number.MAX_SAFE_INTEGER),
         Number.MAX_SAFE_INTEGER,
       );
     out.sort((a, b) => firstIndex(a) - firstIndex(b) || a.name.localeCompare(b.name));
@@ -2876,7 +3521,7 @@ export function selectVisibleFamilies(s: {
     out = out.filter((f) => !f.active);
   }
   if (s.nav.kind === "system") {
-    out = out.filter((f) => f.faces.length > 0 && f.faces.every((face) => face.source === "system"));
+    out = out.filter(isSystemFamily);
   }
   if (q) {
     out = out.filter(

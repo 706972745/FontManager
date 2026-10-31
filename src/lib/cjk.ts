@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ipc, type FontFace } from "./ipc";
+import { createBoundedMap } from "./boundedMap";
 
 /**
  * 「这个字面里有没有中文字形」的查询。
@@ -18,7 +19,11 @@ import { ipc, type FontFace } from "./ipc";
 
 export type HanLevel = "none" | "sparse" | "full";
 
-const cache = new Map<string, HanLevel>();
+/**
+ * 键是 `path#faceIndex`，一个字体库几千个字面就会攒几千条。
+ * 每条很小（一个字符串 + 一个枚举），但没理由越过上限一直长（BUG-9）。
+ */
+const cache = createBoundedMap<string, HanLevel>(5000);
 const inflight = new Map<string, Promise<HanLevel>>();
 
 const keyOf = (face: Pick<FontFace, "path" | "faceIndex">) => `${face.path}#${face.faceIndex}`;
