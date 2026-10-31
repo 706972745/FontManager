@@ -4,6 +4,76 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] — 2026-11-01
+
+> **1.0.0 里程碑**：万级字体库（14,211 字族实测）、速览列表虚拟化、右键菜单收口、字重级操作，
+> 外加一套默认关闭的性能诊断埋点。本版**无破坏性变更**：`0.9.9-x` 的字体库、标签、合集、
+> 收藏、备注与快照数据可直接沿用。功能全貌见 README 的「全功能说明（1.0.0）」。
+
+### 新增：右键菜单的「分组 / 快照」收进二级菜单（完整界面 + 速览）
+
+用户 2026-11-01 截图反馈：分组和快照的成员**平铺**在右键菜单里，
+分组长名（`fjeifsjief...`）会把「导出 / 复制 / 回收站」一路顶到屏幕外。
+
+**改动**
+
+- `ContextMenu.tsx` 的 `MenuItem` 新增 `submenu` 分支：hover / 点击 / `→` 展开，
+  `←` 收起并回到父项；子面板走 portal 挂到 `body`（父面板是 `overflow-y: auto`，嵌在里面会被裁掉，
+  而且父面板的上下键导航会把子项当成同级项）。
+- 三处菜单构建器收口：`buildFamilyMenu` / `buildFaceMenu` / `buildBulkMenu` 的「分组」「快照」
+  变成子菜单入口，成员勾选项 + 「新建分组… / 新建快照…」全部进子面板；
+  侧栏分组右键菜单里的「加入快照」同样收进子菜单。
+- 主菜单长度恒定，不再随用户建的分组/快照数量增长。
+
+**坑（窄窗口，第一版真机就撞上）**
+
+速览窗口只有 500 宽。子面板沿用「右侧放不下就翻到左侧」，结果整块盖在父菜单上，
+「分组 / 快照」两行被完全遮住 —— 用户不知道自己在哪一层。
+改成**右侧剩余空间 ≥168px 就把子面板压窄留在右边**，只有两边都挤不出才选较宽的一侧；
+子面板必须内联 `minWidth: 0` 才能压到 `.ctx-menu` 的 `min-width: 208` 以下。
+
+**真机验证**（`.workbuddy/qa-2026-11-01/verify_submenu*.json` + 截图）
+
+- 完整界面：主菜单 14 项，仅「分组 ›」「快照 ›」两个入口；悬停后子菜单读到
+  「新建分组… + 2 个分组」「新建快照… + 5 个快照」，与侧栏计数量一致。
+- 速览：主菜单同样收口，子菜单在**右侧并排**显示（压缩到约 196px），无遮挡、无溢出窗口。
+- 取证坑：菜单项在 UIA 里是 **MenuItem**（勾选项是 **CheckBox**），
+  用 `Button` 查会得到「菜单里没有分组」的错误结论，而截图明明有。
+
+### 新增：滚动性能的被动测量（§10）与实验开关（§11）
+
+交接文档 `交接文档-2026-10-31-滚动预取-评估与替代路线.md` 的判定线需要实测数据。
+这次把测量与开关做进产品，**默认全部关闭，行为与 0.9.9-25 完全一致**。
+
+- `lib/loaderStats.ts`：环形 2000 样本；**原始加载与修复加载分开统计**
+  （repair 走两次 IPC，混进同一个 p95 会让「慢在解码还是慢在修」失去分辨力）；
+  registerMs、time-to-ink、预取命中率各自成组。
+- `lib/frameWatch.ts`：rAF 间隔采样，`>50ms` 记一次掉帧。
+- `fontLoader.ts`：`tryLoad` 成功路径只多一次 `stats.record()`（**不得有分支**，-24 教训）；
+  `faceStats()` 扩展 pinned / loadP50 / loadP95 / loadMax / repair / ink / 预取门控计数。
+- `lib/experiment.ts`：`?overscan=8&qbRoot=360px&prefetch=1&diag=1`
+  或 `localStorage["zfm.exp.*"]`，**默认值 = 现状**（6 / 240px / 关闭）。
+- `components/DiagHud.tsx`：`role="status"`，500ms 刷新，仅 `?diag=1` 挂载；
+  配套脚本 `.workbuddy/qa-2026-11-01/measure_scroll.py` 边滚边读它落 JSON。
+- `lib/prefetch.ts`：预取窗口的纯逻辑（只预取滚动方向前方、按视口量、硬上限 40），可单测。
+
+### 新增：主动预取 `prefetchFace`（默认关闭）
+
+按 §14.2 的修正语义实现：**不 pin、不带 repair、不触发 `incompleteHook`**。
+
+**坑（文档伪代码的死角）**：预取失败时「不写 cache」并不够 —— 前面已经
+`cache.set(name, "loading")` 了，残留的 `loading` 会让 `ensurePathLoaded` 直接 return，
+用户真滚到那张卡时**永远不加载**（比写 `failed` 更难查，因为日志里什么都看不到）。
+这里显式 `cache.delete(name)`。
+
+`?prefetch=1` 才生效，带三道门控：体积（>40MB 跳过）、预算（已用 >60% 跳过）、在途（≤3）。
+交付标准是命中率 ≥40%，否则回滚（§14.3）。
+
+### 测试
+
+`node --test` **187 pass / 0 fail**（新增 `loaderStats` / `prefetchWindow` / `experiment`
+三组共 24 例）；`tsc --noEmit` 干净。
+
 ## [0.9.9-25] — 2026-10-31
 
 ### 性能：速览列表虚拟化 —— 4211 个字族只挂载视口内的十几行

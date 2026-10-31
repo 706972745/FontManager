@@ -2070,6 +2070,55 @@ h2.detail-title.copy-name {
   border-color: transparent;
   box-shadow: 0 0 8px var(--accent-glow-soft);
 }
+/* 二级菜单入口：右侧箭头常驻、展开态保持高亮。
+   高亮必须跟着「展开」而不是只在 hover 上 —— 鼠标移进子面板后父项会失去 hover，
+   没有这条的话父项会在子菜单开着的时候突然变灰，看起来像点错了。 */
+.ctx-submenu-chevron {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+.ctx-item.ctx-submenu-open {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+.ctx-item.ctx-submenu-open .ctx-submenu-chevron,
+.ctx-item:hover:not(:disabled) .ctx-submenu-chevron {
+  opacity: 1;
+  color: inherit;
+}
+/* 子面板层级要高于父面板（父 81 / backdrop 80），否则会压在 backdrop 下面点不到 */
+.ctx-submenu-panel {
+  z-index: 82;
+  /* 窄窗口（速览 500px）下必须能和父面板并排：允许压到 .ctx-menu 的 min-width 以下，
+     实际宽度由 SubmenuRow 按可用空间内联设置 */
+  min-width: 0;
+}
+
+/* 诊断 HUD：只在 ?diag=1 时挂载。WebView2 的 CDP 不可用，UIA 靠 role="status" 的文本读它。
+   pointer-events: none —— 它压在最上层，绝不能挡住任何点击。 */
+.diag-hud {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  z-index: 90;
+  max-width: min(820px, 96vw);
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: rgba(var(--scrim-rgb), 0.6);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
 
 .sidebar-toggle {
   display: flex;

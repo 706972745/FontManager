@@ -14,7 +14,7 @@
 This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) with Chinese localization and new features. **[🇨🇳 完整中文文档请看这里 →](README.zh-CN.md)**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.9.9--25-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.0.0-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 
@@ -29,6 +29,22 @@ This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZF
 ---
 
 ## 🍴 What this fork adds
+
+### 🎉 The 1.0.0 milestone
+
+This release closes out two long-running threads — **library scale** and **menu density**:
+
+- **A ten-thousand-font library holds up.** At 14,211 families the app launches, searches and scrolls
+  with only 6–8 cards mounted in the viewport; memory obeys a dual cap (200 faces **and** 160 MB),
+  faces unmount when they scroll away, and usage falls back after idling (it recovers, not leaks).
+- **QuickBar is virtualized.** The peek panel used to mount all 4,211 rows; now it renders only what's on screen.
+- **Tidier context menus.** Collection and snapshot members moved into **submenus**, so the main menu
+  stops growing with your collections — consistently across the main window, QuickBar, face rows,
+  bulk selection and the sidebar.
+- **Face-level operations.** Activate/deactivate a single weight, add just that weight to a snapshot
+  or collection; cards report "N/M active" instead of pretending to be fully on.
+- **Diagnostics, off by default.** Load p50/p95, time-to-ink, dropped frames, resident count/bytes and
+  prefetch hit-rate are available behind a launch flag when you need to profile — zero cost otherwise.
 
 - **Font snapshots** — save your currently activated fonts as a named snapshot and restore it in one click; up to 5 snapshots, oldest evicted automatically. What each button on the snapshot bar does:
   - **Switch to this snapshot** — deactivate every other active font (system fonts are never touched) and keep only this snapshot's fonts
@@ -136,6 +152,7 @@ from one clean, fast, native app. Your fonts never leave your machine.
   - [Themes, sound &amp; motion](#themes-sound--motion)
   - [Your language](#your-language)
   - [Back up your curation](#back-up-your-curation)
+- [Complete feature reference (1.0.0)](#-complete-feature-reference-100)
 - [Keyboard shortcuts](#-keyboard-shortcuts)
 - [Translations](#-translations)
 - [Getting ZFontManager](#-getting-zfontmanager)
@@ -496,6 +513,124 @@ Your tags, collections, favorites and notes are the real work — the fonts
 themselves you can always re-download. Settings → **Export library data**
 saves all of it to a single file; **Import** merges it back in, on this
 machine or another one.
+
+---
+
+## 📋 Complete feature reference (1.0.0)
+
+The tour above explains *why it feels good*; this is the **full inventory**, organized by module.
+Every row maps to an entry point you can actually click in the app.
+
+### 1. Library & import
+
+| Feature | What it does |
+|---|---|
+| Automatic scan | On first launch, scans the standard system-wide and per-user font locations and builds the library |
+| Watched folders | Add any folder in Settings; new fonts show up as soon as they land |
+| Drag & drop | A single file (TTF / OTF / TTC / WOFF), an entire folder, or **a ZIP archive** (no need to unzip) |
+| Two landing modes | **Add to library** (register in place — good for external drives/project folders) or **copy into the system folder** |
+| Name collisions | The detail panel lists every involved file, which one is currently active, and lets you keep/remove/trash them individually; system fonts are protected |
+| Trash | Uninstalling moves fonts to an in-app, restorable trash; only "empty trash" or "delete permanently" removes files |
+| Duplicates & broken files | Files already in the library are skipped; WOFF2 is skipped, lone WOFF1 is unpacked to sfnt so you never install a half-broken copy |
+| Parse cache | Keyed by path + mtime + size, so restarts only parse new or changed files |
+| Library folder | Point it anywhere in Settings |
+
+### 2. Browsing & preview
+
+| Feature | What it does |
+|---|---|
+| Three views | **Grid** (large cards), **List** (compact overview), **Waterfall** (one family at every size on one screen) |
+| Live rendering | Your entire library renders your sample text **in its own glyphs**; the size slider goes from footnote to poster |
+| Family grouping | Weights and italics collapse into one card; expand it to see each style rendered live |
+| Face rows | Per-face activation (eye toggle), per-face context menu, hover-to-preview that face, missing-script hints, CJK sibling lookup |
+| QuickBar | Collapse the window into an edge-hugging translucent strip that expands on hover; **system-wide Alt + ` hotkey**, remappable |
+| Detail panel | Live specimen per style, variable-font axes, OpenType feature toggles, character map (click to copy), format/glyph count/size/path/license |
+| Side-by-side compare | Pick 2–4 families and render the same sentence side by side, adjustable size |
+| License detection | Card badge and filters share one rule set: paid / free for personal / free for commercial / unknown / time-limited (with expiry), plus library-wide license search |
+| Missing-glyph hints | When your sample text needs characters this font can't draw, the preview says which script is missing |
+
+### 3. Activation & deactivation
+
+| Feature | What it does |
+|---|---|
+| One-click toggle | Click or press <kbd>Space</kbd>: the font appears/disappears from other apps' menus, the file never moves |
+| Bulk | Multi-select and toggle all at once, with undo; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects the current view (including filtered results) |
+| Partial activation | Families with only some faces active show a half-state toggle and "N/M active" — never masquerading as fully active |
+| Activate until quit | Session-scoped wake-up; quitting ZFontManager puts it back to sleep, nothing left behind |
+| System font protection | Fonts the OS won't let you disable are marked protected and can't be removed by any path; hide them entirely if you prefer |
+| Restore on launch | Optional: re-activate whatever was active in your last session |
+| Bulk performance | Thousands of toggles run on a background thread, with one registry rebuild and one broadcast per batch (fixes the old O(n²) freeze) |
+
+### 4. Design-app integration
+
+| Feature | What it does |
+|---|---|
+| Photoshop / Illustrator | Right-click a family → "Apply in Photoshop…" retargets the selected text layers; with no selection it creates a sample text layer |
+| CorelDRAW | Same, applied to the selected text object |
+| Sleeping fonts | Applying a dormant font wakes it "until quit" — trying a font never installs it permanently |
+| Affinity auto-activate | Activates the fonts a document needs (whole family) while Affinity runs, deactivates when it quits; needs Affinity 3.2+ and MCP |
+| Warm host | A resident COM host cuts the first integration wait from ~5s to ~0.2s |
+
+### 5. Online fonts
+
+| Feature | What it does |
+|---|---|
+| Catalog | ~2,000 open-licensed families (Fontsource index, sourced from google/fonts); search, filter by category/license/variable |
+| Download | One click into your library, tagged *Online*; downloads are **complete fonts**, not web subsets |
+| License | License text is saved alongside the font and readable in the detail panel, including reserved font names |
+| Privacy | **Off by default**; enabling it still makes no background requests; search runs locally (catalog cached 7 days); only two named hosts are ever contacted |
+
+### 6. Organization & search
+
+| Feature | What it does |
+|---|---|
+| Tags | Free-form tags; the sidebar doubles as a filter; bulk-tag a multi-selection |
+| Collections | Manual folders, a font can live in many; **face-level membership** supported (collect just one weight) |
+| Favorites | Star your workhorses, dedicated sidebar view, <kbd>F</kbd> to toggle |
+| Notes | Per-family note box for license limits, spacing quirks, whatever you'd otherwise forget |
+| Snapshots | Save the set of currently-active fonts: switch / merge / add / prune missing / export JSON / delete; applying shows progress with cancel and undo; system fonts are never deactivated |
+| Search | Type-ahead by name (<kbd>/</kbd> focuses it); click to copy family name, PostScript name, or file path |
+| Filters | Source (all/system/installed), category, script, file format, typographic features, **by character** (who actually has this glyph), variable only, hide non-deactivatable |
+| Sort | Name, style count, file size, glyph count |
+| Sidebar states | Active / until-quit / inactive / recently imported / system, each reachable from the palette |
+| Command palette | <kbd>Ctrl</kbd><kbd>K</kbd> to jump to any view, collection, theme, rescan, or find a font by name |
+| Context menus | Collection and snapshot members now live in a **submenu** (1.0.0), so the main menu no longer grows with your collections |
+
+### 7. Export & backup
+
+| Feature | What it does |
+|---|---|
+| Specimen sheet | Export a shareable PNG (alphabet + sizes + sample text) — the recipient needs no fonts installed |
+| Font files | Export a single style or a whole family |
+| Font list | Export metadata for spreadsheet work |
+| Library data | Tags, collections, favorites, notes and snapshots in one file — import on another machine |
+
+### 8. Interface & system
+
+| Feature | What it does |
+|---|---|
+| Themes | Light / dark / follow system |
+| Sound | Synthesized feedback for toggles and events, three levels (on / soft / off) |
+| Motion & transparency | Reduce motion (springs → quick fades), reduce transparency (frosted → solid, easier on older iGPUs) |
+| UI scale | Measures the available screen and picks a scale that fits; or pin it manually between 80% and 125% |
+| Languages | English / Deutsch / Español / Français / Português (Brasil) / Русский / 日本語 / 简体中文 / 繁體中文 |
+| Keyboard | The whole app is keyboard-operable; <kbd>?</kbd> opens the shortcut overlay |
+| Tray & startup | Close to tray, launch at login, start minimized (all off by default) |
+| Single instance | Relaunching focuses the running window instead of opening a second copy |
+| First-run tour | Spotlight walkthrough, replayable from Settings |
+
+### 9. Performance & scale (measured)
+
+| Metric | Result |
+|---|---|
+| Ten-thousand-font library | 14,211 families: launches, searches and scrolls with no crash or blank previews |
+| Mounted cards | Only **6–8** cards mounted at 14,211 families (virtualized), independent of library size |
+| Memory | Dual cap — 200 faces **and** 160 MB; faces unmount when they leave the viewport, and usage falls back after 70s idle (~1.2 GB), i.e. it recovers rather than leaks |
+| Cold start | Parsed results are cached; the window appears in ~1.5s with skeletons and a bottom progress bar |
+| Bulk toggles | 5,873 fonts imported and thousands of families toggled with the UI staying responsive |
+| Preview compatibility | Fonts the browser rejects (TTC, legacy cmap, dirty gid) are repaired into a cached copy, 384 MB LRU |
+
+> Note: `AddFontResourceW` costs ~0.36s per font on Windows — a hard platform floor. Activating ten thousand fonts takes hours by design; that is the OS, not an app stall.
 
 ---
 

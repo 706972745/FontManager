@@ -29,6 +29,7 @@ import { buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
 import { expandQuickbarPanel, minimizeQuickbar, useQuickbarDock } from "../lib/useQuickbarDock";
 import { useInView } from "../lib/useInView";
+import { experiment } from "../lib/experiment";
 import { useWindowDrag } from "../lib/useWindowDrag";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { WarmFooter } from "./WarmFooter";
@@ -43,6 +44,17 @@ import {
   useFontStore,
   type Family,
 } from "../state/fontStore";
+
+/**
+ * 速览的实验开关（§11.2）。默认值 = 现状。
+ *
+ * 速览有**两层**门控，实验时要分开动，否则分不清是「挂载多了」还是「提前加载了」：
+ * - `overscan` 决定虚拟列表多挂几条 DOM（挂载不等于加载）；
+ * - `rootMargin` 决定这些 DOM 里哪些真的去 `useFontCss` 加载字体。
+ * 现在只有 `index < ANIMATED_ITEMS || inView` 的项才传非空 face，所以两层是串联的。
+ */
+const QB_OVERSCAN = experiment.quickbarOverscan();
+const QB_ROOT_MARGIN = experiment.quickbarRootMargin();
 import type { FontFace } from "../lib/ipc";
 import { FilterMenu } from "./TopBar";
 
@@ -97,7 +109,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   /** 与完整界面同一口径：只列出部分字重时，旁边的数字写成「1/4」而不是光一个「1」 */
   const scope = styleScope(visibleFaces, family.faces);
   // 首屏这几张立刻加载字体；其余等滚动到附近再说，避免上千个 FontFace 一起加载
-  const [itemRef, inView] = useInView<HTMLDivElement>();
+  const [itemRef, inView] = useInView<HTMLDivElement>(QB_ROOT_MARGIN);
   /** 鼠标正悬停的字重行：卡片预览临时用它渲染，移开恢复 Regular（与完整界面一致） */
   const [hoverFaceId, setHoverFaceId] = useState<string | null>(null);
   const previewFace = family.faces.find((f) => f.id === hoverFaceId) ?? lead;
@@ -417,7 +429,7 @@ export function QuickBar() {
     count: families.length,
     getScrollElement: () => bodyRef.current,
     estimateSize: () => 104,
-    overscan: 4,
+    overscan: QB_OVERSCAN,
     getItemKey: (i) => families[i].name,
   });
 

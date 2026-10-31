@@ -38,6 +38,14 @@ import { INTRO_OFF, useIntro } from "./lib/useIntro";
 import { expandQuickbarPanel } from "./lib/useQuickbarDock";
 import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
 import { useT } from "./lib/i18n";
+import { DiagHud } from "./components/DiagHud";
+import { experiment } from "./lib/experiment";
+
+/**
+ * 诊断 HUD 开关。只在 `?diag=1` 时挂载：它每 500ms 刷一次文本、常驻一个 rAF 采样循环，
+ * 不能默认开着去影响它自己要测的东西。
+ */
+const DIAG_HUD = experiment.diag();
 
 function ScanSkeleton() {
   const t = useT();
@@ -550,6 +558,7 @@ export default function App() {
         <Toaster />
         <ResizeGrips />
         <HoverHintHost />
+        {DIAG_HUD && <DiagHud />}
       </MotionConfig>
     );
   }
@@ -593,6 +602,7 @@ export default function App() {
       <Toaster />
       <ResizeGrips />
       <HoverHintHost />
+      {DIAG_HUD && <DiagHud />}
     </MotionConfig>
   );
 }

@@ -5956,7 +5956,7 @@ dependencies = [
 
 [[package]]
 name = "zfontmanager"
-version = "0.9.9-25"
+version = "1.0.0"
 dependencies = [
  "dirs 6.0.0",
  "flate2",
