@@ -1,8 +1,10 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
+  Camera,
   Columns2,
   Copy,
+  Folder,
   Minus,
   Plus,
   Download,
@@ -176,45 +178,59 @@ function buildBulkMenu(names: string[]): MenuItem[] {
       action: () => void s.setFamiliesActiveBulk(names, false),
     },
     { kind: "separator" },
-    { kind: "heading", label: t("menu.addAllToCollection") },
-    ...collectionNames.map(
-      (name): MenuItem => ({
-        kind: "check",
-        label: name,
-        checked: names.every((f) => (s.collections[name] ?? []).includes(f)),
-        action: () => {
-          const current = s.collections[name] ?? [];
-          const all = names.every((f) => current.includes(f));
-          const next = all
-            ? current.filter((f) => !names.includes(f))
-            : [...new Set([...current, ...names])];
-          void ipc.setCollection(name, next).then(() =>
-            useFontStore.setState({
-              collections: { ...useFontStore.getState().collections, [name]: next },
-            }),
-          );
-        },
-      }),
-    ),
-    { kind: "separator" },
-    { kind: "heading", label: t("menu.snapshots") },
-    ...snapshotNames.map(
-      (name): MenuItem => ({
-        kind: "check",
-        label: name,
-        checked: (() => {
-          const keys = s.fonts.filter((f) => names.includes(f.family)).map(faceKey);
-          if (keys.length === 0) return false;
-          const entryKeys = new Set(snapshotByName.get(name)?.entries.map((e) => e.key) ?? []);
-          return keys.every((k) => entryKeys.has(k));
-        })(),
-        action: snapshotToggleAction(name, names),
-      }),
-    ),
+    ...(collectionNames.length > 0
+      ? ([
+          {
+            kind: "submenu",
+            label: t("menu.collections"),
+            icon: <Folder size={14} strokeWidth={1.5} />,
+            items: collectionNames.map(
+              (name): MenuItem => ({
+                kind: "check",
+                label: name,
+                checked: names.every((f) => (s.collections[name] ?? []).includes(f)),
+                action: () => {
+                  const current = s.collections[name] ?? [];
+                  const all = names.every((f) => current.includes(f));
+                  const next = all
+                    ? current.filter((f) => !names.includes(f))
+                    : [...new Set([...current, ...names])];
+                  void ipc.setCollection(name, next).then(() =>
+                    useFontStore.setState({
+                      collections: { ...useFontStore.getState().collections, [name]: next },
+                    }),
+                  );
+                },
+              }),
+            ),
+          },
+        ] satisfies MenuItem[])
+      : []),
     {
-      label: t("menu.newSnapshot"),
-      icon: <Plus size={14} strokeWidth={1.5} />,
-      action: () => useFontStore.setState({ pendingSnapshotFor: names[0] }),
+      kind: "submenu",
+      label: t("menu.snapshots"),
+      icon: <Camera size={14} strokeWidth={1.5} />,
+      items: [
+        ...snapshotNames.map(
+          (name): MenuItem => ({
+            kind: "check",
+            label: name,
+            checked: (() => {
+              const keys = s.fonts.filter((f) => names.includes(f.family)).map(faceKey);
+              if (keys.length === 0) return false;
+              const entryKeys = new Set(snapshotByName.get(name)?.entries.map((e) => e.key) ?? []);
+              return keys.every((k) => entryKeys.has(k));
+            })(),
+            action: snapshotToggleAction(name, names),
+          }),
+        ),
+        ...(snapshotNames.length > 0 ? ([{ kind: "separator" }] satisfies MenuItem[]) : []),
+        {
+          label: t("menu.newSnapshot"),
+          icon: <Plus size={14} strokeWidth={1.5} />,
+          action: () => useFontStore.setState({ pendingSnapshotFor: names[0] }),
+        },
+      ],
     },
     { kind: "separator" },
     { kind: "heading", label: t("menu.tagAll") },
@@ -325,11 +341,10 @@ export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
   const collectionNames = Object.keys(s.collections).sort((a, b) => a.localeCompare(b));
   // 和字族菜单同一套：没有分组时也给「新建分组…」入口（速览里不给新建）
   if (collectionNames.length > 0 || !s.quickbar) {
-    items.push({ kind: "heading", label: t("menu.collections") });
-    for (const name of collectionNames) {
+    const subItems: MenuItem[] = collectionNames.map((name) => {
       const inFamily = (s.collections[name] ?? []).includes(face.family);
       const inFace = (s.collectionFaces[name] ?? []).includes(key);
-      items.push({
+      return {
         kind: "check",
         label: name,
         checked: inFamily || inFace,
@@ -342,10 +357,10 @@ export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
           if (inFamily && !inFace) void s.removeFamiliesFromCollection(name, [face.family]);
           else void s.toggleFaceInCollection(name, face.id);
         },
-      });
-    }
+      };
+    });
     if (!s.quickbar) {
-      items.push({
+      subItems.push({
         label: t("menu.newCollection"),
         icon: <FolderPlus size={14} strokeWidth={1.5} />,
         // 从字重进来的「新建分组」只放这个字重，不把整族拖进去
@@ -353,22 +368,28 @@ export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
           useFontStore.setState({ pendingCollectionFor: face.family, pendingCollectionFace: key }),
       });
     }
+    items.push({
+      kind: "submenu",
+      label: t("menu.collections"),
+      icon: <Folder size={14} strokeWidth={1.5} />,
+      items: subItems,
+    });
     items.push({ kind: "separator" });
   }
 
   // 和分组同一套：即使一个快照都没有，也给「新建快照…」入口（速览里不给新建）
   if (snapshots.length > 0 || !s.quickbar) {
-    items.push({ kind: "heading", label: t("menu.snapshots") });
-    for (const sn of [...snapshots].sort((a, b) => a.name.localeCompare(b.name))) {
-      items.push({
+    const subItems: MenuItem[] = [...snapshots]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((sn) => ({
         kind: "check",
         label: sn.name,
         checked: sn.entries.some((e) => e.key === key),
         action: () => void s.toggleFaceInSnapshot(sn.name, face.id),
-      });
-    }
+      }));
+    if (subItems.length > 0) subItems.push({ kind: "separator" });
     if (!s.quickbar) {
-      items.push({
+      subItems.push({
         label: t("menu.newSnapshot"),
         icon: <Plus size={14} strokeWidth={1.5} />,
         // 从字重进来的「新建快照」只放这个字重，不把整族拖进去
@@ -376,6 +397,12 @@ export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
           useFontStore.setState({ pendingSnapshotFor: face.family, pendingSnapshotFace: key }),
       });
     }
+    items.push({
+      kind: "submenu",
+      label: t("menu.snapshots"),
+      icon: <Camera size={14} strokeWidth={1.5} />,
+      items: subItems,
+    });
     items.push({ kind: "separator" });
   }
 
@@ -478,57 +505,70 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
     ...(collectionNames.length > 0 || !s.quickbar
       ? ([
           { kind: "separator" },
-          { kind: "heading", label: t("menu.collections") },
-          ...collectionNames.map(
-            (name): MenuItem => ({
-              kind: "check",
-              label: name,
-              checked: (s.collections[name] ?? []).includes(family.name),
-              action: () => void s.toggleFamilyInCollection(name, family.name),
-            }),
-          ),
-          ...(s.quickbar
-            ? []
-            : [
-                {
+          {
+            kind: "submenu",
+            label: t("menu.collections"),
+            icon: <Folder size={14} strokeWidth={1.5} />,
+            // 用 IIFE 组装：勾选项与「新建」之间要不要加分隔线，取决于有没有勾选项
+            items: (() => {
+              const list: MenuItem[] = collectionNames.map(
+                (name): MenuItem => ({
+                  kind: "check",
+                  label: name,
+                  checked: (s.collections[name] ?? []).includes(family.name),
+                  action: () => void s.toggleFamilyInCollection(name, family.name),
+                }),
+              );
+              if (!s.quickbar) {
+                if (list.length > 0) list.push({ kind: "separator" });
+                list.push({
                   label: t("menu.newCollection"),
                   icon: <FolderPlus size={14} strokeWidth={1.5} />,
                   action: () => useFontStore.setState({ pendingCollectionFor: family.name }),
-                } satisfies MenuItem,
-              ]),
+                });
+              }
+              return list;
+            })(),
+          },
         ] satisfies MenuItem[])
       : []),
     ...(s.snapshots.length > 0 || !s.quickbar
       ? ([
           { kind: "separator" },
-          { kind: "heading", label: t("menu.snapshots") },
-          ...s.snapshots
-            .map((sn) => sn.name)
-            .sort((a, b) => a.localeCompare(b))
-            .map(
-              (name): MenuItem => ({
-                kind: "check",
-                label: name,
-                checked: (() => {
-                  const familyKeys = family.faces.map(faceKey);
-                  if (familyKeys.length === 0) return false;
-                  const entryKeys = new Set(
-                    s.snapshots.find((sn) => sn.name === name)?.entries.map((e) => e.key) ?? [],
-                  );
-                  return familyKeys.every((k) => entryKeys.has(k));
-                })(),
-                action: snapshotToggleAction(name, [family.name]),
-              }),
-            ),
-          ...(s.quickbar
-            ? []
-            : [
-                {
+          {
+            kind: "submenu",
+            label: t("menu.snapshots"),
+            icon: <Camera size={14} strokeWidth={1.5} />,
+            items: (() => {
+              const list: MenuItem[] = s.snapshots
+                .map((sn) => sn.name)
+                .sort((a, b) => a.localeCompare(b))
+                .map(
+                  (name): MenuItem => ({
+                    kind: "check",
+                    label: name,
+                    checked: (() => {
+                      const familyKeys = family.faces.map(faceKey);
+                      if (familyKeys.length === 0) return false;
+                      const entryKeys = new Set(
+                        s.snapshots.find((sn) => sn.name === name)?.entries.map((e) => e.key) ?? [],
+                      );
+                      return familyKeys.every((k) => entryKeys.has(k));
+                    })(),
+                    action: snapshotToggleAction(name, [family.name]),
+                  }),
+                );
+              if (!s.quickbar) {
+                if (list.length > 0) list.push({ kind: "separator" });
+                list.push({
                   label: t("menu.newSnapshot"),
                   icon: <Plus size={14} strokeWidth={1.5} />,
                   action: () => useFontStore.setState({ pendingSnapshotFor: family.name }),
-                } satisfies MenuItem,
-              ]),
+                });
+              }
+              return list;
+            })(),
+          },
         ] satisfies MenuItem[])
       : []),
     { kind: "separator" },

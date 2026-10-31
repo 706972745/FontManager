@@ -451,16 +451,20 @@ export function Sidebar() {
                       },
                     },
                     { kind: "separator" },
-                    { kind: "heading", label: translate("menu.snapshots") },
-                    ...(snapItems.length > 0
-                      ? snapItems
-                      : [
-                          {
-                            label: translate("menu.noSnapshots"),
-                            disabled: true,
-                            action: () => {},
-                          } satisfies MenuItem,
-                        ]),
+                    {
+                      kind: "submenu",
+                      label: translate("menu.snapshots"),
+                      items:
+                        snapItems.length > 0
+                          ? snapItems
+                          : [
+                              {
+                                label: translate("menu.noSnapshots"),
+                                disabled: true,
+                                action: () => {},
+                              } satisfies MenuItem,
+                            ],
+                    },
                     { kind: "separator" },
                     {
                       label: translate("menu.deleteCollection"),
