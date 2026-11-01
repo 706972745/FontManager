@@ -54,15 +54,32 @@ pub fn is_system_font(path: &str) -> bool {
     }
 }
 
+/// E3（2026-11-01）：这个路径是不是「本来就没启用」——HKCU 无条目且非机器级注册。
+///
+/// 批量停用一个混合集合（部分启用、部分从未启用）时，后者会被原样写进
+/// `state.deactivated`（实测 1172 族停用 → 59 → 2071 条，state 2.35 → 2.92 MB），
+/// 而注册表里没有条目时 `apply` 的删除分支本来就是 no-op —— 纯污染。
+/// 注意 `apply` 仍要照跑：会话级启用（`set_fonts_active_session`）只装载 GDI、
+/// 不写注册表，`remove_font_resource` 对这类字体仍然必要。
+#[cfg(target_os = "windows")]
+fn never_registered(cache: &crate::registry::RegCache, path: &str) -> bool {
+    cache.names_for(path).is_empty() && !cache.is_machine(path)
+}
+
 pub fn sync(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
     if is_system_font(path) {
         crate::diag::log(&format!("activation: skip protected system font: {path}"));
         return Ok(());
     }
     let was_deactivated = state.deactivated.contains(path);
+    // E3：停用一个本来就没启用的字体，不写 deactivated（详见 never_registered 注释）
+    #[cfg(target_os = "windows")]
+    let skip_deactivated = !active && never_registered(&crate::registry::RegCache::load(), path);
+    #[cfg(not(target_os = "windows"))]
+    let skip_deactivated = false;
     if active {
         state.deactivated.remove(path);
-    } else {
+    } else if !skip_deactivated {
         state.deactivated.insert(path.to_string());
     }
     let result = apply(state, path, active);
@@ -99,9 +116,15 @@ pub fn sync_batch(state: &mut AppState, paths: &[String], active: bool) -> Vec<S
             continue;
         }
         let was_deactivated = state.deactivated.contains(path);
+        // E3：本来就没启用（HKCU 无条目、非机器级）→ 不写 deactivated。
+        // 缓存里此刻还没有这个路径（还没处理过），names_for 查的就是当前注册表状态。
+        #[cfg(target_os = "windows")]
+        let skip_deactivated = !active && never_registered(&cache, path);
+        #[cfg(not(target_os = "windows"))]
+        let skip_deactivated = false;
         if active {
             state.deactivated.remove(path);
-        } else {
+        } else if !skip_deactivated {
             state.deactivated.insert(path.clone());
         }
         #[cfg(target_os = "windows")]
@@ -385,10 +408,14 @@ fn is_active_path(state: &AppState, path: &str) -> bool {
     !state.deactivated.contains(path) && !state.parked.contains_key(path)
 }
 
-#[cfg(all(test, target_os = "linux"))]
+// 注意：这里原来是 `cfg(all(test, target_os = "linux"))`，导致下面挂着的
+// `cfg(target_os = "windows")` 测试全部成了死代码（矛盾 cfg，任何平台都不编译）。
+// 现在改为按测试自己声明平台：Linux 专属的（fontconfig）单独加 cfg。
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn fragment_lifecycle() {
         let tmp = std::env::temp_dir().join(format!("zfm-test-{}", std::process::id()));
@@ -449,5 +476,38 @@ mod tests {
         let path = r"C:\Windows\Fonts\segoeui.ttf";
         assert!(sync(&mut state, path, false).is_ok());
         assert!(!state.deactivated.contains(path));
+    }
+
+    /// E3：停用一个「本来就没启用」的字体（HKCU 无条目、非机器级注册），
+    /// 不得把它写进 deactivated —— 注册表里没有它，apply 无事可做，
+    /// 写了只会让 state.json 越滚越大（实测 1172 族停用 → 59 → 2071 条）。
+    /// 路径是虚构的，只读真注册表，不写任何东西。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn sync_skips_deactivated_for_never_registered_font() {
+        let mut state = AppState::default();
+        let path = r"C:\zfm-e3-never-registered\dummy.ttf";
+        let cache = crate::registry::RegCache::load();
+        assert!(
+            never_registered(&cache, path),
+            "测试前提：虚构路径不应出现在真注册表里"
+        );
+        assert!(sync(&mut state, path, false).is_ok());
+        assert!(!state.deactivated.contains(path));
+    }
+
+    /// E3 批量路径：混合「已启用 + 从未启用」的批量停用，
+    /// 从未启用的那些不进 deactivated，已启用（HKCU 有条目）的行为不变。
+    /// HKCU 部分只读（虚构路径不在注册表里），不写真机数据。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn sync_batch_skips_never_registered_paths() {
+        let mut state = AppState::default();
+        let fresh = r"C:\zfm-e3-never-registered\batch-a.ttf";
+        let fresh2 = r"C:\zfm-e3-never-registered\batch-b.ttf";
+        let failed = sync_batch(&mut state, &[fresh.to_string(), fresh2.to_string()], false);
+        assert!(failed.is_empty());
+        assert!(!state.deactivated.contains(fresh));
+        assert!(!state.deactivated.contains(fresh2));
     }
 }
