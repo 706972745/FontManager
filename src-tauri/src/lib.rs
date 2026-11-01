@@ -391,6 +391,39 @@ async fn set_fonts_active(store: State<'_, Store>, paths: Vec<String>, active: b
     activation::batch_error(&failed, total)
 }
 
+/// E2（2026-11-01）：批量启停「进行中」标志。
+///
+/// 4000+ 族批量启用要 35~45 分钟，中途关主窗口不该把清单打断：
+/// 批量进行中收到关闭请求 → 不退出进程，窗口藏进托盘，
+/// 前端的分批编排（runBatches）在隐藏的 WebView 里继续逐批跑完。
+/// 前端在批量开始/结束时调用置位/复位。
+static BATCH_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn set_batch_running(on: bool) {
+    BATCH_RUNNING.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// E2：批量启停断点（`state.pending_batch`）的写入。
+/// 前端每 30 秒更新一次「还剩哪些没做」（一次落盘 2.4MB，不能每批都写）；
+/// 批量正常结束 / 取消 / 失败时传 `None` 清除断点。
+#[tauri::command]
+fn batch_checkpoint(
+    store: State<Store>,
+    cp: Option<crate::store::PendingBatch>,
+) -> Result<(), String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    state.pending_batch = cp;
+    store::save(&state)
+}
+
+/// E2：启动时查有没有没做完的批量（有 → 前端弹「继续吗」）
+#[tauri::command]
+fn batch_checkpoint_get(store: State<Store>) -> Result<Option<crate::store::PendingBatch>, String> {
+    let state = store.0.lock().map_err(|e| e.to_string())?;
+    Ok(state.pending_batch.clone())
+}
+
 #[tauri::command]
 async fn install_fonts(
     app: tauri::AppHandle,
@@ -2147,7 +2180,13 @@ pub fn run() {
                 let handle = app.handle().clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        if tray_ok && close_to_tray_enabled(&handle) {
+                        // E2：批量启停进行中 → 无论「关闭即最小化到托盘」开没开，
+                        // 都不退出（藏进托盘，WebView 里的分批编排继续跑）。
+                        // 托盘没建成的极端情况不拦：断点（state.pending_batch）兜底，
+                        // 下次启动会问用户要不要续做。
+                        let busy =
+                            BATCH_RUNNING.load(std::sync::atomic::Ordering::Relaxed);
+                        if tray_ok && (busy || close_to_tray_enabled(&handle)) {
                             api.prevent_close();
                             if let Some(w) = handle.get_webview_window("main") {
                                 let _ = w.hide();
@@ -2218,6 +2257,9 @@ pub fn run() {
             set_font_active,
             set_fonts_active,
             set_fonts_active_session,
+            set_batch_running,
+            batch_checkpoint,
+            batch_checkpoint_get,
             install_fonts,
             install_online_family,
             uninstall_font,

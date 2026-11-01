@@ -30,6 +30,7 @@ import {
   type OnlineFamilyDetail,
   type OnlineInstallScope,
   type OnlineProgress,
+  type PendingBatch,
   type ScanProgress,
   type Snapshot,
   type SnapshotEntry,
@@ -344,6 +345,9 @@ interface FontStore {
   /** 待确认的批量「移到回收站」清单（C9）：非 null 时前端弹确认框 */
   trashConfirm: string[] | null;
 
+  /** E2：上次没跑完的批量断点（启动时从 state.pending_batch 读入），非 null 时弹「继续吗」 */
+  pendingResume: PendingBatch | null;
+
   init: () => Promise<void>;
   rescan: () => Promise<void>;
   restoreLastActivation: () => Promise<void>;
@@ -403,6 +407,10 @@ interface FontStore {
   toggleFavorite: (family: string) => Promise<void>;
   setFamilyNote: (family: string, note: string) => Promise<void>;
   setFamiliesActiveBulk: (families: string[], active: boolean) => Promise<void>;
+  /** E2：续做上次没跑完的批量（ResumeBatchDialog 确认后调用，走 setFamiliesActiveBulk 同一条路） */
+  resumePendingBatch: (cp: PendingBatch) => Promise<void>;
+  /** E2：放弃续做（清除断点，剩余清单作废） */
+  dismissPendingResume: () => void;
   applyFamilyInApp: (family: string, app: AdobeApp) => Promise<void>;
   /** 单独应用某个字重（faceId = FontFace.id） */
   applyFaceInApp: (family: string, faceId: string, app: AdobeApp) => Promise<void>;
@@ -821,6 +829,60 @@ let undoPending: ApplyBatch[] = [];
  * 字体文件（约 6 秒），侧栏计数会当着用户的面清零再跳回来 —— 用户看到的就是
  * 「点了取消，怎么又开始读字体库了」。`restoreLastActivation` 早就用了同样的就地更新法。
  */
+/**
+ * E2：批量启停期间的「关窗 = 后台继续」标志。
+ * runBatches 的所有调用点（含撤销）开头/结尾都要挂——撤销 4000 族同样要十几分钟。
+ * IPC 失败只影响「关窗后台继续」这一个能力，绝不能反过来挡住批量本身。
+ */
+async function batchRunBegin(): Promise<void> {
+  try {
+    await ipc.setBatchRunning(true);
+  } catch {
+    /* ignore */
+  }
+}
+async function batchRunEnd(): Promise<void> {
+  try {
+    await ipc.setBatchRunning(false);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * E2：批量启停断点的节流写入。
+ * 一次落盘 2.4MB，不能每批（10 字面/4 秒）都写——30 秒一次，40 分钟的任务
+ * 最多写 ~80 次 ≈ 190MB，可接受；进程意外退出最多丢最后 30 秒的进度。
+ */
+const CHECKPOINT_MIN_INTERVAL_MS = 30_000;
+let lastCheckpointAt = 0;
+function resetCheckpointThrottle(): void {
+  lastCheckpointAt = 0;
+}
+function writeBatchCheckpoint(
+  flatPaths: string[],
+  done: number,
+  active: boolean,
+): void {
+  const now = Date.now();
+  if (now - lastCheckpointAt < CHECKPOINT_MIN_INTERVAL_MS) return;
+  lastCheckpointAt = now;
+  void ipc
+    .batchCheckpoint({
+      remaining: flatPaths.slice(done),
+      done,
+      total: flatPaths.length,
+      active,
+    })
+    .catch(() => {
+      /* 断点写失败不致命：最坏情况重启后从头问 */
+    });
+}
+/** 批量结束（done/cancelled/failed 三种出口都算）必须清除断点：剩下的清单已作废 */
+function clearBatchCheckpoint(): void {
+  void ipc.batchCheckpoint(null).catch(() => {});
+}
+
 function patchActiveLocally(batches: ApplyBatch[]): void {
   if (batches.length === 0) return;
   const want = new Map<string, boolean>();
@@ -920,6 +982,8 @@ async function applyEntries(
     applyNotice: null,
     applyCancelled: false,
   });
+  // E2：快照切换也可能跑几十分钟，跑批期间关窗后台继续（快照不接断点——已确认口径）
+  await batchRunBegin();
   try {
     const outcome = await runBatches({
       batches,
@@ -964,6 +1028,7 @@ async function applyEntries(
   } finally {
     // 中途失败也要把进度条收掉，否则它会永远挂在底部
     useFontStore.setState({ applyBusy: false, applyProgress: null });
+    void batchRunEnd();
   }
 }
 
@@ -982,6 +1047,8 @@ async function undoAppliedBatches(applied: ApplyBatch[]): Promise<void> {
     applyCancelled: false,
     applyProgress: { done: 0, total, undo: true },
   });
+  // E2：撤销大批量同样要十几分钟，关窗不能打断
+  await batchRunBegin();
   try {
     const outcome = await runBatches({
       batches,
@@ -997,6 +1064,7 @@ async function undoAppliedBatches(applied: ApplyBatch[]): Promise<void> {
     }
   } finally {
     useFontStore.setState({ applyBusy: false, applyProgress: null });
+    void batchRunEnd();
     // 撤销过的部分同样就地写回，避免又触发一次整库重扫
     patchActiveLocally(batches);
   }
@@ -1228,6 +1296,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   pendingSnapshotFace: null,
   duplicateReport: null,
   trashConfirm: null,
+  pendingResume: null,
 
   init: async () => {
     if (initStarted) return;
@@ -1585,6 +1654,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
       applyProgress: { done: 0, total: paths.length, undo: false },
       applyCancelled: false,
     });
+    // E2：大族启停 5~20 秒，跑批期间同样关窗后台继续（不接断点，清单太短不值得）
+    await batchRunBegin();
     let outcome: Awaited<ReturnType<typeof runBatches>>;
     try {
       outcome = await runBatches({
@@ -1600,6 +1671,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
       });
     } finally {
       useFontStore.setState({ applyBusy: false, applyProgress: null });
+      void batchRunEnd();
     }
 
     if (outcome.status === "cancelled") {
@@ -2737,6 +2809,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
       applyProgress: { done: 0, total, undo: false },
       applyCancelled: false,
     });
+    // E2：跑批期间关主窗口 = 藏进托盘后台继续（lib.rs 的 BATCH_RUNNING）
+    await batchRunBegin();
+    resetCheckpointThrottle();
     let outcome: Awaited<ReturnType<typeof runBatches>>;
     try {
       outcome = await runBatches({
@@ -2747,12 +2822,18 @@ export const useFontStore = create<FontStore>((set, get) => ({
         },
         // 中间批次都跳过了存盘，取消/失败时必须补这一次
         flush: () => ipc.setFontsActive([], true, false),
-        onProgress: (done, all) =>
-          useFontStore.setState({ applyProgress: { done, total: all, undo: false } }),
+        onProgress: (done, all) => {
+          useFontStore.setState({ applyProgress: { done, total: all, undo: false } });
+          // E2：断点记「还没做的路径」（扁平顺序与分批切片顺序一致），30 秒节流
+          writeBatchCheckpoint(paths, done, active);
+        },
         isCancelled: () => useFontStore.getState().applyCancelled,
       });
     } finally {
       useFontStore.setState({ applyBusy: false, applyProgress: null });
+      // done / cancelled / failed 三种出口都作废剩余清单，断点一并清掉
+      clearBatchCheckpoint();
+      void batchRunEnd();
     }
 
     if (outcome.status === "cancelled") {
@@ -2793,6 +2874,32 @@ export const useFontStore = create<FontStore>((set, get) => ({
       undefined,
       { label: t("toast.undo"), run: () => void get().setFamiliesActiveBulk(families, !active) },
     );
+  },
+
+  /**
+   * E2：续做上次没跑完的批量（启动弹窗确认后调用）。
+   * 把断点里剩下的路径还原成字族清单，走 setFamiliesActiveBulk 同一条路——
+   * 乐观更新、分批、进度条、取消、断点、toast 全部复用，不另起一套。
+   * 重建的清单可能比断点略大（最后一个族的字面是按批切的，部分已做过）：
+   * 重做的开销只是那个族的几条注册表/GDI 重复写，无副作用。
+   */
+  resumePendingBatch: async (cp) => {
+    set({ pendingResume: null });
+    const byPath = new Map(get().fonts.map((f) => [f.path, f] as const));
+    const families = new Set<string>();
+    for (const p of cp.remaining) {
+      const f = byPath.get(p);
+      if (f && f.deactivatable) families.add(f.family);
+    }
+    // 弹窗已确认，断点的使命结束——之后的进度由 setFamiliesActiveBulk 自己的新断点接管
+    clearBatchCheckpoint();
+    if (families.size === 0) return;
+    await get().setFamiliesActiveBulk([...families], cp.active);
+  },
+
+  dismissPendingResume: () => {
+    set({ pendingResume: null });
+    clearBatchCheckpoint();
   },
 
   applyFamilyInApp: async (family, app) => {
