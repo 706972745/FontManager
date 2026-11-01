@@ -270,51 +270,197 @@ fn script_coverage(face: &ttf_parser::Face) -> Vec<String> {
     out
 }
 
-fn classify(face: &ttf_parser::Face, family: &str) -> Classification {
+/// OS/2 的 `sFamilyClass`（高字节）→ 分类。0 或未识别的值返回 `None`。
+fn os2_class(face: &ttf_parser::Face) -> Option<Classification> {
+    let os2 = face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2"))?;
+    if os2.len() < 42 {
+        return None;
+    }
+    match os2[30] {
+        1..=5 | 7 => Some(Classification::Serif),
+        8 => Some(Classification::Sans),
+        9 | 12 => Some(Classification::Display),
+        10 => Some(Classification::Script),
+        _ => None,
+    }
+}
+
+/// PANOSE → 分类（含 `bProportion = 9` 等宽判定）。
+fn panose_class(face: &ttf_parser::Face) -> Option<Classification> {
+    let os2 = face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2"))?;
+    if os2.len() < 42 {
+        return None;
+    }
+    let panose = &os2[32..42];
+    if panose[0] == 2 && panose[3] == 9 {
+        return Some(Classification::Mono);
+    }
+    panose_family_kind(panose)
+}
+
+/// PANOSE 的 `bSerifStyle` → serif/sans。**不用** `bProportion`：
+/// 中文字体的西文半角字身等宽是排印假象（SimHei / 宋体的 bProportion 都是 9，
+/// 但它们不是等宽字体），等宽判定只对西文字体做。
+fn panose_serif_style(face: &ttf_parser::Face) -> Option<Classification> {
+    let os2 = face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2"))?;
+    if os2.len() < 42 {
+        return None;
+    }
+    panose_family_kind(&os2[32..42])
+}
+
+fn panose_family_kind(panose: &[u8]) -> Option<Classification> {
+    match panose[0] {
+        3 => Some(Classification::Script),
+        4 | 5 => Some(Classification::Display),
+        2 => {
+            if (11..=15).contains(&panose[1]) {
+                Some(Classification::Sans)
+            } else if (2..=10).contains(&panose[1]) {
+                Some(Classification::Serif)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// 字族分类。**用户 2026-11-01 报「筛选选衬线，结果里还有无衬线」**后的重写。
+///
+/// 旧逻辑按「is_monospaced → OS/2 class → PANOSE → 英文名关键字」的顺序取第一个
+/// 命中的信号，实测（4211 族全库核对 OS/2 / PANOSE 真值）有两类系统性错误：
+///
+/// 1. **中文字体的 PANOSE / OS/2 class 大量垃圾数据**：SimHei 的 `bProportion=9`
+///    被判成等宽、方正黑体的 `sFamilyClass=10`（手写）被判成手写、SimSun 的
+///    `bProportion=9` 把宋体判成等宽。中西文混排字体的这两张表基本不可信，
+///    唯一可靠的是**名字**（中文优先：「黑体→无衬线、宋体→衬线、楷/隶→手写」），
+///    本地化名（宋体 / 黑体）比英文名（SimSun / SimHei）更直接。
+/// 2. **西文古典字体的 OS/2 class 与 PANOSE 互相矛盾**：Century Gothic 的
+///    class=2（过渡衬线，错）而 PANOSE bSerifStyle=11（无衬线，对）；反例
+///    Friz Quadrata 的 class=7（自由衬线，对）而 PANOSE=14。两个信号都无权威，
+///    分歧时用**名字里的明确关键字**破平（Gothic / Sans → 无衬线，Serif → 衬线），
+///    名字没说就维持 OS/2 class（旧行为，不回归）。
+/// 中日韩字符判定（汉字 / 假名 / 谚文 / 注音 / 全角）。
+/// 比 `copyright::is_cjk` 宽：字体名可能是纯假名（「昭和モダン体」）或纯谚文。
+fn is_cjk_char(c: char) -> bool {
+    matches!(c,
+        '\u{3000}'..='\u{303F}'   // CJK 符号和标点
+        | '\u{3040}'..='\u{309F}' // 平假名
+        | '\u{30A0}'..='\u{30FF}' // 片假名
+        | '\u{3100}'..='\u{312F}' // 注音
+        | '\u{3130}'..='\u{318F}' // 韩文兼容字母
+        | '\u{3400}'..='\u{4DBF}' // 汉字扩展 A
+        | '\u{4E00}'..='\u{9FFF}' // 汉字
+        | '\u{AC00}'..='\u{D7AF}' // 韩文音节
+        | '\u{F900}'..='\u{FAFF}' // 汉字兼容
+        | '\u{FE30}'..='\u{FE4F}' // CJK 兼容形式
+        | '\u{FF00}'..='\u{FFEF}' // 全角 / 半角形式
+    )
+}
+
+/// 这个字体是不是中日韩字体？
+///
+/// **不能只看 `han_coverage`**：CID-keyed CFF 的中文 OTF（创艺简宋体、文鼎CS中宋、
+/// 中国龙豪隶书…）`glyph_index` 查不到汉字，覆盖度是 `None`，于是被当成西文字体走
+/// 西文分支 —— 而中日韩字体天然等宽（每个汉字 advance width 相同），
+/// `is_monospaced()` 一律为真，结果**整批中文宋体 / 黑体 / 隶书被判成等宽字体**
+/// （2026-11-01 实测：字体库 206 个 Mono 里 103 个是中文字体）。
+/// 名字里有中日韩字符的一律按中日韩字体处理，这个信号比字形探测可靠得多。
+fn is_cjk_font(face: &ttf_parser::Face, names: &[String]) -> bool {
+    if han_coverage(face) != HanCoverage::None {
+        return true;
+    }
+    names.iter().any(|n| n.chars().any(is_cjk_char))
+}
+
+fn classify(face: &ttf_parser::Face, family: &str, localized: &[LocalizedName]) -> Classification {
+    // 所有可用的名字（族名 + 各语言本地化名）小写化，关键字匹配用
+    let names: Vec<String> = std::iter::once(family.to_lowercase())
+        .chain(localized.iter().map(|l| l.name.to_lowercase()))
+        .collect();
+    let has = |kw: &str| names.iter().any(|n| n.contains(kw));
+
+    if is_cjk_font(face, &names) {
+        // —— 中文字体：名字优先，元数据兜底 ——
+        if has("mono") || has("等宽") || has("等寬") {
+            return Classification::Mono;
+        }
+        if has("黑")
+            || has("hei")
+            || has("雅黑")
+            || has("gothic")
+            || has("sans")
+            || has("圆")
+            || has("圓")
+            || has("round")
+            // 「等线」是无衬线（Windows 的 DengXian / 汉仪中等线 / 迷你简中等线），
+            // 它们的 OS/2 class 常被写成 10（手写），不补这个关键字就会被归到手写里
+            || has("等线")
+            || has("等線")
+        {
+            return Classification::Sans;
+        }
+        if has("楷")
+            || has("kai")
+            || has("隶")
+            || has("隷") // 隶的繁体写法（文鼎CS大隸書 / 日本青柳隷書）
+            || has("篆")
+            || has("seal")
+            || has("行书")
+            || has("行書")
+            || has("草") // 草书（叶根友疾风草书）
+        {
+            return Classification::Script;
+        }
+        if has("宋") || has("song") || has("明") || has("ming") || has("仿") || has("serif") {
+            return Classification::Serif;
+        }
+        // 名字没说：退 OS/2 class，再退 PANOSE 的 bSerifStyle（不用 bProportion）
+        if let Some(c) = os2_class(face) {
+            return c;
+        }
+        if let Some(c) = panose_serif_style(face) {
+            return c;
+        }
+        return Classification::Unknown;
+    }
+
+    // —— 西文字体：is_monospaced 优先（Courier / Consolas 的 OS/2 class 会写成 8）——
     if face.is_monospaced() {
         return Classification::Mono;
     }
-    if let Some(os2) = face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2")) {
-        if os2.len() >= 42 {
-            let class = os2[30];
-            match class {
-                1..=5 | 7 => return Classification::Serif,
-                8 => return Classification::Sans,
-                9 | 12 => return Classification::Display,
-                10 => return Classification::Script,
-                _ => {}
-            }
-            let panose = &os2[32..42];
-            if panose[0] == 2 && panose[3] == 9 {
-                return Classification::Mono;
-            }
-            match panose[0] {
-                3 => return Classification::Script,
-                4 | 5 => return Classification::Display,
-                2 => {
-                    return if (11..=15).contains(&panose[1]) {
-                        Classification::Sans
-                    } else if (2..=10).contains(&panose[1]) {
-                        Classification::Serif
-                    } else {
-                        Classification::Unknown
-                    };
-                }
-                _ => {}
+    match (os2_class(face), panose_class(face)) {
+        // 两个信号一致，直接用
+        (Some(a), Some(b)) if a == b => a,
+        // 分歧：名字里有明确关键字就听名字（Century Gothic / GoudySans 的 class 是错的）；
+        // 名字没说就维持 OS/2 class（Friz Quadrata 这类 PANOSE 写 14 的真衬线）
+        (Some(a), Some(_)) => {
+            if has("sans") || has("gothic") {
+                Classification::Sans
+            } else if has("serif") {
+                Classification::Serif
+            } else {
+                a
             }
         }
-    }
-    let name = family.to_lowercase();
-    if name.contains("mono") {
-        Classification::Mono
-    } else if name.contains("script") || name.contains("hand") {
-        Classification::Script
-    } else if name.contains("sans") {
-        Classification::Sans
-    } else if name.contains("serif") {
-        Classification::Serif
-    } else {
-        Classification::Unknown
+        (Some(a), None) => a,
+        (None, Some(b)) => b,
+        // 都没有：英文名关键字兜底（原逻辑，补 gothic——日文「 Gothic 」= 无衬线）
+        (None, None) => {
+            let name = family.to_lowercase();
+            if name.contains("mono") {
+                Classification::Mono
+            } else if name.contains("script") || name.contains("hand") {
+                Classification::Script
+            } else if name.contains("sans") || name.contains("gothic") {
+                Classification::Sans
+            } else if name.contains("serif") {
+                Classification::Serif
+            } else {
+                Classification::Unknown
+            }
+        }
     }
 }
 
@@ -427,10 +573,10 @@ fn parse_face(
         })
         .collect();
 
-    let classification = classify(&face, &family);
+    let localized_names = localized_family_names(&face);
+    let classification = classify(&face, &family, &localized_names);
     let scripts = script_coverage(&face);
     let features = layout_features(&face);
-    let localized_names = localized_family_names(&face);
     let path_str = path.to_string_lossy().into_owned();
     Some(FontFace {
         id: format!("{}#{}", path_str, index),
@@ -759,6 +905,354 @@ mod tests {
         assert_eq!(iso_language("Russian"), Some("ru"));
         assert_eq!(iso_language("Portuguese"), Some("pt"));
         assert_eq!(iso_language("Klingon"), None);
+    }
+
+    /// 取一台 Windows 上 `C:\Windows\Fonts` 里某个字体的分类。
+    /// 文件不存在就返回 `None` —— 换机器 / CI 上缺字体时自动跳过，不误报失败。
+    fn classify_system_font(file_name: &str) -> Option<(String, Classification)> {
+        let path = Path::new(r"C:\Windows\Fonts").join(file_name);
+        if !path.exists() {
+            eprintln!("[skip] 系统字体缺失，跳过：{file_name}");
+            return None;
+        }
+        let faces = parse_font_file(&path, FontSource::System);
+        let f = faces.into_iter().next()?;
+        Some((f.family, f.classification))
+    }
+
+    /// 断言一批系统字体的分类，缺文件就跳过那一条。
+    fn assert_system_classification(cases: &[(&str, Classification)]) {
+        for (file, want) in cases {
+            let Some((family, got)) = classify_system_font(file) else {
+                continue;
+            };
+            assert_eq!(got, *want, "{file}（字族「{family}」）分类错了");
+        }
+    }
+
+    /// 回归（用户 2026-11-01 报「筛选选衬线，里面还会出现无衬线」）：
+    /// **中文字体只能信名字**。它们的 OS/2 `sFamilyClass` / PANOSE 基本是垃圾数据 ——
+    /// SimHei 的 `bProportion=9` 会被旧逻辑判成等宽、SimSun 同样，方正黑体的 class 还写成手写。
+    /// 中文名（黑体 / 宋体 / 楷体 / 仿宋）比英文名（SimHei / SimSun）更直接，优先用它。
+    #[test]
+    fn classifies_cjk_fonts_from_localized_names() {
+        assert_system_classification(&[
+            ("simhei.ttf", Classification::Sans), // 黑体
+            ("simsun.ttc", Classification::Serif), // 宋体
+            ("simkai.ttf", Classification::Script), // 楷体
+            ("simfang.ttf", Classification::Serif), // 仿宋
+            ("msyh.ttc", Classification::Sans),    // 微软雅黑
+            ("Deng.ttf", Classification::Sans),    // 等线
+        ]);
+    }
+
+    #[test]
+    fn cjk_char_detection_covers_kana_and_hangul() {
+        for c in ['宋', '黑', '線', 'カ', 'モ', '한', '글', 'ㄱ', 'ㄴ'] {
+            assert!(is_cjk_char(c), "{c} 该算中日韩字符");
+        }
+        for c in ['A', 'z', '0', 'é', 'ß', 'Ω'] {
+            assert!(!is_cjk_char(c), "{c} 不该算中日韩字符");
+        }
+    }
+
+    /// 回归（最要命的一条）：CID-keyed CFF 的中文 OTF 查不到汉字（`han_coverage` 是
+    /// `None`），以前就被当成西文字体 —— 而中日韩字体天然等宽，`is_monospaced()` 一律
+    /// 为真，于是**整批中文宋体 / 黑体 / 隶书被判成等宽字体**（字体库 206 个 Mono 里
+    /// 103 个是中文字体）。现在名字里有中日韩字符就按中日韩字体处理。
+    #[test]
+    fn cjk_font_is_detected_by_name_when_glyph_lookup_fails() {
+        let path = Path::new(r"C:\Windows\Fonts\arial.ttf");
+        let Some(data) = std::fs::read(path).ok() else {
+            eprintln!("[skip] 没有 arial.ttf");
+            return;
+        };
+        let Some(face) = ttf_parser::Face::parse(&data, 0).ok() else {
+            return;
+        };
+        let names = |n: &str| vec![n.to_string()];
+        // Arial 既没有汉字、名字也不是中文 —— 不是中日韩字体
+        assert!(!is_cjk_font(&face, &names("Arial")));
+        // 同一个「查不到汉字」的字体，只要名字是中文，就要按中日韩字体处理
+        assert!(is_cjk_font(&face, &names("文鼎CS中宋")));
+        assert!(is_cjk_font(&face, &names("昭和モダン体")));
+        assert!(is_cjk_font(&face, &names("안상수2000")));
+    }
+
+    /// 回归：西文古典字体的 OS/2 class 与 PANOSE 经常互相矛盾，此时听名字里的关键字。
+    /// Century Gothic（`GOTHIC.TTF`）的 class=2「过渡衬线」是错的，PANOSE bSerifStyle=11
+    /// 才是对的；Century Schoolbook（`CENTURY.TTF`）反过来，名字里没有 sans 关键字，
+    /// 于是维持 OS/2 class 判成衬线（旧行为，不回归）。
+    #[test]
+    fn western_fonts_break_os2_panose_ties_by_name() {
+        assert_system_classification(&[
+            ("GOTHIC.TTF", Classification::Sans), // Century Gothic
+            ("CENTURY.TTF", Classification::Serif), // Century Schoolbook
+        ]);
+    }
+
+    /// 回归：等宽字体不能被 CJK 分支「不迷信 bProportion」的规则带偏，
+    /// 也不能被 OS/2 class 抢走（Courier / Consolas 的 class 常写成 8「无衬线」）。
+    #[test]
+    fn monospaced_fonts_stay_mono() {
+        assert_system_classification(&[
+            ("cour.ttf", Classification::Mono),
+            ("consola.ttf", Classification::Mono),
+        ]);
+    }
+
+    /// 诊断：把系统字体目录里每个字体的「分类 + 原始元数据」dump 出来，
+    /// 用来核对分类规则改动的真实影响面（改规则前后各跑一次对比）。
+    /// 跑法：`cargo test --lib dump_system_classification -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn dump_system_classification() {
+        let dir = std::env::var("ZFM_DUMP_DIR").unwrap_or_else(|_| r"C:\Windows\Fonts".to_string());
+        let mut rows: std::collections::BTreeMap<String, (Classification, String)> =
+            std::collections::BTreeMap::new();
+        for entry in walkdir::WalkDir::new(&dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path().to_path_buf();
+            if !path.is_file() || !is_font_file(&path) {
+                continue;
+            }
+            for f in parse_font_file(&path, FontSource::System) {
+                {
+                    let han = (|| -> Option<String> {
+                        let d = std::fs::read(&path).ok()?;
+                        let face = ttf_parser::Face::parse(&d, f.face_index).ok()?;
+                        Some(format!("{:?}", han_coverage(&face)))
+                    })()
+                    .unwrap_or_else(|| "?".to_string());
+                    let raw = std::fs::read(&path).ok().and_then(|d| {
+                        let face = ttf_parser::Face::parse(&d, 0).ok()?;
+                        let os2 = face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2"))?;
+                        if os2.len() < 42 {
+                            return None;
+                        }
+                        Some(format!("class={} panose={:?}", os2[30], &os2[32..42]))
+                    });
+                    rows.insert(
+                        f.family.clone(),
+                        (
+                            f.classification,
+                            format!("{} {}", han, raw.unwrap_or_default()),
+                        ),
+                    );
+                }
+            }
+        }
+        let mut tally: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        for (family, (c, raw)) in &rows {
+            println!("{:?}\t{family}\t{raw}", c);
+            *tally.entry(format!("{c:?}")).or_default() += 1;
+        }
+        println!("---- 合计 {} 条 ----", rows.len());
+        for (k, v) in tally {
+            println!("{k}\t{v}");
+        }
+    }
+
+    /// `classify` 重写**之前**的实现（照抄 git HEAD 版），只给下面的新旧对比用。
+    /// 生产代码里不要再调用它 —— 它把「中文字体的 OS/2 / PANOSE 垃圾数据」当真值。
+    fn classify_legacy(face: &ttf_parser::Face, family: &str) -> Classification {
+        if face.is_monospaced() {
+            return Classification::Mono;
+        }
+        if let Some(os2) = face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2")) {
+            if os2.len() >= 42 {
+                let class = os2[30];
+                match class {
+                    1..=5 | 7 => return Classification::Serif,
+                    8 => return Classification::Sans,
+                    9 | 12 => return Classification::Display,
+                    10 => return Classification::Script,
+                    _ => {}
+                }
+                let panose = &os2[32..42];
+                if panose[0] == 2 && panose[3] == 9 {
+                    return Classification::Mono;
+                }
+                match panose[0] {
+                    3 => return Classification::Script,
+                    4 | 5 => return Classification::Display,
+                    2 => {
+                        return if (11..=15).contains(&panose[1]) {
+                            Classification::Sans
+                        } else if (2..=10).contains(&panose[1]) {
+                            Classification::Serif
+                        } else {
+                            Classification::Unknown
+                        };
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let name = family.to_lowercase();
+        if name.contains("mono") {
+            Classification::Mono
+        } else if name.contains("script") || name.contains("hand") {
+            Classification::Script
+        } else if name.contains("sans") {
+            Classification::Sans
+        } else if name.contains("serif") {
+            Classification::Serif
+        } else {
+            Classification::Unknown
+        }
+    }
+
+    fn os2_probe(face: &ttf_parser::Face) -> String {
+        match face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2")) {
+            Some(os2) if os2.len() >= 42 => {
+                format!("class={} panose={:?}", os2[30], &os2[32..42])
+            }
+            _ => "no-os2".to_string(),
+        }
+    }
+
+    /// 诊断：对**整个字体库**跑「旧规则 vs 新规则」分类对比，量化重写影响面。
+    ///
+    /// 这是修「筛选选衬线却出现无衬线」时的核对工具 —— 光靠系统字体那十几个样本
+    /// 看不出 4211 族的真实分布，必须全库跑。
+    ///
+    /// 跑法：
+    /// ```bash
+    /// ZFM_DIFF_DIR="E:\...\字体库" cargo test --lib diff_classification_library -- --ignored --nocapture
+    /// ```
+    /// 输出全部是 TSV，`face-change` 行是逐字面差异，`family-change` 行是**族级**差异
+    /// （族级才是用户筛选时看到的：旧前端「第一个非 unknown 说了算」vs 新「代表字面说了算」）。
+    #[test]
+    #[ignore]
+    fn diff_classification_library() {
+        use std::collections::BTreeMap;
+        let Ok(dir) = std::env::var("ZFM_DIFF_DIR") else {
+            eprintln!("[skip] 没设 ZFM_DIFF_DIR");
+            return;
+        };
+        // family → [(style, old, new, file)]
+        let mut by_family: BTreeMap<String, Vec<(String, Classification, Classification, String)>> =
+            BTreeMap::new();
+        // (old, new) → 次数
+        let mut moved: BTreeMap<(String, String), usize> = BTreeMap::new();
+        let mut old_tally: BTreeMap<String, usize> = BTreeMap::new();
+        let mut new_tally: BTreeMap<String, usize> = BTreeMap::new();
+        let mut files = 0usize;
+        let mut faces_seen = 0usize;
+
+        for entry in walkdir::WalkDir::new(&dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.into_path();
+            if !path.is_file() || !is_font_file(&path) {
+                continue;
+            }
+            files += 1;
+            let Ok(data) = std::fs::read(&path) else { continue };
+            let file_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            for f in parse_font_file(&path, FontSource::Managed) {
+                let Ok(face) = ttf_parser::Face::parse(&data, f.face_index) else {
+                    continue;
+                };
+                faces_seen += 1;
+                let old = classify_legacy(&face, &f.family);
+                let new = f.classification;
+                *old_tally.entry(format!("{old:?}")).or_default() += 1;
+                *new_tally.entry(format!("{new:?}")).or_default() += 1;
+                if old != new {
+                    let mut names = vec![f.family.to_lowercase()];
+                    names.extend(
+                        localized_family_names(&face)
+                            .into_iter()
+                            .map(|l| l.name.to_lowercase()),
+                    );
+                    println!(
+                        "face-change\t{:?}\t{:?}\t{}\t{}\t{}\t{}{}",
+                        old,
+                        new,
+                        f.family,
+                        f.style,
+                        file_name,
+                        os2_probe(&face),
+                        if is_cjk_font(&face, &names) {
+                            " cjk=yes"
+                        } else {
+                            " cjk=no"
+                        }
+                    );
+                }
+                by_family.entry(f.family.clone()).or_default().push((
+                    f.style.clone(),
+                    old,
+                    new,
+                    file_name.clone(),
+                ));
+                *moved.entry((format!("{old:?}"), format!("{new:?}"))).or_default() += 1;
+            }
+        }
+
+        // 族级：旧 = 碰见第一个非 unknown 就定（旧 computeFamilies）；新 = 代表字面（Regular 优先）
+        // 代表字面自己判不出来时退「多数派」——与 src/lib/familyState.ts::familyClassification 同口径
+        let mut family_changed = 0usize;
+        let mut family_total = 0usize;
+        for (family, list) in &by_family {
+            family_total += 1;
+            let old_family = list
+                .iter()
+                .map(|(_, o, _, _)| *o)
+                .find(|c| *c != Classification::Unknown)
+                .unwrap_or(Classification::Unknown);
+            let lead = list
+                .iter()
+                .find(|(style, _, _, _)| style.eq_ignore_ascii_case("Regular"))
+                .or_else(|| list.first())
+                .map(|(_, _, n, _)| *n)
+                .unwrap_or(Classification::Unknown);
+            let new_family = if lead != Classification::Unknown {
+                lead
+            } else {
+                let mut tally: BTreeMap<String, (Classification, usize)> = BTreeMap::new();
+                for (_, _, n, _) in list {
+                    if *n == Classification::Unknown {
+                        continue;
+                    }
+                    let e = tally.entry(format!("{n:?}")).or_insert((*n, 0));
+                    e.1 += 1;
+                }
+                tally
+                    .values()
+                    .max_by_key(|(_, c)| *c)
+                    .map(|(c, _)| *c)
+                    .unwrap_or(Classification::Unknown)
+            };
+            if old_family != new_family {
+                family_changed += 1;
+                println!(
+                    "family-change\t{:?}\t{:?}\t{}\t{}",
+                    old_family,
+                    new_family,
+                    family,
+                    list.first().map(|(_, _, _, f)| f.as_str()).unwrap_or("")
+                );
+            }
+        }
+
+        println!("---- 文件 {files} / 字面 {faces_seen} / 族 {family_total} ----");
+        println!("---- 族级变化 {family_changed} 个 ----");
+        println!("old-dist\tnew-dist\tcount");
+        for (k, v) in &old_tally {
+            println!("{k}\t-\t{v}");
+        }
+        for (k, v) in &new_tally {
+            println!("-\t{k}\t{v}");
+        }
+        println!("moves\told\tnew\tcount");
+        let mut moves: Vec<_> = moved.into_iter().collect();
+        moves.sort_by(|a, b| b.1.cmp(&a.1));
+        for ((o, n), c) in moves {
+            println!("move\t{o}\t{n}\t{c}");
+        }
     }
 
     /// 压测：把 `ZFM_BULK_DIR` 指向的目录里所有字体逐个解析一遍。

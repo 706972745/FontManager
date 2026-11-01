@@ -38,7 +38,11 @@ import {
 } from "../lib/ipc";
 import { normalizeFaces } from "../lib/ipc";
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
-import { familyActivation, pathsToToggle } from "../lib/familyState";
+import {
+  familyActivation,
+  familyClassification,
+  pathsToToggle,
+} from "../lib/familyState";
 import { DEFAULT_HOTKEY, normalizeHotkey, type HotkeySpec } from "../lib/hotkey";
 import { cjkKnown } from "../lib/cjk";
 import { familyCopyrightClass } from "../lib/license";
@@ -3774,7 +3778,6 @@ export function computeFamilies(
     fam.dirCopyrightClass ??= f.copyrightClass ?? null;
     fam.addedAt = Math.max(fam.addedAt, f.addedAt ?? 0);
 
-    if (fam.classification === "unknown") fam.classification = f.classification;
     for (const s of f.scripts ?? []) {
       if (!fam.scripts.includes(s)) fam.scripts.push(s);
     }
@@ -3792,6 +3795,8 @@ export function computeFamilies(
   }
   for (const fam of map.values()) {
     fam.faces.sort((a, b) => styleOrder(a) - styleOrder(b));
+    // 分类必须在字面排序**之后**算：代表字面是按 style 取的，排序后才是用户看到的顺序
+    fam.classification = familyClassification(fam.faces);
     // 全坏才算「整个字族不可用」；部分坏只是标注，别让用户以为这族废了
     fam.brokenAll = fam.brokenFaces > 0 && fam.brokenFaces === fam.faces.length;
     Object.assign(fam, familyActivation(fam.faces));

@@ -4,6 +4,63 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] — 2026-11-01
+
+> **正式版**（1.1.0 的修正版）。内容 = 字体分类判定重写 + 族分类口径统一，
+> 修掉用户报的「筛选选衬线、结果里还有无衬线」。缓存格式升到 v7，升级后首次启动
+> 会重算一遍字体分类（其余字段仍走缓存）。
+
+### 修复：筛选「衬线」里混着无衬线字体（用户报障）
+
+- **现象**：分类筛选选「衬线」，结果里出现 Arial、微软雅黑这类无衬线族；
+  反选「无衬线」也一样混。搜索修复（1.1.0 的 OBS-1）只改了检索口径，没碰分类本身。
+- **根因一（元数据不可信）**：旧逻辑按「`is_monospaced` → OS/2 `sFamilyClass`
+  → PANOSE → 英文名关键字」取第一个命中的信号，实测两类系统性错误：
+  ① **中文字体的 OS/2 / PANOSE 大面积是垃圾数据** —— SimHei 的
+  `bProportion=9` 被判成等宽、SimSun 同样、方正黑体的 `sFamilyClass=10`（手写）
+  被判成手写；② **CID-keyed CFF 的中文 OTF**（创艺简宋、文鼎CS中宋…）汉字
+  `glyph_index` 查不到，`han_coverage` 为 `None` → 走西文分支，而中日韩字体
+  天然等宽 → `is_monospaced()` 恒为真，**整批中文宋体/黑体/隶书被判成等宽字体**。
+- **根因二（前端口径分裂）**：`computeFamilies` 聚合时「碰见第一个非 unknown
+  的字面就定族分类」，而卡片预览、详情面板看的是**代表字面**（Regular）。
+  两者不一致时（混排族里 Regular 是无衬线、其他字面是衬线），族被贴了衬线标签，
+  用户点进去看到的却是无衬线卡片。
+- **修法**：
+  ① 后端 `classify` 重写，拆成 `os2_class` / `panose_class` / `panose_serif_style`
+  / `is_cjk_font` 四块。**中日韩字体以名字为主**（黑/hei/gothic/圆/等线 → 无衬线；
+  宋/song/明/仿/serif → 衬线；楷/隶/篆/行/草 → 手写），元数据只做兜底；
+  **中日韩字符判定不再依赖 `han_coverage`**，名字里有假名/谚文/汉字即认定为中日韩字体。
+  ② 西文字体仍以 `is_monospaced` 优先；OS/2 与 PANOSE 分歧时用名字关键字破平
+  （Century Gothic 听名字 → 无衬线；Century Schoolbook 名字没线索 → 维持 OS/2，不回归）。
+  ③ 新增 `familyClassification()`（`src/lib/familyState.ts`），族分类统一看**代表字面**，
+  代表字面判不出来时退「全族多数派」；`computeFamilies` 改为字面排序之后再算。
+  ④ `CACHE_VERSION` 6 → **7**：分类是烤进缓存字面的，旧缓存里的错值必须作废重算。
+- **影响面（全库 4059 族 / 5670 字面实测）**：族级变化 **547** 个，字面级 **643** 处。
+  其中 Mono 离开 **248 族**（→ 无衬线 55 / 手写 40 / 衬线 38 / 装饰 33 / 未分类 82），
+  新增分类 **180 族**（未分类 → 无衬线 83 / 手写 67 / 衬线 30，原本名里有「宋/黑/楷」
+  却因元数据垃圾被判成未分类），「手写 → 无衬线」62 族、「手写 → 衬线」33 族
+  （方正报宋、方正粗宋这类宋体被旧逻辑的 `class=10` 抢走）。
+- **未处理**：82 个中日韩美术/标题字体（汉仪方叠体、汉仪琥珀体、经典魏碑、白舟印相体…）
+  名字里没有宋/黑/楷关键字、OS/2 class=0、PANOSE `bSerifStyle=1`，现在归「未分类」。
+  它们**不再污染等宽筛选**，但也没有落进装饰/手写——见待办清单。
+- **回归测试**：`classifies_cjk_fonts_from_localized_names` /
+  `cjk_font_is_detected_by_name_when_glyph_lookup_fails` /
+  `western_fonts_break_os2_panose_ties_by_name` /
+  `monospaced_fonts_stay_mono`（Rust，缺字体自动跳过）；
+  `tests/familyClassification.test.ts`（5 条）。
+- **真机验证**（1.1.1 实际构建）：筛选「衬线」→ 只剩細明體 / Bodoni / Book Antiqua /
+  Cambria / Century 一类，Arial、微软正黑體 不再出现；详情面板「分类」字段与筛选项一致；
+  系统字体 166 族缓存分类：sans 181 / serif 79 / script 32 / mono 10 / display 10 /
+  unknown 12（字面数），SimHei→无衬线、SimSun→衬线、KaiTi→手写、DengXian→无衬线、
+  Consolas→等宽 全部正确。
+
+### 变更
+
+- 合作者署名：`authors` / `publisher` / `copyright` 增加 `IIEOzo`（「关于」页同时加了
+  定制版地址链接）。
+- 诊断工具：`parser.rs` 新增 `#[ignore]` 测试 `diff_classification_library`，
+  可对任意字体目录跑「旧规则 vs 新规则」全量对比（`ZFM_DIFF_DIR=<目录>`）。
+
 ## [1.1.0] — 2026-11-01
 
 > **正式版**（1.0.0 之后第一个正式发布版）。内容 = 未单独发布的 1.0.1 开发迭代
