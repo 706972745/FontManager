@@ -21,7 +21,9 @@ use std::path::PathBuf;
 /// 并改成按汉字抽样覆盖率判定。老缓存里纯中文字体根本没有 `cjk` 标记，
 /// 无法就地迁移，只能作废重解析——代价是升级后第一次启动要重扫一遍字体库。
 // v5：目录判定加了「文件名与后缀矛盾」守卫 + 「企业授权」系关键词，旧缓存结论要重算
-const CACHE_VERSION: u32 = 6;
+// v6：分类判定重写（中文字体名字优先、PANOSE 与 OS/2 分歧用名字破平）——
+// 分类是烤进缓存字面的，旧缓存里 SimHei=mono、Century Gothic=serif 这类错值要重算
+const CACHE_VERSION: u32 = 7;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

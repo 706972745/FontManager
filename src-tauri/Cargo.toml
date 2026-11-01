@@ -1,8 +1,8 @@
 [package]
 name = "zfontmanager"
-version = "1.1.0"
+version = "1.1.1"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
-authors = ["TheHolyOneZ"]
+authors = ["TheHolyOneZ", "IIEOzo"]
 license = "GPL-3.0-only"
 homepage = "https://zsync.eu/zfontmanager/"
 repository = "https://github.com/TheHolyOneZ/ZFontManager"
