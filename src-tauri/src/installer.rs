@@ -709,7 +709,7 @@ pub fn install(
                         error: None,
                     },
                 );
-                let mut faces = src_faces;
+                let mut faces = src_faces.clone();
                 for face in &mut faces {
                     face.active = false;
                     known.insert(dup_key(face));
@@ -806,7 +806,22 @@ pub fn install(
                         if recycled && !src.starts_with(&staging) {
                             result.recycled_sources.push(src.to_string_lossy().into_owned());
                         }
-                        let mut faces = parser::parse_font_file(&dest, FontSource::Managed);
+                        // 复用刚才对**源文件**的解析结果，不再把刚落盘的副本整份读一遍。
+                        // `place_file` 做的是逐字节复制（跨盘时是 copy + 回收站），
+                        // 副本的解析结果与源完全一致，唯一要改的只有 path/id。
+                        // 2026-11-01 实测：这一步原本让每次导入多读一整份字体
+                        // （54 MB 样本 → 多读 57 MB，占「每文件 3 份读」里的 1 份）。
+                        let mut faces = if src_faces.is_empty() {
+                            parser::parse_font_file(&dest, FontSource::Managed)
+                        } else {
+                            let dest_str = dest.to_string_lossy().into_owned();
+                            let mut f = src_faces.clone();
+                            for face in &mut f {
+                                face.path = dest_str.clone();
+                                face.id = format!("{}#{}", dest_str, face.face_index);
+                            }
+                            f
+                        };
                         for face in &mut faces {
                             face.active = false;
                             // 判定结果带到前端：文件夹备注 / 版权信息文件定的版权也能在界面上看到

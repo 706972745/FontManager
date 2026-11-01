@@ -299,7 +299,12 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
     let before = state.linked.len();
     state.linked.retain(|p| std::path::Path::new(p).is_file());
-    if state.linked.len() != before {
+    // `added` 同样要收：删除字体不会清它（uninstall_quiet 只管文件），
+    // 长期下来「已删除路径」越攒越多（2026-11-01 实测 5603 条 vs 库里 4211 族）。
+    // 它只用来给「最近导入」排序，文件不在了留着没意义。
+    let before_added = state.added.len();
+    state.added.retain(|p, _| std::path::Path::new(p).is_file());
+    if state.linked.len() != before || state.added.len() != before_added {
         let _ = store::save(&state);
     }
     let mut faces: Vec<FontFace> = faces
@@ -506,6 +511,20 @@ async fn install_online_family(
 /// 而 `state.json` 已有 2.27 MB —— 2026-11-01 那次误触发的 4020 个链接字体，
 /// 实测写盘 **9.0 GB**（4020 × 2.27 MB ≈ 9.1 GB，完全对得上）。
 /// 所以把「干什么」和「什么时候落盘」拆开：这里的调用者负责在合适的时候存一次。
+/// 这个路径是不是躺在「字体库」目录里（大小写不敏感，Windows 语义）。
+fn path_in_library(library_dir: Option<&str>, path: &str) -> bool {
+    let lib = scanner::effective_managed_dir(library_dir);
+    let mut lib = lib.to_string_lossy().to_lowercase();
+    if lib.is_empty() {
+        return false;
+    }
+    // 补目录分隔符，否则库目录叫「字体库」时，隔壁「字体库2」也会被判成库内
+    if !lib.ends_with('\\') && !lib.ends_with('/') {
+        lib.push('\\');
+    }
+    path.to_lowercase().starts_with(&lib)
+}
+
 fn uninstall_one(
     state: &mut store::AppState,
     path: &str,
@@ -515,12 +534,24 @@ fn uninstall_one(
         // 先把它重新启用，否则文件搬走后注册表里留一条指向空路径的值
         activation::sync(state, path, true)?;
     }
-    if state.linked.contains(path) {
+    // `state.linked` 不能单独当「这是库外链接字体」的判据：
+    // 扫描的「自动收编」会把**库内**新发现的字体也写进 linked（lib.rs 里的 fresh 分支），
+    // 于是「导入 → 重启（重扫）→ 删除」会走成 unlink：只写一条 link 记录、文件原地不动，
+    // 用户下次重扫又看到它回来了（2026-11-01 修：删 12 个测试族，10 个只删了记录，
+    // 文件还在库里；`link-*.zfmtrash` 的 trashedPath 就等于 originalPath）。
+    // 库目录内的字体必须走真正的「搬到回收站」。
+    let in_library = path_in_library(state.active_library_dir(), path);
+    if state.linked.contains(path) && !in_library {
         activation::drop_linked_alias(state, path);
         let entry = installer::unlink_quiet(path, family)?;
         state.linked.remove(path);
+        state.added.remove(path);
         return Ok(entry);
     }
+    // 真删同样要清登记表：扫描的「自动收编」会把库内字体写进 linked/added，
+    // 不清就留下指向空路径的死记录（linked 会在下次扫描被 retain 掉，added 不会）。
+    state.linked.remove(path);
+    state.added.remove(path);
     installer::uninstall_quiet(path, family)
 }
 
@@ -2295,5 +2326,23 @@ mod session_tests {
 
         assert_eq!(gate.lock().unwrap().len(), 2, "同一路径只应占一份");
         gate.lock().unwrap().clear();
+    }
+
+    /// 「导入 → 重启（重扫写进 linked）→ 删除」不能退化成 unlink。
+    /// 2026-11-01 实测：删 12 个测试族，10 个只写了一条 `link-*.zfmtrash`，
+    /// 文件原地不动，重扫就回来。
+    #[test]
+    fn library_paths_never_take_the_unlink_branch() {
+        let lib = r"E:\Users\someone\字体库";
+        // 库内：即使被扫描「收编」进 linked，也必须走真删
+        assert!(path_in_library(Some(lib), r"E:\Users\someone\字体库\Roboto\Roboto-Regular.ttf"));
+        // 大小写不敏感
+        assert!(path_in_library(Some(lib), r"e:\users\someone\字体库\a.ttf"));
+        // 库外：链接语义（只删登记、文件留着）
+        assert!(!path_in_library(Some(lib), r"D:\downloads\a.ttf"));
+        // 前缀相同但不是同一个目录（库目录叫「字体库」，隔壁叫「字体库2」）
+        assert!(!path_in_library(Some(lib), r"E:\Users\someone\字体库2\a.ttf"));
+        // 没配库目录 → 用默认 managed 目录，外部路径一律不算库内
+        assert!(!path_in_library(None, r"D:\downloads\a.ttf"));
     }
 }
