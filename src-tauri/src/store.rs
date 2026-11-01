@@ -103,6 +103,28 @@ pub struct AppState {
     /// 镜像全部失败时还会回头再试原始地址，网络恢复后这个标记会被清掉。
     #[serde(default)]
     pub raw_unreachable: bool,
+
+    /// E2（2026-11-01）：批量启停的断点。
+    ///
+    /// 4000+ 族批量启用要 35~45 分钟（逐字面注册表 + GDI，0.3~0.4 s/个），
+    /// 中途进程退出的话清单就丢了。这里持久化「还剩哪些没做」，下次启动问用户要不要续。
+    /// 前端编排（runBatches）每 30 秒更新一次 —— 一次落盘 2.4 MB，不能每批都写。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_batch: Option<PendingBatch>,
+}
+
+/// 批量启停断点。`remaining` 保持原清单顺序（分批切片的顺序就是 paths 的顺序），
+/// 续做时按它重新分组跑批。
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingBatch {
+    /// 还没做启停的字体路径（有序）
+    pub remaining: Vec<String>,
+    /// 已完成的字面数（只用于展示「x / y」）
+    pub done: usize,
+    pub total: usize,
+    /// true = 启用，false = 停用
+    pub active: bool,
 }
 
 /// 包一层 Arc：批量启停要丢到后台线程（`spawn_blocking`）跑，得能拿出一份 'static 的共享状态

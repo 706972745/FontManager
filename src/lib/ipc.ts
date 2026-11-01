@@ -4,6 +4,20 @@ export type FontFormat = "otf" | "ttf" | "woff" | "woff2" | "unknown";
 export type FontSource = "system" | "user" | "managed";
 export type Classification = "serif" | "sans" | "mono" | "display" | "script" | "unknown";
 
+/**
+ * E2：批量启停断点（state.json 的 `pending_batch`）。
+ * 批量跑到一半进程退出时留下的「还剩哪些没做」，下次启动弹窗问用户要不要续。
+ */
+export interface PendingBatch {
+  /** 还没做启停的字体路径（有序） */
+  remaining: string[];
+  /** 已完成的字面数（展示用） */
+  done: number;
+  total: number;
+  /** true = 启用，false = 停用 */
+  active: boolean;
+}
+
 export interface VariationAxis {
   tag: string;
   min: number;
@@ -340,6 +354,16 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
     invoke<void>("set_fonts_active", { paths, active, noSave: noSave ?? false }),
   setFontsActiveSession: (paths: string[]) =>
     invoke<void>("set_fonts_active_session", { paths }),
+  /**
+   * E2：批量启停「进行中」标志。置位期间关主窗口 = 藏进托盘后台继续跑，
+   * 不退出进程；批量结束（含取消/失败）必须复位。
+   */
+  setBatchRunning: (on: boolean) => invoke<void>("set_batch_running", { on }),
+  /** E2：写/清批量启停断点（`null` = 清除。一次落盘 2.4MB，调用方自行节流） */
+  batchCheckpoint: (cp: PendingBatch | null) =>
+    invoke<void>("batch_checkpoint", { cp }),
+  /** E2：启动时查有没有没做完的批量（有 → 弹「继续吗」） */
+  batchCheckpointGet: () => invoke<PendingBatch | null>("batch_checkpoint_get"),
   installFonts: (paths: string[], existing: string[], mode: InstallMode) =>
     invoke<InstallResult>("install_fonts", { paths, existing, mode }),
   installOnline: (

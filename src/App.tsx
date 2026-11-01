@@ -28,6 +28,7 @@ import { ApplyProgress } from "./components/ApplyProgress";
 import { BulkTagPrompt } from "./components/BulkTagPrompt";
 import { DuplicateDialog } from "./components/DuplicateDialog";
 import { TrashConfirmDialog } from "./components/TrashConfirmDialog";
+import { ResumeBatchDialog } from "./components/ResumeBatchDialog";
 import { Onboarding } from "./components/Onboarding";
 import { ContextMenuHost, isContextMenuOpen, openContextMenuAt } from "./design/primitives/ContextMenu";
 import { HoverHintHost } from "./design/primitives/HoverHint";
@@ -39,6 +40,7 @@ import { INTRO_OFF, useIntro } from "./lib/useIntro";
 import { expandQuickbarPanel } from "./lib/useQuickbarDock";
 import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
 import { useT } from "./lib/i18n";
+import { ipc } from "./lib/ipc";
 import { DiagHud } from "./components/DiagHud";
 import { experiment } from "./lib/experiment";
 import { ensureThumbIndex } from "./lib/thumb";
@@ -288,6 +290,14 @@ export default function App() {
     void init().then(() => {
       if (!useFontStore.getState().startMinimized) void getCurrentWindow().show();
     });
+    // E2：查上次批量启停有没有断点（有 → ResumeBatchDialog 弹「继续吗」）。
+    // 拿不到就当没有——断点只是锦上添花，不能让它挡启动。
+    ipc
+      .batchCheckpointGet()
+      .then((cp) => {
+        if (cp) useFontStore.setState({ pendingResume: cp });
+      })
+      .catch(() => {});
   }, [init]);
 
   // 软件已经开着时用户又点了一次桌面 / 开始菜单图标（原生侧拦下第二个进程并发来这个事件）：
@@ -611,6 +621,7 @@ export default function App() {
       <ContextMenuHost />
       <DuplicateDialog />
       <TrashConfirmDialog />
+      <ResumeBatchDialog />
       <Toaster />
       <ResizeGrips />
       <HoverHintHost />
