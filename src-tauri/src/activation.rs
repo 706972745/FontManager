@@ -17,7 +17,48 @@ pub fn can_deactivate(source: FontSource) -> bool {
     }
 }
 
+/// 系统字体目录（`%SystemRoot%\Fonts`，回退 `C:\Windows\Fonts`）。
+///
+/// Windows 装在别的盘时只有前者对，所以两个都留。
+#[cfg(target_os = "windows")]
+fn system_font_roots() -> Vec<String> {
+    let mut roots: Vec<String> = Vec::new();
+    if let Ok(w) = std::env::var("SystemRoot") {
+        let base = w.trim_end_matches(['\\', '/']).replace('/', "\\").to_lowercase();
+        roots.push(format!("{base}\\fonts"));
+    }
+    let fallback = r"c:\windows\fonts".to_string();
+    if !roots.contains(&fallback) {
+        roots.push(fallback);
+    }
+    roots
+}
+
+/// 这条路径是不是「系统装好的那份」——它改不动，任何尝试都只会失败。
+///
+/// 早期版本把系统字体也记进了 `state.deactivated`，于是每次启动 reconcile 都会
+/// 重试一遍、失败一遍，右上角反复弹「无法卸载系统字体」（C4）。入口就挡住它，
+/// 比「尝试 → 失败 → 提示」省事，也不会污染用户数据。
+pub fn is_system_font(path: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let norm = path.replace('/', "\\").to_lowercase();
+        return system_font_roots()
+            .iter()
+            .any(|root| norm == *root || norm.starts_with(&format!("{root}\\")));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 pub fn sync(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
+    if is_system_font(path) {
+        crate::diag::log(&format!("activation: skip protected system font: {path}"));
+        return Ok(());
+    }
     let was_deactivated = state.deactivated.contains(path);
     if active {
         state.deactivated.remove(path);
@@ -52,6 +93,11 @@ pub fn sync_batch(state: &mut AppState, paths: &[String], active: bool) -> Vec<S
     #[cfg(target_os = "windows")]
     let mut cache = crate::registry::RegCache::load();
     for path in paths {
+        // 系统字体改不动：既不写 registry，也不记进 deactivated（C4）
+        if is_system_font(path) {
+            crate::diag::log(&format!("activation: skip protected system font: {path}"));
+            continue;
+        }
         let was_deactivated = state.deactivated.contains(path);
         if active {
             state.deactivated.remove(path);
@@ -376,5 +422,32 @@ mod tests {
             batch_error(&["a".into(), "b".into()], 12),
             Err("2 of 12 fonts failed: a".into())
         );
+    }
+
+    /// C4：系统字体必须被认出来，而且只能认对（别把 `C:\Windows\Fonts2` 也当成系统目录）
+    #[test]
+    fn detects_protected_system_fonts() {
+        #[cfg(target_os = "windows")]
+        {
+            assert!(is_system_font(r"C:\Windows\Fonts\arial.ttf"));
+            assert!(is_system_font("c:/windows/fonts/Arial.ttf"));
+            assert!(is_system_font(r"C:\Windows\Fonts\sub\other.ttf"));
+            assert!(!is_system_font(r"C:\Windows\Fonts2\arial.ttf"));
+            assert!(!is_system_font(r"E:\Users\me\Desktop\fonts\arial.ttf"));
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(!is_system_font("/usr/share/fonts/a.ttf"));
+        }
+    }
+
+    /// 系统字体走 sync 必须「静默跳过」：不写 deactivated，也不报错
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn sync_skips_system_font_without_error() {
+        let mut state = AppState::default();
+        let path = r"C:\Windows\Fonts\segoeui.ttf";
+        assert!(sync(&mut state, path, false).is_ok());
+        assert!(!state.deactivated.contains(path));
     }
 }

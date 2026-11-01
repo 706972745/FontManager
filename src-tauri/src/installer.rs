@@ -33,6 +33,10 @@ pub struct InstallResult {
     /// 因「系统已经装了这个字体」而没入库的文件数（避免在库里造出重复副本）
     #[serde(default)]
     pub system_duplicates: usize,
+    /// 「移动」导入时跨盘降级成「复制 + 源文件进回收站」的源路径（C7）。
+    /// 非空时前端必须告诉用户源文件去哪了，不能只说「导入成功」。
+    #[serde(default)]
+    pub recycled_sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,23 +64,45 @@ pub fn dup_key(face: &FontFace) -> String {
         .unwrap_or_else(|| format!("{} {}", face.family, face.style))
 }
 
-fn move_file(from: &Path, to: &Path) -> Result<(), String> {
+fn move_file(from: &Path, to: &Path) -> Result<bool, String> {
     if fs::rename(from, to).is_ok() {
-        return Ok(());
+        return Ok(false);
     }
     fs::copy(from, to).map_err(|e| e.to_string())?;
-    recycle(from)
+    recycle(from)?;
+    // 跨盘：`rename` 必然失败，退化成「复制 + 把源文件送进 Windows 回收站」。
+    // 返回 true 让调用方把源文件去向告诉用户 —— 以前这里完全静默，界面只说「导入成功」，
+    // 用户以为文件被搬走了，实际躺在回收站里（C7）。
+    Ok(true)
 }
 
 /// 把字体放到目标位置：`copy_only = true` 时只复制一份（源文件保留）。
 ///
 /// 「导入文件夹」按钮用复制模式——用户 2026-10-30 要求：不移动、不走链接，
 /// 把字体复制进软件的字库目录，原来的文件夹原样不动。
-fn place_file(from: &Path, to: &Path, copy_only: bool) -> Result<(), String> {
+///
+/// 返回值 `true` 表示「跨盘移动」：源文件已经进了回收站，调用方应当告知用户。
+fn place_file(from: &Path, to: &Path, copy_only: bool) -> Result<bool, String> {
     if copy_only {
-        fs::copy(from, to).map(|_| ()).map_err(|e| e.to_string())
+        fs::copy(from, to).map(|_| false).map_err(|e| e.to_string())
     } else {
         move_file(from, to)
+    }
+}
+
+/// 导入失败时，把刚为这个文件建出来、而且仍然是空的字族目录收掉。
+///
+/// 只处理「库内的、确实是空的」目录：库根本身和分类目录（`_01_中文字体` 这类）
+/// 一律不动 —— 它们不是为某个文件建的，删了会把用户的组织结构弄塌。
+fn prune_empty_dir(dir: &Path, library: &Path) {
+    if dir == library || !dir.starts_with(library) {
+        return;
+    }
+    let empty = fs::read_dir(dir)
+        .map(|mut it| it.next().is_none())
+        .unwrap_or(false);
+    if empty {
+        let _ = fs::remove_dir(dir);
     }
 }
 
@@ -717,10 +743,23 @@ pub fn install(
                 } else {
                     library.to_path_buf()
                 };
-                let target_dir = match (src_faces.first(), class) {
-                    (Some(f0), Some(class)) => base.join(copyright::family_dir_name(&f0.family, class)),
-                    // 版权判不出来 + 残缺：至少按字族名分目录，别一堆坏文件摊在根上
-                    (Some(f0), None) if incomplete => base.join(copyright::sanitize(&f0.family)),
+                // 真族名（不是拿文件名顶上的那种）。假族名一律收进「未识别字体」这一个桶：
+                // 否则「导入一批」就产生一批 `<文件名>（未知版权）` 目录，内容一搬走就成空壳。
+                let real_family = src_faces
+                    .first()
+                    .filter(|f0| !f0.name_fallback)
+                    .map(|f0| f0.family.as_str());
+                let target_dir = match (real_family, class) {
+                    (Some(fam), Some(class)) => base.join(copyright::family_dir_name(fam, class)),
+                    (None, Some(class)) => base.join(copyright::family_dir_name(
+                        copyright::UNIDENTIFIED_FAMILY,
+                        class,
+                    )),
+                    // 版权判不出来（只剩残缺字体这条路）：至少按族名分目录，别摊在根上
+                    (Some(fam), None) if incomplete => base.join(copyright::sanitize(fam)),
+                    (None, None) if incomplete => {
+                        base.join(copyright::sanitize(copyright::UNIDENTIFIED_FAMILY))
+                    }
                     _ => base,
                 };
                 let created = fs::create_dir_all(&target_dir).map_err(|e| e.to_string());
@@ -747,7 +786,7 @@ pub fn install(
                     matches!(mode, InstallMode::Copy) || staged.converted,
                 );
                 let (ok, error) = match &moved {
-                    Ok(()) => (true, None),
+                    Ok(_) => (true, None),
                     Err(e) => (false, Some(e.clone())),
                 };
                 let _ = app.emit(
@@ -761,7 +800,12 @@ pub fn install(
                     },
                 );
                 match moved {
-                    Ok(()) => {
+                    Ok(recycled) => {
+                        // 跨盘移动：源文件进了回收站。staging 里的临时文件（zip 解包 / WOFF 转换）
+                        // 不算「用户的源文件」，不进清单，否则每次 zip 导入都报一堆假提示。
+                        if recycled && !src.starts_with(&staging) {
+                            result.recycled_sources.push(src.to_string_lossy().into_owned());
+                        }
                         let mut faces = parser::parse_font_file(&dest, FontSource::Managed);
                         for face in &mut faces {
                             face.active = false;
@@ -789,7 +833,12 @@ pub fn install(
                         }
                         result.installed.extend(faces);
                     }
-                    Err(e) => result.errors.push(e),
+                    Err(e) => {
+                        // 文件没放进去 → 刚为它建的字族目录还空着，收掉。
+                        // 以前这里直接留空目录，一次失败的导入就在库根留一个空壳（2.4）。
+                        prune_empty_dir(&target_dir, library);
+                        result.errors.push(e)
+                    }
                 }
             }
         }
@@ -937,7 +986,8 @@ pub fn install_online(
         }
         let dest = unique_dest(&dir, &file_name);
         match move_file(src, &dest) {
-            Ok(()) => {
+            // 在线字体是从下载 staging 搬过来的临时文件，跨盘回收属正常，不报给用户
+            Ok(_) => {
                 let mut faces = parser::parse_font_file(&dest, FontSource::Managed);
                 for face in &mut faces {
                     face.active = false;
@@ -1008,6 +1058,13 @@ fn sanitize_component(name: &str) -> String {
 }
 
 pub fn uninstall(path: &str, family: &str) -> Result<TrashEntry, String> {
+    let entry = uninstall_quiet(path, family)?;
+    refresh_system_font_cache();
+    Ok(entry)
+}
+
+/// `uninstall` 的本体：**不广播 WM_FONTCHANGE**（批量入口最后统一广播一次，见 `unlink_quiet`）。
+pub fn uninstall_quiet(path: &str, family: &str) -> Result<TrashEntry, String> {
     #[cfg(target_os = "windows")]
     unregister_user_font(path);
 
@@ -1033,8 +1090,12 @@ pub fn uninstall(path: &str, family: &str) -> Result<TrashEntry, String> {
         "{}.zfmtrash",
         dest.extension().and_then(|e| e.to_str()).unwrap_or("bin")
     ));
-    let _ = fs::write(&meta, serde_json::to_vec(&entry).unwrap_or_default());
-    refresh_system_font_cache();
+    // 记录写不进去就把文件搬回原位（C1）：否则回收站里留下一个「有文件、没记录」的孤儿 ——
+    // `list_trash` 只认 sidecar，界面里看不见它，用户也就永远还原不了。
+    if let Err(e) = fs::write(&meta, serde_json::to_vec(&entry).unwrap_or_default()) {
+        let _ = move_file(&dest, src);
+        return Err(format!("写入回收站记录失败：{e}"));
+    }
     Ok(entry)
 }
 
@@ -1118,6 +1179,17 @@ pub enum RestoreOutcome {
 }
 
 pub fn unlink(path: &str, family: &str) -> Result<TrashEntry, String> {
+    let entry = unlink_quiet(path, family)?;
+    refresh_system_font_cache();
+    Ok(entry)
+}
+
+/// `unlink` 的本体：**不广播 WM_FONTCHANGE**。
+///
+/// 批量删除要走这个版本 —— 4020 个链接字体若每个都广播一次 `WM_FONTCHANGE`，
+/// 等于向所有顶层窗口发 4020 轮通知（C8：与「每项重写整份 state」同一个毛病，
+/// 都是把「单条操作」的开销乘上了批量规模）。批量入口最后统一广播一次。
+pub fn unlink_quiet(path: &str, family: &str) -> Result<TrashEntry, String> {
     #[cfg(target_os = "windows")]
     unregister_user_font(path);
 
@@ -1142,7 +1214,6 @@ pub fn unlink(path: &str, family: &str) -> Result<TrashEntry, String> {
     }
     fs::write(&sidecar, serde_json::to_vec(&entry).unwrap_or_default())
         .map_err(|e| e.to_string())?;
-    refresh_system_font_cache();
     Ok(entry)
 }
 
@@ -1434,6 +1505,29 @@ mod tests {
         assert_eq!(targets, vec![d1, d2]);
     }
 
+    /// 2.4：导入失败留下的空字族目录要收掉，但库根与非空目录绝不能动
+    #[test]
+    fn prune_removes_only_empty_family_dirs() {
+        let tmp = std::env::temp_dir().join(format!("zfm-prune-{}", std::process::id()));
+        let lib = tmp.join("lib");
+        let empty_family = lib.join("SomeFamily（未知版权）");
+        let keep = lib.join("_01_中文字体");
+        fs::create_dir_all(&empty_family).unwrap();
+        fs::create_dir_all(&keep).unwrap();
+        fs::write(keep.join("a.ttf"), b"x").unwrap();
+
+        prune_empty_dir(&empty_family, &lib);
+        assert!(!empty_family.exists(), "空的字族目录应被收掉");
+
+        prune_empty_dir(&lib, &lib);
+        assert!(lib.exists(), "库根本身不能删");
+
+        prune_empty_dir(&keep, &lib);
+        assert!(keep.exists(), "非空目录不能删");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     /// 两个 zip 里有同名文件：解压到同一个 staging 时不能互相覆盖
     #[test]
     fn multi_zip_same_file_name_keeps_both() {
@@ -1485,6 +1579,8 @@ mod tests {
             webfonts_skipped: 0,
             // 0.9.9-13 新增的字段：测试这里只关心 staging 目录，不关心系统重复计数
             system_duplicates: 0,
+            // 1.0.0-4 新增：跨盘移动被回收的源文件清单，本测试不涉及
+            recycled_sources: vec![],
         };
         let _ = process_webfonts(vec![staged], &staging, &mut result);
 
@@ -1566,6 +1662,64 @@ mod tests {
         assert!(list_trash().iter().all(|t| t.id != entry.id));
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// C7 真机验证：跨盘「移动」导入必须把源文件送进回收站，并如实回报 `recycled = true`。
+    ///
+    /// 同盘 `rename` 直接成功，跨盘才落到「复制 + 源进回收站」那条分支，
+    /// 所以这里强制要求源和目标在不同盘。样本路径用环境变量给，不把用户路径写进仓库：
+    ///   ZFM_CROSS_SRC=D:\some\dir  ZFM_CROSS_DST=E:\tmp\lib  cargo test cross_drive -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn cross_drive_move_recycles_source() {
+        let src_dir = match std::env::var("ZFM_CROSS_SRC") {
+            Ok(v) => std::path::PathBuf::from(v),
+            Err(_) => {
+                println!("跳过：未设置 ZFM_CROSS_SRC");
+                return;
+            }
+        };
+        let dst_dir = match std::env::var("ZFM_CROSS_DST") {
+            Ok(v) => std::path::PathBuf::from(v),
+            Err(_) => {
+                println!("跳过：未设置 ZFM_CROSS_DST");
+                return;
+            }
+        };
+        let src_drive = src_dir.components().next();
+        let dst_drive = dst_dir.components().next();
+        assert_ne!(src_drive, dst_drive, "必须在不同盘之间测，否则测不到跨盘分支");
+
+        fs::create_dir_all(&dst_dir).unwrap();
+        let mut moved = 0usize;
+        let mut recycled = 0usize;
+        let mut names: Vec<String> = vec![];
+        for entry in fs::read_dir(&src_dir).unwrap() {
+            let src = entry.unwrap().path();
+            if !src.is_file() {
+                continue;
+            }
+            let name = src.file_name().unwrap().to_string_lossy().into_owned();
+            let dest = dst_dir.join(&name);
+            let was_recycled = place_file(&src, &dest, false).expect("移动失败");
+            assert!(!src.exists(), "源文件应当已经不在了: {src:?}");
+            assert!(dest.exists(), "目标文件应当存在: {dest:?}");
+            println!(
+                "{name}: recycled={was_recycled} size={}",
+                fs::metadata(&dest).unwrap().len()
+            );
+            moved += 1;
+            if was_recycled {
+                recycled += 1;
+            }
+            names.push(name);
+        }
+        println!("moved={moved} recycled={recycled} dst={dst_dir:?} files={names:?}");
+        assert!(moved > 0, "样本目录里没有文件");
+        assert_eq!(
+            recycled, moved,
+            "跨盘移动必须走「复制 + 源进回收站」，否则源文件是被硬删的"
+        );
     }
 }
 

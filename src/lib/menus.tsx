@@ -272,13 +272,14 @@ function buildBulkMenu(names: string[]): MenuItem[] {
           },
         ] satisfies MenuItem[])
       : []),
+    // C9：删除项单独成组。以前它紧挨着「停用 N 个」，菜单项高度一致、都在同一列，
+    // 4213 个全选后误点的代价是整库进回收站 —— 隔一条分隔线 + 统一的确认入口。
+    { kind: "separator" },
     {
       label: t("menu.moveCountToTrash", { count: n }),
       icon: <Trash2 size={14} strokeWidth={1.5} />,
       danger: true,
-      action: () => {
-        for (const f of names) void s.uninstallFamily(f);
-      },
+      action: () => s.requestTrash(names),
     },
   ];
 }

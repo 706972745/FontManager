@@ -4,6 +4,172 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-8] — 2026-11-01
+
+> 开发版。1.0.0-6 那个确认框的**配色收尾**：这套设计 token 里没有红色
+> （`--error` / `--warning` 都是灰度 `#d4d4d8` / `#3f3f46`），我第一版按「危险=红」写出来，
+> 实际渲染成一颗灰白按钮，和整个界面不搭。
+
+- 主按钮改用 `var(--accent-gradient)`（与「新建标签」的 `.bulktag-apply` 同款），
+  面板边框/图标用 `var(--warning)`（与「这些字体已存在」的 `.dup-panel` 一致）；
+- 「等 N 个」移出滚动区，长清单时也始终可见；
+- 危险语义靠**文案 + 位置**表达，不自造红色。
+
+## [1.0.0-7] — 2026-11-01
+
+> 开发版。按用户反馈「搜索范围再大一点，有些都搜索不到」扩了匹配面，并支持多关键词。
+
+### 改进：字体搜索能搜的字段大幅扩展
+
+原来只匹配 族名 / 标签 / 格式 / 厂商 / 备注 / 授权正文 / 本地化名，所以下面这些**全搜不到**：
+
+| 搜什么 | 例子 | 以前 | 现在 |
+|---|---|---|---|
+| 字重 / 样式名 | `semibold`、`italic` | ✗ | ✓ |
+| PostScript 名 | `HelveticaNeueLTPro-Bd` | ✗ | ✓ |
+| 文件名 | `msyh`、`HelveticaNeue` | ✗ | ✓ |
+| 语言（中文名） | `中文`、`拉丁文` | ✗ | ✓ |
+| 分类（中文名） | `衬线`、`无衬线`、`等宽` | ✗ | ✓ |
+| OpenType 特性（中文名） | `连字`、`小型大写` | ✗ | ✓ |
+
+- 语言 / 分类 / 特性的中文名来自 i18n（`script.han` → 「中文」），按当前语言取，切语言后自动跟随；
+  文案缓存按 locale 存，不会每次按键重建。
+- **多关键词按 AND**：`bold 中文` 会同时约束「有 Bold」和「含中文」；`Neue Helvetica` 这种反序也能出结果。
+  单关键词行为与以前一致。
+- 规则抽到 `src/lib/familySearch.ts`（纯函数），单测 8 条覆盖上面每一行。
+
+## [1.0.0-6] — 2026-11-01
+
+> 开发版。收掉 11-01 事故暴露的两条：批量删除的写盘放大（C8）与没有护栏（C9）。
+
+### 修复：批量「移到回收站」把整份 state 写了 4020 遍（C8）
+
+- **现象**：一次误触发的 4023 项批量删除，累计写盘 **9.0 GB**、私有内存 79 MB → **1.09 GB**、单核 CPU 60% 持续 3 分钟。
+- **根因**：`uninstall_font` 每处理一个文件就 `store::save(&state)` 一次；`state.json` 已 **2.27 MB**，
+  4020 次 × 2.27 MB ≈ **9.1 GB**，与实测 9.0 GB 完全吻合。前端那侧更糟：
+  `for (const f of names) void uninstallFamily(f)` 会并发 4213 条 Promise，每条内部再逐文件发 IPC。
+  顺带两个同源问题：每个文件都广播一次 `WM_FONTCHANGE`；`if state.deactivated.contains(path)` 分支也会单独落一次盘。
+- **修法**：
+  1. 后端拆出 `uninstall_one`（**不落盘**），新增 `uninstall_fonts(items)`：**一次加锁、一次落盘、一次广播**，
+     并跑在 `spawn_blocking` 里（否则上万次文件搬运会卡住主线程）。
+  2. `installer::uninstall` / `unlink` 拆成 `*_quiet`（不广播）+ 带广播的薄包装，批量入口只在结尾广播一次。
+  3. 前端新增 `uninstallFamilies(families)`：整批一次 IPC、一次状态更新、一条 toast（带「撤销」还原全部条目）；
+     `uninstallFamily` 变成它的单族包装，所以 44 个字面的族也不再是 44 次落盘。
+  4. 条目生成抽成纯函数 `applyPlan::trashItems()`：同一路径只发一次（TTC 多面共用一个文件）、系统字体不发。
+- **验证口径**：`activation.log` 新增一行 `trash batch: N item(s), K ok, F failed, saved once, T ms`，
+  复测时用 `GetProcessIoCounters` 对写盘量：N 个文件应当只多出约 1 份 state.json（2.3 MB），而不是 N × 2.3 MB。
+
+### 修复：批量删除没有二次确认、菜单项还紧挨着启停（C9）
+
+- **现象**：右键菜单里「将 4213 个移到回收站」与「停用 4213 个」相邻，高度、排版完全一致，**没有确认**。
+- **修法**：
+  1. 删除项**单独成组**（前面加分隔线），仍然保留 `danger` 红字；
+  2. 新增统一入口 `requestTrash(families)`：≤ **50** 个直接删（日常整理不该被打断），
+     超过就弹 `TrashConfirmDialog` —— 结构照抄既有的 `DuplicateDialog`（同遮罩、Escape、焦点陷阱、模态层级）；
+     面板列出前 8 个族名 +「等 N 个」、说明「文件进应用回收站，随时可还原」、主按钮走危险色、执行中变 loading 防连点；
+  3. `Delete` 键、右键菜单两条路径都改成走 `requestTrash`，行为一致。
+- 9 种语言文案齐（`trashConfirm.*`、`toast.movedFamiliesToTrash`、`toast.restoredFamilies`）。
+
+### 测试
+
+- 前端 `node --test` **202 pass**（新增 `tests/trashBatch.test.ts` 5 条：路径去重 / 系统字体排除 / 只收目标族 / 多族顺序 / 空清单）。
+- Rust `cargo test --lib` 保持全绿。
+
+## [1.0.0-5] — 2026-11-01
+
+> 开发版。收掉 P2 四条：子集化再优化两条（kern / TTC）、命中率可观测一条、回收站一致性一条。
+
+### 新增：子集命中率统计（A9）
+
+- 以前只有「能生成多少份产物」这种静态计数，回答不了「到底多少张卡片真的用上了子集」。
+- `faceStats()` 增加 `subsetHits` / `subsetMisses` / `subsetHitRate`，`DiagHud` 多一段
+  `sub 命中/总数=百分比 art 产物数`。任何子集优化做完都靠它证明有没有效果。
+
+### 优化：kern 表裁剪（A3）
+
+- 子集产物里只保留「左右 gid 都在字形闭包内」的 pair；非 format 0 / 非 version 0 的子表整段原样保留。
+- 实测（宝马中国字体-黑体）：`kern` **3408 对 → 4 对**，产物 199 KB → **174.8 KB（-12%）**；
+  fontTools 复核「产物里的 pair 值与原表逐条一致，0 处差异」。
+- 踩到的坑（写成单测 `kern_subset_keeps_valid_layout`）：kern 头是 `version(2) + nTables(2)` **4 字节**，
+  只写 2 字节会让子表直接从 offset 2 开始写、把子表 version 顶掉 —— 产物能生成、体积也对，
+  但**整份 kern 读不出来**（fontTools 报 `unsupported kern subtable version: 38`）。
+
+### 优化：TTC / OTC 子集（A6）
+
+- 以前 `.ttc` 直接放弃，白白浪费库内那 12 个 / 4.9% 体积。
+- 现在用 `face_offsets()` 定位到具体那个 sfnt，`rebuild()` 产出的本来就是**单面**独立字体
+  （正好是 OTS 要的形态），集合内共享表的绝对寻址不受影响。
+- 实测：`batang.ttc` 16.26 MB → 7.12 MB（43.75%）、`日本雅艺体.TTC` 4.39 MB → **128 KB（2.92%）**。
+
+### 修复：回收站「有文件、没记录」的孤儿（C1）
+
+- `uninstall()` 写 sidecar 失败时原来直接忽略返回值 → 文件留在 `Trash/`、记录没写成，
+  而 `list_trash()` 只认 sidecar，界面里看不见、也永远还原不了。
+- 现在写记录失败就把文件搬回原位并报错，不再产生孤儿。
+- 另核：移文件 → 写记录的**顺序本来就是对的**（0.9.9-6 那个「4155 条记录只移了 62 个文件」
+  是更早版本的写法），当前 `Trash/` 实测 0 个残留。
+
+### 版本与缓存
+
+- `SUBSET_TAG` `S5` → **`S6`**：子集算法变了（kern + TTC），不升会命中旧产物。
+- 旧 S5 产物不再被引用；`preview-cache` 里可直接删 `*S5*` 释放空间。
+
+## [1.0.0-4] — 2026-11-01
+
+> 开发版。清掉三条 P1 遗留（都会在界面上被看见或被烦到）+ 一条导入归档问题。
+> 无破坏性变更，用户数据（备注 / 快照 / 分组）不动。
+
+### 修复：系统字体反复弹「无法卸载系统字体」（C4）
+
+- 现象：右上角反复出现「无法卸载系统字体 / 系统字体受操作系统保护」，每次 reconcile
+  或批量停用都来一串。
+- 根因：`state.deactivated` 里混进了 `C:\Windows\Fonts` 的条目 —— 那些字体**永远改不动**，
+  于是每次启动都「尝试 → 失败 → 提示」，重试一次失败一次。
+- 修法（三层，从根到末）：
+  1. `activation::is_system_font()` 识别系统字体目录（`%SystemRoot%\Fonts`，回退 `C:\Windows\Fonts`；
+     用前缀 + 反斜杠边界判断，`Fonts2` 这类不算）；
+  2. `sync` / `sync_batch` 入口直接静默跳过系统字体：不写注册表、**也不记进 `deactivated`**；
+  3. `store::load()` 一次性清理历史遗留条目并立刻落盘（只清系统路径，其它一个字不动）。
+- 前端：4 处「系统字体动不了」的提示收成一个 `warnSystemFont()`，**3 秒内只弹一次** ——
+  原来批量停用碰到几个系统字面就弹几条，能连排十几条。
+- 单测：`detects_protected_system_fonts`（含 `Fonts2` 反例）、`sync_skips_system_font_without_error`。
+
+### 修复：跨盘「移动」导入静默把源文件丢进回收站（C7）
+
+- 现象：从 D 盘拖字体到 E 盘的库、选「移动」，界面只说「导入成功」，源文件其实进了 Windows 回收站，
+  用户以为文件被搬走了。
+- 根因：`installer::move_file()` 的 `fs::rename` 跨盘必然失败 → 降级成 `fs::copy` + `recycle(from)`，
+  **这一步完全静默**；`zip` / `WOFF` 解包产物还会强制走移动，与所选模式无关。
+- 修法：`move_file` 返回「是否走了回收站」→ `InstallResult.recycled_sources` → 前端明确提示
+  「源文件已移入回收站（N 个），需要原文件可从回收站还原」。`staging` 里的临时文件不计入，
+  否则每次 zip 导入都会报一堆假提示。
+- 文案 9 语言已补齐（`toast.sourcesRecycled` / `toast.sourcesRecycledSub`）。
+
+### 修复：单族整族启停仍一次性调用，大族卡 5~20 秒
+
+- 1.0.0-3 只修了**批量**路径（`planBatches` / `runBatches`），`setFamilyActive` 还是把整族字面
+  一次丢给后端：思源 / 苹方这类 40+ 字面的族，整族启用时窗口十几秒不响应。
+- 修法：超过一个批次（10 个字面）就走和批量完全相同的那条分批通道，复用进度条与「取消」；
+  取消时已做的保留、没轮到的退回原值。**≤10 个字面的小族保持原样**（一条 IPC，不弹进度条）。
+
+### 修复：族名解析失败会制造一堆空目录（2.4）
+
+- 现象：库根长出一堆 `<序号>_<文件名>（未知版权）` 目录，里面是空的（2026-11-01 一次清掉 71 个）。
+- 根因：`parser::fallback_family()` 在字体读不出 `name` 表时拿文件名顶族名，导入归档又用这个
+  「假族名」建目录 → 一个文件一个目录；内容后来被整理脚本搬走，空壳就留在库根。
+- 修法：
+  1. `FontFace.name_fallback` 标记「族名是拿文件名顶的」（不是损坏 —— 老中文字体 name 表是 GBK，
+     字体本身完好，这个区分不能丢）；
+  2. 导入归档时，假族名一律收进 `<库>/未识别字体（版权类）/` 这一个桶，不再按文件名建目录；
+  3. `place_file` 失败时，把刚为它建出来、且仍然空的字族目录收掉（库根与分类目录不动）。
+- 单测：`prune_removes_only_empty_family_dirs`（含「库根不能删」「非空不能删」反例）。
+
+### 已核不再存在的问题（0.9.9-13 那 9 条 BUG）
+
+- BUG-1 ~ BUG-9 逐条对过源码，**全部已在前几个版本修完**（Face LRU、分组收窄、字重菜单勾选语义、
+  系统副本提示、删除分组计数、Toast 暂停计时器、字符集缓存、会话清单、CJK 缓存）。
+  详见 `待办清单-1.0.0-4-2026-11-01.md` 第 1 节的状态表。
+
 ## [1.0.0-3] — 2026-11-01
 
 > 开发版。**批量启用/停用的卡顿修复**（安装包实测发现），外加速览面板族名的显示口径统一。

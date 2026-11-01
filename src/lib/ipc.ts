@@ -110,6 +110,8 @@ export interface InstallResult {
   duplicates: string[];
   /** 本次跳过的 WOFF/WOFF2 个数（同字体已有 ttf/otf，或 woff2 不受支持） */
   webfontsSkipped?: number;
+  /** 「移动」导入跨盘降级成「复制 + 源文件进回收站」的源路径（C7） */
+  recycledSources?: string[];
 }
 
 export interface ScanProgress {
@@ -358,6 +360,13 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
     }),
   uninstallFont: (path: string, family: string) =>
     invoke<TrashEntry>("uninstall_font", { path, family }),
+  /**
+   * 批量移到回收站（C8）。
+   * 后端一次加锁、一次落盘、一次 WM_FONTCHANGE 广播 —— 单个文件走 `uninstallFont`
+   * 会让 N 个文件产生 N 次整份 state 落盘（2.27 MB × N）。
+   */
+  uninstallFonts: (items: { path: string; family: string }[]) =>
+    invoke<{ entries: TrashEntry[]; errors: string[] }>("uninstall_fonts", { items }),
   listTrash: () => invoke<TrashEntry[]>("list_trash"),
   restoreFromTrash: (entryId: string) => invoke<void>("restore_from_trash", { entryId }),
   deleteTrashEntry: (entryId: string) => invoke<void>("delete_trash_entry", { entryId }),

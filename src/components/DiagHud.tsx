@@ -21,6 +21,7 @@ export function DiagHud() {
       const fr = frameStats.snapshot();
       const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
       const pct = Math.round(f.prefetchHitRate * 100);
+      const subPct = Math.round(f.subsetHitRate * 100);
       setText(
         `resident ${f.resident}/${mb(f.bytes)}MB pin ${f.pinned} | ` +
           `load ${f.loads} evict ${f.evictions} | ` +
@@ -28,6 +29,7 @@ export function DiagHud() {
           `ink ${f.inkP95.toFixed(1)}/${f.inkCount} | ` +
           `repair ${f.repairLoads}@${f.repairP95.toFixed(0)} | ` +
           `pf ${f.prefetchHit}/${f.prefetchQueued}=${pct}% | ` +
+          `sub ${f.subsetHits}/${f.subsetHits + f.subsetMisses}=${subPct}% art ${f.subsetArtifacts} | ` +
           `frame ${fr.frames} drop ${fr.drops} worst ${fr.worst.toFixed(0)}`,
       );
     }, 500);

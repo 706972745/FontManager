@@ -451,6 +451,15 @@ const subsetArtifacts = new Map<string, { path: string; bytes: number }>();
 const subsetInflight = new Map<string, Promise<boolean>>();
 const MAX_SUBSET_MEMO = 3000;
 
+/**
+ * A9 命中率：真正用上子集产物的次数 / 回退完整字体的次数。
+ *
+ * 以前只有「能生成多少份产物」这种静态计数，回答不了「到底多少张卡片受益」。
+ * 这两个数进 DiagHud，任何子集优化（A3 kern / A6 TTC）做完都靠它证明有没有效果。
+ */
+let subsetHits = 0;
+let subsetMisses = 0;
+
 function listVariant(face: ZFontFace, chars: string): string {
   return `${face.id}#${chars}`;
 }
@@ -476,6 +485,13 @@ function memoBounded<T>(map: Map<string, T>, key: string, value: T): void {
  * 失败一律返回 false 让调用方回退完整链路：宁可慢，也绝不能缺字。
  */
 async function ensureListSubset(face: ZFontFace, chars: string, name: string): Promise<boolean> {
+  const ok = await ensureListSubsetInner(face, chars, name);
+  if (ok) subsetHits++;
+  else subsetMisses++;
+  return ok;
+}
+
+async function ensureListSubsetInner(face: ZFontFace, chars: string, name: string): Promise<boolean> {
   if (subsetUnavailable.has(face.id)) return false;
   const variant = listVariant(face, chars);
   const known = subsetArtifacts.get(variant);
@@ -657,6 +673,10 @@ export function faceStats() {
     subsetCapable: subsetCapable.size,
     subsetUnavailable: subsetUnavailable.size,
     subsetArtifacts: subsetArtifacts.size,
+    /** A9：真正用上子集 / 回退完整字体的次数与命中率 */
+    subsetHits,
+    subsetMisses,
+    subsetHitRate: subsetHits + subsetMisses > 0 ? subsetHits / (subsetHits + subsetMisses) : 0,
   };
 }
 

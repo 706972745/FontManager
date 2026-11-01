@@ -128,3 +128,31 @@ export async function runBatches(o: RunBatchesOptions): Promise<ApplyOutcome> {
     return { status: "failed", done, error };
   }
 }
+
+/**
+ * 批量「移到回收站」要发给后端的条目（C8 的前端那一半）。
+ *
+ * 三个约束，改坏了会很贵：
+ *   1. **一个路径只发一次** —— TTC 一个文件里有多个字面，`fonts` 里会有同一 path 的多条记录；
+ *      去不去重差的不是几条请求，而是整个 uninstall 搬运次数。
+ *   2. **系统字体一律不发** —— 动不了，发过去只会让后端为它写一条失败信息。
+ *   3. **整批一次 IPC** —— 后端 `uninstall_fonts` 只在结尾落盘一次；
+ *      逐个文件调 `uninstall_font` 会变成「每个文件重写 2.27 MB 的 state.json」，
+ *      4020 个文件实测写了 9 GB（2026-11-01 事故）。
+ */
+export function trashItems(
+  faces: Pick<FontFace, "family" | "path" | "source">[],
+  families: Iterable<string>,
+): { path: string; family: string }[] {
+  const wanted = new Set(families);
+  const seen = new Set<string>();
+  const items: { path: string; family: string }[] = [];
+  for (const f of faces) {
+    if (f.source === "system" || !wanted.has(f.family)) continue;
+    const key = `${f.family}\u0000${f.path}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ path: f.path, family: f.family });
+  }
+  return items;
+}

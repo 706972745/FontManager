@@ -570,6 +570,13 @@ fn suffix(class: CopyrightClass) -> &'static str {
 /// 用户 2026-10-30 要求：导入时坏掉的字体不能跟正常字族混在一起，单独归到这个目录下。
 pub const INCOMPLETE_DIR: &str = "非完整字体";
 
+/// 族名解析不出来时的统一归档名。
+///
+/// parser 读不出 name 表时会拿文件名顶族名（老中文字体的 GBK name、未转换的 WOFF…）。
+/// 那种「族名」一个文件一个，拿来建目录等于「导入一批 = 一批目录」，内容一搬走
+/// 库根上就剩一堆空壳（2026-11-01 清了 71 个）。所以统一收进这一个桶。
+pub const UNIDENTIFIED_FAMILY: &str = "未识别字体";
+
 /// 清理文件名非法字符
 pub fn sanitize(name: &str) -> String {
     let cleaned: String = name

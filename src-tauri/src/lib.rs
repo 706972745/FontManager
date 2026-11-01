@@ -500,23 +500,116 @@ async fn install_online_family(
     Ok(result)
 }
 
+/// 单个文件的「移到回收站」本体：**不落盘**。
+///
+/// C8：以前 `uninstall_font` 每处理一个文件就 `store::save` 一次整份 state，
+/// 而 `state.json` 已有 2.27 MB —— 2026-11-01 那次误触发的 4020 个链接字体，
+/// 实测写盘 **9.0 GB**（4020 × 2.27 MB ≈ 9.1 GB，完全对得上）。
+/// 所以把「干什么」和「什么时候落盘」拆开：这里的调用者负责在合适的时候存一次。
+fn uninstall_one(
+    state: &mut store::AppState,
+    path: &str,
+    family: &str,
+) -> Result<TrashEntry, String> {
+    if state.deactivated.contains(path) {
+        // 先把它重新启用，否则文件搬走后注册表里留一条指向空路径的值
+        activation::sync(state, path, true)?;
+    }
+    if state.linked.contains(path) {
+        activation::drop_linked_alias(state, path);
+        let entry = installer::unlink_quiet(path, family)?;
+        state.linked.remove(path);
+        return Ok(entry);
+    }
+    installer::uninstall_quiet(path, family)
+}
+
 #[tauri::command]
 fn uninstall_font(store: State<Store>, path: String, family: String) -> Result<TrashEntry, String> {
-    {
+    let entry = {
         let mut state = store.0.lock().map_err(|e| e.to_string())?;
-        if state.deactivated.contains(&path) {
-            activation::sync(&mut state, &path, true)?;
-            store::save(&state)?;
+        let entry = uninstall_one(&mut state, &path, &family)?;
+        store::save(&state)?;
+        entry
+    };
+    installer::refresh_system_font_cache();
+    Ok(entry)
+}
+
+/// 批量「移到回收站」的一条请求。
+#[derive(serde::Deserialize)]
+struct TrashRequest {
+    path: String,
+    family: String,
+}
+
+/// 批量结果：成功的条目 + 逐个失败的说明（前端汇总成一条 toast）。
+#[derive(serde::Serialize)]
+struct TrashBatchResult {
+    entries: Vec<TrashEntry>,
+    errors: Vec<String>,
+}
+
+/// 批量「移到回收站」：**一次加锁、一次落盘、一次广播**（C8）。
+///
+/// 前端以前是 `for (const f of names) void uninstallFamily(f)`，每个族再逐个文件调
+/// `uninstall_font`，于是 4020 个文件 = 4020 次整份 state 落盘 + 4020 次 WM_FONTCHANGE
+/// 广播 + 4213 个并发 Promise（内存飙到 1 GB 也是这么来的）。
+#[tauri::command]
+async fn uninstall_fonts(
+    store: State<'_, Store>,
+    items: Vec<TrashRequest>,
+) -> Result<TrashBatchResult, String> {
+    // 走 spawn_blocking：4213 个族、上万次文件搬运放在主线程会把界面卡死（同时批量
+    // 启停 `set_fonts_active` 也是这么处理的）。
+    let store = store.inner().clone();
+    Ok(tauri::async_runtime::spawn_blocking(move || {
+        let started = std::time::Instant::now();
+        let mut entries = Vec::new();
+        let mut errors = Vec::new();
+        {
+            let mut state = match store.0.lock() {
+                Ok(s) => s,
+                Err(e) => {
+                    return TrashBatchResult {
+                        entries,
+                        errors: vec![e.to_string()],
+                    };
+                }
+            };
+            for it in &items {
+                match uninstall_one(&mut state, &it.path, &it.family) {
+                    Ok(entry) => entries.push(entry),
+                    Err(e) => errors.push(format!("{}: {e}", it.family)),
+                }
+            }
+            // 整批只在这里落盘一次；一个都没成功就不必写
+            if !entries.is_empty() {
+                if let Err(e) = store::save(&state) {
+                    errors.push(format!("保存状态失败：{e}"));
+                }
+            }
         }
-        if state.linked.contains(&path) {
-            activation::drop_linked_alias(&state, &path);
-            let entry = installer::unlink(&path, &family)?;
-            state.linked.remove(&path);
-            store::save(&state)?;
-            return Ok(entry);
+        // 广播也只在最后做一次（原来每个文件一次）
+        if !entries.is_empty() {
+            installer::refresh_system_font_cache();
         }
-    }
-    installer::uninstall(&path, &family)
+        // 留一条可核对的痕迹：批量删除以前每个文件都写一遍整份 state，
+        // 这里记下「多少个文件、一次落盘、花了多久」，复测时能直接对写盘量。
+        crate::diag::log(&format!(
+            "trash batch: {} item(s), {} ok, {} failed, saved once, {} ms",
+            items.len(),
+            entries.len(),
+            errors.len(),
+            started.elapsed().as_millis()
+        ));
+        TrashBatchResult { entries, errors }
+    })
+    .await
+    .unwrap_or_else(|e| TrashBatchResult {
+        entries: Vec::new(),
+        errors: vec![e.to_string()],
+    }))
 }
 
 #[tauri::command]
@@ -2097,6 +2190,7 @@ pub fn run() {
             install_fonts,
             install_online_family,
             uninstall_font,
+            uninstall_fonts,
             list_trash,
             affinity_connection,
             app_warm_state,

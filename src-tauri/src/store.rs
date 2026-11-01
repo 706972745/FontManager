@@ -199,10 +199,25 @@ pub fn trash_dir() -> PathBuf {
 }
 
 pub fn load() -> AppState {
-    fs::read(state_path())
+    let mut state: AppState = fs::read(state_path())
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // 历史遗留清理（C4）：早期版本把系统字体也记进了 deactivated，那些条目永远改不动，
+    // 每次 reconcile 都重试一遍、失败一遍，右上角反复弹「无法卸载系统字体」。
+    // 只可能是我们自己写进去的（用户无从手动编辑 state.json），直接剔掉并立刻落盘。
+    let before = state.deactivated.len();
+    state.deactivated.retain(|p| !crate::activation::is_system_font(p));
+    if state.deactivated.len() != before {
+        crate::diag::log(&format!(
+            "store: dropped {} protected system-font entries from deactivated",
+            before - state.deactivated.len()
+        ));
+        if let Err(e) = save(&state) {
+            crate::diag::log(&format!("store: failed to persist deactivated cleanup: {e}"));
+        }
+    }
+    state
 }
 
 pub fn save(state: &AppState) -> Result<(), String> {

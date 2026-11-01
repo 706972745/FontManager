@@ -91,6 +91,13 @@ pub struct FontFace {
     /// 系统字体不标记（动不了也不需要整理）；字库里的字体由导入流程归到「非完整字体」目录。
     #[serde(default)]
     pub incomplete: Option<String>,
+    /// `family` 是拿文件名顶上的假族名（字体读不出 name 表 / 未转换的 WOFF）。
+    ///
+    /// 这不是「损坏」——老中文字体（长城/文鼎那批）name 表是 GBK，字体本身好好的。
+    /// 只用来决定**导入时不要拿它建目录**：一个文件一个「族」目录，搬走内容后
+    /// 就在库根留下永远没人用的空壳（2026-11-01 清掉 71 个）。
+    #[serde(default)]
+    pub name_fallback: bool,
     pub file_size: u64,
     pub source: FontSource,
     pub deactivatable: bool,
