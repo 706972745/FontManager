@@ -372,9 +372,12 @@ fn parse_face(
         }
     };
 
-    let family = name_string(&face, ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
-        .or_else(|| name_string(&face, ttf_parser::name_id::FAMILY))
-        .unwrap_or_else(|| fallback_family(path));
+    let name_family = name_string(&face, ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
+        .or_else(|| name_string(&face, ttf_parser::name_id::FAMILY));
+    // 真族名读不出来 → 下面会用文件名顶上。导入归档时不能拿这种「假族名」建目录，
+    // 否则一个文件一个目录，搬走内容后就是库根上的一片空壳（2.4）。
+    let name_fallback = name_family.is_none();
+    let family = name_family.unwrap_or_else(|| fallback_family(path));
     let style = name_string(&face, ttf_parser::name_id::TYPOGRAPHIC_SUBFAMILY)
         .or_else(|| name_string(&face, ttf_parser::name_id::SUBFAMILY))
         .unwrap_or_else(|| "Regular".to_string());
@@ -455,6 +458,7 @@ fn parse_face(
         features,
         glyph_count: face.number_of_glyphs(),
         incomplete,
+        name_fallback,
         file_size,
         source,
         deactivatable: crate::activation::can_deactivate(source),
@@ -500,6 +504,7 @@ fn broken_face(
         features: Vec::new(),
         glyph_count: 0,
         incomplete: Some(reason.to_string()),
+        name_fallback: true,
         file_size,
         source,
         deactivatable: crate::activation::can_deactivate(source),
@@ -576,6 +581,7 @@ pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
             features: Vec::new(),
             glyph_count: 0,
             incomplete: None,
+            name_fallback: true,
             file_size,
             source,
             deactivatable: crate::activation::can_deactivate(source),

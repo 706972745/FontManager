@@ -42,10 +42,12 @@ import { DEFAULT_HOTKEY, normalizeHotkey, type HotkeySpec } from "../lib/hotkey"
 import { cjkKnown } from "../lib/cjk";
 import { familyCopyrightClass } from "../lib/license";
 import {
+  APPLY_CHUNK,
   dropRedundantCopies,
   planBatches,
   reverseBatches,
   runBatches,
+  trashItems,
   type ApplyBatch,
 } from "../lib/applyPlan";
 import { contextMenuSize } from "../lib/menuMetrics";
@@ -65,13 +67,16 @@ import { toast } from "../design/primitives/Toast";
 import { setSoundLevel, type SoundLevel } from "../lib/sound";
 import { applyTheme, type ThemePref } from "../lib/theme";
 import {
+  activeLocale,
   getLocalePref,
   hydrateLocalePref,
   isLocalePref,
   setLocalePref as applyLocalePref,
   t,
   type LocalePref,
+  type TKey,
 } from "../lib/i18n";
+import { familyMatches, searchTokens, type LabelMaps } from "../lib/familySearch";
 
 export const SIZES = [8, 14, 18, 24, 32, 48, 64, 96] as const;
 
@@ -336,6 +341,9 @@ interface FontStore {
 
   duplicateReport: { names: string[]; at: number } | null;
 
+  /** 待确认的批量「移到回收站」清单（C9）：非 null 时前端弹确认框 */
+  trashConfirm: string[] | null;
+
   init: () => Promise<void>;
   rescan: () => Promise<void>;
   restoreLastActivation: () => Promise<void>;
@@ -353,6 +361,15 @@ interface FontStore {
   uninstallFontFile: (path: string) => Promise<void>;
   installPaths: (paths: string[], mode: InstallMode) => Promise<void>;
   uninstallFamily: (family: string, opts?: { silent?: boolean; keepMeta?: boolean }) => Promise<void>;
+  /** 批量移到回收站：一次 IPC、一次落盘、一次状态更新（C8） */
+  uninstallFamilies: (
+    families: string[],
+    opts?: { silent?: boolean; keepMeta?: boolean },
+  ) => Promise<void>;
+  /** 「移到回收站」的统一入口：少量直接删，超过 `TRASH_CONFIRM_THRESHOLD` 先弹确认（C9） */
+  requestTrash: (families: string[]) => void;
+  confirmTrash: () => Promise<void>;
+  cancelTrash: () => void;
   restoreTrash: (entryId: string) => Promise<void>;
   deleteTrashEntry: (entryId: string) => Promise<void>;
   emptyTrash: () => Promise<void>;
@@ -826,6 +843,29 @@ function patchActiveLocally(batches: ApplyBatch[]): void {
  * 分批、跳过存盘、三个出口（完成/取消/失败）补落盘这些约束都在 `lib/applyPlan.ts`，
  * 那里有单测；这里只负责「算要动哪些字体」和「把结果讲给用户」。
  */
+let systemFontToastAt = 0;
+
+/**
+ * 「系统目录那份动不了」的提示，3 秒内只弹一次（C4）。
+ *
+ * 原来 4 处入口各弹一次：批量停用时每碰到一个系统字面就是一条，右上角能连排十几条，
+ * 用户只能看着它们一条条消失。系统字体改不动是既定事实，说一次就够。
+ */
+function warnSystemFont(): void {
+  const now = Date.now();
+  if (now - systemFontToastAt < 3000) return;
+  systemFontToastAt = now;
+  toast.error(t("toast.cantUninstallSystem"), t("toast.cantUninstallSystemSub"));
+}
+
+/**
+ * 超过多少个字族就弹「确认移到回收站」（C9）。
+ *
+ * 阈值取 50：日常整理一屏也就几十个族，弹窗会变成噪音；而全选这类误操作动辄几百上千，
+ * 必须拦一下（2026-11-01 那次误点的是 4213 个）。
+ */
+export const TRASH_CONFIRM_THRESHOLD = 50;
+
 async function applyEntries(
   entries: SnapshotEntry[],
   mode: SnapshotApplyMode,
@@ -1187,6 +1227,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   pendingSnapshotFor: null,
   pendingSnapshotFace: null,
   duplicateReport: null,
+  trashConfirm: null,
 
   init: async () => {
     if (initStarted) return;
@@ -1512,21 +1553,83 @@ export const useFontStore = create<FontStore>((set, get) => ({
     if (paths.length === 0) return;
 
     const prevSession = get().sessionActivated;
+    const prevFonts = get().fonts;
     set({
-      fonts: get().fonts.map((f) =>
+      fonts: prevFonts.map((f) =>
         f.family === family && f.deactivatable ? { ...f, active } : f,
       ),
       sessionActivated: prevSession.filter((n) => n !== family),
     });
+
+    // 小族（一个批次能装下）保持原样：一条 IPC 就完事，不必为 1~10 个字面弹进度条。
+    if (paths.length <= APPLY_CHUNK) {
+      try {
+        await ipc.setFontsActive(paths, active);
+        persistPrefs(get);
+      } catch (e) {
+        set({ sessionActivated: prevSession });
+        toast.error(t(active ? "toast.couldntActivate" : "toast.couldntDeactivate"), String(e));
+        await get().rescan();
+        persistPrefs(get);
+      }
+      return;
+    }
+
+    // 大族整族启停同样要分批（1.0.0-3 只修了批量路径）：
+    // 思源/苹方这类 40+ 字面一次性丢给后端，窗口会连续十几秒不响应。
+    // 走和批量完全相同的那条通道，进度条与「取消」一并复用。
+    const batches = planBatches(active ? [] : paths, active ? paths : []);
+    const applied: ApplyBatch[] = [];
+    useFontStore.setState({
+      applyBusy: true,
+      applyProgress: { done: 0, total: paths.length, undo: false },
+      applyCancelled: false,
+    });
+    let outcome: Awaited<ReturnType<typeof runBatches>>;
     try {
-      await ipc.setFontsActive(paths, active);
+      outcome = await runBatches({
+        batches,
+        apply: async (batch, noSave) => {
+          await ipc.setFontsActive(batch.paths, batch.active, noSave);
+          applied.push(batch);
+        },
+        flush: () => ipc.setFontsActive([], true, false),
+        onProgress: (done, all) =>
+          useFontStore.setState({ applyProgress: { done, total: all, undo: false } }),
+        isCancelled: () => useFontStore.getState().applyCancelled,
+      });
+    } finally {
+      useFontStore.setState({ applyBusy: false, applyProgress: null });
+    }
+
+    if (outcome.status === "cancelled") {
+      // 取消时已做的保留、没轮到的退回原值（和批量同口径）
+      const touched = new Set<string>();
+      for (const b of applied) for (const p of b.paths) touched.add(p);
+      set({
+        fonts: get().fonts.map((f) =>
+          paths.includes(f.path) && !touched.has(f.path) ? { ...f, active: !active } : f,
+        ),
+      });
+      useFontStore.setState({
+        applyNotice: {
+          done: applied.reduce((n, b) => n + b.paths.length, 0),
+          total: paths.length,
+        },
+      });
       persistPrefs(get);
-    } catch (e) {
-      set({ sessionActivated: prevSession });
-      toast.error(t(active ? "toast.couldntActivate" : "toast.couldntDeactivate"), String(e));
+      return;
+    }
+
+    if (outcome.status === "failed") {
+      set({ fonts: prevFonts, sessionActivated: prevSession });
+      toast.error(t(active ? "toast.couldntActivate" : "toast.couldntDeactivate"), String(outcome.error));
       await get().rescan();
       persistPrefs(get);
+      return;
     }
+
+    persistPrefs(get);
   },
 
   activateFamilySession: async (family) => {
@@ -1556,7 +1659,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const faces = get().fonts.filter((f) => f.path === path);
     if (faces.length === 0) return;
     if (faces.every((f) => f.source === "system")) {
-      toast.error(t("toast.cantUninstallSystem"), t("toast.cantUninstallSystemSub"));
+      warnSystemFont();
       return;
     }
     const targets = faces.filter((f) => f.deactivatable);
@@ -1602,7 +1705,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
       );
     }
     if (!target) {
-      toast.error(t("toast.cantUninstallSystem"), t("toast.cantUninstallSystemSub"));
+      warnSystemFont();
       return;
     }
     const sharing = fonts.filter((f) => f.path === target.path);
@@ -1657,7 +1760,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const faces = get().fonts.filter((f) => f.path === path);
     if (faces.length === 0) return;
     if (faces.some((f) => f.source === "system")) {
-      toast.error(t("toast.cantUninstallSystem"), t("toast.cantUninstallSystemSub"));
+      warnSystemFont();
       return;
     }
     const family = faces[0].family;
@@ -1728,6 +1831,13 @@ export const useFontStore = create<FontStore>((set, get) => ({
         void warnMissingLicenses(result.installed);
       }
       for (const err of result.errors) toast.error(t("toast.installFailed"), err);
+      // 跨盘「移动」：源文件进的是 Windows 回收站，不是被搬走 —— 必须说清楚（C7）
+      if (result.recycledSources?.length) {
+        toast.info(
+          t("toast.sourcesRecycled", { count: result.recycledSources.length }),
+          t("toast.sourcesRecycledSub"),
+        );
+      }
       // WOFF 判重：同字体已有 ttf/otf（或 woff2 不受支持）被跳过的个数
       if (result.webfontsSkipped) {
         toast.info(t("toast.webfontsSkipped", { count: result.webfontsSkipped }));
@@ -1750,69 +1860,139 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   uninstallFamily: async (family, opts) => {
+    await get().uninstallFamilies([family], opts);
+  },
+
+  /**
+   * 批量「移到回收站」：一次 IPC、一次状态更新（C8）。
+   *
+   * 以前是 `for (const f of names) void uninstallFamily(f)`，每个族再逐个文件调
+   * `uninstall_font`：4020 个链接字体 → 4020 次整份 `state.json` 落盘（2.27 MB × 4020
+   * ≈ 9 GB 写盘）+ 4213 个并发 Promise（私有内存飙到 1 GB）。2026-11-01 事故实测就是这样。
+   */
+  uninstallFamilies: async (families, opts) => {
     const silent = opts?.silent === true;
     const keepMeta = opts?.keepMeta === true;
+    const wanted = new Set(families);
+    if (wanted.size === 0) return;
     const faces = get().fonts.filter(
-      (f) => f.family === family && f.source !== "system",
+      (f) => wanted.has(f.family) && f.source !== "system",
     );
     if (faces.length === 0) {
-      toast.error(t("toast.cantUninstallSystem"), t("toast.cantUninstallSystemSub"));
+      warnSystemFont();
       return;
     }
-    const paths = [...new Set(faces.map((f) => f.path))];
+    // 逐族收路径、去重（TTC 多面共用一个文件），系统字体不发 —— 逻辑在 applyPlan 里有单测
+    const items = trashItems(get().fonts, wanted);
+    if (items.length === 0) {
+      warnSystemFont();
+      return;
+    }
     try {
-      const entryIds: string[] = [];
-      for (const path of paths) {
-        entryIds.push((await ipc.uninstallFont(path, family)).id);
-      }
+      const { entries, errors } = await ipc.uninstallFonts(items);
+      const gone = new Set(entries.map((e) => e.family));
+      const gonePaths = new Set(entries.map((e) => e.originalPath));
+      const kept = get().fonts.filter((f) => !gonePaths.has(f.path));
       set({
-        fonts: get().fonts.filter((f) => !paths.includes(f.path)),
+        fonts: kept,
         trash: await ipc.listTrash(),
-        selectedFamily: get().selectedFamily === family ? null : get().selectedFamily,
-        selection: get().selection.filter((f) => f !== family),
-        lastImported: get().lastImported.filter((f) => f !== family),
+        selectedFamily:
+          get().selectedFamily && gone.has(get().selectedFamily as string)
+            ? null
+            : get().selectedFamily,
+        selection: get().selection.filter((f) => !gone.has(f)),
+        lastImported: get().lastImported.filter((f) => !gone.has(f)),
         // 被比较的那一族卸载了：比较项里留着失效名字会退化成单列、还继续拦快捷键，
         // 而且以前要等下一次扫描才清（§5 第 18 条残留）
         compare: (() => {
           const cmp = get().compare;
-          if (!cmp || !cmp.includes(family)) return cmp;
-          const next = cmp.filter((n) => n !== family);
+          if (!cmp || !cmp.some((n) => gone.has(n))) return cmp;
+          const next = cmp.filter((n) => !gone.has(n));
           return next.length < 2 ? null : next;
         })(),
       });
 
       if (!keepMeta) {
         const { tags, favorites, collections } = get();
-        if (tags[family]) void get().setFamilyTags(family, []);
-        if (favorites.includes(family)) void get().toggleFavorite(family);
+        for (const family of gone) {
+          if (tags[family]) void get().setFamilyTags(family, []);
+          if (favorites.includes(family)) void get().toggleFavorite(family);
+        }
         for (const [name, members] of Object.entries(collections)) {
-          if (members.includes(family)) {
-            const next = members.filter((m) => m !== family);
-            set({ collections: { ...get().collections, [name]: next } });
-            void ipc.setCollection(name, next);
-          }
+          if (!members.some((m) => gone.has(m))) continue;
+          const next = members.filter((m) => !gone.has(m));
+          set({ collections: { ...get().collections, [name]: next } });
+          void ipc.setCollection(name, next);
         }
       }
-      if (silent) return;
-      toast.success(t("toast.movedToTrash", { family }), t("toast.movedToTrashSub"), "trash", {
-        label: t("toast.undo"),
-        run: () => {
-          void (async () => {
-            try {
-              for (const id of entryIds) await ipc.restoreFromTrash(id);
-              set({ trash: await ipc.listTrash() });
-              await get().rescan();
-              toast.success(t("toast.restoredFamily", { family }), undefined, "restore");
-            } catch (e) {
-              toast.error(t("toast.couldntRestore"), String(e));
-            }
-          })();
+      for (const err of errors) toast.error(t("toast.couldntMoveToTrash"), err);
+      if (silent || entries.length === 0) return;
+
+      const only = gone.size === 1 ? [...gone][0] : null;
+      const entryIds = entries.map((e) => e.id);
+      toast.success(
+        only
+          ? t("toast.movedToTrash", { family: only })
+          : t("toast.movedFamiliesToTrash", { count: gone.size }),
+        t("toast.movedToTrashSub"),
+        "trash",
+        {
+          label: t("toast.undo"),
+          run: () => {
+            void (async () => {
+              try {
+                for (const id of entryIds) await ipc.restoreFromTrash(id);
+                set({ trash: await ipc.listTrash() });
+                await get().rescan();
+                toast.success(
+                  only
+                    ? t("toast.restoredFamily", { family: only })
+                    : t("toast.restoredFamilies", { count: gone.size }),
+                  undefined,
+                  "restore",
+                );
+              } catch (e) {
+                toast.error(t("toast.couldntRestore"), String(e));
+              }
+            })();
+          },
         },
-      });
+      );
     } catch (e) {
       toast.error(t("toast.couldntMoveToTrash"), String(e));
     }
   },
+
+  /**
+   * 「移到回收站」的唯一入口：少量直接删，超过阈值先弹确认（C9）。
+   *
+   * 事故复盘：右键菜单里「将 N 个移到回收站」紧挨着「停用 N 个」，且 N 可以是全选后的
+   * 4213 —— 一次误点就把整个库搬进回收站。删除本身可还原（进的是应用回收站），
+   * 但「无提示地丢掉 4213 个族」这件事不该只靠用户手稳。
+   */
+  requestTrash: (families) => {
+    const wanted = new Set(families);
+    const targets = [...wanted].filter((name) =>
+      get().fonts.some((f) => f.family === name && f.source !== "system"),
+    );
+    if (targets.length === 0) {
+      warnSystemFont();
+      return;
+    }
+    if (targets.length <= TRASH_CONFIRM_THRESHOLD) {
+      void get().uninstallFamilies(targets);
+      return;
+    }
+    set({ trashConfirm: targets });
+  },
+
+  confirmTrash: async () => {
+    const targets = get().trashConfirm;
+    set({ trashConfirm: null });
+    if (targets && targets.length > 0) await get().uninstallFamilies(targets);
+  },
+
+  cancelTrash: () => set({ trashConfirm: null }),
 
   restoreTrash: async (entryId) => {
     try {
@@ -3606,24 +3786,73 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
     out = out.filter(isSystemFamily);
   }
   if (q) {
-    out = out.filter(
-      (f) =>
-        f.name.toLowerCase().includes(q) ||
-        f.tags.some((t) => t.toLowerCase().includes(q)) ||
-        f.formats.some((fmt) => fmt.includes(q)) ||
-        (f.foundry?.toLowerCase().includes(q) ?? false) ||
-        (s.notes[f.name]?.toLowerCase().includes(q) ?? false) ||
-        (f.license?.toLowerCase().includes(q) ?? false) ||
-        (f.copyright?.toLowerCase().includes(q) ?? false) ||
-        // 界面上显示的字体名（含本地化名）也能搜到：字魂那批族名是拼音
-        // 「zihunchuangzhonghei」，中文名「字魂创中黑(商用需授权)」只存在于
-        // name 表的本地化记录里 —— 搜中文必须到这里找（用户 2026-10-30）。
-        f.faces.some((fc) =>
-          fc.localizedNames?.some((ln) => ln.name.toLowerCase().includes(q)),
-        ),
+    // 2026-11-01 用户反馈「有些都搜索不到」：原来只匹配族名/标签/格式/厂商/备注/授权/本地化名，
+    // 漏了字重样式（Semibold）、PostScript 名、文件名，以及「中文 / 衬线 / 连字」这类
+    // 只存在于 i18n 文案里的中文标签。规则与单测都在 `lib/familySearch.ts`。
+    const tokens = searchTokens(q);
+    const labels = searchLabelMaps();
+    out = out.filter((f) =>
+      familyMatches(
+        {
+          name: f.name,
+          tags: f.tags,
+          formats: f.formats,
+          foundry: f.foundry,
+          license: f.license,
+          copyright: f.copyright,
+          scripts: f.scripts,
+          features: f.features,
+          classification: f.classification,
+          faces: f.faces,
+          note: s.notes[f.name] ?? null,
+        },
+        tokens,
+        labels,
+      ),
     );
   }
   return sortFamilies(out, s.sort);
+}
+
+/**
+ * 语言 / 分类 / 特性的「编码 → 当前语言文案」映射，给搜索用。
+ *
+ * 有了它，搜「中文」「衬线」「连字」能命中对应字体 —— 这些词只存在于 i18n 文案里，
+ * 字体数据本身只有 `han` / `serif` / `liga` 这种编码。
+ * 代码在模块级缓存：文案只在切语言时变，不必每次按键重建。
+ */
+let labelMapsCache: { locale: string; maps: LabelMaps } | null = null;
+
+const SCRIPT_CODES = [
+  "han", "kana", "hangul", "latin", "cyrillic", "greek", "arabic",
+  "hebrew", "thai", "devanagari", "cjk", "korean", "vietnamese",
+];
+const CLASS_CODES = ["display", "mono", "sans", "script", "serif", "unknown"];
+const FEATURE_CODES = [
+  "c2sc", "calt", "dlig", "frac", "hist", "liga", "lnum", "onum", "ordn",
+  "pnum", "salt", "smcp", "stylisticSet", "subs", "sups", "swsh", "titl",
+  "tnum", "zero",
+];
+
+function searchLabelMaps(): LabelMaps {
+  const locale = activeLocale();
+  if (labelMapsCache?.locale === locale) return labelMapsCache.maps;
+  const build = (prefix: string, codes: string[]) => {
+    const out: Record<string, string> = {};
+    for (const code of codes) {
+      // 文案缺失时 t() 会回显 key，回显值不参与匹配（否则搜 "feat.xx" 也能命中）
+      const text = t(`${prefix}.${code}` as TKey);
+      if (text && !text.startsWith(`${prefix}.`)) out[code] = text;
+    }
+    return out;
+  };
+  const maps: LabelMaps = {
+    script: build("script", SCRIPT_CODES),
+    classification: build("class", CLASS_CODES),
+    feature: build("feat", FEATURE_CODES),
+  };
+  labelMapsCache = { locale, maps };
+  return maps;
 }
 
 export function allTags(tags: Record<string, string[]>): Map<string, number> {

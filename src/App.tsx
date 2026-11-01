@@ -27,6 +27,7 @@ import { LoadProgress } from "./components/LoadProgress";
 import { ApplyProgress } from "./components/ApplyProgress";
 import { BulkTagPrompt } from "./components/BulkTagPrompt";
 import { DuplicateDialog } from "./components/DuplicateDialog";
+import { TrashConfirmDialog } from "./components/TrashConfirmDialog";
 import { Onboarding } from "./components/Onboarding";
 import { ContextMenuHost, isContextMenuOpen, openContextMenuAt } from "./design/primitives/ContextMenu";
 import { HoverHintHost } from "./design/primitives/HoverHint";
@@ -501,7 +502,8 @@ export default function App() {
             void st.removeFamiliesFromSnapshot(name, doomed).then(() => st.select(null));
             return;
           }
-          for (const name of doomed) void st.uninstallFamily(name);
+          // C9：走统一入口 —— 少量直接删，超过阈值先弹确认（全选后误按 Delete 的护栏）
+          st.requestTrash(doomed);
           return;
         }
 
@@ -608,6 +610,7 @@ export default function App() {
       <Onboarding />
       <ContextMenuHost />
       <DuplicateDialog />
+      <TrashConfirmDialog />
       <Toaster />
       <ResizeGrips />
       <HoverHintHost />
