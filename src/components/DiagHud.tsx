@@ -16,6 +16,13 @@ export function DiagHud() {
 
   useEffect(() => {
     const stop = startFrameWatch();
+    // E1：First Contentful Paint —— 「首屏可交互」的硬指标。
+    // p50/p95 只量解码耗时，量不出「用户什么时候看到内容」；占位方案要让 FCP 落到 1~2 帧。
+    let fcp = -1;
+    const paintEntries = performance.getEntriesByType("paint");
+    for (const e of paintEntries) {
+      if (e.name === "first-contentful-paint") fcp = Math.round(e.startTime);
+    }
     const timer = window.setInterval(() => {
       const f = faceStats();
       const fr = frameStats.snapshot();
@@ -23,7 +30,8 @@ export function DiagHud() {
       const pct = Math.round(f.prefetchHitRate * 100);
       const subPct = Math.round(f.subsetHitRate * 100);
       setText(
-        `resident ${f.resident}/${mb(f.bytes)}MB pin ${f.pinned} | ` +
+        `fcp ${fcp} | dec ${f.inflightDecode}/${f.decodeQueued} | ` +
+          `resident ${f.resident}/${mb(f.bytes)}MB pin ${f.pinned} | ` +
           `load ${f.loads} evict ${f.evictions} | ` +
           `p50 ${f.loadP50.toFixed(1)} p95 ${f.loadP95.toFixed(1)} max ${f.loadMax.toFixed(0)} | ` +
           `ink ${f.inkP95.toFixed(1)}/${f.inkCount} | ` +
