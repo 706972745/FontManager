@@ -1,6 +1,7 @@
 use crate::font_types::{FontFace, FontSource};
 use crate::parser;
 use serde::Serialize;
+use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Emitter;
 use walkdir::WalkDir;
@@ -142,33 +143,113 @@ fn in_dup_dir(e: &walkdir::DirEntry) -> bool {
 ///
 /// 导入时要按它挡掉「系统已经有了、还要再往库里复制一份」的操作（用户 2026-10-31：
 /// 「以后的系统字体还会不会自动再复制一份」）。扫一次系统目录约 1~2 秒，缓存住即可。
+/// 系统已装字体的 PostScript 名（小写）集合，导入时用来判断「这个字体系统里已经有了」。
+///
+/// **为什么要落盘**：这个缓存第一次构建要把 `C:\Windows\Fonts` 下**全部**字体解析一遍
+/// （实测 166 个文件 / 576 MB）。2026-11-01 的导入 I/O 测量里，它占了
+/// 「导入 54 MB 却读了 770 MB（13.5×）」中的 **607 MB** —— 用户看到的「导入读放大」
+/// 其实是这条**每会话一次**的固定成本混进了导入窗口。
+///
+/// 于是把结果按「目录快照」缓存到 `%APPDATA%\ZFontManager\system-ps.json`：
+/// 系统字体没变（文件名 + 大小 + mtime 全等）就直接读这个几 KB 的 JSON，
+/// 变了才重建。缓存写失败不影响功能，只是下次再重建一遍。
 pub fn system_postscript_names() -> &'static std::collections::HashSet<String> {
     static CACHE: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
-    CACHE.get_or_init(|| {
-        let mut set = std::collections::HashSet::new();
-        let Some(dir) = system_font_dir() else {
-            return set;
-        };
-        for e in WalkDir::new(&dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if !e.file_type().is_file() {
-                continue;
-            }
-            let p = e.into_path();
-            if !parser::is_font_file(&p) {
-                continue;
-            }
-            for f in parser::parse_font_file(&p, FontSource::System) {
-                if let Some(ps) = f.postscript_name {
-                    set.insert(ps.to_lowercase());
+    CACHE.get_or_init(load_or_build_system_postscript_names)
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PsNameCache {
+    version: u32,
+    stamp: u64,
+    names: Vec<String>,
+}
+
+const PS_CACHE_VERSION: u32 = 1;
+
+fn system_ps_cache_path() -> PathBuf {
+    crate::store::app_data_dir().join("system-ps.json")
+}
+
+/// 系统字体目录的快照指纹：字体文件的路径 + 大小 + mtime 全参与哈希。
+///
+/// 只 stat、不读内容 —— 596 个条目大约几毫秒，比读 576 MB 便宜三个数量级。
+fn system_font_stamp(dir: &Path) -> (u64, Vec<PathBuf>) {
+    use std::hash::{Hash, Hasher};
+    let mut files: Vec<PathBuf> = WalkDir::new(dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.into_path())
+        .filter(|p| parser::is_font_file(p))
+        .collect();
+    files.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for p in &files {
+        p.to_string_lossy().to_lowercase().hash(&mut h);
+        if let Ok(md) = fs::metadata(p) {
+            md.len().hash(&mut h);
+            if let Ok(t) = md.modified() {
+                if let Ok(d) = t.duration_since(std::time::UNIX_EPOCH) {
+                    d.as_secs().hash(&mut h);
                 }
             }
         }
-        set
-    })
+    }
+    (h.finish(), files)
+}
+
+fn load_or_build_system_postscript_names() -> std::collections::HashSet<String> {
+    use std::collections::HashSet;
+    let mut set: HashSet<String> = HashSet::new();
+    let Some(dir) = system_font_dir() else {
+        return set;
+    };
+    let t0 = std::time::Instant::now();
+    let (stamp, files) = system_font_stamp(&dir);
+    let cache_path = system_ps_cache_path();
+
+    if let Ok(raw) = fs::read_to_string(&cache_path) {
+        if let Ok(c) = serde_json::from_str::<PsNameCache>(&raw) {
+            if c.version == PS_CACHE_VERSION && c.stamp == stamp {
+                set.extend(c.names.into_iter().map(|s| s.to_lowercase()));
+                crate::diag::log(&format!(
+                    "system-ps: cache hit, {} names in {} ms",
+                    set.len(),
+                    t0.elapsed().as_millis()
+                ));
+                return set;
+            }
+        }
+    }
+
+    for p in &files {
+        for f in parser::parse_font_file(p, FontSource::System) {
+            if let Some(ps) = f.postscript_name {
+                set.insert(ps.to_lowercase());
+            }
+        }
+    }
+    let payload = PsNameCache {
+        version: PS_CACHE_VERSION,
+        stamp,
+        names: {
+            let mut v: Vec<String> = set.iter().cloned().collect();
+            v.sort();
+            v
+        },
+    };
+    if let Ok(text) = serde_json::to_string(&payload) {
+        let _ = fs::write(&cache_path, text);
+    }
+    crate::diag::log(&format!(
+        "system-ps: rebuilt from {} files, {} names in {} ms",
+        files.len(),
+        set.len(),
+        t0.elapsed().as_millis()
+    ));
+    set
 }
 
 /// 归置记录里的一条：从哪来、到哪去
@@ -712,6 +793,35 @@ mod tests {
         // 已经登记过的不会再返回（刷新按钮重复点也不会重复收编）
         let known: std::collections::HashSet<String> = got.iter().cloned().collect();
         assert!(discover_managed(&dir, &known).is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 系统字体 PS 名缓存的指纹：系统字体没动就必须稳定（否则每次导入都白重建 576 MB），
+    /// 加了文件或改了大小就必须变（否则新装的系统字体判不出来）。
+    #[test]
+    fn system_font_stamp_tracks_changes() {
+        let dir = std::env::temp_dir().join("zfm-ps-stamp-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("A.ttf"), b"xx").unwrap();
+        std::fs::write(dir.join("note.txt"), b"ignored").unwrap();
+
+        let (s1, files1) = system_font_stamp(&dir);
+        let (s2, _) = system_font_stamp(&dir);
+        assert_eq!(s1, s2, "没改动时指纹必须稳定");
+        assert_eq!(files1.len(), 1, "只数字体文件：{files1:?}");
+
+        // 同一个文件变长 → 指纹变
+        std::fs::write(dir.join("A.ttf"), b"xxxxxxxx").unwrap();
+        let (s3, _) = system_font_stamp(&dir);
+        assert_ne!(s1, s3, "文件大小变了指纹必须变");
+
+        // 新增一个字体 → 指纹变
+        std::fs::write(dir.join("B.otf"), b"x").unwrap();
+        let (s4, files4) = system_font_stamp(&dir);
+        assert_ne!(s3, s4, "加了字体指纹必须变");
+        assert_eq!(files4.len(), 2);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
