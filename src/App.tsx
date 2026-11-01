@@ -29,6 +29,7 @@ import { BulkTagPrompt } from "./components/BulkTagPrompt";
 import { DuplicateDialog } from "./components/DuplicateDialog";
 import { TrashConfirmDialog } from "./components/TrashConfirmDialog";
 import { ResumeBatchDialog } from "./components/ResumeBatchDialog";
+import { DestructiveConfirmDialog } from "./components/DestructiveConfirmDialog";
 import { Onboarding } from "./components/Onboarding";
 import { ContextMenuHost, isContextMenuOpen, openContextMenuAt } from "./design/primitives/ContextMenu";
 import { HoverHintHost } from "./design/primitives/HoverHint";
@@ -40,7 +41,6 @@ import { INTRO_OFF, useIntro } from "./lib/useIntro";
 import { expandQuickbarPanel } from "./lib/useQuickbarDock";
 import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
 import { useT } from "./lib/i18n";
-import { ipc } from "./lib/ipc";
 import { DiagHud } from "./components/DiagHud";
 import { experiment } from "./lib/experiment";
 import { ensureThumbIndex } from "./lib/thumb";
@@ -287,17 +287,11 @@ export default function App() {
   const intro = useIntro();
 
   useEffect(() => {
+    // 断点查询已收进 fontStore.init()（rescan 之后）：有未完成的批量时
+    // 启动恢复让位、只弹 ResumeBatchDialog——见 init 里的 DEF-4 注释。
     void init().then(() => {
       if (!useFontStore.getState().startMinimized) void getCurrentWindow().show();
     });
-    // E2：查上次批量启停有没有断点（有 → ResumeBatchDialog 弹「继续吗」）。
-    // 拿不到就当没有——断点只是锦上添花，不能让它挡启动。
-    ipc
-      .batchCheckpointGet()
-      .then((cp) => {
-        if (cp) useFontStore.setState({ pendingResume: cp });
-      })
-      .catch(() => {});
   }, [init]);
 
   // 软件已经开着时用户又点了一次桌面 / 开始菜单图标（原生侧拦下第二个进程并发来这个事件）：
@@ -528,7 +522,8 @@ export default function App() {
         if (!container) return;
         if (kind === "collection") {
           e.preventDefault();
-          void st.deleteCollection(container);
+          // DEF-1：与右键菜单同一个入口——非空分组先弹确认
+          st.requestDeleteCollection(container);
           return;
         }
         if (kind === "snapshot") {
@@ -622,6 +617,7 @@ export default function App() {
       <DuplicateDialog />
       <TrashConfirmDialog />
       <ResumeBatchDialog />
+      <DestructiveConfirmDialog />
       <Toaster />
       <ResizeGrips />
       <HoverHintHost />

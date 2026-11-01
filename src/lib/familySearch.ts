@@ -41,6 +41,24 @@ export interface LabelMaps {
   feature?: Record<string, string>;
 }
 
+/**
+ * 全部本地化标签的小写集合，按 `labels` 对象身份记忆化。
+ *
+ * 一次搜索对几千个族各调一次 `familyMatches`，标签集合只在切语言时变——
+ * 按对象身份缓存后整个搜索只建一次（`searchLabelMaps` 本身就是按语言缓存的）。
+ */
+let exactLabelsCache: { src: LabelMaps; set: Set<string> } | null = null;
+
+function exactLabelSet(labels: LabelMaps): Set<string> {
+  if (exactLabelsCache?.src === labels) return exactLabelsCache.set;
+  const set = new Set<string>();
+  for (const map of [labels.script, labels.classification, labels.feature]) {
+    for (const text of Object.values(map ?? {})) set.add(text.toLowerCase());
+  }
+  exactLabelsCache = { src: labels, set };
+  return set;
+}
+
 export function searchTokens(query: string): string[] {
   return query
     .trim()
@@ -73,21 +91,28 @@ function matchesToken(f: SearchableFamily, q: string, labels: LabelMaps): boolea
   if (f.license?.toLowerCase().includes(q)) return true;
   if (f.copyright?.toLowerCase().includes(q)) return true;
 
-  // 语言 / 分类 / 特性：既有编码（latin、serif、liga），也有本地化名（拉丁文、衬线、连字）
-  if (f.scripts?.some((s) => s.includes(q) || (labels.script?.[s] ?? "").toLowerCase().includes(q)))
-    return true;
+  // 语言 / 分类 / 特性：既有编码（latin、serif、liga），也有本地化名（拉丁文、衬线、连字）。
+  //
+  // OBS-1（2026-11-01 测试报告）：本地化名按「全词」语义匹配——查询词正好等于某个
+  // 标签的全名时，只有全等才算命中。否则「衬线」会蹭上「无衬线」、「连字」会蹭上
+  // 「自由连字」、「中文」会蹭上「中日韩」，英文里同样（「ligatures」是
+  // 「Discretionary ligatures」的子串）——搜一个分类却把它的反面/邻居一并命中。
+  // 查询词不是任何标签的全名时（用户在打部分词，如「小型」→「小型大写字母」），
+  // 仍按子串匹配，保留原来的宽容度。
+  const exactOnly = exactLabelSet(labels).has(q);
+  const labelHit = (map: Record<string, string> | undefined, code: string): boolean => {
+    const text = map?.[code];
+    if (text === undefined) return false;
+    const lower = text.toLowerCase();
+    return exactOnly ? lower === q : lower.includes(q);
+  };
+  if (f.scripts?.some((s) => s.includes(q) || labelHit(labels.script, s))) return true;
   if (
     f.classification &&
-    (f.classification.includes(q) ||
-      (labels.classification?.[f.classification] ?? "").toLowerCase().includes(q))
+    (f.classification.includes(q) || labelHit(labels.classification, f.classification))
   )
     return true;
-  if (
-    f.features?.some(
-      (x) => x.includes(q) || (labels.feature?.[x] ?? "").toLowerCase().includes(q),
-    )
-  )
-    return true;
+  if (f.features?.some((x) => x.includes(q) || labelHit(labels.feature, x))) return true;
 
   const file = q;
   return (f.faces ?? []).some(

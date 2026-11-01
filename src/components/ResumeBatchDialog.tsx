@@ -80,7 +80,7 @@ export function ResumeBatchDialog() {
             <div className="trashconfirm-head">
               <History size={18} strokeWidth={2} className="trashconfirm-icon" />
               <span className="trashconfirm-title" id="resumebatch-title">
-                {t("resumeBatch.title")}
+                {t("resumeBatch.title", { mode })}
               </span>
             </div>
             <p className="trashconfirm-note">
