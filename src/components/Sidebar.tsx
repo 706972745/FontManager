@@ -213,14 +213,16 @@ export function Sidebar() {
   const lastImported = useFontStore((s) => s.lastImported);
   const trash = useFontStore((s) => s.trash);
   const onlineEnabled = useFontStore((s) => s.settings.onlineFontsEnabled);
-  const deleteCollection = useFontStore((s) => s.deleteCollection);
+  // DEF-1：删除非空分组走确认入口（空组才直接删）
+  const requestDeleteCollection = useFontStore((s) => s.requestDeleteCollection);
   const renameCollection = useFontStore((s) => s.renameCollection);
   const pendingCollectionFor = useFontStore((s) => s.pendingCollectionFor);
   const snapshots = useFontStore((s) => s.snapshots);
   const deleteSnapshot = useFontStore((s) => s.deleteSnapshot);
   const renameSnapshot = useFontStore((s) => s.renameSnapshot);
   const applySnapshot = useFontStore((s) => s.applySnapshot);
-  const clearSnapshot = useFontStore((s) => s.clearSnapshot);
+  // DEF-2：清空快照走确认入口（空快照静默返回）
+  const requestClearSnapshot = useFontStore((s) => s.requestClearSnapshot);
   const exportSnapshot = useFontStore((s) => s.exportSnapshot);
   const importSnapshots = useFontStore((s) => s.importSnapshots);
   const pendingSnapshotFor = useFontStore((s) => s.pendingSnapshotFor);
@@ -469,7 +471,8 @@ export function Sidebar() {
                     {
                       label: translate("menu.deleteCollection"),
                       danger: true,
-                      action: () => void deleteCollection(name),
+                      // DEF-1：非空分组弹确认（组内 N 个字体如何处理），空组直接删
+                      action: () => requestDeleteCollection(name),
                     },
                   ]);
                 }}
@@ -579,7 +582,8 @@ export function Sidebar() {
                     },
                     {
                       label: translate("menu.clearSnapshot"),
-                      action: () => void clearSnapshot(name),
+                      // DEF-2：非空快照弹确认后再清（测试文档 §4.8）
+                      action: () => requestClearSnapshot(name),
                     },
                     { kind: "separator" },
                     {

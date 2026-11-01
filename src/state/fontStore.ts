@@ -345,6 +345,12 @@ interface FontStore {
   /** 待确认的批量「移到回收站」清单（C9）：非 null 时前端弹确认框 */
   trashConfirm: string[] | null;
 
+  /**
+   * DEF-1/DEF-2：待确认的「删除非空分组 / 清空快照」，非 null 时弹确认框。
+   * `count` 在发起时就算好（分组成员 = 整族 + 字重两级），对话框不再自己算。
+   */
+  pendingDestructive: { kind: "collection" | "snapshot"; name: string; count: number } | null;
+
   /** E2：上次没跑完的批量断点（启动时从 state.pending_batch 读入），非 null 时弹「继续吗」 */
   pendingResume: PendingBatch | null;
 
@@ -381,6 +387,12 @@ interface FontStore {
   removeTagEverywhere: (tag: string) => Promise<void>;
   createCollection: (name: string) => Promise<void>;
   deleteCollection: (name: string) => Promise<void>;
+  /**
+   * DEF-1：删除分组的统一入口。空组直接删；非空先弹确认框——
+   * 测试文档 §3.7 要求「组内 N 个字体如何处理」必须有明确提示。
+   * 分组关系（元数据）的丢失不可撤销，字体本身不受影响，对话框里要说清。
+   */
+  requestDeleteCollection: (name: string) => void;
   renameCollection: (from: string, to: string) => Promise<void>;
   toggleFamilyInCollection: (collection: string, family: string) => Promise<void>;
   /** 批量把字族移出分组（只删成员关系，不删字体）。一条都没命中时静默返回。 */
@@ -401,6 +413,14 @@ interface FontStore {
   removeMissingFromSnapshot: (name: string) => Promise<void>;
   /** 清空快照内所有字体（快照本身保留） */
   clearSnapshot: (name: string) => Promise<void>;
+  /**
+   * DEF-2：清空快照的统一入口。空快照无事可做（静默返回，同 clearSnapshot）；
+   * 非空先弹确认框——测试文档 §4.8 要求确认框存在。
+   */
+  requestClearSnapshot: (name: string) => void;
+  /** DEF-1/DEF-2：确认框的「删除 / 清除」，按 pendingDestructive 分发 */
+  confirmPendingDestructive: () => Promise<void>;
+  cancelPendingDestructive: () => void;
   exportSnapshot: (name: string, dest: string) => Promise<void>;
   /** mode: none = 仅导入；switch = 导入并切换；merge = 导入并合并到当前启用 */
   importSnapshots: (src: string, mode?: SnapshotApplyMode | "none") => Promise<void>;
@@ -1297,6 +1317,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   duplicateReport: null,
   trashConfirm: null,
   pendingResume: null,
+  pendingDestructive: null,
 
   init: async () => {
     if (initStarted) return;
@@ -1487,6 +1508,26 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // 这段时间用户对着空桌面干等，什么反馈都没有。先把窗口亮出来——里面是骨架屏 +
     // 底部百分比进度条，扫完自然换成字体库（见 components/LoadProgress.tsx）。
     await get().rescan();
+    // E2/DEF-4：有未完成的批量断点时，「启动时恢复上次启用的字体」整体让位。
+    //
+    // 冲突实景（2026-11-01 测试报告 DEF-4，高危）：批量停用跑到 30% 被强杀 →
+    // 重启 → 恢复流把 state 里仍标记为启用的字面又注册回注册表（反向启用 319 个）
+    // → 用户点「继续」后续做流再停 409 个 → 终态 reg=319，与「全部停用」的意图相反。
+    // 两个机制都在「纠正」注册表，叠加之后终态不可预期。约定：断点在时只弹
+    // 「继续吗」，恢复等断点消散（续做完成 / 用户放弃）后的下一次启动再说。
+    //
+    // 顺带修掉一个潜伏竞态：断点查询必须在 rescan 之后——resumePendingBatch
+    // 要靠 get().fonts 把路径还原成族清单，扫描完成前弹框，用户点「继续」会
+    // 因为清单为空而静默什么都不做。
+    try {
+      const cp = await ipc.batchCheckpointGet();
+      if (cp) {
+        set({ pendingResume: cp });
+        return;
+      }
+    } catch {
+      // 断点只是锦上添花，不能让它挡启动
+    }
     await get().restoreLastActivation();
   },
 
@@ -2204,6 +2245,24 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
   },
 
+  /**
+   * DEF-1：删除分组的统一入口（侧栏右键菜单、Delete 键都走这里）。
+   *
+   * 空组直接删——删一个没成员的分组没有任何损失，弹框反而是噪音；
+   * 非空先弹确认：分组关系（元数据）的丢失不可撤销，测试文档 §3.7 要求
+   * 「组内 N 个字体如何处理」必须有明确提示。字体本身不受影响，
+   * 对话框的正文要把这件事说清楚。
+   */
+  requestDeleteCollection: (name) => {
+    const s = get();
+    const count = (s.collections[name] ?? []).length + (s.collectionFaces[name] ?? []).length;
+    if (count === 0) {
+      void get().deleteCollection(name);
+      return;
+    }
+    set({ pendingDestructive: { kind: "collection", name, count } });
+  },
+
   deleteCollection: async (name) => {
     const prev = get().collections;
     const prevFaces = get().collectionFaces;
@@ -2608,6 +2667,33 @@ export const useFontStore = create<FontStore>((set, get) => ({
       toast.error(t("toast.couldntUpdateSnapshot"), String(e));
     }
   },
+
+  /**
+   * DEF-2：清空快照的统一入口（侧栏右键菜单走这里）。
+   *
+   * 空快照静默返回（与 clearSnapshot 一致：没事可做就别打扰用户）；
+   * 非空先弹确认——测试文档 §4.8 要求确认框存在。清掉的只是快照记录，
+   * 字体本身一个都不动，对话框正文要把边界说清楚。
+   */
+  requestClearSnapshot: (name) => {
+    const snap = get().snapshots.find((s) => s.name === name);
+    if (!snap || snap.entries.length === 0) return;
+    set({ pendingDestructive: { kind: "snapshot", name, count: snap.entries.length } });
+  },
+
+  /** DEF-1/DEF-2：确认框的「删除分组 / 清除」。确认即执行，原路复用底层 action */
+  confirmPendingDestructive: async () => {
+    const pending = get().pendingDestructive;
+    if (!pending) return;
+    set({ pendingDestructive: null });
+    if (pending.kind === "collection") {
+      await get().deleteCollection(pending.name);
+    } else {
+      await get().clearSnapshot(pending.name);
+    }
+  },
+
+  cancelPendingDestructive: () => set({ pendingDestructive: null }),
 
   exportSnapshot: async (name, dest) => {
     const snap = get().snapshots.find((s) => s.name === name);

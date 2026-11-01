@@ -113,11 +113,22 @@ fn recycle(path: &Path) -> Result<(), String> {
 fn unique_dest(dir: &Path, file_name: &std::ffi::OsStr) -> PathBuf {
     let mut dest = dir.join(file_name);
     let mut n = 1;
-    while dest.exists() {
+    // 账本文件也要避让：只避让字体会出现「文件没重名、账本被上一轮的同名条目压掉」，
+    // 那条旧条目就从此消失在回收站视图里（文件还在，但查不到记录）。
+    while dest.exists() || sidecar_path(&dest).exists() {
         dest = dir.join(format!("{n}-{}", file_name.to_string_lossy()));
         n += 1;
     }
     dest
+}
+
+/// 回收站条目的「账本」：与字体文件同 stem，扩展名换成 `<ext>.zfmtrash`。
+/// `list_trash` 只认账本，界面里看得见、能还原的条目全凭它。
+fn sidecar_path(dest: &Path) -> PathBuf {
+    dest.with_extension(format!(
+        "{}.zfmtrash",
+        dest.extension().and_then(|e| e.to_str()).unwrap_or("bin")
+    ))
 }
 
 /// 暂存/待处理文件：字体 或 版权信息类文件（许可证、版权说明等）
@@ -1079,6 +1090,20 @@ pub fn uninstall(path: &str, family: &str) -> Result<TrashEntry, String> {
 }
 
 /// `uninstall` 的本体：**不广播 WM_FONTCHANGE**（批量入口最后统一广播一次，见 `unlink_quiet`）。
+///
+/// DEF-6（2026-11-01 测试报告，高危）：旧顺序是「先动文件、后写账本」，而跨盘时
+/// `move_file` 走「复制 + 源送 Windows 回收站」——`trash` crate 的 IFileOperation
+/// **即使真把文件搬走了也可能报 `Some operations were aborted`**（实测 7/7：
+/// 文件进了 E: 盘 Windows 回收站，$R/$I 时间戳与失败秒级吻合）。错误一抛，
+/// 账本没写、副本留在回收站目录里 → 「文件已离开字体库、回收站视图却空着、
+/// 用户既看不见也还原不了」的悬挂状态。
+///
+/// 新顺序与分流规则：
+///   1. **先写账本，再动文件**——文件只要离开原位置，账就必须已经存在；
+///      账本写不进去就什么都没动，直接报错。
+///   2. 移动报告失败后**不信错误、信文件系统**：原文件还在 → 撤摊子（删副本 +
+///      删账本，当没发生过）；原文件已经没了 → 认账（副本是唯一留存，账本已写好，
+///      至少能从应用回收站还原）。
 pub fn uninstall_quiet(path: &str, family: &str) -> Result<TrashEntry, String> {
     #[cfg(target_os = "windows")]
     unregister_user_font(path);
@@ -1088,7 +1113,6 @@ pub fn uninstall_quiet(path: &str, family: &str) -> Result<TrashEntry, String> {
     let src = Path::new(path);
     let file_name = src.file_name().ok_or("invalid path")?;
     let dest = unique_dest(&trash, file_name);
-    move_file(src, &dest)?;
 
     let entry = TrashEntry {
         id: dest.to_string_lossy().into_owned(),
@@ -1100,18 +1124,49 @@ pub fn uninstall_quiet(path: &str, family: &str) -> Result<TrashEntry, String> {
             .map(|d| d.as_secs())
             .unwrap_or(0),
     };
+    let meta = sidecar_path(&dest);
+    // 先落账：此刻文件还原地没动，账本写失败就是干净的「什么都没发生」
+    fs::write(&meta, serde_json::to_vec(&entry).unwrap_or_default())
+        .map_err(|e| format!("写入回收站记录失败：{e}"))?;
 
-    let meta = dest.with_extension(format!(
-        "{}.zfmtrash",
-        dest.extension().and_then(|e| e.to_str()).unwrap_or("bin")
-    ));
-    // 记录写不进去就把文件搬回原位（C1）：否则回收站里留下一个「有文件、没记录」的孤儿 ——
-    // `list_trash` 只认 sidecar，界面里看不见它，用户也就永远还原不了。
-    if let Err(e) = fs::write(&meta, serde_json::to_vec(&entry).unwrap_or_default()) {
-        let _ = move_file(&dest, src);
-        return Err(format!("写入回收站记录失败：{e}"));
+    match move_file(src, &dest) {
+        Ok(_) => Ok(entry),
+        Err(e) => match recover_move_failure(src, &dest) {
+            MoveRecovery::Rollback => {
+                // 原文件还在（或副本也没落成）：撤摊子。副本和账本都收掉，当没发生过
+                let _ = fs::remove_file(&dest);
+                let _ = fs::remove_file(&meta);
+                Err(e)
+            }
+            MoveRecovery::Commit => Ok(entry),
+        },
     }
-    Ok(entry)
+}
+
+/// DEF-6：移动报告失败后的真实状态分流。**不信错误、信文件系统。**
+///
+/// 跨盘时 `move_file` 是「复制 + 源送 Windows 回收站」，而 `trash` crate 的
+/// IFileOperation 即使真把文件搬走了也可能报 `Some operations were aborted`
+/// （2026-11-01 实测 7/7，$R/$I 时间戳与失败秒级吻合）。所以失败之后必须看：
+///   - 原文件已经不在、且副本落在了回收站里 → **认账**：副本是唯一留存，
+///     账本也已经写好（先写账后动文件），至少能从应用回收站还原；
+///   - 其余一切情况（原文件还在 / 副本也没落成）→ **回滚**：收掉副本和账本，
+///     原样返回错误，库里的字体分毫未动。
+///
+/// 单独抽出来是为了锁住这张真值表：真实复现需要「IFileOperation 报错但文件已搬走」，
+/// 测试环境造不出来，但决策规则不能靠运气。
+#[derive(Debug, PartialEq, Eq)]
+enum MoveRecovery {
+    Rollback,
+    Commit,
+}
+
+fn recover_move_failure(src: &Path, dest: &Path) -> MoveRecovery {
+    if !src.exists() && dest.exists() {
+        MoveRecovery::Commit
+    } else {
+        MoveRecovery::Rollback
+    }
 }
 
 pub fn list_trash() -> Vec<TrashEntry> {
@@ -1145,10 +1200,30 @@ pub fn restore(entry_id: &str) -> Result<RestoreOutcome, String> {
     if let Some(parent) = Path::new(&entry.original_path).parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    move_file(Path::new(&entry.trashed_path), Path::new(&entry.original_path))?;
-    remove_sidecar(&entry.trashed_path);
-    refresh_system_font_cache();
-    Ok(RestoreOutcome::Moved)
+    // DEF-6 同款分流：跨盘还原也是「复制 + 回收站里的副本送 Windows 回收站」，
+    // IFileOperation 报错但副本其实已经搬走时，原路径已经有了文件 —— 那就是还原成功，
+    // 顺手收掉回收站里残留的副本和账本，别让它既在库里又挂在回收站视图里。
+    let orig_existed = Path::new(&entry.original_path).exists();
+    match move_file(
+        Path::new(&entry.trashed_path),
+        Path::new(&entry.original_path),
+    ) {
+        Ok(_) => {
+            remove_sidecar(&entry.trashed_path);
+            refresh_system_font_cache();
+            Ok(RestoreOutcome::Moved)
+        }
+        Err(e) => {
+            if !orig_existed && Path::new(&entry.original_path).exists() {
+                let _ = fs::remove_file(Path::new(&entry.trashed_path));
+                remove_sidecar(&entry.trashed_path);
+                refresh_system_font_cache();
+                Ok(RestoreOutcome::Moved)
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 pub fn empty_trash() -> Result<(), String> {
@@ -1161,8 +1236,12 @@ pub fn empty_trash() -> Result<(), String> {
         if entry.original_path == entry.trashed_path {
             continue;
         }
-        if let Err(e) = recycle(Path::new(&entry.trashed_path)) {
-            errors.push(e);
+        let trashed = Path::new(&entry.trashed_path);
+        // IFileOperation 即使搬成功也可能报 aborted（DEF-6）：以「文件还在不在」为准
+        if let Err(e) = recycle(trashed) {
+            if trashed.exists() {
+                errors.push(e);
+            }
         }
     }
     if !errors.is_empty() {
@@ -1183,7 +1262,13 @@ pub fn delete_trash_entry(entry_id: &str) -> Result<(), String> {
         }
         return Ok(());
     }
-    recycle(Path::new(&entry.trashed_path))?;
+    let trashed = Path::new(&entry.trashed_path);
+    // 同 empty_trash：报错但文件已经搬走 = 成功
+    if let Err(e) = recycle(trashed) {
+        if trashed.exists() {
+            return Err(e);
+        }
+    }
     remove_sidecar(&entry.trashed_path);
     Ok(())
 }
@@ -1675,6 +1760,86 @@ mod tests {
         restore(&entry.id).unwrap();
         assert!(font.exists(), "file should be back after restore");
         assert!(list_trash().iter().all(|t| t.id != entry.id));
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// DEF-6 回归：账本必须与文件同在。旧顺序「先动文件、后写账本」在跨盘 +
+    /// IFileOperation 报 aborted 时会留下「回收站里有文件、视图里查不到」的悬挂条目
+    /// （2026-11-01 实测：7 个字体物理离开字体库，回收站计数却是 0，无法还原）。
+    #[test]
+    fn uninstall_writes_sidecar_with_the_file() {
+        // 独立目录：cargo test 默认多线程并行，共用 temp 子目录会互相删对象
+        let tmp = std::env::temp_dir().join(format!("zfm-sidecar-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
+
+        let font = tmp.join("Ledger Font.ttf");
+        fs::write(&font, b"not really a font").unwrap();
+
+        let entry = uninstall(font.to_str().unwrap(), "Ledger Font").unwrap();
+        // 账本、副本、列表三处必须同时看得到这条记录
+        let sidecar = sidecar_path(Path::new(&entry.trashed_path));
+        assert!(sidecar.exists(), "账本应与副本同时存在");
+        assert!(Path::new(&entry.trashed_path).exists());
+        assert!(list_trash().iter().any(|t| t.id == entry.id));
+
+        restore(&entry.id).unwrap();
+        assert!(font.exists());
+        assert!(!sidecar.exists(), "还原后账本应被收掉");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// DEF-6：移动失败后的分流真值表。真实场景是「IFileOperation 报 aborted、
+    /// 但文件已经搬进 Windows 回收站」——测试环境造不出来，真值表必须锁死。
+    #[test]
+    fn recover_move_failure_truth_table() {
+        let tmp = std::env::temp_dir().join(format!("zfm-recover-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let src = tmp.join("src.ttf");
+        let dest = tmp.join("dest.ttf");
+
+        // 原文件还在 → 回滚（哪怕副本已经落成：库里的字体不能动）
+        fs::write(&src, b"a").unwrap();
+        fs::write(&dest, b"b").unwrap();
+        assert_eq!(recover_move_failure(&src, &dest), MoveRecovery::Rollback);
+
+        // 原文件没了、副本在 → 认账（DEF-6 实测场景：副本是唯一留存）
+        fs::remove_file(&src).unwrap();
+        assert_eq!(recover_move_failure(&src, &dest), MoveRecovery::Commit);
+
+        // 原文件没了、副本也没落成 → 回滚（干净的「什么都没发生」）
+        fs::remove_file(&dest).unwrap();
+        assert_eq!(recover_move_failure(&src, &dest), MoveRecovery::Rollback);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// 回收站目标名要同时避让「已存在的文件」和「已存在的账本」：
+    /// 只避让文件时，同名旧账本会被新条目压掉，旧条目从此凭空消失。
+    #[test]
+    fn unique_dest_avoids_existing_sidecars() {
+        let tmp = std::env::temp_dir().join(format!("zfm-dest-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let name = std::ffi::OsStr::new("Dup.ttf");
+        let first = unique_dest(&tmp, name);
+        assert_eq!(first.file_name().unwrap(), name);
+        assert_eq!(
+            sidecar_path(&first).file_name().unwrap().to_string_lossy(),
+            "Dup.ttf.zfmtrash"
+        );
+
+        // 只建账本、不建文件：dest 本身没被占，但账本路径被占 → 也必须让位
+        fs::write(sidecar_path(&first), b"{}").unwrap();
+        let second = unique_dest(&tmp, name);
+        assert_ne!(second, first, "账本被占的名字也要避让");
+        assert_eq!(second.file_name().unwrap().to_string_lossy(), "1-Dup.ttf");
 
         let _ = fs::remove_dir_all(&tmp);
     }
