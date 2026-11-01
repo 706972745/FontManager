@@ -4,7 +4,7 @@ import { ArrowUpRight, Download, Globe } from "lucide-react";
 import { spring, springSoft, staggerDelay } from "../design/springs";
 import { toast } from "../design/primitives/Toast";
 import { t as translate, useT, type TKey } from "../lib/i18n";
-import { APP_LICENSE, APP_VERSION } from "../lib/version";
+import { APP_LICENSE, displayVersion } from "../lib/version";
 
 function GithubGlyph({ size = 16 }: { size?: number }) {
   return (
@@ -62,7 +62,7 @@ export function AboutView() {
       <img className="about-icon" src="/icon-512.png" alt="" draggable={false} />
       <h1 className="about-name">ZFontManager</h1>
       <div className="about-version tabular">
-        {t("about.version", { version: APP_VERSION, license: APP_LICENSE })}
+        {t("about.version", { version: displayVersion(t), license: APP_LICENSE })}
       </div>
       <p className="about-desc">{t("about.desc")}</p>
 

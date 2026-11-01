@@ -4,3 +4,14 @@ import pkg from "../../package.json";
 
 export const APP_VERSION = pkg.version;
 export const APP_LICENSE = "GPL-3.0";
+/**
+ * 发布通道标记。1.1.0 是第一个正式发布版（此前的 1.0.0-x 都是未发布的开发迭代版），
+ * 所以起显示「正式版」；下一轮开发中的小修订发版前改回 null 即可不显示。
+ * 「关于」页与设置页脚注共用，别再往别处硬编码版本串。
+ */
+export const APP_EDITION: "stable" | null = "stable";
+
+/** 展示用版本串：正式版带通道标记（`1.1.0 正式版`），开发版只有版本号 */
+export function displayVersion(t: (key: "about.edition") => string): string {
+  return APP_EDITION ? `${APP_VERSION} ${t("about.edition")}` : APP_VERSION;
+}
