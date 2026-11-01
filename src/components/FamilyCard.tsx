@@ -171,7 +171,11 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
     chars: listCharSet,
     sizePx: size,
   });
-  const { fontFamily, failed } = useListFontCss(thumb.src ? null : previewFace, listCharSet);
+  /* 缺语言文字的格子显示的是标注、不是字形：不为它加载字体（有 thumb 同理） */
+  const { fontFamily, failed } = useListFontCss(
+    thumb.src || hasScriptNote(scriptStatus) ? null : previewFace,
+    listCharSet,
+  );
   // 缺语言文字的格子显示的是标注、不是字形，别为它生成缩略图
   useThumbGenerate(thumb, hasScriptNote(scriptStatus) ? null : fontFamily, text, size);
   // 权重：手动设置 > 字体自带版权信息 > 文件夹备注 / 版权信息文件判定的版权
@@ -329,7 +333,21 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
 
       <div className="card-preview" ref={thumb.ref} style={{ minHeight: size * 1.35 }}>
         <AnimatePresence mode="wait">
-          {thumb.src && !hasScriptNote(scriptStatus) ? (
+          {/* 缺语言文字的标注不依赖字体加载，提到最前 —— 立即可见，
+              还能免掉为这一格发起一次子集/完整字体加载 */}
+          {hasScriptNote(scriptStatus) ? (
+            /* 画不出示例文字的语言：这一格直接换成「无中文」这类标注（0.9.3-5）
+               缺中文时若同族另有中文版，补一句「中文见 XXX」指路（0.9.3-7） */
+            <motion.p
+              key="noscript"
+              className="preview-text preview-script"
+              initial={intro ? { opacity: 0, y: 5 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={intro ? spring : INTRO_OFF}
+            >
+              <ScriptChip status={scriptStatus} hint={scriptHint} />
+            </motion.p>
+          ) : thumb.src ? (
             /* 缩略图：像素尺寸按实际预览宽度 × DPR 渲染，这里 1:1 显示，不缩放 */
             <motion.img
               key="thumb"
@@ -342,46 +360,43 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
               transition={intro ? spring : INTRO_OFF}
             />
           ) : fontFamily ? (
-            hasScriptNote(scriptStatus) ? (
-              /* 画不出示例文字的语言：这一格直接换成「无中文」这类标注（0.9.3-5）
-                 缺中文时若同族另有中文版，补一句「中文见 XXX」指路（0.9.3-7） */
-              <motion.p
-                key="noscript"
-                className="preview-text preview-script"
-                initial={intro ? { opacity: 0, y: 5 } : false}
-                animate={{ opacity: 1, y: 0 }}
-                transition={intro ? spring : INTRO_OFF}
-              >
-                <ScriptChip status={scriptStatus} hint={scriptHint} />
-              </motion.p>
-            ) : (
-              <motion.p
-                key="real"
-                className="preview-text"
-                style={{
-                  fontFamily,
-                  fontSize: size,
-                  fontStyle: previewFace.italic ? "italic" : "normal",
-                  fontWeight: previewFace === lead ? undefined : previewFace.weight,
-                }}
-                initial={intro ? { opacity: 0, y: 5 } : false}
-                animate={{ opacity: 1, y: 0 }}
-                transition={intro ? spring : INTRO_OFF}
-              >
-                {text}
-              </motion.p>
-            )
+            <motion.p
+              key="real"
+              className="preview-text"
+              style={{
+                fontFamily,
+                fontSize: size,
+                fontStyle: previewFace.italic ? "italic" : "normal",
+                fontWeight: previewFace === lead ? undefined : previewFace.weight,
+              }}
+              initial={intro ? { opacity: 0, y: 5 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={intro ? spring : INTRO_OFF}
+            >
+              {text}
+            </motion.p>
           ) : failed ? (
             <p key="failed" className="preview-text preview-failed">
               {t("card.noPreview")}
             </p>
           ) : (
-            <motion.span
-              key="skeleton"
-              className="skeleton preview-skeleton"
-              style={{ height: size * 1.1 }}
+            /* E1 占位：字体还在排队/解码时先用界面字体把示例文字顶上，
+               加载完成换成真字体 —— 首屏不再是一排 skeleton 灰条（B1 p95 489 ms 的体感主因） */
+            <motion.p
+              key="pending"
+              className="preview-text preview-pending"
+              style={{
+                fontSize: size,
+                fontStyle: previewFace.italic ? "italic" : "normal",
+                fontWeight: previewFace === lead ? undefined : previewFace.weight,
+              }}
+              initial={intro ? { opacity: 0, y: 5 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={intro ? spring : INTRO_OFF}
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
-            />
+            >
+              {text}
+            </motion.p>
           )}
         </AnimatePresence>
       </div>

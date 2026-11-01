@@ -202,34 +202,71 @@ async function repairLoad(name: string, hint: RepairHint, bytes: number): Promis
   return false;
 }
 
+/**
+ * E1（2026-11-01）：可见解码的全局并发闸。
+ *
+ * B1 实测：冷启动 p95 489 ms / drop 5，而滚动阶段 17 s 只掉 1 帧 —— 问题集中在
+ * **首屏前 60~80 个面同时抢解码**。这里给所有 FontFace 解码套一个 FIFO 队列 +
+ * 并发上限：挂载顺序天然就是虚拟列表的可见顺序（上→下），先挂先解码。
+ * 上限取 6（与滚动期的自然并发同量级：一屏卡片数 + overscan）。
+ */
+const MAX_INFLIGHT_DECODE = 6;
+let inflightDecode = 0;
+const decodeQueue: Array<() => void> = [];
+
+function acquireDecodeSlot(): Promise<void> {
+  if (inflightDecode < MAX_INFLIGHT_DECODE) {
+    inflightDecode += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    decodeQueue.push(() => {
+      inflightDecode += 1;
+      resolve();
+    });
+  });
+}
+
+function releaseDecodeSlot(): void {
+  inflightDecode -= 1;
+  const next = decodeQueue.shift();
+  if (next) next();
+}
+
 function tryLoad(
   name: string,
   path: string,
   bytes = 0,
   repaired = false,
 ): Promise<boolean> {
-  return new Promise((resolve) => {
+  return (async () => {
+    // E1：先排队拿解码槽。started 从拿到槽起算 —— p50/p95 保持「纯解码耗时」口径
+    // 不变，排队延迟由占位文字（体感）和 HUD 的 FCP（测量）去消化。
+    await acquireDecodeSlot();
     const started = performance.now();
     const ff = new FontFace(name, `url("${convertFileSrc(path)}")`);
-    ff.load()
-      .then(() => {
-        // 登记进 LRU —— 这一步才真正 add 进 document.fonts，同时兑现「条数 + 字节」双上限的淘汰。
-        // bytes 是这个字面文件的实际体积，字节预算靠它算（不认识体积就传 0，只受条数约束）。
-        const registerStart = performance.now();
-        loadedFaces.register(name, ff, bytes);
-        // 诊断样本：加载耗时 + add 的同步耗时（add 偶发长任务时能单独归因）
-        stats.record(
-          registerStart - started,
-          bytes,
-          repaired,
-          performance.now() - registerStart,
-        );
-        rememberLoadedAt(name);
-        loadCount += 1;
-        resolve(true);
-      })
-      .catch(() => resolve(false));
-  });
+    try {
+      await ff.load();
+      // 登记进 LRU —— 这一步才真正 add 进 document.fonts，同时兑现「条数 + 字节」双上限的淘汰。
+      // bytes 是这个字面文件的实际体积，字节预算靠它算（不认识体积就传 0，只受条数约束）。
+      const registerStart = performance.now();
+      loadedFaces.register(name, ff, bytes);
+      // 诊断样本：加载耗时 + add 的同步耗时（add 偶发长任务时能单独归因）
+      stats.record(
+        registerStart - started,
+        bytes,
+        repaired,
+        performance.now() - registerStart,
+      );
+      rememberLoadedAt(name);
+      loadCount += 1;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      releaseDecodeSlot();
+    }
+  })();
 }
 
 function ensurePathLoaded(
@@ -570,15 +607,31 @@ export function useListFontCss(
   }, [face, listName, chars]);
 
   /**
-   * 完整链路的兜底加载：**只在「还不确定这字体能不能子集」时做**。
-   * 已确认能子集的字面不再拉完整字体 —— 那一次解码正是子集要省掉的。
+   * 完整链路的兜底加载（E1 收窄）：只在「确定不走子集」时才拉完整字体 ——
+   * ① `chars` 为 null（用户自定义示例文字，子集链路天然不适用）→ 立即加载；
+   * ② 子集第一轮结果出来且**失败**（后端说不适合 / 产物加载不了）→ 才兜底。
+   *
+   * 老实现是「子集还没就绪就先拉完整字体顶着」：冷启动首屏 60~80 个面同时发起
+   * **完整字体**解码（B1 实测 p95 489 ms 的主力），而子集产物只有几十 KB、大多数
+   * 几毫秒就到 —— 完整字体那份解码是纯浪费（加载完就被 LRU 挤走）。
+   * 等待期间预览格显示占位文字（FamilyCard），不再靠完整字体「顶着」。
+   * `ensureListSubset` 内部有 inflight 去重，这里再来一次只是挂上同一个 promise。
    */
   useEffect(() => {
     if (!face || !fullName) return;
     if (listReady) return;
     if (subsetCapable.has(face.id)) return;
+    if (listName && chars) {
+      let alive = true;
+      void ensureListSubset(face, chars, listName).then((ok) => {
+        if (alive && !ok) ensureLoaded(face);
+      });
+      return () => {
+        alive = false;
+      };
+    }
     ensureLoaded(face);
-  }, [face, fullName, listReady]);
+  }, [face, fullName, listName, chars, listReady]);
 
   // 子集被 LRU 淘汰后要能立刻退回完整字体，而不是闪一下空白
   const listLoaded = !!(listReady && listName && cache.get(listName) === "loaded");
@@ -669,6 +722,9 @@ export function faceStats() {
     prefetchSkipKnown: p.skipKnown,
     prefetchSkipSubset: p.skipSubset,
     inflightPrefetch,
+    /** E1 解码闸：正在解码的 FontFace 数 / 排队等待数（HUD 观测首屏扎堆用） */
+    inflightDecode,
+    decodeQueued: decodeQueue.length,
     /** 列表子集通道：已确认能子集 / 明确不适用 / 拿到产物的变体数 */
     subsetCapable: subsetCapable.size,
     subsetUnavailable: subsetUnavailable.size,

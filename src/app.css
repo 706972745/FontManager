@@ -940,6 +940,14 @@ body,
   min-height: 16px;
 }
 
+/* E1 占位（2026-11-01）：字体还在排队/解码时，先用界面字体把示例文字顶上，
+   加载完成换成真字体。淡色 + 半透明，和真字体的视觉差异一眼可辨，
+   用户知道「马上要换」，不会当成最终效果 */
+.preview-pending {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
 .card-styles {
   overflow: hidden;
   margin-top: 10px;
