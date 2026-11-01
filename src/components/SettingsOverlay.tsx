@@ -27,7 +27,7 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
 import { useT } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
-import { APP_LICENSE, APP_VERSION } from "../lib/version";
+import { APP_LICENSE, displayVersion } from "../lib/version";
 import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 
 const IS_LINUX = navigator.platform.toUpperCase().includes("LINUX");
@@ -831,7 +831,7 @@ export function SettingsOverlay() {
 
             <footer className="settings-footer tabular">
               <img className="settings-footer-icon" src="/favicon.png" alt="" draggable={false} />
-              ZFontManager {APP_VERSION} · {APP_LICENSE} · {t("settings.footerNote")} ·{" "}
+              ZFontManager {displayVersion(t)} · {APP_LICENSE} · {t("settings.footerNote")} ·{" "}
               <button
                 className="settings-replay"
                 onClick={() => {

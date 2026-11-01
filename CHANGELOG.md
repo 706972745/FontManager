@@ -4,11 +4,11 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [1.0.1] — 2026-11-01
+## [1.1.0] — 2026-11-01
 
-> 正式版。1.0.0-9 之后一轮完整回归测试（`测试报告-1.0.0-9-E1E2E3-2026-11-01.md`）
-> 暴露 6 条缺陷，本轮全部处理：4 条修复、1 条按报告建议约定冲突规则、1 条排查后
-> 定性为无法归因于代码路径的偶发项（详见仓库内两份清单文档）。
+> **正式版**（1.0.0 之后第一个正式发布版）。内容 = 未单独发布的 1.0.1 开发迭代
+> （1.0.0-9 回归测试暴露的 6 条缺陷的全部处理）+ 「关于」页/设置页起显示
+> 「正式版」通道标记（`APP_EDITION`，见 `src/lib/version.ts`）。
 
 ### 修复：移到回收站后进入悬挂状态（DEF-6，高危）
 
@@ -65,6 +65,16 @@ All notable changes to ZFontManager are documented here. The format follows
   孤立 deactivate 与切换无因果关系，退出时会话回退 / Affinity 回退两条路径均被
   时间线排除。与 DEF-4 同属「多机制写注册表」家族，已按 DEF-4 的约定规则处理，
   建议下一轮按注册表计数口径复测（测试报告原文建议）。
+
+### 杂项
+
+- 「关于」页与设置页脚注的版本显示自 1.1.0 起带「正式版」通道标记
+  （`src/lib/version.ts` 的 `APP_EDITION`；开发中的小修订发版前置回 `null`
+  即只显示版本号）。9 种语言的 `about.edition` 词条同步补齐。
+
+## [1.0.1] — 2026-11-01（未发布）
+
+> 开发迭代版，内容已全部并入 1.1.0，未单独打包发布。
 
 ## [1.0.0-9] — 2026-11-01
 
