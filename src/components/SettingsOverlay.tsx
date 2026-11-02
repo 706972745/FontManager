@@ -8,6 +8,7 @@ import {
   FolderDown,
   FolderOpen,
   FolderPlus,
+  FolderSync,
   Languages,
   MessageSquarePlus,
   Scaling,
@@ -27,6 +28,7 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
 import { useT } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
+import { LabelResyncDialog } from "./LabelResyncDialog";
 import { APP_LICENSE, displayVersion } from "../lib/version";
 import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 
@@ -103,6 +105,13 @@ export function SettingsOverlay() {
   const affinityConnection = useFontStore((s) => s.affinityConnection);
   const refreshAffinityConnection = useFontStore((s) => s.refreshAffinityConnection);
   const pollAffinityLink = useFontStore((s) => s.pollAffinityLink);
+  /** 目录名重算对话框（版权判定 v7 的迁移入口，默认只预演） */
+  const [resyncOpen, setResyncOpen] = useState(false);
+
+  useEffect(() => {
+    // 设置面板关掉时一并收掉子对话框：不然它会浮在一个已经消失的面板上方
+    if (!openState) setResyncOpen(false);
+  }, [openState]);
 
   useEffect(() => {
     if (!openState) return;
@@ -281,6 +290,7 @@ export function SettingsOverlay() {
   };
 
   return (
+    <>
     <AnimatePresence>
       {openState && (
         <motion.div
@@ -708,6 +718,24 @@ export function SettingsOverlay() {
                   </button>
                 </div>
               </div>
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">
+                    <FolderSync size={13} strokeWidth={1.5} /> {t("settings.labelResync")}
+                  </div>
+                  <div className="settings-sub">{t("settings.labelResyncSub")}</div>
+                  <div className="settings-sub">{t("settings.labelResyncWhy")}</div>
+                </div>
+                <div className="settings-data-actions">
+                  <button
+                    className="settings-data-btn"
+                    onClick={() => setResyncOpen(true)}
+                    disabled={scanning}
+                  >
+                    {t("settings.labelResyncOpen")}
+                  </button>
+                </div>
+              </div>
             </section>
 
             <section className="settings-section">
@@ -847,5 +875,7 @@ export function SettingsOverlay() {
         </motion.div>
       )}
     </AnimatePresence>
+    <LabelResyncDialog open={openState && resyncOpen} onClose={() => setResyncOpen(false)} />
+    </>
   );
 }

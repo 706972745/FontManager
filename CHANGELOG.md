@@ -4,10 +4,10 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [1.1.7] — 未发布（代码已就绪，等打 tag）
+## [1.1.7] — 2026-11-02
 
-> 1.1.6 发版后当天发现的前端回归。只影响「历史上手动标注过免费」的字族，
-> 自动判定那条主链路不受影响。
+> 1.1.6 发版后当天发现的前端回归，外加把 1.1.6 留下的迁移入口接上。
+> 回归只影响「历史上手动标注过免费」的字族，自动判定那条主链路不受影响。
 
 ### 修复：手动标注的「免费」被抹成「未知」（v1.1.6 回归）
 
@@ -34,6 +34,18 @@ Rust 侧不动：`class_from_status("free") => None` 本来就是正确的拦截
 > 说明：这也是 2026-11-02 `CI (Windows)` 在 `main` 上变红的原因 ——
 > `tests/license.test.ts` 里「manual copyright status overrides the auto-detected
 > class」断言 override `"free"` → `free_commercial`，1.1.6 里失败。
+
+### 新增：设置里能跑「目录名重算」（1.1.6 遗留的迁移入口）
+
+1.1.6 加了 `resync_library_labels` 命令，却**没有任何界面调用它** —— 命令只能由
+开发者手动敲，老库里按旧口径写下的（商用免费）后缀，普通用户没法改。现在接在
+「设置 → 字体库数据」：点「检查并重算」先跑预演，逐条列出「旧名 → 新名」和新分类，
+确认后再落盘。
+
+- 只改「证据给出明确分类」的目录，判不出来的一律保持原名，绝不凭空贴标签；
+- 改名会同时处理已启用的字面（先停用、改完再按原状态恢复），改完自动重扫，
+  卡片路径与分组跟着刷新；
+- 9 种语言补文案；对话框默认只预演，误点「关闭」不会有任何改动。
 
 ## [1.1.6] — 2026-11-02
 
