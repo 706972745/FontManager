@@ -734,8 +734,20 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
             setContentHeight(null);
             // 展开完毕再恢复「放得下右键菜单」的最小尺寸限制
             void syncQuickbarMinSize();
-            // 鼠标已经不在窗口里的话，静置一会儿自动收回
-            if (hoverExpanded && !pointerInside) scheduleRecall();
+            // 鼠标已经不在窗口里的话，静置一会儿自动收回。
+            // 不能只信 pointerInside：它只在 pointermove 里置真，鼠标停着不动时
+            // 「窗口自己被动画挪走」造成的 leave 会把它永久留在 false，展开刚落地就
+            // 被这里判成「人走了」而立刻收起（§5 第 22 条）。
+            if (hoverExpanded && !pointerInside) {
+              void cursorInsideWindow().then((inside) => {
+                if (!alive || dockedRef.current) return;
+                if (inside) {
+                  pointerInside = true;
+                  return;
+                }
+                scheduleRecall();
+              });
+            }
             // 动画期间失焦过的：几何落定了才补收起，否则 setSize 会被动画线程覆盖（§5 第 4 条）
             // 关掉「贴顶自动隐藏」时不该再自动收回去（§5 第 1 条：这条旁路以前漏了门控，
             // 结果是关了开关照样会在失焦时收成 34px 提示条）
@@ -1208,7 +1220,35 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         return;
       }
       clearRecall();
-      void collapse();
+      // 这次 leave 未必是「鼠标走了」，也可能是「窗口自己滑走了」：
+      // 收成细线时整窗要滑出屏幕上沿（RETRACT_OUT_MS / OFFSCREEN_PAD），光标压在
+      // 窗口上沿不动也会收到 pointerleave；窗口滑回来时又没有 pointermove 把
+      // pointerInside 拉回 true —— 于是「展开 → 滑走（leave）→ 细线滑回来 → 感应带
+      // 上升沿又把它展开」自激成死循环（2026-11-02 实测：光标停在 (830,0) 不动，
+      // 窗口 2.1 秒一轮 43↔1240 反复横跳）。收之前先问系统光标到底在哪。
+      void cursorInsideWindow().then((inside) => {
+        if (!alive || dockedRef.current || !hoverExpanded) return;
+        if (inside) {
+          // 假离开：光标一直压在窗口上，把状态补回来，别收
+          pointerInside = true;
+          return;
+        }
+        if (animating || mutating) {
+          scheduleRecall();
+          return;
+        }
+        void collapse();
+      });
+    };
+
+    /**
+     * 指针进入窗口：窗口滑回光标底下、或光标没动而窗口长高盖过来时，
+     * 浏览器不会再补 pointermove，只能靠 enter 把 pointerInside 补回来。
+     * 这里只补状态，不触发展开（展开入口仍是 hover / 感应带 / 热键）。
+     */
+    const onPointerEnter = () => {
+      pointerInside = true;
+      clearRecall();
     };
 
     const onEngage = () => {
@@ -1290,6 +1330,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     document.addEventListener("pointermove", onPointerMove, true);
     document.documentElement.addEventListener("pointerleave", onPointerLeave);
     document.addEventListener("mouseleave", onPointerLeave);
+    document.addEventListener("pointerenter", onPointerEnter, true);
+    document.addEventListener("mouseenter", onPointerEnter, true);
     document.addEventListener("pointerdown", onEngage, true);
     window.addEventListener("keydown", onKeyDown);
     // 拖动结束（useWindowDrag 派发）：松手后没有新的 move 事件，这里补一次判定
@@ -1354,6 +1396,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       document.removeEventListener("pointermove", onPointerMove, true);
       document.documentElement.removeEventListener("pointerleave", onPointerLeave);
       document.removeEventListener("mouseleave", onPointerLeave);
+      document.removeEventListener("pointerenter", onPointerEnter, true);
+      document.removeEventListener("mouseenter", onPointerEnter, true);
       document.removeEventListener("pointerdown", onEngage, true);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("zfm:window-drag-end", onDragEnd);
