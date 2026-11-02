@@ -57,6 +57,16 @@ export const DOCK_HEIGHT_BAR = 12;
 /** 横线高度（逻辑像素）：CSS 里 .qb-grip-bar 用 clamp() 按 DPI/分辨率微调，这里只是文档说明 */
 export const DOCK_BAR_LINE = 5;
 /**
+ * 收成细线后，指针要贴到**窗口上沿**多少像素以内才展开（CSS 像素）。
+ *
+ * 2026-11-02 用户要求：以前整条细线（12px 窗口）都算热区，英文输入时鼠标在
+ * 屏幕顶边附近一晃就把速览弹出来。现在只有贴到窗口顶部才展开。
+ *
+ * 这是**前端**那条入口的门槛（`onPointerMove`）；原生感应带在
+ * `window_dock.rs` 的 `SENSOR_TOP_EDGE_LOGIC`，两处必须一起改。
+ */
+const TOP_EDGE_HOVER_PX = 3;
+/**
  * 提示行停留多久后收成一条横线（毫秒）。
  * 每次露出来都只亮这么一下就收掉——鼠标路过时也能看清快捷键，但不会一直占着屏幕。
  */
@@ -1154,7 +1164,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     };
 
     // 指针在窗口内移动：收起时靠近展开；展开时取消「移开就收回」
-    const onPointerMove = () => {
+    const onPointerMove = (e: PointerEvent) => {
       pointerInside = true;
       clearRecall();
       if (hotkeyHoldTimer) {
@@ -1165,6 +1175,9 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       if (!dockedRef.current) return;
       if (animating || !hoverArmed || Date.now() - blurredAt < REVEAL_AFTER_BLUR_MS) return;
       if (phaseRef.current === "bar") {
+        // 只有指针贴到窗口上沿才展开（2026-11-02 用户要求）。
+        // 以前整条细线都是热区，英文输入时鼠标擦过屏幕顶边就误触弹出。
+        if (e.clientY > TOP_EDGE_HOVER_PX) return;
         // 长回提示高度后也要重新计时：万一这次没展开（冷却中 / 未解锁），
         // 提示条不会一直挂在屏幕上，1 秒后照样收成横线。
         growToHint(() => {

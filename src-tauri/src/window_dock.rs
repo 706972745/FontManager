@@ -43,9 +43,19 @@ const SENSOR_POLL_MS: u64 = 90;
 #[cfg(windows)]
 const SENSOR_SLOP_LOGIC: i32 = 6;
 
+/// **纵向**命中带（逻辑像素）：只认窗口**上沿**这一条，不再覆盖整条细线。
+///
+/// 2026-11-02 用户要求（原话：「英文有时候很容易误触到，然后展开速览界面…
+/// 鼠标必须碰到窗口顶部才可以展开速览界面」）：之前纵向是「整个窗口高度 + 容差」，
+/// 细线态窗口 15px 高、整条都算热区，鼠标在屏幕顶边附近一晃就弹出来。
+/// 现在收成 3 逻辑像素（≈ 细线顶边那几像素），必须真的贴到窗口顶部。
+/// 横向仍用 `SENSOR_SLOP_LOGIC`，手抓线的宽度和高度都不变。
+#[cfg(windows)]
+const SENSOR_TOP_EDGE_LOGIC: i32 = 3;
+
 #[cfg(windows)]
 mod platform {
-    use super::{PREV_PROC, QUICKBAR_MODE, SENSOR_SLOP_LOGIC};
+    use super::{PREV_PROC, QUICKBAR_MODE, SENSOR_SLOP_LOGIC, SENSOR_TOP_EDGE_LOGIC};
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, LOGPIXELSX};
@@ -140,21 +150,31 @@ mod platform {
 
     /// 把逻辑像素容差按窗口 DPI 换成物理像素（96 DPI = 1.0）。
     unsafe fn slop_px(hwnd: HWND) -> i32 {
+        px_from_logic(hwnd, SENSOR_SLOP_LOGIC)
+    }
+
+    /// 逻辑像素 → 物理像素（按窗口 DPI 缩放）
+    unsafe fn px_from_logic(hwnd: HWND, logic: i32) -> i32 {
         let hdc = GetDC(hwnd);
         if hdc.is_null() {
-            return SENSOR_SLOP_LOGIC;
+            return logic;
         }
         let dpi = GetDeviceCaps(hdc, LOGPIXELSX as i32);
         ReleaseDC(hwnd, hdc);
         if dpi <= 0 {
-            return SENSOR_SLOP_LOGIC;
+            return logic;
         }
-        ((SENSOR_SLOP_LOGIC as f32) * (dpi as f32) / 96.0).round() as i32
+        ((logic as f32) * (dpi as f32) / 96.0).round() as i32
     }
 
-    /// 光标是否落在窗口矩形里（外扩一点随 DPI 缩放的容差）。
-    /// 收成细线后鼠标几乎不可能「进入窗口」，这条判定就是细线唯一的 hover 入口；
-    /// 容差不能是 1（精确压线，手抖就废），也不能是写死的 22（离得老远就弹开）。
+    /// 光标是否落在**窗口上沿那条感应带**里。
+    ///
+    /// 横向：窗口宽度 ± `SENSOR_SLOP_LOGIC`（热区跟着手抓线走，手抓线多宽它就多宽）。
+    /// 纵向：**只认窗口上沿** ± `SENSOR_TOP_EDGE_LOGIC`，不再覆盖整条细线 ——
+    /// 必须把鼠标压到窗口顶部才展开（见该常量的说明，2026-11-02 收紧）。
+    ///
+    /// 注意：前端 `useQuickbarDock` 的 `onPointerMove` 是另一条展开入口，
+    /// 两边的纵向门槛必须一起改，只改这里仍会误触。
     pub fn cursor_near(raw_hwnd: isize) -> bool {
         if raw_hwnd == 0 {
             return false;
@@ -172,8 +192,9 @@ mod platform {
                 return false;
             }
             let slop = slop_px(raw_hwnd as HWND);
-            pt.y >= rect.top - slop
-                && pt.y <= rect.bottom + slop
+            let top_band = px_from_logic(raw_hwnd as HWND, SENSOR_TOP_EDGE_LOGIC);
+            pt.y >= rect.top - top_band
+                && pt.y <= rect.top + top_band
                 && pt.x >= rect.left - slop
                 && pt.x <= rect.right + slop
         }
