@@ -421,6 +421,20 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
       errors: string[];
       reactivateFailed: string[];
     }>("sync_family_copyright", { family, status }),
+  /**
+   * 按证据重算全库字族目录名（v7 迁移用）。默认只预演，`dryRun: false` 才真改。
+   * 只有证据给出明确分类才会改名，判不出来的目录原样保留。
+   */
+  resyncLibraryLabels: (dryRun = true) =>
+    invoke<{
+      dry_run: boolean;
+      checked: number;
+      changed: number;
+      unchanged: number;
+      no_evidence: number;
+      errors: string[];
+      items: { from: string; to: string; class: string }[];
+    }>("resync_library_labels", { dryRun }),
   /** 批量问「这些字面有没有中文字形」，返回同序布尔数组 */
   fontCjk: (probes: [string, number][]) =>
     invoke<boolean[]>("font_cjk", { probes }),

@@ -197,7 +197,8 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
                 .or_insert_with(|| crate::copyright::inspect_dir_files_only(dir))
                 .clone();
             for face in &mut parsed {
-                // 目录里有授权文件 / 目录名带后缀 → 用目录结论；否则只看这个字族自己的 name 表
+                // 目录里有授权文档且能归属到单字族 → 用目录结论；
+                // 否则只看这个字面自己的 name 表（目录名不参与判定，见 copyright.rs）
                 if found.class != crate::copyright::CopyrightClass::Unknown {
                     face.copyright_class = Some(found.class.as_str().to_string());
                     face.license_note = found.note.clone();
@@ -797,6 +798,144 @@ fn sync_family_copyright(
         errors,
         reactivate_failed,
     })
+}
+
+/** 按**证据**重算字族目录名（v7 迁移工具）。
+ *
+ * 为什么要有这个命令：v7 之前，目录名后缀既当输出又当输入（软件写出去、又读回来
+ * 当最权威的证据）。改成「目录名只做展示」之后，老库里那些按错误口径写下的后缀
+ * 就成了纯噪音 —— 用户看到的还是「商用免费」，而证据根本不支持。
+ *
+ * 但**不能自动跑**：批量改名是破坏性操作，库里的目录名也可能是用户自己整理的。
+ * 所以这里默认 `dry_run = true`，只报不改；只有明确传 false 才动文件。
+ *
+ * 规则只有一条：**证据给出明确分类才改名，判不出来的一个字都不动。**
+ * 不给无证据的目录乱贴标签 —— 那正是旧版干的事。
+ */
+#[derive(serde::Serialize)]
+pub struct LabelResyncItem {
+    pub from: String,
+    pub to: String,
+    pub class: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct LabelResyncReport {
+    pub dry_run: bool,
+    pub checked: usize,
+    pub changed: usize,
+    pub unchanged: usize,
+    pub no_evidence: usize,
+    pub errors: Vec<String>,
+    pub items: Vec<LabelResyncItem>,
+}
+
+/// 库里所有「装着字体的目录」（最多两层，跳过根）。
+fn collect_family_dirs(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let mut stack: Vec<(std::path::PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+    while let Some((d, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        let mut has_font = false;
+        let mut subs = Vec::new();
+        for e in entries.filter_map(|e| e.ok()) {
+            let p = e.path();
+            if p.is_dir() {
+                if depth < 2 {
+                    subs.push(p);
+                }
+            } else if crate::parser::is_font_file(&p) {
+                has_font = true;
+            }
+        }
+        if has_font && depth > 0 {
+            out.push(d.clone());
+        }
+        for s in subs {
+            stack.push((s, depth + 1));
+        }
+    }
+    out.sort();
+    out
+}
+
+#[tauri::command]
+fn resync_library_labels(
+    app: tauri::AppHandle,
+    dry_run: bool,
+) -> Result<LabelResyncReport, String> {
+    let store: State<Store> = app.state();
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    let library = scanner::effective_managed_dir(state.active_library_dir());
+    let mut report = LabelResyncReport {
+        dry_run,
+        checked: 0,
+        changed: 0,
+        unchanged: 0,
+        no_evidence: 0,
+        errors: Vec::new(),
+        items: Vec::new(),
+    };
+    for dir in collect_family_dirs(&library) {
+        let Some(name) = dir.file_name().and_then(|n| n.to_str()).map(String::from) else {
+            continue;
+        };
+        let family = copyright::family_of_dir_name(&name).to_string();
+        if family.is_empty() {
+            continue;
+        }
+        report.checked += 1;
+        // 目录级判定：授权文档 + 字体自带信息（目录名已不在证据链里）
+        let found = copyright::inspect_dir(&dir);
+        if found.class == copyright::CopyrightClass::Unknown {
+            // 没证据就别动 —— 保持用户原来的名字
+            report.no_evidence += 1;
+            continue;
+        }
+        if copyright::suffix_class(&name) == Some(found.class) {
+            report.unchanged += 1;
+            continue;
+        }
+        let Some(parent) = dir.parent() else { continue };
+        let target = parent.join(copyright::family_dir_name(&family, found.class));
+        if target == dir {
+            report.unchanged += 1;
+            continue;
+        }
+        let item = LabelResyncItem {
+            from: name.clone(),
+            to: target
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string(),
+            class: found.class.as_str().to_string(),
+        };
+        if dry_run {
+            report.changed += 1;
+            report.items.push(item);
+            continue;
+        }
+        match rename_family_dir(&mut state, &dir, &target) {
+            Ok(_) => {
+                report.changed += 1;
+                report.items.push(item);
+            }
+            Err(e) => report.errors.push(format!("{name}: {e}")),
+        }
+    }
+    crate::diag::log(&format!(
+        "[copyright] 目录名重算（{}）：检查 {} / 改 {} / 不变 {} / 无证据 {} / 失败 {}",
+        if dry_run { "预演" } else { "执行" },
+        report.checked,
+        report.changed,
+        report.unchanged,
+        report.no_evidence,
+        report.errors.len()
+    ));
+    Ok(report)
 }
 
 /** 一次问一批字面「有没有中文字形」。
@@ -2251,6 +2390,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_autostart,
             get_autostart,
+            resync_library_labels,
             dedupe_font_library,
             restore_deduped_fonts,
             scan_fonts,
@@ -2386,5 +2526,55 @@ mod session_tests {
         assert!(!path_in_library(Some(lib), r"E:\Users\someone\字体库2\a.ttf"));
         // 没配库目录 → 用默认 managed 目录，外部路径一律不算库内
         assert!(!path_in_library(None, r"D:\downloads\a.ttf"));
+    }
+}
+
+/// 真机核对用：把整个字库按新口径跑一遍，输出「目录名标注 → 证据判定」的对照表。
+/// **只读，不改任何文件。**
+///
+///   ZFM_LIB_DIR="E:\...\新建文件夹 (2)" cargo test --lib lib_label_probe -- --ignored --nocapture
+#[cfg(test)]
+mod lib_label_probe {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn lib_label_probe() {
+        let Ok(root) = std::env::var("ZFM_LIB_DIR") else {
+            return;
+        };
+        let dirs = collect_family_dirs(std::path::Path::new(&root));
+        println!("目录总数: {}", dirs.len());
+        let mut tally: std::collections::BTreeMap<String, usize> = Default::default();
+        let mut changed: Vec<String> = Vec::new();
+        let mut no_evidence = 0usize;
+        for d in &dirs {
+            let name = d
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            let old = copyright::suffix_class(&name);
+            let found = copyright::inspect_dir(d);
+            let key = format!(
+                "{}  ->  {}",
+                old.map(|c| c.as_str()).unwrap_or("(无后缀)"),
+                found.class.as_str()
+            );
+            *tally.entry(key).or_default() += 1;
+            if found.class == copyright::CopyrightClass::Unknown {
+                no_evidence += 1;
+            } else if old != Some(found.class) {
+                changed.push(format!("{name}  =>  {}", found.class.as_str()));
+            }
+        }
+        for (k, v) in &tally {
+            println!("  {v:>5}  {k}");
+        }
+        println!("无证据（保持原名）: {no_evidence}");
+        println!("有证据且与现名不同: {}", changed.len());
+        for c in changed.iter().take(40) {
+            println!("    {c}");
+        }
     }
 }

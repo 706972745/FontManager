@@ -225,14 +225,39 @@ fn resolve_class(
     faces: &[FontFace],
     infos_by_rel: &std::collections::HashMap<InfoKey, Vec<PathBuf>>,
     all_infos: &[(Option<PathBuf>, PathBuf)],
+    scope: copyright::DocScope,
 ) -> copyright::CopyrightClass {
     // 1. 版权信息文件：优先与字体「同批次 + 同目录」的那些。
     //    批次（origin）必须一致：一次拖入多个 zip 时它们都平铺在同一个 staging 里，
     //    只看相对目录会把 A 包的 OFL 套到 B 包的字体上。
+    //
+    //    **但文档还得能归属到这个字族**：目录里混着多个字族时，一份 OFL 不能代表
+    //    别人家的字体。旧版这里无条件采信第一个判出结果的文档，于是
+    //    「其他Fonts」这种平铺目录（4923 个字体 + 1 份 OFL）被整体染成「商用免费」。
     let key = info_key_for(staged);
     let mut candidates: Vec<PathBuf> = infos_by_rel.get(&key).cloned().unwrap_or_default();
-    // 跨目录兜底：整批只有一份、且和自己同一批次时才敢采信
-    if candidates.is_empty() {
+    if scope == copyright::DocScope::Mixed {
+        // 多字族目录：只认「文件名里写了这个字族」的文档，其余一律不猜
+        let family = faces
+            .iter()
+            .find(|f| !f.name_fallback)
+            .map(|f| f.family.as_str())
+            .unwrap_or("");
+        let token = copyright::norm_token(family);
+        if token.len() < 4 {
+            candidates.clear();
+        } else {
+            candidates.retain(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| copyright::norm_token(n).contains(&token))
+                    .unwrap_or(false)
+            });
+        }
+    }
+    // 跨目录兜底：整批只有一份、且和自己同一批次时才敢采信。
+    // 目录里混着多个字族时不做这个兜底 —— 那一份多半是「整包授权」，归属不明。
+    if candidates.is_empty() && scope == copyright::DocScope::Family {
         if let [(origin, path)] = all_infos {
             if *origin == staged.origin {
                 candidates = vec![path.clone()];
@@ -247,13 +272,8 @@ fn resolve_class(
             }
         }
     }
-    // 2. 文件夹备注的版权信息
-    if let Some(note) = staged.folder_note.as_deref() {
-        let class = copyright::classify_folder_name(note);
-        if class != copyright::CopyrightClass::Unknown {
-            return class;
-        }
-    }
+    // 2. 原来的「文件夹备注」这一级已删除（v7）：目录名是软件自己写的，
+    //    读回来当依据等于自证。用户要手工指定版权，走详情面板的下拉。
     // 3. 字体自带的版权信息
     for f in faces {
         let class = copyright::classify(f.license.as_deref());
@@ -637,6 +657,45 @@ pub fn install(
         .map(|i| (i.origin.clone(), i.path.clone()))
         .collect();
 
+    // 每个「批次 + 相对目录」里到底有几个字族 —— 决定那里的授权文档能不能归属到具体字族。
+    // 只在有授权文档时才需要算；而且见到第二个字族就停，平铺目录几乎不花时间。
+    let mut key_scope: std::collections::HashMap<InfoKey, copyright::DocScope> =
+        std::collections::HashMap::new();
+    if !infos_by_rel.is_empty() {
+        let mut first_family: std::collections::HashMap<InfoKey, String> =
+            std::collections::HashMap::new();
+        for f in &fonts {
+            let key = info_key_for(f);
+            if !infos_by_rel.contains_key(&key) {
+                continue;
+            }
+            if key_scope.get(&key) == Some(&copyright::DocScope::Mixed) {
+                continue;
+            }
+            for face in parser::parse_font_file(&f.path, FontSource::Managed) {
+                if face.name_fallback {
+                    continue;
+                }
+                match first_family.get(&key) {
+                    None => {
+                        first_family.insert(key.clone(), face.family.clone());
+                    }
+                    Some(first) if *first != face.family => {
+                        key_scope.insert(key.clone(), copyright::DocScope::Mixed);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // 没被标成 Mixed 的（真·单字族目录）才是 Family
+        for key in infos_by_rel.keys() {
+            key_scope
+                .entry(key.clone())
+                .or_insert(copyright::DocScope::Family);
+        }
+    }
+
     if matches!(mode, InstallMode::Move | InstallMode::Copy) || any_zip {
         if let Err(e) = fs::create_dir_all(library) {
             result.errors.push(e.to_string());
@@ -752,6 +811,10 @@ pub fn install(
                         &src_faces,
                         &infos_by_rel,
                         &all_infos,
+                        key_scope
+                            .get(&info_key_for(&staged))
+                            .copied()
+                            .unwrap_or(copyright::DocScope::Family),
                     ))
                 };
                 // 损坏 / 不完整的字体单独归档到 <库>/非完整字体/<家族（版权后缀）>/：
@@ -979,7 +1042,37 @@ fn license_targets(
         //
         // 代价（用户 2026-11-02 明确接受）：放在族目录外面的授权文档不会进目标库，
         // 源文件仍在原处。单族批次不受影响（走上面的 `1 =>` 分支）。
-        _ => Vec::new(),
+        //
+        // 唯一例外（v7）：**文件名点了某个字族的名**（`NotoSans-OFL.txt`）时归它。
+        // 判定那边（`resolve_class`）在多字族目录里也只认这种文档，
+        // 归档必须跟着判定走：判定用了哪份文档，就得把它放进那个字族目录，
+        // 否则下次扫描时证据已经不在了，同一个字体会从「商用免费」掉回「未知」。
+        _ => {
+            let stem = info
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(copyright::norm_token)
+                .unwrap_or_default();
+            let hits: Vec<PathBuf> = mine
+                .iter()
+                .filter(|d| {
+                    let key = d
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(copyright::family_of_dir_name)
+                        .map(copyright::norm_token)
+                        .unwrap_or_default();
+                    key.len() >= 4 && stem.contains(&key)
+                })
+                .cloned()
+                .collect();
+            if hits.len() == 1 {
+                hits
+            } else {
+                Vec::new()
+            }
+        }
     }
 }
 
@@ -1626,17 +1719,23 @@ mod tests {
             .expect("B 包的字体");
 
         assert_eq!(
-            resolve_class(font_a, &[], &infos_by_rel, &all_infos),
+            resolve_class(font_a, &[], &infos_by_rel, &all_infos, copyright::DocScope::Family),
             copyright::CopyrightClass::FreeCommercial,
             "A 包自己的 OFL 应该生效"
         );
         assert_ne!(
-            resolve_class(font_b, &[], &infos_by_rel, &all_infos),
+            resolve_class(font_b, &[], &infos_by_rel, &all_infos, copyright::DocScope::Family),
             copyright::CopyrightClass::FreeCommercial,
             "B 包没有授权文件，不能被 A 包的 OFL 串成商用免费"
         );
         assert_eq!(
-            resolve_class(font_b, &[], &infos_by_rel, &all_infos),
+            resolve_class(
+                font_b,
+                &[],
+                &infos_by_rel,
+                &all_infos,
+                copyright::DocScope::Family
+            ),
             copyright::CopyrightClass::Unknown,
             "判不出来就应该老实报未知"
         );
@@ -1859,7 +1958,8 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// 导入时版权来源的权重：版权信息文件 > 文件夹备注 > 字体自带信息
+    /// 导入时版权来源的权重（v7 之后）：授权文档 > 字体自带信息。
+    /// 目录名**不参与** —— 它本来就是软件自己写出去的，读回来等于自证。
     #[test]
     fn copyright_source_priority() {
         let tmp = std::env::temp_dir().join(format!("zfm-lic-test-{}", std::process::id()));
@@ -1876,22 +1976,49 @@ mod tests {
             Some("某某字体（收费字体）".to_string()),
         );
 
-        // 1. 同目录有版权信息文件：按文件正文判定（免费），文件夹备注的"收费"不生效
+        // 1. 同目录有版权信息文件：按文件正文判定（商用免费），文件夹名的「收费」不作数
         let mut by_rel: std::collections::HashMap<(Option<PathBuf>, PathBuf), Vec<PathBuf>> =
             std::collections::HashMap::new();
         by_rel.insert((None, PathBuf::new()), vec![license.clone()]);
         assert_eq!(
-            resolve_class(&staged, &[], &by_rel, &[(None, license.clone())]),
+            resolve_class(
+                &staged,
+                &[],
+                &by_rel,
+                &[(None, license.clone())],
+                copyright::DocScope::Family
+            ),
             copyright::CopyrightClass::FreeCommercial
         );
 
-        // 2. 没有版权信息文件时，用文件夹备注的版权（收费）
+        // 2. 目录名写着「收费字体」但没有授权证据 → 未知。
+        //    旧版这里会读目录名直接判 Paid，那正是「自己给自己作证」的入口。
         assert_eq!(
-            resolve_class(&staged, &[], &std::collections::HashMap::new(), &[]),
-            copyright::CopyrightClass::Paid
+            resolve_class(
+                &staged,
+                &[],
+                &std::collections::HashMap::new(),
+                &[],
+                copyright::DocScope::Family
+            ),
+            copyright::CopyrightClass::Unknown,
+            "目录名不能当版权证据"
         );
 
-        // 3. 两者都没有 → 未知（这里没有真实字体可解析，元数据一级也认不出来）
+        // 3. 目录里混着多个字族时，同一份 OFL 不能外溢给这个字族
+        assert_eq!(
+            resolve_class(
+                &staged,
+                &[],
+                &by_rel,
+                &[(None, license.clone())],
+                copyright::DocScope::Mixed
+            ),
+            copyright::CopyrightClass::Unknown,
+            "平铺目录里的授权文档不能整目录生效"
+        );
+
+        // 4. 什么都没有 → 未知
         let plain = StagedFile::new(
             tmp.join("Font-Regular.ttf"),
             true,
@@ -1900,7 +2027,13 @@ mod tests {
             Some("字体合集".to_string()),
         );
         assert_eq!(
-            resolve_class(&plain, &[], &std::collections::HashMap::new(), &[]),
+            resolve_class(
+                &plain,
+                &[],
+                &std::collections::HashMap::new(),
+                &[],
+                copyright::DocScope::Family
+            ),
             copyright::CopyrightClass::Unknown
         );
 
