@@ -152,7 +152,13 @@ const SCRIPT_FILTERS = [
   "vietnamese",
 ] as const;
 
-export function FilterMenu() {
+/**
+ * 顶栏「筛选」菜单。完整界面和速览界面共用。
+ *
+ * `membership`：速览界面传 true，多出一段「范围」—— 收藏 / 分组 / 快照。
+ * 完整界面不需要（那边走侧栏导航），所以默认不渲染，行为零变化。
+ */
+export function FilterMenu({ membership = false }: { membership?: boolean } = {}) {
   const t = useT();
   const classFilter = useFontStore((s) => s.classFilter);
   const toggleClassFilter = useFontStore((s) => s.toggleClassFilter);
@@ -175,6 +181,14 @@ export function FilterMenu() {
   const charFilter = useFontStore((s) => s.charFilter);
   const charSearching = useFontStore((s) => s.charSearching);
   const setCharFilter = useFontStore((s) => s.setCharFilter);
+  const favoriteOnly = useFontStore((s) => s.favoriteOnly);
+  const setFavoriteOnly = useFontStore((s) => s.setFavoriteOnly);
+  const collectionFilter = useFontStore((s) => s.collectionFilter);
+  const toggleCollectionFilter = useFontStore((s) => s.toggleCollectionFilter);
+  const snapshotFilter = useFontStore((s) => s.snapshotFilter);
+  const toggleSnapshotFilter = useFontStore((s) => s.toggleSnapshotFilter);
+  const collections = useFontStore((s) => s.collections);
+  const snapshots = useFontStore((s) => s.snapshots);
   const { open, toggle, close, triggerRef, listRef } = usePopoverMenu("filter-menu");
 
   const activeCount =
@@ -187,7 +201,10 @@ export function FilterMenu() {
     (charFilter ? 1 : 0) +
     (variableOnly ? 1 : 0) +
     (toggleableOnly ? 1 : 0) +
-    (incompleteOnly ? 1 : 0);
+    (incompleteOnly ? 1 : 0) +
+    (membership
+      ? (favoriteOnly ? 1 : 0) + collectionFilter.length + snapshotFilter.length
+      : 0);
 
   return (
     <div className="sort-wrap">
@@ -220,6 +237,64 @@ export function FilterMenu() {
               exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.13 } }}
               transition={springSnappy}
             >
+              {membership && (
+                <>
+                  <li className="filter-heading" role="none">
+                    {t("filter.scope")}
+                  </li>
+                  <li>
+                    <button
+                      role="option"
+                      aria-selected={favoriteOnly}
+                      className={favoriteOnly ? "sort-item sort-active" : "sort-item"}
+                      onClick={() => setFavoriteOnly(!favoriteOnly)}
+                    >
+                      <span>{t("side.favorites")}</span>
+                      {favoriteOnly && <Check size={13} strokeWidth={2} />}
+                    </button>
+                  </li>
+                  {Object.keys(collections).length > 0 && (
+                    <li className="filter-heading" role="none">
+                      {t("side.collections")}
+                    </li>
+                  )}
+                  {Object.keys(collections).map((name) => (
+                    <li key={`c-${name}`}>
+                      <button
+                        role="option"
+                        aria-selected={collectionFilter.includes(name)}
+                        className={
+                          collectionFilter.includes(name) ? "sort-item sort-active" : "sort-item"
+                        }
+                        onClick={() => toggleCollectionFilter(name)}
+                      >
+                        <span>{name}</span>
+                        {collectionFilter.includes(name) && <Check size={13} strokeWidth={2} />}
+                      </button>
+                    </li>
+                  ))}
+                  {snapshots.length > 0 && (
+                    <li className="filter-heading" role="none">
+                      {t("side.snapshots")}
+                    </li>
+                  )}
+                  {snapshots.map((snap) => (
+                    <li key={`s-${snap.name}`}>
+                      <button
+                        role="option"
+                        aria-selected={snapshotFilter.includes(snap.name)}
+                        className={
+                          snapshotFilter.includes(snap.name) ? "sort-item sort-active" : "sort-item"
+                        }
+                        onClick={() => toggleSnapshotFilter(snap.name)}
+                      >
+                        <span>{snap.name}</span>
+                        {snapshotFilter.includes(snap.name) && <Check size={13} strokeWidth={2} />}
+                      </button>
+                    </li>
+                  ))}
+                </>
+              )}
               <li className="filter-heading" role="none">
                 {t("filter.show")}
               </li>

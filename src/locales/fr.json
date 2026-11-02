@@ -253,6 +253,7 @@
   "filter.fileFormat": "Format de fichier",
   "filter.languageSupport": "Langues prises en charge",
   "filter.show": "Afficher",
+  "filter.scope": "Portée",
   "filter.toggleableOnly": "Masquer les polices que l’OS ne laisse pas désactiver",
   "filter.typography": "Fonctions typographiques",
   "filter.variableOnly": "Variables uniquement",

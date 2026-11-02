@@ -57,6 +57,7 @@ import {
 const QB_OVERSCAN = experiment.quickbarOverscan();
 const QB_ROOT_MARGIN = experiment.quickbarRootMargin();
 import type { FontFace } from "../lib/ipc";
+import { buildFaceIndexCached, entryFaceIds, faceKey } from "../lib/snapshotKey";
 import { FilterMenu } from "./TopBar";
 
 /**
@@ -314,6 +315,14 @@ export function QuickBar() {
   const incompleteOnly = useFontStore((s) => s.incompleteOnly);
   const licenseFilter = useFontStore((s) => s.licenseFilter);
   const copyrightStatus = useFontStore((s) => s.copyrightStatus);
+  // 速览专属作用域筛选：收藏 / 分组 / 快照（完整界面走侧栏导航，不用这三个）
+  const favoriteOnly = useFontStore((s) => s.favoriteOnly);
+  const collectionFilter = useFontStore((s) => s.collectionFilter);
+  const snapshotFilter = useFontStore((s) => s.snapshotFilter);
+  const favorites = useFontStore((s) => s.favorites);
+  const collections = useFontStore((s) => s.collections);
+  const collectionFaces = useFontStore((s) => s.collectionFaces);
+  const snapshots = useFontStore((s) => s.snapshots);
   const sampleText = useFontStore((s) => s.sampleText);
   const setSampleText = useFontStore((s) => s.setSampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
@@ -413,13 +422,43 @@ export function QuickBar() {
       licenseFilter,
       copyrightStatus,
     });
+    // 收藏 / 分组 / 快照：口径与侧栏导航**完全一致**（分组取「字族级 ∪ 字重级」并集，
+    // 快照用可移植标识解析成当前机器的字面 id，不能按路径比 —— TTC 一个文件多个族）。
+    let scoped = filtered;
+    if (favoriteOnly) {
+      const fav = new Set(favorites);
+      scoped = scoped.filter((f) => fav.has(f.name));
+    }
+    if (collectionFilter.length > 0) {
+      const memberNames = new Set<string>();
+      const memberFaces = new Set<string>();
+      for (const g of collectionFilter) {
+        for (const n of collections[g] ?? []) memberNames.add(n);
+        for (const k of collectionFaces[g] ?? []) memberFaces.add(k);
+      }
+      scoped = scoped.filter(
+        (f) =>
+          memberNames.has(f.name) ||
+          (memberFaces.size > 0 && f.faces.some((fc) => memberFaces.has(faceKey(fc)))),
+      );
+    }
+    if (snapshotFilter.length > 0) {
+      const index = buildFaceIndexCached(fonts);
+      const ids = new Set<string>();
+      for (const snap of snapshots) {
+        if (!snapshotFilter.includes(snap.name)) continue;
+        for (const id of entryFaceIds(snap.entries, index)) ids.add(id);
+      }
+      scoped = scoped.filter((f) => f.faces.some((fc) => ids.has(fc.id)));
+    }
     const q = query.trim().toLowerCase();
-    const hit = q ? filtered.filter((f) => f.name.toLowerCase().includes(q)) : filtered;
+    const hit = q ? scoped.filter((f) => f.name.toLowerCase().includes(q)) : scoped;
     return sortFamilies(hit, sort);
   }, [
     fonts, tags, sessionActivated, query, sort,
     classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter,
     charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus,
+    favoriteOnly, collectionFilter, snapshotFilter, favorites, collections, collectionFaces, snapshots,
   ]);
 
   /**
@@ -621,7 +660,7 @@ export function QuickBar() {
               />
               <span className="size-value tabular">{SIZES[sizeIndex]}</span>
             </div>
-            <FilterMenu />
+            <FilterMenu membership />
           </div>
 
           {/* 滚动容器是 .qb-body（overflow-y:auto）；.qb-list 只是 flex 列，

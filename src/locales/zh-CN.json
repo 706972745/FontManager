@@ -250,6 +250,7 @@
   "filter.fileFormat": "文件格式",
   "filter.languageSupport": "语言支持",
   "filter.show": "显示",
+  "filter.scope": "范围",
   "filter.toggleableOnly": "隐藏系统不允许停用的字体",
   "filter.typography": "排版特性",
   "filter.variableOnly": "仅可变字体",

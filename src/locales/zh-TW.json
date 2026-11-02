@@ -247,6 +247,7 @@
   "filter.fileFormat": "檔案格式",
   "filter.languageSupport": "語言支援",
   "filter.show": "顯示",
+  "filter.scope": "範圍",
   "filter.toggleableOnly": "隱藏系統不允許停用的字型",
   "filter.typography": "排版特性",
   "filter.variableOnly": "僅可變字型",
