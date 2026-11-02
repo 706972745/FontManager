@@ -1687,6 +1687,47 @@ mod tests {
         );
     }
 
+    /// 一个 zip 里只有**一个字族**（同族多字重），授权文件叫「版权说明.txt」放在包根：
+    /// 它必须落进这个唯一的字族目录 —— 既不能丢，也不能复制多份。
+    #[test]
+    fn zip_single_family_root_doc_lands_in_that_family() {
+        // 「版权说明.txt」靠 .txt 扩展名就够；即使去掉扩展名，「版权」也是关键词
+        assert!(is_info_file(Path::new("版权说明.txt")));
+        assert!(is_info_file(Path::new("版权说明")));
+        assert!(!is_info_file(Path::new("Regular.ttf")), "字体不能被当作文档");
+
+        let zip = PathBuf::from(r"C:/fonts/方正兰亭黑.zip");
+        let dir = PathBuf::from(r"C:/lib/方正兰亭黑（个人免费）");
+
+        let mut doc =
+            StagedFile::new(PathBuf::from("版权说明.txt"), false, true, PathBuf::new(), None);
+        doc.origin = Some(zip.clone());
+
+        let mut origin_dirs: std::collections::HashMap<Option<PathBuf>, Vec<PathBuf>> =
+            std::collections::HashMap::new();
+        origin_dirs.insert(Some(zip.clone()), vec![dir.clone()]);
+
+        // 情形 1：说明与字体同在包根（zip 内相对目录都是空）→ 走「同目录只有一个族」
+        let mut rel_dirs: std::collections::HashMap<InfoKey, Vec<PathBuf>> =
+            std::collections::HashMap::new();
+        rel_dirs.insert((Some(zip.clone()), PathBuf::new()), vec![dir.clone()]);
+        assert_eq!(
+            license_targets(&doc, &rel_dirs, &origin_dirs, &[dir.clone()]),
+            vec![dir.clone()],
+            "同层只有一个字族：说明文件进这个族目录"
+        );
+
+        // 情形 2：字体在子目录、说明在包根 → 同批次只产生了一个族，仍然进它
+        let mut sub_dirs: std::collections::HashMap<InfoKey, Vec<PathBuf>> =
+            std::collections::HashMap::new();
+        sub_dirs.insert((Some(zip.clone()), PathBuf::from("Regular")), vec![dir.clone()]);
+        assert_eq!(
+            license_targets(&doc, &sub_dirs, &origin_dirs, &[dir.clone()]),
+            vec![dir.clone()],
+            "说明在包根、字体在子目录：同批次仅一个族，仍然进它"
+        );
+    }
+
     /// 松散文件夹（一次拖入一个文件夹）：根目录的授权文件**不再**发给文件夹里的每个字族。
     ///
     /// 2026-11-02 改：以前这里断言「广播给每个族」，那正是字体库导入产生 54 万个副本的根源。
