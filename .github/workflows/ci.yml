@@ -1,0 +1,80 @@
+﻿# 日常 CI：只做「代码有没有坏」的检查，不打包、不发布。
+#
+# 为什么只有 Windows：本项目是 Windows 专属（依赖 windows-sys / GDI / 注册表 /
+# UI Automation），src-tauri 里 cfg(windows) 70 处，Linux/macOS 那几处是上游残留。
+# 上游带过来的 workflowLatest_.yml 每次推 main 都会跑全平台，macOS 两个 job 与
+# Linux job 从未成功过（历史 15 次运行全部 failure），已于 2026-11-02 删除。
+#
+# 职责划分：
+#   ci.yml              → push / PR 时验证（本文件）
+#   release-signed.yml  → 推 v* tag 时构建 + 签名 + 发布
+
+name: CI (Windows)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  COREPACK_ENABLE_AUTO_PIN: "0"
+  COREPACK_ENABLE_STRICT: "0"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  check:
+    name: 类型检查 + 单测 + 编译检查
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add x86_64-pc-windows-msvc target
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: src-tauri
+          key: windows-x64-ci
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tsc --noEmit + vite build（package.json 的 build 脚本 = tsc && vite build）
+      # dist/ 同时是后面 cargo check 里 tauri-build 需要的产物目录
+      - name: 类型检查 + 前端构建
+        run: pnpm build
+
+      - name: 前端单测
+        run: node --test "tests/**/*.test.ts"
+
+      # 只编译不运行：避免测试对真实注册表 / 字体库的依赖在 runner 上不稳定
+      - name: Rust 编译检查（含测试代码）
+        working-directory: src-tauri
+        run: cargo check --locked --all-targets
