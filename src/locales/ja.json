@@ -777,6 +777,8 @@
   "toast.nothingToInstall": "インストールするものがありません",
   "toast.nothingToInstallSub": "ドロップされたものにフォントファイルが見つかりませんでした",
   "toast.webfontsSkipped": "WOFF {count} 件をスキップしました（同じフォントの TTF/OTF があるか、WOFF2 非対応）",
+  "toast.zipMultiFamily": "「{name}」には複数のフォントファミリーが含まれているため、インポートを中止しました",
+  "toast.zipMultiFamilySub": "パッケージ内の {count} 個のフォントファイルが別々のファミリーに分かれています：{families}。展開してからファミリーごとにインポートしてください。",
   "toast.sourcesRecycled": "元のファイル {count} 件をゴミ箱へ移動しました",
   "toast.sourcesRecycledSub": "ドライブをまたぐ「移動」は直接転送できないため、ライブラリへコピーしました。元ファイルはゴミ箱から復元できます。",
   "toast.onlineDetailFailed": "フォントの詳細を読み込めませんでした",

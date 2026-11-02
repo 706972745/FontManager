@@ -809,6 +809,8 @@
   "toast.nothingToInstall": "Nada para instalar",
   "toast.nothingToInstallSub": "Nenhum arquivo de fonte encontrado no que você soltou",
   "toast.webfontsSkipped": "{count} arquivo(s) WOFF ignorado(s) — a mesma fonte já tem TTF/OTF, ou WOFF2 não é suportado",
+  "toast.zipMultiFamily": "“{name}” contém várias famílias de fontes — importação recusada",
+  "toast.zipMultiFamilySub": "Os {count} arquivos do pacote pertencem a famílias diferentes: {families}. Descompacte o pacote e importe uma família por vez.",
   "toast.sourcesRecycled": "{count} arquivo(s) de origem movido(s) para a Lixeira",
   "toast.sourcesRecycledSub": "«Mover» entre unidades não transfere diretamente, então os arquivos foram copiados para a biblioteca. Restaure os originais da Lixeira.",
   "toast.onlineDetailFailed": "Não foi possível carregar os detalhes da fonte",

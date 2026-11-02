@@ -1960,6 +1960,16 @@ export const useFontStore = create<FontStore>((set, get) => ({
         void warnMissingLicenses(result.installed);
       }
       for (const err of result.errors) toast.error(t("toast.installFailed"), err);
+      // 一个包里混了多个字族 → 整包拒绝（后端判定，这里说清是哪个包、有哪些字族）
+      for (const zip of result.rejectedZips ?? []) {
+        toast.error(
+          t("toast.zipMultiFamily", { name: zip.name }),
+          t("toast.zipMultiFamilySub", {
+            count: zip.fontCount,
+            families: zip.families.join(", "),
+          }),
+        );
+      }
       // 跨盘「移动」：源文件进的是 Windows 回收站，不是被搬走 —— 必须说清楚（C7）
       if (result.recycledSources?.length) {
         toast.info(
@@ -1974,7 +1984,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
       if (
         result.installed.length === 0 &&
         result.errors.length === 0 &&
-        result.duplicates.length === 0
+        result.duplicates.length === 0 &&
+        // 整个包被拒的情况上面已经说清楚了，别再说一句「没有可安装的内容」
+        !(result.rejectedZips?.length)
       ) {
         toast.error(t("toast.nothingToInstall"), t("toast.nothingToInstallSub"));
       }

@@ -803,6 +803,8 @@
   "toast.nothingToInstall": "Nothing to install",
   "toast.nothingToInstallSub": "No font files found in the drop",
   "toast.webfontsSkipped": "Skipped {count} WOFF file(s) — same font already has TTF/OTF, or WOFF2 is unsupported",
+  "toast.zipMultiFamily": "“{name}” contains more than one font family — import refused",
+  "toast.zipMultiFamilySub": "Its {count} font files belong to different families: {families}. Unzip the package and import one family at a time.",
   "toast.sourcesRecycled": "Moved {count} source file(s) to the Recycle Bin",
   "toast.sourcesRecycledSub": "Cross-drive \"Move\" can't relocate files directly, so they were copied into the library. Restore the originals from the Recycle Bin if needed.",
   "toast.onlineDetailFailed": "Couldn’t load font details",

@@ -809,6 +809,8 @@
   "toast.nothingToInstall": "Rien à installer",
   "toast.nothingToInstallSub": "Aucun fichier de police dans ce que vous avez déposé",
   "toast.webfontsSkipped": "{count} fichier(s) WOFF ignoré(s) : la même police existe déjà en TTF/OTF, ou WOFF2 n'est pas pris en charge",
+  "toast.zipMultiFamily": "« {name} » contient plusieurs familles de polices : import refusé",
+  "toast.zipMultiFamilySub": "Les {count} fichiers du paquet appartiennent à des familles différentes : {families}. Décompressez l’archive et importez une famille à la fois.",
   "toast.sourcesRecycled": "{count} fichier(s) source déplacé(s) dans la Corbeille",
   "toast.sourcesRecycledSub": "Le « déplacement » entre disques ne peut pas transférer directement : les fichiers ont été copiés dans la bibliothèque. Restaurez les originaux depuis la Corbeille.",
   "toast.onlineDetailFailed": "Impossible de charger les détails de la police",

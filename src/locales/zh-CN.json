@@ -794,6 +794,8 @@
   "toast.nothingToInstall": "没有可安装的内容",
   "toast.nothingToInstallSub": "拖入的内容里没有找到字体文件",
   "toast.webfontsSkipped": "已跳过 {count} 个 WOFF（同字体已有 TTF/OTF，或 WOFF2 不受支持）",
+  "toast.zipMultiFamily": "「{name}」包含多个字族，已拒绝导入",
+  "toast.zipMultiFamilySub": "包内 {count} 个字体文件分属不同字族：{families}。请解压后按字族分别导入。",
   "toast.sourcesRecycled": "源文件已移入回收站（{count} 个）",
   "toast.sourcesRecycledSub": "跨盘「移动」无法直接搬运，已改为复制入库；需要原文件可从回收站还原",
   "toast.onlineDetailFailed": "无法加载字体详情",
