@@ -126,6 +126,18 @@ export interface InstallResult {
   webfontsSkipped?: number;
   /** 「移动」导入跨盘降级成「复制 + 源文件进回收站」的源路径（C7） */
   recycledSources?: string[];
+  /** 因「一个压缩包里混了多个字族」被整包拒绝的包 */
+  rejectedZips?: RejectedZip[];
+}
+
+/** 混装多个字族、被整包拒绝导入的压缩包 */
+export interface RejectedZip {
+  /** 压缩包文件名 */
+  name: string;
+  /** 包里识别到的字族名（最多 5 个） */
+  families: string[];
+  /** 被拒绝的字体文件数 */
+  fontCount: number;
 }
 
 export interface ScanProgress {

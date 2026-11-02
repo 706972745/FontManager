@@ -50,6 +50,26 @@ pub struct InstallResult {
     /// 同名但内容不同的文档：记下目标路径，不覆盖、也不生成 N- 副本
     #[serde(default)]
     pub doc_conflicts: Vec<String>,
+    /// 因「一个压缩包里混了多个字族」被整包拒绝的包。
+    /// 非空时前端要明确说清是哪个包、里面有哪些字族，而不是只说「没导进来」。
+    #[serde(default)]
+    pub rejected_zips: Vec<RejectedZip>,
+}
+
+/// 被拒绝导入的压缩包：一个包里混了多个字族。
+///
+/// 为什么要拒（用户 2026-11-02 的要求）：压缩包的包名会作为「文件夹备注」参与版权判定，
+/// 包内平铺的授权文档又没法归属到具体字族（见 resolve_class 的注释）。一个包装多个字族时，
+/// 这份备注 / 文档会被套到包内**所有**字体上 —— 与其猜，不如整包拒绝、让用户按字族拆开再导。
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RejectedZip {
+    /// 压缩包文件名（不带目录，便于直接展示）
+    pub name: String,
+    /// 包里识别到的字族名（最多 `ZIP_FAMILY_LIST_MAX` 个）
+    pub families: Vec<String>,
+    /// 被拒绝的字体文件数
+    pub font_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -614,6 +634,106 @@ pub fn relocate_incomplete(library: &Path, faces: &[FontFace]) -> Vec<(String, S
     moved
 }
 
+/// 提示里最多列几个字族名（再多就用「等」概括，提示框一屏放得下）
+const ZIP_FAMILY_LIST_MAX: usize = 5;
+
+fn is_zip_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+}
+
+/// 扫一批字体，按出现顺序收集其中不同的字族名。
+///
+/// 凑够 `want` 个就停 —— 判定「是不是多字族包」只需要看到第二个，几百个字体的大包
+/// 不必为此全解析一遍。解析不出来的（占位字面 `name_fallback`）不算数，
+/// 否则包里混一个坏文件就可能把正常包误拒。
+fn zip_families(fonts: &[&StagedFile], want: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for f in fonts {
+        for face in parser::parse_font_file(&f.path, FontSource::Managed) {
+            if face.name_fallback {
+                continue;
+            }
+            let shown = face.family.trim();
+            if shown.is_empty() {
+                continue;
+            }
+            // 比较用规范化键（压空白 + 小写），展示用原样：不同字重的 name 表偶尔有
+            // 大小写 / 尾空格差异，不规范化会把同一族算成两族。
+            let key = shown.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+            if !seen.insert(key) {
+                continue;
+            }
+            out.push(shown.to_string());
+            if out.len() >= want {
+                return out;
+            }
+        }
+    }
+    out
+}
+
+/// 把「混了多个字族」的压缩包整包摘掉：字体、连同它解压出来的授权文档一起丢弃。
+///
+/// 只认 zip 来源 —— 拖入的文件夹有真实目录结构，授权文档能按目录归属到字族，不需要拒。
+/// 一次拖入多个包时逐个判定：只拒有问题的那个，正常的包照常导入。
+fn reject_multi_family_zips(files: Vec<StagedFile>) -> (Vec<StagedFile>, Vec<RejectedZip>) {
+    let mut by_origin: std::collections::HashMap<PathBuf, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (i, f) in files.iter().enumerate() {
+        if !f.is_font {
+            continue;
+        }
+        let Some(origin) = &f.origin else { continue };
+        // 只按来源判断是不是 zip（WOFF 解包出的转换文件 is_zip=false，但 origin 仍是那个包）
+        if !is_zip_path(origin) {
+            continue;
+        }
+        by_origin.entry(origin.clone()).or_default().push(i);
+    }
+    if by_origin.is_empty() {
+        return (files, Vec::new());
+    }
+
+    let mut rejected: Vec<RejectedZip> = Vec::new();
+    let mut drop_origins: HashSet<PathBuf> = HashSet::new();
+    for (origin, idx) in by_origin {
+        let refs: Vec<&StagedFile> = idx.iter().map(|&i| &files[i]).collect();
+        let families = zip_families(&refs, ZIP_FAMILY_LIST_MAX + 1);
+        // 0 个 = 里面的字体一个都解析不出来（坏包），交给后面的正常流程报错；
+        // 1 个 = 单字族，放行
+        if families.len() < 2 {
+            continue;
+        }
+        crate::diag::log(&format!(
+            "[install] 拒绝多字族压缩包 {:?}：{:?}（{} 个字体文件）",
+            origin,
+            families,
+            refs.len()
+        ));
+        rejected.push(RejectedZip {
+            name: origin
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            families: families.into_iter().take(ZIP_FAMILY_LIST_MAX).collect(),
+            font_count: refs.len(),
+        });
+        drop_origins.insert(origin);
+    }
+    if rejected.is_empty() {
+        return (files, rejected);
+    }
+    rejected.sort_by(|a, b| a.name.cmp(&b.name));
+    let kept: Vec<StagedFile> = files
+        .into_iter()
+        .filter(|f| !f.origin.as_ref().is_some_and(|o| drop_origins.contains(o)))
+        .collect();
+    (kept, rejected)
+}
+
 pub fn install(
     app: &tauri::AppHandle,
     dropped: Vec<String>,
@@ -634,6 +754,10 @@ pub fn install(
     }
     // WOFF 判重 / 解包（见 process_webfonts 与 webfonts 模块注释）
     let files = process_webfonts(files, &staging, &mut result);
+
+    // 混装多个字族的压缩包 → 整包拒绝（见 reject_multi_family_zips 的注释）
+    let (files, rejected_zips) = reject_multi_family_zips(files);
+    result.rejected_zips = rejected_zips;
 
     // zip 导入无论选择何种模式都移动进字体库（zip 解压出的临时文件没有"链接"意义）；
     // WOFF 解包出的转换文件落在 staging 临时目录，同理强制移动
@@ -1676,6 +1800,81 @@ mod tests {
         zw.finish().unwrap();
     }
 
+    /// 一个 zip 里混了两个字族 → 整包拒绝；同字族的不同字重 → 正常放行。
+    ///
+    /// 用系统自带字体做真实解析，CI 镜像里字体不一定齐，所以标记 ignore：
+    /// 本地验证 `cargo test --lib -- --ignored multi_family_zip`。
+    #[test]
+    #[ignore = "依赖系统字体，本地手工跑（CI 镜像字体不保证齐）"]
+    fn multi_family_zip_rejected_end_to_end() {
+        let fonts_dir = PathBuf::from(r"C:\Windows\Fonts");
+        let regular = fonts_dir.join("arial.ttf");
+        let bold = fonts_dir.join("arialbd.ttf");
+        let serif = fonts_dir.join("times.ttf");
+        if !(regular.is_file() && bold.is_file() && serif.is_file()) {
+            eprintln!("跳过：本机系统字体不全");
+            return;
+        }
+        let tmp = std::env::temp_dir().join(format!("zfm-multifam-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let staging = tmp.join("staging");
+        let (arial, arial_bold, times) = (
+            fs::read(&regular).unwrap(),
+            fs::read(&bold).unwrap(),
+            fs::read(&serif).unwrap(),
+        );
+
+        // ① 同字族的两个字重 → 允许
+        let one = tmp.join("Arial.zip");
+        write_zip(
+            &one,
+            &[("arial.ttf", &arial[..]), ("arialbd.ttf", &arial_bold[..])],
+        );
+        let (kept, rejected) =
+            reject_multi_family_zips(expand_dropped(&one, &staging).unwrap());
+        assert!(rejected.is_empty(), "同字族多字重不该被拒：{rejected:?}");
+        assert_eq!(kept.iter().filter(|f| f.is_font).count(), 2);
+
+        // ② 两个字族 → 整包拒绝，字体和解压出的授权文档一起丢
+        let two = tmp.join("Mixed.zip");
+        write_zip(
+            &two,
+            &[
+                ("arial.ttf", &arial[..]),
+                ("times.ttf", &times[..]),
+                ("OFL.txt", &b"SIL Open Font License"[..]),
+            ],
+        );
+        let (kept, rejected) =
+            reject_multi_family_zips(expand_dropped(&two, &staging).unwrap());
+        assert_eq!(rejected.len(), 1, "应该只拒这一个包：{rejected:?}");
+        assert_eq!(rejected[0].name, "Mixed.zip");
+        assert_eq!(rejected[0].font_count, 2);
+        assert!(rejected[0].families.len() >= 2, "要能报出包里的字族名");
+        assert_eq!(kept.len(), 0, "整包都该被摘掉（含授权文档）");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// 拖入文件夹不走这条规则：目录结构能让授权文档归属到字族，不需要整包拒绝。
+    #[test]
+    fn folder_import_is_never_rejected() {
+        let tmp = std::env::temp_dir().join(format!("zfm-folderfam-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let pack = tmp.join("Some Pack");
+        fs::create_dir_all(pack.join("sub")).unwrap();
+        fs::write(pack.join("a.ttf"), b"aaa").unwrap();
+        fs::write(pack.join("sub/b.ttf"), b"bbb").unwrap();
+
+        let files = expand_dropped(&pack, &tmp.join("staging")).unwrap();
+        let (kept, rejected) = reject_multi_family_zips(files);
+        assert!(rejected.is_empty(), "文件夹导入不该被拒");
+        assert_eq!(kept.len(), 2);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     /// 一次导入多个 zip：A 包的授权文件不能套到 B 包的字体上。
     /// （解压后都平铺在同一个 staging 目录，两个包都把字体放在根目录时 rel 都是空）
     #[test]
@@ -1951,6 +2150,8 @@ mod tests {
             docs_skipped: 0,
             docs_unassigned: 0,
             doc_conflicts: vec![],
+            // 1.1.7 之后新增：多字族压缩包拒绝清单，本测试不涉及
+            rejected_zips: vec![],
         };
         let _ = process_webfonts(vec![staged], &staging, &mut result);
 

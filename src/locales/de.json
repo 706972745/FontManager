@@ -793,6 +793,8 @@
   "toast.nothingToInstall": "Nichts zu installieren",
   "toast.nothingToInstallSub": "Im Abgelegten wurden keine Schriftdateien gefunden",
   "toast.webfontsSkipped": "{count} WOFF-Datei(en) übersprungen — gleiche Schrift bereits als TTF/OTF vorhanden oder WOFF2 nicht unterstützt",
+  "toast.zipMultiFamily": "„{name}“ enthält mehrere Schriftfamilien – Import abgelehnt",
+  "toast.zipMultiFamilySub": "Die {count} Schriftdateien im Paket gehören zu verschiedenen Familien: {families}. Bitte entpacken und familienweise importieren.",
   "toast.sourcesRecycled": "{count} Quelldatei(en) in den Papierkorb verschoben",
   "toast.sourcesRecycledSub": "„Verschieben“ über Laufwerksgrenzen kopiert in die Bibliothek; die Originale lassen sich aus dem Papierkorb wiederherstellen.",
   "toast.onlineDetailFailed": "Schriftdetails konnten nicht geladen werden",
