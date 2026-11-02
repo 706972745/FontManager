@@ -109,6 +109,15 @@ test('"auto" and unknown override values fall back to auto detection', () => {
   assert.equal(effectiveCopyrightClass(null, "bogus"), "unknown");
 });
 
+test('后端回 "free" 不是证据，手动覆盖 "free" 才是用户的意思（v7 分界）', () => {
+  // 老缓存 / 老后端可能还在回 "free"：那是 v7 之前放大出来的，不能据它宣称可商用
+  assert.equal(effectiveCopyrightClass(null, undefined, "free"), "unknown");
+  // 但字体自带的 OFL 原文仍能兜底
+  assert.equal(effectiveCopyrightClass("SIL Open Font License", undefined, "free"), "free_commercial");
+  // 手动覆盖里的 "free" 是用户当年亲手点的，按商用免费读，且优先于后端结论
+  assert.equal(effectiveCopyrightClass(null, "free", "paid"), "free_commercial");
+});
+
 test("copyrightExpired judges the YYYY-MM-DD expiry date", () => {
   assert.equal(copyrightExpired(null), false);
   assert.equal(copyrightExpired(undefined), false);

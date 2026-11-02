@@ -4,6 +4,37 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.7] — 未发布（代码已就绪，等打 tag）
+
+> 1.1.6 发版后当天发现的前端回归。只影响「历史上手动标注过免费」的字族，
+> 自动判定那条主链路不受影响。
+
+### 修复：手动标注的「免费」被抹成「未知」（v1.1.6 回归）
+
+v7 把 `normalizeCopyright("free")` 改成返回「未知」，本意是防止**自动判定**把
+笼统值放大成「商用免费」。但同一个函数也服务**手动覆盖** —— 老版本 UI 写进
+`prefs.copyrightStatus` 的值就是 `"free"`。改完之后：
+
+- 详情面板那排版权按钮一个都不亮（状态算成 unknown，不匹配任何选项）；
+- 更糟的是覆盖优先级最高，一个空的「未知」会反过来压掉后端的正确结论。
+
+现在按方向拆开，两种 `"free"` 不再共用一个出口：
+
+- **手动覆盖**里的 `"free"` → 仍按「商用免费」读。那是用户当年亲手点的，不是
+  软件替他猜的；抹掉等于让老库里的手工标注全部失效。
+- **自动判定结论**（`effectiveCopyrightClass` 的 `dirClass`）→ `"free"` 直接当成
+  「后端没给结论」，落到字体 name 表文本兜底，绝不据此宣称可商用。
+
+Rust 侧不动：`class_from_status("free") => None` 本来就是正确的拦截点，问题只
+出在前端把「读老数据」和「读自动结论」混成了一个函数。
+
+新增测试 `后端回 "free" 不是证据，手动覆盖 "free" 才是用户的意思（v7 分界）`
+钉住这条边界；前端 217 项测试全绿。
+
+> 说明：这也是 2026-11-02 `CI (Windows)` 在 `main` 上变红的原因 ——
+> `tests/license.test.ts` 里「manual copyright status overrides the auto-detected
+> class」断言 override `"free"` → `free_commercial`，1.1.6 里失败。
+
 ## [1.1.6] — 2026-11-02
 
 > 版权判定口径重写。修的是「软件自己给自己作证」这条闭环：目录名既是输出又是输入，
