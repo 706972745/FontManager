@@ -2042,6 +2042,46 @@ h2.detail-title.copy-name {
     transform: rotate(360deg);
   }
 }
+/* 目录名重算对话框（版权判定 v7 的迁移入口）。
+   在 .trashconfirm-* 骨架上加宽一档：一行里要并排放「旧名 → 新名」两个长目录名，
+   420px 会把两边都挤成省略号。 */
+.labelresync-panel {
+  width: min(560px, 94%);
+}
+.labelresync-summary {
+  color: var(--text-secondary);
+}
+.labelresync-list {
+  max-height: 232px;
+}
+.labelresync-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+}
+.labelresync-from,
+.labelresync-to {
+  max-width: 43%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.labelresync-arrow {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  align-self: center;
+}
+.labelresync-class {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  white-space: nowrap;
+}
 .toast-title {
   display: block;
   font-size: var(--fs-13);
