@@ -467,7 +467,12 @@ pub fn explain(text: Option<&str>) -> (CopyrightClass, Reason) {
 /// v5：只有**明确标注「个人免费」**才判个人免费，没标注的一律收费（2026-10-30 用户口径）。
 /// v6：「企业授权方案 / 企业需授权 / 企业授权」加入收费关键词；文件夹名后缀与
 ///     文件名里的「商用需授权 / 企业授权」矛盾时不再采纳后缀（字魂 7 目录的教训）。
-pub const NOTE_RULES_VERSION: u32 = 6;
+/// 判定口径版本号。**口径只要变了就要加一**，否则老库里按旧口径写下的自动备注
+/// 会一直留着，用户看到的还是过时结论。
+///
+/// v7（2026-11-02）：目录名退出证据链（不再把自己写进目录名的分类读回来当依据），
+/// 平铺目录里的授权文档不再对整个目录生效，旧值 "free" 不再放大成「商用免费」。
+pub const NOTE_RULES_VERSION: u32 = 7;
 
 pub fn classify(text: Option<&str>) -> CopyrightClass {
     explain(text).0
@@ -543,9 +548,13 @@ fn pick_quote(candidates: &[&str], class: CopyrightClass, reason: &Reason) -> Op
 /// 前端「版权状态」下拉里的值 → 版权分类；auto / 无法识别时返回 None（表示按来源重新判定）
 pub fn class_from_status(status: &str) -> Option<CopyrightClass> {
     match status.trim().to_lowercase().as_str() {
-        // "free" 是旧版存下来的值：那时候免费不分商用/个人，按「商用免费」处理，
-        // 用户可以在详情面板里改成「个人免费」（我们不会替他把权限调窄）。
-        "free" | "free_commercial" | "freecommercial" | "commercial" => {
+        // "free" 是旧版存下来的笼统值：那时免费不分商用/个人，历史上被直接当成
+        // 「商用免费」写进目录名 —— 这等于替用户**把权限放大**（2026-11-02 修正）。
+        //
+        // 现在一律落到「未知版权」，逼着重新按证据判定：宁可显示未判定，
+        // 也不能在没有任何依据的情况下宣称一个字体可以商用。
+        "free" => Some(CopyrightClass::Unknown),
+        "free_commercial" | "freecommercial" | "commercial" => {
             Some(CopyrightClass::FreeCommercial)
         }
         "free_personal" | "freepersonal" | "personal" => Some(CopyrightClass::FreePersonal),
@@ -594,8 +603,14 @@ pub fn family_dir_name(family: &str, class: CopyrightClass) -> String {
     format!("{}（{}）", sanitize(family), suffix(class))
 }
 
-/// 目录名里的版权后缀 → 分类（识别我们自己写的「（免费字体）」这类后缀）
-fn suffix_class(name: &str) -> Option<CopyrightClass> {
+/// 目录名里的版权后缀 → 分类。
+///
+/// **只用于展示与迁移对账，绝不作为判定证据**：这个后缀是软件自己写的，
+/// 读回来当依据等于自证（`NOTE_RULES_VERSION` v7 起已从证据链移除）。
+/// 目前只在两处用到：
+///  1. `resync_library_labels`：对比「旧后缀」和「新证据结论」，决定要不要改名；
+///  2. 界面显示「目录名标注的是 X」。
+pub fn suffix_class(name: &str) -> Option<CopyrightClass> {
     for class in [
         CopyrightClass::FreeCommercial,
         CopyrightClass::FreePersonal,
@@ -615,8 +630,10 @@ fn suffix_class(name: &str) -> Option<CopyrightClass> {
     None
 }
 
-/// 文件夹备注的版权信息：文件夹名里写明的版权（"Lora（免费字体）"、"某某字体 收费"…）。
-/// 这是三级权重里的第二级，比字体自带的版权信息优先。
+/// 文件夹名里写明的版权（"Lora（免费字体）"、"某某字体 收费"…）。
+///
+/// **已退出判定链路**（v7）。保留这个函数只为兼容旧调用与测试：
+/// 新代码不要再拿目录名当证据，见 `inspect_dir` 的注释。
 pub fn classify_folder_name(name: &str) -> CopyrightClass {
     if let Some(class) = suffix_class(name) {
         return class;
@@ -906,42 +923,124 @@ pub struct DirCopyright {
     pub note: Option<String>,
 }
 
-/// 目录 → 版权分类 + 判定留痕，按「版权信息文件 > 文件夹备注 > 字体自带信息」三级权重。
+/// 目录 → 版权分类 + 判定留痕，按「版权信息文件 > 字体自带信息」两级权重。
 ///
 /// 每一级内部都做冲突检测：两份授权文件说法不同 → 判未知，并把两条原文都留在备注里。
+///
+/// **目录名不参与判定**（2026-11-02 修正，见 `NOTE_RULES_VERSION` 的注释）：
+/// 以前这里会读回自己写进目录名的「（商用免费）」后缀并当成最权威的证据，
+/// 命中就直接返回，字体自带的版权信息那一级**永远走不到**。
+/// 结果就是软件自己给自己作证：第一次导入判错，之后每次扫描都在确认那个错。
 pub fn inspect_dir(dir: &Path) -> DirCopyright {
-    inspect_dir_impl(dir, true)
+    inspect_dir_impl(dir, true, probe_dir_scope(dir))
 }
 
 /// 扫描时用这个：目录里的 name 表证据**不算数**（一个平铺目录里塞几千个字体时，
 /// 拿别的字体的授权去判整个目录会把整目录染成同一个结论）。
 pub fn inspect_dir_files_only(dir: &Path) -> DirCopyright {
-    inspect_dir_impl(dir, false)
+    inspect_dir_impl(dir, false, probe_dir_scope(dir))
 }
 
+/// 调用方已经知道目录里有几个字族时用这个，省掉一遍探测。
+pub fn inspect_dir_scoped(dir: &Path, scope: DocScope, include_name_table: bool) -> DirCopyright {
+    inspect_dir_impl(dir, include_name_table, scope)
+}
 
-/// 目录里的文件名是否带着「商用需授权 / 企业授权」这类字样。
+/// 目录里的授权文档能不能归到某个字族。
 ///
-/// 这些字样是分发站标注的「商用要另买授权」。字库里有 7 个「字魂」目录，
-/// 旧版判定把后缀写成了「（商用免费）」，与文件名自带的「(商用需授权)」直接矛盾
-/// （用户 2026-10-30：这类字样**绝不能**归类为商用免费）。矛盾时不再采纳文件夹名，
-/// 让后面的证据（版权文档 / name 表）说话。
-fn dir_files_say_commercial_restricted(dir: &Path) -> bool {
-    const MARKERS: [&str; 4] = ["商用需授权", "企业授权方案", "企业需授权", "企业授权"];
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return false;
-    };
-    entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.is_file())
-        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(String::from))
-        .any(|name| MARKERS.iter().any(|m| name.contains(m)))
+/// 判定和「文档归档」必须用同一套归属规则，否则就会出现
+/// 「文档判了整个目录、却不肯复制进任何字族目录」的自相矛盾
+/// （2026-11-02 实测：其他Fonts 平铺 4923 个字体 + 52 份文档，
+/// 52 份全被判为无归属不归档，可它们已经把整个目录判成了「商用免费」）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocScope {
+    /// 目录只对应一个字族 → 目录里的文档就是这个字族的授权
+    Family,
+    /// 目录里混着多个字族 → 文档不属于其中任何一个，不能拿来判定
+    Mixed,
 }
 
-fn inspect_dir_impl(dir: &Path, include_name_table: bool) -> DirCopyright {
+/// 探一下目录里到底有几个字族。
+///
+/// 只看「字体文件数」不够：正经字族目录可能有 60 多个字重文件（Bodoni Moda），
+/// 而平铺目录里可能塞着几千个来源毫不相干的字体。所以数**字族**，不数字体。
+///
+/// 早退：撞见第二个不同字族就返回 Mixed，平铺目录几乎不花时间；
+/// 真·单字族目录要读完，但那种目录本身很小。
+pub fn probe_dir_scope(dir: &Path) -> DocScope {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return DocScope::Family;
+    };
+    let mut fonts: Vec<PathBuf> = Vec::new();
+    let mut has_docs = false;
+    for e in entries.filter_map(|e| e.ok()) {
+        let p = e.path();
+        if !p.is_file() {
+            continue;
+        }
+        if crate::installer::is_info_file(&p) {
+            has_docs = true;
+        } else if crate::parser::is_font_file(&p) {
+            fonts.push(p);
+        }
+    }
+    // 目录里没有授权文档 → 根本不存在「文档归谁」的问题，直接算单字族，
+    // 省掉一次全目录解析（扫描 5000 多个字面时这点开销很显眼）。
+    if !has_docs {
+        return DocScope::Family;
+    }
+    fonts.sort();
+    let mut seen: Option<String> = None;
+    for p in fonts {
+        for f in crate::parser::parse_font_file(&p, crate::font_types::FontSource::Managed) {
+            // 拿文件名顶上的假族名不算数，否则一个文件一个「字族」
+            if f.name_fallback {
+                continue;
+            }
+            match &seen {
+                None => seen = Some(f.family.clone()),
+                Some(first) if *first != f.family => return DocScope::Mixed,
+                _ => {}
+            }
+        }
+    }
+    DocScope::Family
+}
+
+/// 文件名归一化：只留字母数字、转小写，用来做「文档名里有没有这个字族」的比对。
+pub(crate) fn norm_token(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect::<String>()
+        .to_lowercase()
+}
+
+/// 从字族目录名里取出字族名本身（去掉「（版权后缀）」和末尾空白）。
+pub fn family_of_dir_name(name: &str) -> &str {
+    let trimmed = name.trim_end();
+    if let Some(idx) = trimmed.rfind('（') {
+        if trimmed.ends_with('）') {
+            return trimmed[..idx].trim_end();
+        }
+    }
+    trimmed
+}
+
+fn inspect_dir_impl(dir: &Path, include_name_table: bool, scope: DocScope) -> DirCopyright {
     let mut verdicts: Vec<Verdict> = Vec::new();
     let mut channels: Option<String> = None;
+
+    // 0. 目录里混着多个字族：目录级证据一律不作数。
+    //    直接交回 Unknown，让调用方逐字面判定（inspect_face / docs_for_family）。
+    if scope == DocScope::Mixed {
+        return DirCopyright {
+            class: CopyrightClass::Unknown,
+            note: Some(
+                "判定依据：未知版权（目录里混有多个字族，目录级授权证据无法归属到具体字族，已改为逐字面判定）"
+                    .to_string(),
+            ),
+        };
+    }
 
     // 1. 版权信息文件（LICENSE / OFL / 版权说明…）
     if let Ok(entries) = std::fs::read_dir(dir) {
@@ -984,44 +1083,15 @@ fn inspect_dir_impl(dir: &Path, include_name_table: bool) -> DirCopyright {
         return done;
     }
 
-    // 2. 文件夹名里备注的版权（我们自己的「（商用免费）」后缀最权威）
-    //    但文件名带「商用需授权 / 企业授权」时，后缀的「商用免费」不可信 —— 直接跳过这一级
-    let folder_says_free_commercial = dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|name| {
-            suffix_class(name) == Some(CopyrightClass::FreeCommercial)
-                || explain(Some(name)).0 == CopyrightClass::FreeCommercial
-        })
-        .unwrap_or(false);
-    let folder_distrusted = folder_says_free_commercial && dir_files_say_commercial_restricted(dir);
-    if let Some(name) = dir.file_name().and_then(|n| n.to_str()).filter(|_| !folder_distrusted) {
-        let verdict = match suffix_class(name) {
-            Some(class) => Verdict {
-                class,
-                reason: Reason::FolderNote(suffix(class)),
-                quote: Some(truncate_chars(name, 120)),
-                source: "文件夹名".to_string(),
-            },
-            None => {
-                let (class, reason) = explain(Some(name));
-                let quote = find_quote(name, class, &reason);
-                Verdict {
-                    class,
-                    reason,
-                    quote,
-                    source: "文件夹名".to_string(),
-                }
-            }
-        };
-        let conclusive = verdict.class != CopyrightClass::Unknown;
-        verdicts.push(verdict);
-        if conclusive {
-            if let Some(done) = decide(&verdicts, channels.as_deref()) {
-                return done;
-            }
-        }
-    }
+    // 2. 原来的「文件夹名备注」这一级**已删除**。
+    //
+    //    它读的是我们自己写进目录名的后缀（`family_dir_name` 写、`suffix_class` 读），
+    //    注释还写着「我们自己的（商用免费）后缀最权威」—— 命中即 return，
+    //    字体自带的版权信息永远没机会被读到。这条闭环是 2026-11-02 那次
+    //    「3779 个商用免费里只有 139 个有证据」的直接成因。
+    //
+    //    用户想手工指定版权，走详情面板的版权下拉（存在 state.json 的 copyrightStatus 里），
+    //    那条路有明确的「谁设的、什么时候设的」，不会跟自己写的目录名互相印证。
 
     // 3. 字体自带的版权信息（name 表 13 / 0，正文判不出来时看 14 的许可证链接）
     //    平铺目录里这一步会串味，扫描时关掉、改成逐字面判定（inspect_face）
@@ -1437,27 +1507,75 @@ mod tests {
         );
     }
 
-    /// 文件夹后缀说「商用免费」，但目录里的文件名带「商用需授权 / 企业授权」时，
-    /// 后缀不可信（字魂 7 目录的教训）——不能判成商用免费。
+    /// 目录名不再参与判定（v7）。
+    ///
+    /// 旧版这里恰恰相反：`（商用免费）` 后缀被当成最权威的证据，命中就直接返回。
+    /// 可那个后缀是软件自己写进目录名的 —— 自己写、自己读、自己信，
+    /// 于是「3779 个商用免费里只有 139 个有证据」。
     #[test]
-    fn folder_suffix_distrusted_when_file_names_contradict() {
-        let dir = std::env::temp_dir().join("zfm-suffix-conflict");
+    fn folder_suffix_is_never_evidence() {
+        let dir = std::env::temp_dir().join("zfm-suffix-not-evidence");
         let _ = std::fs::remove_dir_all(&dir);
-        let bad = dir.join("zihuntest（商用免费）");
-        std::fs::create_dir_all(&bad).unwrap();
-        std::fs::write(bad.join("字魂测试(商用需授权) #字体# .ttf"), b"fake").unwrap();
+        let marked = dir.join("SomeFont（商用免费）");
+        std::fs::create_dir_all(&marked).unwrap();
+        std::fs::write(marked.join("SomeFont.ttf"), b"fake").unwrap();
         assert_eq!(
-            inspect_dir_files_only(&bad).class,
+            inspect_dir_files_only(&marked).class,
             CopyrightClass::Unknown,
-            "矛盾时不能采纳「（商用免费）」后缀"
+            "目录名写的「商用免费」不能当成证据"
         );
 
-        // 对照组：没有矛盾文件名的目录，后缀照常生效
-        let good = dir.join("zihuntest2（商用免费）");
-        std::fs::create_dir_all(&good).unwrap();
-        std::fs::write(good.join("SomeFont.ttf"), b"fake").unwrap();
+        let marked2 = dir.join("OtherFont（收费字体）");
+        std::fs::create_dir_all(&marked2).unwrap();
+        std::fs::write(marked2.join("OtherFont.ttf"), b"fake").unwrap();
         assert_eq!(
-            inspect_dir_files_only(&good).class,
+            inspect_dir_files_only(&marked2).class,
+            CopyrightClass::Unknown,
+            "目录名写的「收费字体」同样不算证据"
+        );
+
+        // 但目录里真有授权文档时，照样按文档判 —— 目录名影响的只是不再被读回
+        let with_doc = dir.join("RealFont（收费字体）");
+        std::fs::create_dir_all(&with_doc).unwrap();
+        std::fs::write(with_doc.join("RealFont.ttf"), b"fake").unwrap();
+        std::fs::write(
+            with_doc.join("OFL.txt"),
+            b"This Font Software is licensed under the SIL Open Font License, Version 1.1",
+        )
+        .unwrap();
+        assert_eq!(
+            inspect_dir_files_only(&with_doc).class,
+            CopyrightClass::FreeCommercial,
+            "文档说的是什么就判什么，目录名不再覆盖它"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 平铺目录（混着多个字族）里的授权文档不能对整个目录生效。
+    ///
+    /// 这是 2026-11-02 那次事故的正面保护：其他Fonts 一个目录里 4923 个字体 + 52 份文档，
+    /// 一份 OFL 把整个目录判成了「商用免费」。
+    #[test]
+    fn flat_dir_docs_do_not_leak_to_whole_dir() {
+        let dir = std::env::temp_dir().join("zfm-flat-dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.ttf"), b"fake").unwrap();
+        std::fs::write(dir.join("b.ttf"), b"fake").unwrap();
+        std::fs::write(
+            dir.join("OFL.txt"),
+            b"This Font Software is licensed under the SIL Open Font License, Version 1.1",
+        )
+        .unwrap();
+
+        assert_eq!(
+            inspect_dir_scoped(&dir, DocScope::Mixed, false).class,
+            CopyrightClass::Unknown,
+            "多字族目录里的 OFL 不能代表这个目录"
+        );
+        // 同一个目录，在「确认只有一个字族」的前提下文档才作数
+        assert_eq!(
+            inspect_dir_scoped(&dir, DocScope::Family, false).class,
             CopyrightClass::FreeCommercial
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -1590,10 +1708,9 @@ mod tests {
 
     #[test]
     fn maps_manual_status() {
-        assert_eq!(
-            class_from_status("free"),
-            Some(CopyrightClass::FreeCommercial)
-        );
+        // 旧版存的笼统值 "free"：免费不分商用/个人，一律当成「未知」重新按证据判定。
+        // 以前这里直接给「商用免费」，等于没有依据就把权限放大到可以商用。
+        assert_eq!(class_from_status("free"), Some(CopyrightClass::Unknown));
         assert_eq!(
             class_from_status("free_personal"),
             Some(CopyrightClass::FreePersonal)

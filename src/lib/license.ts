@@ -243,7 +243,11 @@ export type CopyrightClass =
 /** 把历史值（"free"）和别名归一成新的分类键；认不出来返回 null */
 export function normalizeCopyright(value: string | null | undefined): CopyrightClass | null {
   switch ((value ?? "").trim()) {
+    // 旧版只分「免费」，历史值 "free" 语义上分不清商用还是仅个人。
+    // 以前一律当「商用免费」，等于没有依据就替用户宣称可以商用；
+    // v7 起落到「未知」，逼着重新按证据判定（与 copyright.rs::class_from_status 对齐）。
     case "free":
+      return "unknown";
     case "commercial":
     case "free_commercial":
     case "freeCommercial":
@@ -266,11 +270,16 @@ export function normalizeCopyright(value: string | null | undefined): CopyrightC
 }
 
 /**
- * 计算字族的实际版权分类，权重：
- *   1. 用户手动设置（含显式的"未知"）
- *   2. 字体自带的版权信息（name 表里的 license）
- *   3. 文件夹备注 / 版权信息文件判定的版权（dirClass，由后端扫描时带出来）
- * 手动设为"自动识别"时按 2 → 3 的顺序判定。
+ * 计算字族的实际版权分类。
+ *
+ * 权重的唯一来源是**后端**（`copyright.rs`）：它手里才有授权文档、name 表原文、
+ * 以及「这份文档能不能归属到这个字族」的判断。前端只负责两件事：
+ *   1. 用户手动设置优先（override）；
+ *   2. 后端没给结论时兜底猜一次（online 字体、旧缓存没有 copyrightClass 的情况）。
+ *
+ * v7 之前的顺序是反的（name 表文本 > 目录结论），两边各算一遍、结论却不一样：
+ * 卡片上写「未知」、筛选却能筛出来，2026-10-31 用户报过这类对不上的现象。
+ * 改成「后端算完、前端只叠加人工覆盖」之后，同一份数据只有一种结论。
  */
 export function effectiveCopyrightClass(
   license: string | null,
@@ -279,11 +288,15 @@ export function effectiveCopyrightClass(
 ): CopyrightClass {
   const fromOverride = normalizeCopyright(override);
   if (fromOverride) return fromOverride;
+  // 后端的结论（授权文档 + 字体自带信息都算过了）
+  const fromBackend = normalizeCopyright(dirClass);
+  if (fromBackend) return fromBackend;
+  // 后端没给（非托管字体 / 旧缓存）：按 name 表文本兜底
   const cls = classifyLicense(license);
   if (cls === "open") return "free_commercial";
   if (cls === "personal") return "free_personal";
   if (cls === "restrictive") return "paid";
-  return normalizeCopyright(dirClass) ?? "unknown";
+  return "unknown";
 }
 
 /**

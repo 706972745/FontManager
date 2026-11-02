@@ -729,7 +729,8 @@ pub fn scan_all(
                     .or_insert_with(|| crate::copyright::inspect_dir_files_only(dir))
                     .clone();
                 for face in &mut parsed {
-                    // 目录里有授权文件 / 目录名带后缀 → 用目录结论；否则只看这个字族自己的 name 表
+                    // 目录里有授权文档且能归属到单字族 → 用目录结论；
+                    // 否则只看这个字面自己的 name 表（目录名不参与判定，见 copyright.rs）
                     if found.class != crate::copyright::CopyrightClass::Unknown {
                         face.copyright_class = Some(found.class.as_str().to_string());
                         face.license_note = found.note.clone();
