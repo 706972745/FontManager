@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildMembership } from "../src/lib/familyMembership.ts";
+import { sortContainers } from "../src/lib/faceContainers.ts";
 import type { FontFace } from "../src/lib/ipc.ts";
 
 const face = (style: string, ps: string) => ({ style, postscriptName: ps }) as unknown as FontFace;
@@ -76,7 +77,14 @@ test("多个分组按名字排序，与侧栏顺序一致", () => {
     {},
     keyOf,
   );
-  assert.deepEqual(m.get("PingFang TC")?.colls.map((b) => b.name), ["甲组", "乙组"]);
+  // 具体先后取决于**系统区域**：中文区域按拼音（甲 jiǎ 在 乙 yǐ 前），
+  // 英文区域退化成码位序（乙 U+4E59 在 甲 U+7532 前）。所以这里不能写死
+  // ["甲组","乙组"] —— 那会让这条用例在英文 runner 上必挂（2026-11-02 CI 实测）。
+  // 真正要保证的是「与侧栏用的是同一个排序函数」，那就直接比它。
+  assert.deepEqual(
+    m.get("PingFang TC")?.colls.map((b) => b.name),
+    sortContainers(["乙组", "甲组"]),
+  );
 });
 
 test("字重指向的字族不存在（字体已删除）时静默跳过", () => {

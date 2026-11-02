@@ -2,6 +2,9 @@ import type { FontFace, SnapshotEntry } from "./ipc";
 // 带 .ts 后缀：这个模块要能被 `node --test` 直接跑（无扩展名的值导入在 Node 里会
 // ERR_MODULE_NOT_FOUND）。tsconfig 开了 allowImportingTsExtensions，Vite 也认。
 import { faceLabel, memberBadge, type MemberBadge } from "./memberBadges.ts";
+// 分组顺序必须和侧栏共用同一个函数（faceContainers 里那段注释说的就是这个）：
+// 各自写一份 localeCompare 迟早会因为细节走样，序号就对不上了。
+import { sortContainers } from "./faceContainers.ts";
 
 /**
  * 一次性算出「每个字族的快照 / 分组胶囊」。
@@ -62,7 +65,7 @@ export function buildMembership(
 
   // 分组名取两边的并集：只放了字重、`collections[name]` 还没建键的分组也要算到
   const names = new Set([...Object.keys(collections), ...Object.keys(collectionFaces)]);
-  for (const name of [...names].sort((a, b) => a.localeCompare(b))) {
+  for (const name of sortContainers([...names])) {
     const whole = new Set(collections[name] ?? []);
     const keys = collectionFaces[name] ?? [];
     if (whole.size === 0 && keys.length === 0) continue;
