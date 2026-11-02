@@ -37,6 +37,19 @@ pub struct InstallResult {
     /// 非空时前端必须告诉用户源文件去哪了，不能只说「导入成功」。
     #[serde(default)]
     pub recycled_sources: Vec<String>,
+    /// 本次真正复制进字族目录的版权/说明文档数
+    #[serde(default)]
+    pub docs_copied: usize,
+    /// 目标目录里已有**内容完全相同**的文档，跳过不重复写
+    #[serde(default)]
+    pub docs_skipped: usize,
+    /// 找不到明确归属、因此没有归档的文档数（多字族批次里的散装文档）。
+    /// 源文件仍在原处，只是不往字族目录里塞 —— 见 license_targets 的注释。
+    #[serde(default)]
+    pub docs_unassigned: usize,
+    /// 同名但内容不同的文档：记下目标路径，不覆盖、也不生成 N- 副本
+    #[serde(default)]
+    pub doc_conflicts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -872,15 +885,32 @@ pub fn install(
 
     // 版权信息文件（许可证/版权声明/说明）随字体归档到字族目录：
     // 与字体同处一个子目录且该目录只归入一个字族 → 只进那个字族；
-    // 否则若本次安装只产生一个字族 → 进它；多字族时每个字族目录都放一份
+    // 否则若本次安装只产生一个字族 → 进它；**多字族时不再广播**（2026-11-02 修）。
     if matches!(mode, InstallMode::Move | InstallMode::Copy) || any_zip {
         for info in &infos {
             let Some(name) = info.path.file_name().map(|f| f.to_owned()) else {
                 continue;
             };
             let targets = license_targets(info, &rel_family_dirs, &origin_family_dirs, &all_family_dirs);
+            if targets.is_empty() {
+                result.docs_unassigned += 1;
+                continue;
+            }
             for t in targets {
-                let _ = fs::copy(&info.path, unique_dest(&t, &name));
+                let dest = t.join(&name);
+                if dest.is_file() {
+                    // 同内容 → 重复，跳过（导入幂等就靠这条：第二次导入零新增）
+                    if same_content(&info.path, &dest) {
+                        result.docs_skipped += 1;
+                    } else {
+                        // 同名不同内容：记冲突，**不覆盖、也不生成 N- 副本**
+                        result.doc_conflicts.push(dest.to_string_lossy().into_owned());
+                    }
+                    continue;
+                }
+                if fs::copy(&info.path, &dest).is_ok() {
+                    result.docs_copied += 1;
+                }
             }
         }
     }
@@ -895,8 +925,9 @@ pub fn install(
 ///
 /// 规则（多 zip 一起导入时必须按包隔离，不能互相串）：
 /// 1. 同批次 + 同相对目录下的字族目录只有一个 → 只进它；
-/// 2. 否则在本批次内部兜底：本批次只产生一个字族 → 进它；多个 → 每个都放一份；
-/// 3. 本批次一个字体都没装成时，整批只剩一个字族才放进去。
+/// 2. 否则在本批次内部兜底：本批次只产生一个字族 → 进它；
+/// 3. 多字族批次：**只有「整批就这一份文档」才当批次级授权广播给每个族**。
+///    一批里有几十上百份文档时，任何一份都不再广播 —— 见下方 `_ =>` 的说明。
 fn license_targets(
     info: &StagedFile,
     rel_family_dirs: &std::collections::HashMap<InfoKey, Vec<PathBuf>>,
@@ -931,7 +962,32 @@ fn license_targets(
                 Vec::new()
             }
         }
-        _ => mine,
+        // 多字族批次：**一律不广播**。
+        //
+        // 旧行为是 `_ => mine`，无条件把整批散装文档复制进**每一个**字族目录，再用
+        // `unique_dest` 加 N- 前缀避让 —— 一次导入整个字体库就会产生
+        // 「族数 × 文档数」个副本（实测 3,904 族 × 131 份 = 54 万个文件、1.15 GB，
+        // 2026-11-02 缺陷报告）。用户的预期是「导入多少字体就是多少，除重复外不多一份」。
+        //
+        // 这里刻意**不做任何"猜归属"的兜底**（不按文档数量、不按文件名关键词判断
+        // 哪份是"整包授权"）—— 只要这份文档不在某个族目录里，就不归档。规则只有
+        // 一条，没有分支可错：目标库里每个族目录只会多出它自己目录里的文档。
+        //
+        // 代价（用户 2026-11-02 明确接受）：放在族目录外面的授权文档不会进目标库，
+        // 源文件仍在原处。单族批次不受影响（走上面的 `1 =>` 分支）。
+        _ => Vec::new(),
+    }
+}
+
+/// 两个文件内容是否完全一致（先比长度，长度相同再逐字节比）。
+/// 版权/说明文档都是小文件，直接读进内存比引一个哈希库划算。
+fn same_content(a: &Path, b: &Path) -> bool {
+    match (fs::metadata(a), fs::metadata(b)) {
+        (Ok(ma), Ok(mb)) if ma.len() == mb.len() => match (fs::read(a), fs::read(b)) {
+            (Ok(x), Ok(y)) => x == y,
+            _ => false,
+        },
+        _ => false,
     }
 }
 
@@ -1416,9 +1472,54 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// 复现（2026-11-02 缺陷报告）：一次导入多个字族、批次根目录下还放着说明文件时，
+    /// 这些「不属于任何单个字族」的文档会被 `license_targets` 的兜底分支广播到**每一个**
+    /// 字族目录 —— 报告实测 3,904 族 × 131 份 = 54 万个编号副本、1.15 GB。
+    ///
+    /// 期望：多字族批次里的根级文档找不到归属，就谁也别塞（宁可不归档，也不能污染全库）。
     #[test]
-    fn detects_info_files() {
-        assert!(is_info_file(Path::new("OFL.txt")));
+    fn repro_root_doc_must_not_be_broadcast_to_every_family() {
+        use std::collections::HashMap;
+
+        let origin: Option<PathBuf> = Some(PathBuf::from("E:/源库"));
+        let fam_a = PathBuf::from("E:/lib/族A");
+        let fam_b = PathBuf::from("E:/lib/族B");
+        let fam_c = PathBuf::from("E:/lib/族C");
+        let all_dirs = vec![fam_a.clone(), fam_b.clone(), fam_c.clone()];
+
+        // 每个字族的字体各自在自己的子目录里 → 各有一条 rel 键
+        let mut rel_family_dirs: HashMap<InfoKey, Vec<PathBuf>> = HashMap::new();
+        rel_family_dirs.insert((origin.clone(), PathBuf::from("族A")), vec![fam_a.clone()]);
+        rel_family_dirs.insert((origin.clone(), PathBuf::from("族B")), vec![fam_b.clone()]);
+        rel_family_dirs.insert((origin.clone(), PathBuf::from("族C")), vec![fam_c.clone()]);
+
+        let mut origin_family_dirs: HashMap<Option<PathBuf>, Vec<PathBuf>> = HashMap::new();
+        origin_family_dirs.insert(origin.clone(), all_dirs.clone());
+
+        // 放在源库根目录的说明文件：rel 为空，不属于任何字族
+        let root_doc = StagedFile {
+            path: PathBuf::from("E:/源库/说明.txt"),
+            is_font: false,
+            is_zip: false,
+            converted: false,
+            rel: PathBuf::new(),
+            origin: origin.clone(),
+            folder_note: None,
+        };
+
+        // 一批里有 3 个族各自的文档时，根目录那份没有归属 → sole_info = false
+        let targets =
+            license_targets(&root_doc, &rel_family_dirs, &origin_family_dirs, &all_dirs);
+        assert!(
+            targets.is_empty(),
+            "根目录说明文件不该进任何字族目录，实际被广播进了 {} 个：{:?}",
+            targets.len(),
+            targets
+        );
+    }
+
+    #[test]
+    fn detects_info_files() {        assert!(is_info_file(Path::new("OFL.txt")));
         assert!(is_info_file(Path::new("LICENSE")));
         assert!(is_info_file(Path::new("Font-License.pdf")));
         assert!(is_info_file(Path::new("版权说明.txt")));
@@ -1582,9 +1683,12 @@ mod tests {
         );
     }
 
-    /// 松散文件夹（一次拖入一个文件夹）：根目录的授权文件仍按老规则发给该文件夹里的每个字族
+    /// 松散文件夹（一次拖入一个文件夹）：根目录的授权文件**不再**发给文件夹里的每个字族。
+    ///
+    /// 2026-11-02 改：以前这里断言「广播给每个族」，那正是字体库导入产生 54 万个副本的根源。
+    /// 现在的规则只有一条 —— 文档不在某个族目录里就不归档，所以这里必须为空。
     #[test]
-    fn license_targets_loose_folder_covers_all_its_families() {
+    fn license_targets_never_broadcasts_to_other_families() {
         let folder = PathBuf::from(r"C:/fonts/pack");
         let d1 = PathBuf::from(r"C:/lib/FamilyOne");
         let d2 = PathBuf::from(r"C:/lib/FamilyTwo");
@@ -1596,13 +1700,30 @@ mod tests {
             std::collections::HashMap::new();
         origin_dirs.insert(Some(folder), vec![d1.clone(), d2.clone()]);
 
+        // 这份 LICENSE 在文件夹根目录、两个族各有自己的子目录 → 它不属于任何单个族
         let targets = license_targets(
             &info,
             &std::collections::HashMap::new(),
             &origin_dirs,
             &[d1.clone(), d2.clone()],
         );
-        assert_eq!(targets, vec![d1, d2]);
+        assert!(
+            targets.is_empty(),
+            "根目录的授权文件不该广播给每个族（那正是 54 万副本的来源），实际：{:?}",
+            targets
+        );
+
+        // 单族批次仍然正常归档：这是唯一允许「文档进族目录」的兜底
+        let mut origin_one: std::collections::HashMap<Option<PathBuf>, Vec<PathBuf>> =
+            std::collections::HashMap::new();
+        origin_one.insert(info.origin.clone(), vec![d1.clone()]);
+        let single = license_targets(
+            &info,
+            &std::collections::HashMap::new(),
+            &origin_one,
+            &[d1.clone()],
+        );
+        assert_eq!(single, vec![d1], "单族批次里，批次文档要进这个唯一的族目录");
     }
 
     /// 2.4：导入失败留下的空字族目录要收掉，但库根与非空目录绝不能动
@@ -1681,6 +1802,11 @@ mod tests {
             system_duplicates: 0,
             // 1.0.0-4 新增：跨盘移动被回收的源文件清单，本测试不涉及
             recycled_sources: vec![],
+            // 1.1.3 新增：版权文档归档统计，本测试只关心 staging 目录
+            docs_copied: 0,
+            docs_skipped: 0,
+            docs_unassigned: 0,
+            doc_conflicts: vec![],
         };
         let _ = process_webfonts(vec![staged], &staging, &mut result);
 

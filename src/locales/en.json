@@ -250,6 +250,7 @@
   "filter.fileFormat": "File format",
   "filter.languageSupport": "Language support",
   "filter.show": "Show",
+  "filter.scope": "Scope",
   "filter.toggleableOnly": "Hide fonts the OS won’t let you turn off",
   "filter.typography": "Typographic features",
   "filter.variableOnly": "Variable only",

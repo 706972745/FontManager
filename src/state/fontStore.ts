@@ -313,6 +313,12 @@ interface FontStore {
   incompleteOnly: boolean;
   /** 版权筛选（free/paid/timelimited/unknown），空 = 全部 */
   licenseFilter: string[];
+  /** 速览界面「范围」筛选：只看收藏的字族 */
+  favoriteOnly: boolean;
+  /** 速览界面「范围」筛选：只看属于这些分组的字族（空 = 不限） */
+  collectionFilter: string[];
+  /** 速览界面「范围」筛选：只看属于这些快照的字族（按快照名，空 = 不限） */
+  snapshotFilter: string[];
   /** 速览界面：只显示已启用的字体，窗口压缩成一条，贴顶时自动隐藏 */
   quickbar: boolean;
   /** 速览界面里是否启用「贴顶自动隐藏」 */
@@ -505,6 +511,9 @@ interface FontStore {
   /** 标记/撤销一个字面的「无法预览」。只写自己这一类，不覆盖更严重的损坏原因 */
   setFaceIncomplete: (id: string, reason: string | null) => void;
   toggleLicenseFilter: (c: string) => void;
+  setFavoriteOnly: (v: boolean) => void;
+  toggleCollectionFilter: (name: string) => void;
+  toggleSnapshotFilter: (id: string) => void;
   /** status 为 null / "auto" 时恢复为按版权信息自动识别 */
   setCopyrightStatus: (family: string, status: string | null) => void;
   /** date 为 null 时清除到期日期 */
@@ -1310,6 +1319,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
   toggleableOnly: false,
   incompleteOnly: false,
   licenseFilter: [],
+  favoriteOnly: false,
+  collectionFilter: [],
+  snapshotFilter: [],
   copyrightStatus: {},
   copyrightExpiry: {},
   nav: { kind: "library" },
@@ -3464,6 +3476,15 @@ export const useFontStore = create<FontStore>((set, get) => ({
   toggleLicenseFilter: (c) => {
     const cur = get().licenseFilter;
     set({ licenseFilter: cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c] });
+  },
+  setFavoriteOnly: (v) => set({ favoriteOnly: v }),
+  toggleCollectionFilter: (name) => {
+    const cur = get().collectionFilter;
+    set({ collectionFilter: cur.includes(name) ? cur.filter((x) => x !== name) : [...cur, name] });
+  },
+  toggleSnapshotFilter: (id) => {
+    const cur = get().snapshotFilter;
+    set({ snapshotFilter: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
   },
   setCopyrightStatus: (family, status) => {
     const next = { ...get().copyrightStatus };

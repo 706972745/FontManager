@@ -256,6 +256,7 @@
   "filter.fileFormat": "Формат файла",
   "filter.languageSupport": "Поддержка языков",
   "filter.show": "Показать",
+  "filter.scope": "Область",
   "filter.toggleableOnly": "Скрыть шрифты, которые ОС не даёт отключить",
   "filter.typography": "Типографские функции",
   "filter.variableOnly": "Только вариативные",

@@ -247,6 +247,7 @@
   "filter.fileFormat": "ファイル形式",
   "filter.languageSupport": "対応言語",
   "filter.show": "表示",
+  "filter.scope": "範囲",
   "filter.toggleableOnly": "OS が無効化を許さないフォントを隠す",
   "filter.typography": "タイポグラフィ機能",
   "filter.variableOnly": "バリアブルのみ",

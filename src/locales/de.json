@@ -250,6 +250,7 @@
   "filter.fileFormat": "Dateiformat",
   "filter.languageSupport": "Sprachunterstützung",
   "filter.show": "Anzeigen",
+  "filter.scope": "Umfang",
   "filter.toggleableOnly": "Schriften ausblenden, die das OS nicht ausschalten lässt",
   "filter.typography": "Typografische Funktionen",
   "filter.variableOnly": "Nur variable",

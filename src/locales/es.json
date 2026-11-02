@@ -253,6 +253,7 @@
   "filter.fileFormat": "Formato de archivo",
   "filter.languageSupport": "Idiomas admitidos",
   "filter.show": "Mostrar",
+  "filter.scope": "Alcance",
   "filter.toggleableOnly": "Ocultar fuentes que el SO no permite desactivar",
   "filter.typography": "Funciones tipográficas",
   "filter.variableOnly": "Solo variables",
