@@ -240,14 +240,19 @@ export type CopyrightClass =
   | "timelimited"
   | "unknown";
 
-/** 把历史值（"free"）和别名归一成新的分类键；认不出来返回 null */
+/**
+ * 把历史值（"free"）和别名归一成新的分类键；认不出来返回 null。
+ *
+ * `"free"` 的归属要分两个方向看，别混：
+ *   - **手动覆盖**（用户当年在详情面板亲手点的「免费」）→ 按「商用免费」读。那是人的
+ *     声明，不是软件替他猜的；抹成「未知」会让老库里所有手工标注失效，按钮一排都不亮。
+ *   - **自动判定结论**（`dirClass`）→ 绝不当证据。「free」是 v7 之前把笼统值放大成
+ *     「商用免费」的产物，调用方必须挡在门外（见 `effectiveCopyrightClass`）。
+ */
 export function normalizeCopyright(value: string | null | undefined): CopyrightClass | null {
   switch ((value ?? "").trim()) {
-    // 旧版只分「免费」，历史值 "free" 语义上分不清商用还是仅个人。
-    // 以前一律当「商用免费」，等于没有依据就替用户宣称可以商用；
-    // v7 起落到「未知」，逼着重新按证据判定（与 copyright.rs::class_from_status 对齐）。
     case "free":
-      return "unknown";
+      return "free_commercial";
     case "commercial":
     case "free_commercial":
     case "freeCommercial":
@@ -288,8 +293,10 @@ export function effectiveCopyrightClass(
 ): CopyrightClass {
   const fromOverride = normalizeCopyright(override);
   if (fromOverride) return fromOverride;
-  // 后端的结论（授权文档 + 字体自带信息都算过了）
-  const fromBackend = normalizeCopyright(dirClass);
+  // 后端的结论（授权文档 + 字体自带信息都算过了）。
+  // 老缓存 / 老后端可能还在回 "free" —— 那是 v7 之前放大出来的，不是证据：
+  // 宁可当作「后端没给结论」落到下面的文本兜底，也不能凭空宣称可商用。
+  const fromBackend = (dirClass ?? "").trim() === "free" ? null : normalizeCopyright(dirClass);
   if (fromBackend) return fromBackend;
   // 后端没给（非托管字体 / 旧缓存）：按 name 表文本兜底
   const cls = classifyLicense(license);

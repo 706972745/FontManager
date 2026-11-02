@@ -1,6 +1,6 @@
 [package]
 name = "zfontmanager"
-version = "1.1.6"
+version = "1.1.7"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
 authors = ["TheHolyOneZ", "IIEOzo"]
 license = "GPL-3.0-only"
