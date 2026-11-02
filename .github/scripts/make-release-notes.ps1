@@ -1,9 +1,10 @@
 ﻿<#
-    生成 GitHub Release 正文：CHANGELOG 对应版本段 + 安装说明（签名状态 / 拦截处理 / SHA-256）。
+    生成 GitHub Release 正文：CHANGELOG 对应版本段 + 安装说明（未签名说明 / 拦截处理 / SHA-256）。
 
     用法（CI 与本地通用，PowerShell 5.1 与 pwsh 7 均可）：
-      .\.github\scripts\make-release-notes.ps1 -Version 1.1.2 -ReleaseDir release -OutFile release-notes.md
-      .\.github\scripts\make-release-notes.ps1 -Version 1.1.2 -ReleaseDir release -Signed -OutFile release-notes.md
+      .\.github\scripts\make-release-notes.ps1 -Version 1.1.3 -ReleaseDir release -OutFile release-notes.md
+
+    说明：本项目不做代码签名（决定见 CODE_SIGNING_POLICY.md），正文固定输出未签名说明。
 
     注意：正文里大量 markdown 反引号，反引号是 PowerShell 的转义符，
     所以模板一律用**单引号 here-string**（@' ... '@），版本号用 __VER__ 占位后替换。
@@ -12,7 +13,6 @@ param(
     [Parameter(Mandatory = $true)][string]$Version,
     [Parameter(Mandatory = $true)][string]$ReleaseDir,
     [Parameter(Mandatory = $true)][string]$OutFile,
-    [switch]$Signed,
     [string]$Changelog = "CHANGELOG.md"
 )
 
@@ -48,17 +48,7 @@ foreach ($f in @($exe, $msi)) {
     $hashLines.Add("$h  $($f.Name)")
 }
 
-# ── 3. 签名状态说明（单引号模板，__VER__ 占位） ─────────────────────
-$signSigned = @'
-### ✅ 本版本已签名
-
-两个安装包均由 **SignPath Foundation** 签发的证书做过 Authenticode 签名（含 RFC 3161 时间戳），
-Windows 可以验证发布者，智能应用控制（Smart App Control）会正常放行。
-
-核对方式：右键安装包 → 属性 → **数字签名**，发布者应显示 `SignPath Foundation`；
-或命令行 `signtool verify /pa ZFontManager___VER___x64-setup.exe`。
-'@
-
+# ── 3. 未签名说明（单引号模板，__VER__ 占位） ───────────────────────
 $signUnsigned = @'
 ### ⚠️ 本版本未做代码签名
 
@@ -107,7 +97,7 @@ $downloadTable = @'
 > **裸 `.msi` 只在干净机器上用**；已经装过 setup.exe 的机器请继续用 setup.exe。
 '@
 
-$signBlock = if ($Signed) { $signSigned } else { $signUnsigned }
+$signBlock = $signUnsigned
 $signBlock = $signBlock.Replace("__VER__", $Version)
 $downloadTable = $downloadTable.Replace("__VER__", $Version)
 
@@ -138,4 +128,4 @@ if ([System.IO.Path]::IsPathRooted($OutFile)) { $full = $OutFile } else { $full 
 $dir = Split-Path -Parent $full
 if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 [System.IO.File]::WriteAllText($full, $text, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "已生成 $full（$($text.Length) 字符，含 $($hashLines.Count) 个哈希，签名状态=$Signed）"
+Write-Host "已生成 $full（$($text.Length) 字符，含 $($hashLines.Count) 个哈希）"
