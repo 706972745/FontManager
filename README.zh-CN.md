@@ -86,6 +86,13 @@ corepack pnpm install        # 安装依赖
 corepack pnpm tauri build    # 构建安装包（产物在 src-tauri/target/release/bundle/）
 ```
 
+### 🔏 代码签名
+
+目前 Windows 安装包**未做代码签名**，下载/安装时可能被浏览器提示「通常不会下载」，
+或被 Windows 11 智能应用控制（Smart App Control）直接拦下（没有「仍要运行」按钮）。
+哪些产物会被签名、由谁签、在什么条件下签，见 [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)；
+后续版本将通过 [SignPath Foundation](https://signpath.org) 改为已签名发布。
+
 ### 📖 其他
 
 - 界面支持 9 种语言（简体中文、繁体中文、英语、日语、德语、西班牙语、法语、葡萄牙语、俄语）
