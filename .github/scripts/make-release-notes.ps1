@@ -86,7 +86,8 @@ Get-FileHash .\ZFontManager___VER___x64-setup.exe -Algorithm SHA256
 
 把输出与下方 SHA-256 对照，一致即说明文件完整。
 
-> 本项目是开源项目，正在申请 SignPath Foundation 的免费代码签名，后续版本会改为已签名发布。
+> 本项目是个人维护的免费开源项目，没有购买代码签名证书，详见仓库根目录的
+> [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)。
 '@
 
 # ── 4. 下载表 ──────────────────────────────────────────────────────

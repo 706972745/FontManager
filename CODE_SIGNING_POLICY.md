@@ -1,38 +1,36 @@
-# Code Signing Policy
+# 代码签名策略（Code Signing Policy）
 
-ZFontManager 的 Windows 发行包（NSIS `setup.exe` 与 `.msi`）使用
-[SignPath.io](https://signpath.io) 提供的免费代码签名服务，证书由
-[SignPath Foundation](https://signpath.org) 签发。
+**当前状态：本项目的 Windows 发行包不做代码签名。**
 
-## 哪些产物会被签名
+## 为什么没有签名
 
-仅限**由本仓库的 GitHub Actions 工作流构建**、并随 GitHub Release 发布的 Windows 安装包：
+ZFontManager 是个人维护的免费开源项目，代码签名证书需要每年付费（主流 CA 约 1000~2500 元/年），
+且 2026 年起 CA/B 论坛要求私钥必须托管在硬件安全模块中，接入成本较高。
+目前没有为发行包购买或申请代码签名证书。
 
-| 产物 | 来源 |
-|---|---|
-| `ZFontManager_<version>_x64-setup.exe` | `.github/workflows/release-signed.yml` |
-| `ZFontManager_<version>_x64_en-US.msi` | 同上 |
+## 这对用户意味着什么
 
-签名请求由 CI 在推送 `v*` tag 时自动发起，并由项目维护者人工确认后执行。
+- 浏览器下载时可能提示「通常不会下载」（Edge/Chrome 的文件信誉机制）——点「保留」即可；
+- Windows 11 **智能应用控制（Smart App Control）**可能直接阻止安装，且**没有「仍要运行」按钮**。
+  该功能一旦关闭通常无法重新开启（需重置或重装系统），是否关闭请自行权衡；
+- 部分杀毒软件可能对未签名程序给出警告。
 
-## 不会被签名的情况
+## 如何确认下载的文件是完整的
 
-- 任何在本仓库之外构建的二进制；
-- 任何包含未公开源码或私有依赖的构建；
-- 本地开发构建（`npx tauri build` 直接产出的未签名安装包）；
-- 第三方基于本项目源码二次分发时自行构建的产物——如需签名，请使用你自己的证书。
+每个 Release 的说明里都附有两个安装包的 **SHA-256**。下载后自行核对：
 
-## 私钥与证书
+```powershell
+Get-FileHash .\ZFontManager_<version>_x64-setup.exe -Algorithm SHA256
+```
 
-签名私钥由 SignPath 托管在符合要求的硬件安全模块（HSM）中，项目维护者
-**不持有、也无法导出**私钥。项目侧只持有一个权限受限的 API token，用于提交签名请求。
+输出与 Release 页面上的值一致，说明文件在传输过程中没有被篡改或截断。
 
-## 构建与签名的一致性
+## 哪些产物可以信任
 
-签名对象是 CI 从本仓库公开源码构建出的产物，构建过程可在
-Actions 运行记录中完整复现与审计。签名后的产物哈希会写进对应 Release 的说明，
-用户可用 `signtool verify /pa` 或「文件属性 → 数字签名」核对发布者。
+只从本仓库的 [Releases](../../releases) 页面下载。任何第三方转载、网盘分享、
+「绿色版」「破解版」都不在本项目控制范围内。
 
-## 联系
+## 如果将来接入签名
 
-如对本策略或某个已签名产物有疑问，请在本仓库提 issue。
+会在此文件中更新说明，并在对应 Release 的正文里标注「本版本已签名」。
+在此之前，**所有发行包都是未签名的**——如果看到声称「官方签名版」的第三方文件，那不是本项目发布的。

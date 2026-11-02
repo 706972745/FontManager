@@ -88,10 +88,10 @@ corepack pnpm tauri build    # 构建安装包（产物在 src-tauri/target/rele
 
 ### 🔏 代码签名
 
-目前 Windows 安装包**未做代码签名**，下载/安装时可能被浏览器提示「通常不会下载」，
+Windows 安装包**没有做代码签名**，下载/安装时可能被浏览器提示「通常不会下载」，
 或被 Windows 11 智能应用控制（Smart App Control）直接拦下（没有「仍要运行」按钮）。
-哪些产物会被签名、由谁签、在什么条件下签，见 [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)；
-后续版本将通过 [SignPath Foundation](https://signpath.org) 改为已签名发布。
+为什么没签、对你意味着什么、怎么用 SHA-256 核对下载完整性，
+都写在 [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md) 里。
 
 ### 📖 其他
 

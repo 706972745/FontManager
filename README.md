@@ -81,11 +81,10 @@ corepack pnpm tauri build    # installer lands in src-tauri/target/release/bundl
 
 ### Code signing
 
-Windows installers are currently **unsigned**, so the browser may warn ("通常不会下载" /
+Windows installers are **not code-signed**. The browser may warn ("通常不会下载" /
 "This type of file can harm your computer") and Windows 11 **Smart App Control** may block them
-outright. What gets signed, by whom, and under which conditions is documented in
-[CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). Signed releases are being set up via
-[SignPath Foundation](https://signpath.org).
+outright. Details — why, what it means for you, and how to verify the download with SHA-256 —
+are in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
 
 Licensed under the upstream GPL-3.0. Many thanks to the original author
 [TheHolyOneZ](https://github.com/TheHolyOneZ). Full upstream documentation below ↓
