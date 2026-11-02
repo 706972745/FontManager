@@ -4,6 +4,29 @@ All notable changes to ZFontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] — 2026-11-02
+
+> 正式版小修。只动速览界面（QuickBar）的「鼠标移开自动收起」判定。
+
+### 修复：鼠标停在速览界面上不动，面板反复展开 / 收起
+
+- **现象**（用户报障）：光标停在速览面板上沿不动，面板约每 2 秒自己展开又收起，
+  无限循环；期望是「鼠标还在上面就保持展开」。录制数据：光标恒定在 `(830, 0)`、
+  期间零 `pointermove`，窗口高度 43 → 1240 → 43 反复横跳，周期 ≈ 2.1 秒。
+- **根因**：`pointerInside` 这个「光标是否在窗口里」的标记**只在 `pointermove`
+  里置真**（`pointerleave` 置假）。而收成细线时窗口要整块滑出屏幕上沿
+  （`RETRACT_OUT_MS` / `OFFSCREEN_PAD`，y 会到 -67），光标压在上沿不动也会收到
+  `pointerleave` → 标记永久停在 false；窗口滑回来时又没有 `pointermove` 补回来。
+  于是链条闭合：展开落地 → 回调见 `hoverExpanded && !pointerInside` → 立刻收起
+  → 滑走再滑回 → 细线感应带（90ms 轮询、上升沿）又把光标判为「靠近」→ 再展开。
+- **修法**：
+  ① `onPointerLeave` 收起前先用 `cursorInsideWindow()` 问系统光标真实位置，
+  光标其实还在窗口里就判为「假离开」，只补状态不收起；
+  ② 展开动画落地回调同样改用真实光标位置，不再只信 `pointerInside`；
+  ③ 补 `pointerenter` / `mouseenter` 监听，窗口滑回光标底下时把标记补回 true
+  （只补状态，不触发展开）。
+- **验证**：`tsc` 干净；`node --test` 216 pass。
+
 ## [1.1.1] — 2026-11-01
 
 > **正式版**（1.1.0 的修正版）。内容 = 字体分类判定重写 + 族分类口径统一，
