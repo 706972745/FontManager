@@ -546,17 +546,46 @@ async fn install_online_family(
 /// 实测写盘 **9.0 GB**（4020 × 2.27 MB ≈ 9.1 GB，完全对得上）。
 /// 所以把「干什么」和「什么时候落盘」拆开：这里的调用者负责在合适的时候存一次。
 /// 这个路径是不是躺在「字体库」目录里（大小写不敏感，Windows 语义）。
-fn path_in_library(library_dir: Option<&str>, path: &str) -> bool {
-    let lib = scanner::effective_managed_dir(library_dir);
-    let mut lib = lib.to_string_lossy().to_lowercase();
-    if lib.is_empty() {
+/// `path` 是否在 `dir` 这个目录里（大小写不敏感，Windows 语义）。
+fn path_under(dir: &std::path::Path, path: &str) -> bool {
+    let mut prefix = dir.to_string_lossy().to_lowercase();
+    if prefix.is_empty() {
         return false;
     }
     // 补目录分隔符，否则库目录叫「字体库」时，隔壁「字体库2」也会被判成库内
-    if !lib.ends_with('\\') && !lib.ends_with('/') {
-        lib.push('\\');
+    if !prefix.ends_with('\\') && !prefix.ends_with('/') {
+        prefix.push('\\');
     }
-    path.to_lowercase().starts_with(&lib)
+    path.to_lowercase().starts_with(&prefix)
+}
+
+fn path_in_library(library_dir: Option<&str>, path: &str) -> bool {
+    path_under(&scanner::effective_managed_dir(library_dir), path)
+}
+
+/// 换字体库时，把停在旧库里的 `linked` / `added` 登记退场，返回退场条数。
+///
+/// 为什么需要（2026-11-03 用户报障「换字体库地址以后，上一个库的字体还留在软件里」）：
+/// `state.linked` 里既有导入时选「链接」的库外字体，也有扫描自动收编的**库内**字体
+/// （`scan_fonts` 里的 fresh 分支，见 store 注释）。换库只改了 `library_dir` 这个设置，
+/// 这些登记还指着旧库路径；`scan_fonts` 又会把 `linked` 里所有 is_file() 的路径
+/// 逐个解析进结果 —— 于是旧库字体照旧出现在列表里，跟换库这个动作完全脱节。
+///
+/// 只动登记表，**不碰注册表、不碰文件**：旧库字体在系统里该启用的仍启用，
+/// 只是不再属于「当前这个库」。旧库以外的链接字体（用户从别处链进来的）保持不动。
+fn retire_old_library(
+    state: &mut store::AppState,
+    old_dir: &std::path::Path,
+    new_dir: &std::path::Path,
+) -> usize {
+    if old_dir == new_dir {
+        return 0;
+    }
+    let stale = |p: &str| path_under(old_dir, p) && !path_under(new_dir, p);
+    let before = state.linked.len();
+    state.linked.retain(|p| !stale(p));
+    state.added.retain(|p, _| !stale(p));
+    before - state.linked.len()
 }
 
 fn uninstall_one(
@@ -2024,6 +2053,7 @@ fn set_settings(
 ) -> Result<(), String> {
     {
         let mut state = store.0.lock().map_err(|e| e.to_string())?;
+        let old_library = state.active_library_dir().map(|s| s.to_owned());
         state.extra_dirs = settings.extra_dirs.clone();
         state.watch_enabled = settings.watch_enabled;
         state.auto_activate_imports = settings.auto_activate_imports;
@@ -2032,6 +2062,22 @@ fn set_settings(
         state.affinity_enabled = settings.affinity_enabled;
         state.affinity_deactivate_on_quit = settings.affinity_deactivate_on_quit;
         state.online_fonts_enabled = settings.online_fonts_enabled;
+        // 换库（含「关掉自定义文件夹」回到默认目录）→ 旧库里登记的链接/新增记录必须退场，
+        // 否则 `scan_fonts` 还会顺着 linked 把旧库字体扫回来，用户看到「库没换干净」。
+        let new_library = state.active_library_dir().map(|s| s.to_owned());
+        if old_library != new_library {
+            let old_managed = scanner::effective_managed_dir(old_library.as_deref());
+            let new_managed = scanner::effective_managed_dir(new_library.as_deref());
+            let retired = retire_old_library(&mut state, &old_managed, &new_managed);
+            if retired > 0 {
+                crate::diag::log(&format!(
+                    "[store] 字体库目录变更：{} → {}，{} 条旧库登记已退场",
+                    old_managed.display(),
+                    new_managed.display(),
+                    retired
+                ));
+            }
+        }
         store::save(&state)?;
     }
     allow_dir(
@@ -2526,6 +2572,60 @@ mod session_tests {
         assert!(!path_in_library(Some(lib), r"E:\Users\someone\字体库2\a.ttf"));
         // 没配库目录 → 用默认 managed 目录，外部路径一律不算库内
         assert!(!path_in_library(None, r"D:\downloads\a.ttf"));
+    }
+}
+
+#[cfg(test)]
+mod library_switch_tests {
+    use super::*;
+
+    /// 换字体库必须让旧库的登记退场（2026-11-03 报障：换库后旧库字体还留在软件里）。
+    /// 只退「旧库目录里、且不在新库目录里」的；库外链入的、新库自己的、前缀相同的隔壁目录都得留着。
+    #[test]
+    fn switching_library_retires_only_old_library_entries() {
+        let mut state = store::AppState::default();
+        let old = std::path::PathBuf::from(r"E:\Users\me\字体库A");
+        let new = std::path::PathBuf::from(r"E:\Users\me\字体库B");
+        let stale = r"E:\Users\me\字体库A\Roboto\Roboto-Regular.ttf";
+        let neighbour = r"E:\Users\me\字体库A2\隔壁.ttf";
+        let linked_outside = r"D:\downloads\linked.ttf";
+        let in_new = r"E:\Users\me\字体库B\Inter\Inter.ttf";
+        for p in [stale, neighbour, linked_outside, in_new] {
+            state.linked.insert(p.to_string());
+        }
+        state.added.insert(stale.to_string(), 1);
+        state.added.insert(linked_outside.to_string(), 2);
+
+        assert_eq!(retire_old_library(&mut state, &old, &new), 1);
+        assert!(!state.linked.contains(stale), "旧库里的登记要退场");
+        assert!(!state.added.contains_key(stale), "added 登记也要一起退场");
+        assert!(state.linked.contains(neighbour), "「字体库A2」不是旧库");
+        assert!(state.linked.contains(linked_outside), "库外链入的字体不受换库影响");
+        assert!(state.linked.contains(in_new), "新库自己的登记不能删");
+        assert!(state.added.contains_key(linked_outside));
+    }
+
+    /// 「关掉自定义文件夹」= 从自定义库回到默认目录，同样要退场（用户截图里就是这个操作）。
+    #[test]
+    fn disabling_custom_library_also_retires() {
+        let mut state = store::AppState::default();
+        let custom = std::path::PathBuf::from(r"E:\Users\Administrator\Desktop\字体库");
+        let default_dir = scanner::managed_font_dir();
+        let stale = r"E:\Users\Administrator\Desktop\字体库\思源黑体\SourceHanSans-Regular.otf";
+        state.linked.insert(stale.to_string());
+        assert_eq!(retire_old_library(&mut state, &custom, &default_dir), 1);
+        assert!(state.linked.is_empty());
+    }
+
+    /// 同一个目录（只是别的设置变了）不能误删登记。
+    #[test]
+    fn same_library_keeps_entries() {
+        let mut state = store::AppState::default();
+        let dir = std::path::PathBuf::from(r"E:\Users\me\字体库");
+        let p = r"E:\Users\me\字体库\a.ttf";
+        state.linked.insert(p.to_string());
+        assert_eq!(retire_old_library(&mut state, &dir, &dir), 0);
+        assert!(state.linked.contains(p));
     }
 }
 
