@@ -24,6 +24,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { QuickBar } from "./components/QuickBar";
 import { WarmFooter } from "./components/WarmFooter";
 import { LoadProgress } from "./components/LoadProgress";
+import { PackProgress } from "./components/PackProgress";
 import { ApplyProgress } from "./components/ApplyProgress";
 import { BulkTagPrompt } from "./components/BulkTagPrompt";
 import { DuplicateDialog } from "./components/DuplicateDialog";
@@ -598,6 +599,7 @@ export default function App() {
             <main className="app-content">
               <MainContent />
             </main>
+            <PackProgress />
             <LoadProgress />
             <ApplyProgress />
             <WarmFooter />

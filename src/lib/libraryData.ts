@@ -79,6 +79,26 @@ export type CurationParse =
   | { ok: false; reason: "notAnExport" | "isSnapshot" };
 
 /**
+ * 整包（`.ZFontManager`，里面是整理数据 + 字体文件的 zip）的路径判定。
+ * 大小写都认：Windows 上用户改文件名时大小写很容易变。
+ */
+export const isPackPath = (path: string) => /\.zfontmanager$/i.test(path.trim());
+
+/**
+ * 整理数据的文件内容（「仅导出整理数据」和「整包」共用同一份 schema，
+ * 这样整包里的 json 和单独导出的 json 可以互相顶替，导入端只有一条解析路径）。
+ */
+export function curationFile(data: CurationData, exportedAt: string) {
+  return {
+    app: CURATION_APP,
+    kind: CURATION_KIND,
+    version: CURATION_VERSION,
+    exportedAt,
+    ...data,
+  };
+}
+
+/**
  * 解析导入文件。老版本（version 1）没有 `kind` 字段，必须继续认；
  * `kind: "snapshots"` 的快照文件要明确拦下来并指引到「快照」那一行，
  * 否则用户会得到一句含糊的「这不是导出文件」。

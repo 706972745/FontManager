@@ -8,6 +8,7 @@ mod diag;
 mod font_types;
 mod fontcache;
 mod installer;
+mod library_pack;
 mod net;
 mod online;
 mod parser;
@@ -2017,6 +2018,60 @@ fn export_fonts(paths: Vec<String>, dest_dir: String) -> Result<u32, String> {
     Ok(n)
 }
 
+/// 打包「整理数据 + 字体文件」。`dest` 是用户选的文件名（单卷直接用，多卷自动加 `-partN`）。
+/// 全在阻塞线程池里跑，界面只靠 `pack:progress` 事件更新底部进度条。
+#[tauri::command]
+async fn export_library_pack(
+    app: tauri::AppHandle,
+    dest: String,
+    curation: String,
+    created_at: String,
+) -> Result<library_pack::PackExportReport, String> {
+    use tauri::Manager;
+    let library = {
+        let store: State<Store> = app.state();
+        let state = store.0.lock().map_err(|e| e.to_string())?;
+        scanner::effective_managed_dir(state.active_library_dir())
+    };
+    let emitter = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        library_pack::export_pack(
+            &library,
+            std::path::Path::new(&dest),
+            &curation,
+            &created_at,
+            &|p| {
+                let _ = emitter.emit("pack:progress", p);
+            },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 解包 .ZFontManager：字体铺回字库（重复的跳过），整理数据原样交回前端合并。
+#[tauri::command]
+async fn import_library_pack(
+    app: tauri::AppHandle,
+    src: String,
+) -> Result<library_pack::PackImportReport, String> {
+    use tauri::Manager;
+    let library = {
+        let store: State<Store> = app.state();
+        let state = store.0.lock().map_err(|e| e.to_string())?;
+        scanner::effective_managed_dir(state.active_library_dir())
+    };
+    let emitter = app.clone();
+    let src = std::path::PathBuf::from(src);
+    tauri::async_runtime::spawn_blocking(move || {
+        library_pack::import_pack(&library, &src, &|p| {
+            let _ = emitter.emit("pack:progress", p);
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Settings {
@@ -2480,6 +2535,8 @@ pub fn run() {
             rename_snapshot,
             export_font,
             export_fonts,
+            export_library_pack,
+            import_library_pack,
             write_text_file,
             read_text_file,
             write_binary_file,

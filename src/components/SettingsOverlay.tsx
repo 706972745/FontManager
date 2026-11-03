@@ -40,6 +40,15 @@ const TRANSLATE_GUIDE_URL =
 const REQUEST_LANGUAGE_URL =
   "https://github.com/TheHolyOneZ/ZFontManager/issues/new?title=Language%20request%3A%20";
 
+/** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
+const EXPORT_FONTS_KEY = "zfm.exportFonts";
+
+/** 保存对话框的默认文件名：ZFonts-2026-11-03.ZFontManager */
+function packFileName(now = new Date()) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `ZFonts-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.ZFontManager`;
+}
+
 /**
  * radiogroup 的方向键 + roving tabindex（§5 第 30 条残留）。
  * 全局方向键是「换选中字族」的，不拦住的话在设置里按 ←/→ 动的是背后看不见的列表。
@@ -107,6 +116,19 @@ export function SettingsOverlay() {
   const pollAffinityLink = useFontStore((s) => s.pollAffinityLink);
   /** 目录名重算对话框（版权判定 v7 的迁移入口，默认只预演） */
   const [resyncOpen, setResyncOpen] = useState(false);
+  /**
+   * 「导出时连字体文件一起打包」的选择。
+   *
+   * 记在本机（localStorage）：这是个使用习惯，不是数据 —— 用户决定搬家一次，
+   * 之后每次打开设置都还要重新勾一遍会很烦。默认不勾（导出整包要写几 GB，不能默认干）。
+   */
+  const [exportFonts, setExportFonts] = useState(() => {
+    try {
+      return localStorage.getItem(EXPORT_FONTS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     // 设置面板关掉时一并收掉子对话框：不然它会浮在一个已经消失的面板上方
@@ -272,21 +294,34 @@ export function SettingsOverlay() {
   };
 
   const exportData = async () => {
+    // 勾了「连字体一起」就走整包（.ZFontManager，超 2GB 自动分卷），否则还是轻量的 json
     const dest = await save({
-      title: t("settings.exportDataTitle"),
-      defaultPath: "zfontmanager-library.json",
-      filters: [{ name: "JSON", extensions: ["json"] }],
+      title: exportFonts ? t("settings.exportPackTitle") : t("settings.exportDataTitle"),
+      defaultPath: exportFonts ? packFileName() : "zfontmanager-library.json",
+      filters: exportFonts
+        ? [{ name: "ZFontManager", extensions: ["ZFontManager"] }]
+        : [{ name: "JSON", extensions: ["json"] }],
     });
-    if (dest) await useFontStore.getState().exportLibraryData(dest);
+    if (!dest) return;
+    // 整包要写很久，进度条在窗口底部：设置面板留着会把它盖住
+    if (exportFonts) setSettingsOpen(false);
+    if (exportFonts) await useFontStore.getState().exportLibraryPack(dest);
+    else await useFontStore.getState().exportLibraryData(dest);
   };
 
   const importData = async () => {
     const src = await open({
       title: t("settings.importDataTitle"),
       multiple: false,
-      filters: [{ name: "JSON", extensions: ["json"] }],
+      filters: [
+        { name: "ZFontManager", extensions: ["ZFontManager", "json"] },
+        { name: "JSON", extensions: ["json"] },
+      ],
     });
-    if (typeof src === "string") await useFontStore.getState().importLibraryData(src);
+    if (typeof src !== "string") return;
+    // 整包要解很久，同样把面板收起来，让底部进度条露出来
+    if (/\.zfontmanager$/i.test(src)) setSettingsOpen(false);
+    await useFontStore.getState().importLibraryFile(src);
   };
 
   return (
@@ -675,6 +710,23 @@ export function SettingsOverlay() {
                     <DatabaseBackup size={13} strokeWidth={1.5} /> {t("settings.curation")}
                   </div>
                   <div className="settings-sub">{t("settings.curationSub")}</div>
+                  <label className="settings-check">
+                    <input
+                      type="checkbox"
+                      checked={exportFonts}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setExportFonts(next);
+                        try {
+                          localStorage.setItem(EXPORT_FONTS_KEY, next ? "1" : "0");
+                        } catch {
+                          // 隐私模式下写不进去：只影响「下次还记不记得」，不影响这次导出
+                        }
+                      }}
+                    />
+                    <span>{t("settings.exportPackToggle")}</span>
+                  </label>
+                  <div className="settings-sub">{t("settings.exportPackHint")}</div>
                 </div>
                 <div className="settings-data-actions">
                   <button className="settings-data-btn" onClick={() => void exportData()}>

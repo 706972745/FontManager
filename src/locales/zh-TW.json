@@ -777,7 +777,7 @@
   "toast.notAnExport": "不是 ZFontManager 的匯出檔",
   "toast.notAnExportSub": "請選擇透過「匯出資料庫資料」建立的檔案",
   "toast.importIsSnapshot": "這是快照檔案",
-  "toast.importIsSnapshotSub": "請到上面的「快照」那一列匯入，不要匯入整理資料",
+  "toast.importIsSnapshotSub": "請到左側「快照」那一欄，用它自己的匯入按鈕；這裡只合併整理資料",
   "toast.nothingToInstall": "沒有可安裝的內容",
   "toast.nothingToInstallSub": "拖入的內容裡沒有找到字型檔",
   "toast.webfontsSkipped": "已跳過 {count} 個 WOFF（同字型已有 TTF/OTF，或 WOFF2 不支援）",
@@ -929,4 +929,23 @@
   "toast.faceDeactivated": "已單獨停用「{style}」",
   "toast.faceDeactivatedSub": "同族另外 {count} 個字重仍然可用",
   "toast.faceDeactivatedSolo": "這個字族現在沒有啟用的字重了"
+,
+  "settings.exportPackToggle": "同時匯出字型檔案",
+  "settings.exportPackHint": "勾選後匯出 .ZFontManager 整包：整理資料 + 字型庫裡的字型（不含系統字型），換一台電腦匯入即可連字型一起還原。字型庫超過 2GB 會自動分卷，每卷不超過 2GB，匯入時任選一卷即可。",
+  "settings.exportPackTitle": "匯出整包",
+  "toast.packExported": "已打包 {files} 個字型（{size}，共 {parts} 卷）",
+  "toast.packExportFailed": "打包失敗",
+  "toast.packImported": "已匯入 {added} 個字型，略過重複 {skipped} 個，合併整理資料 {merged} 項",
+  "toast.packImportFailed": "匯入失敗",
+  "toast.packImportFailedSub": "有 {count} 個檔案沒能寫入",
+  "toast.packMissingParts": "缺少分卷：第 {parts} 卷",
+  "toast.packMissingPartsSub": "請把同一套的所有分卷放進同一個資料夾再匯入",
+  "pack.preparingExport": "正在清點字型庫…",
+  "pack.preparingImport": "正在讀取整包…",
+  "pack.exporting": "正在打包字型 {done}/{total} 個檔案 · {percent}%{vol}",
+  "pack.importing": "正在匯入字型 {done}/{total} 個檔案 · {percent}%{vol}",
+  "pack.volume": " · 第 {part}/{parts} 卷",
+  "hint.packProgress": "整包會把整理資料和字型檔案打在一起。字型庫超過 2GB 時自動分卷，每卷不超過 2GB。"
+,
+  "toast.packBusy": "上一趟打包或匯入還沒結束，等它跑完再點"
 }

@@ -3315,6 +3315,27 @@ h2.detail-title.copy-name {
   line-height: 1.5;
 }
 
+/* 设置里的小勾选项（目前只有「导出时连字体一起打包」）：
+   用原生 checkbox + accent-color，别自绘——这里不需要动效，越朴素越不容易点错 */
+.settings-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.settings-check input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent-a);
+  cursor: pointer;
+}
+
 /* 设置里录制快捷键：一块「按键框」+ 恢复默认 */
 .hotkey-edit {
   display: flex;

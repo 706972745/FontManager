@@ -825,7 +825,7 @@
   "toast.notAnExport": "Это не экспорт ZFontManager",
   "toast.notAnExportSub": "Выберите файл, созданный через «Экспорт данных библиотеки»",
   "toast.importIsSnapshot": "Это файл снимка",
-  "toast.importIsSnapshotSub": "Импортируйте его через строку «Снимки» выше",
+  "toast.importIsSnapshotSub": "Используйте кнопку импорта в разделе «Снимки» на боковой панели — здесь объединяются только данные организации",
   "toast.nothingToInstall": "Нечего устанавливать",
   "toast.nothingToInstallSub": "В перетащенном не нашлось файлов шрифтов",
   "toast.webfontsSkipped": "Пропущено файлов WOFF: {count} — тот же шрифт уже есть в TTF/OTF, либо WOFF2 не поддерживается",
@@ -980,4 +980,23 @@
   "toast.faceDeactivated": "Начертание «{style}» выключено отдельно",
   "toast.faceDeactivatedSub": "Ещё {count} начертаний этого семейства остаются доступными",
   "toast.faceDeactivatedSolo": "В этом семействе больше нет включённых начертаний"
+,
+  "settings.exportPackToggle": "Экспортировать и файлы шрифтов",
+  "settings.exportPackHint": "Экспортирует пакет .ZFontManager: данные организации плюс шрифты из библиотеки (системные шрифты не включаются). При импорте на другом компьютере восстановится и то и другое. Библиотека больше 2 ГБ делится на тома не более 2 ГБ; для импорта достаточно выбрать любой том.",
+  "settings.exportPackTitle": "Экспорт пакета",
+  "toast.packExported": "Упаковано шрифтов: {files} ({size}, томов: {parts})",
+  "toast.packExportFailed": "Не удалось упаковать",
+  "toast.packImported": "Импортировано шрифтов: {added}, пропущено дублей: {skipped}, объединено записей: {merged}",
+  "toast.packImportFailed": "Не удалось импортировать",
+  "toast.packImportFailedSub": "Не удалось записать файлов: {count}",
+  "toast.packMissingParts": "Не хватает томов: {parts}",
+  "toast.packMissingPartsSub": "Положите все тома одного набора в одну папку и повторите импорт",
+  "pack.preparingExport": "Подсчёт файлов библиотеки…",
+  "pack.preparingImport": "Чтение пакета…",
+  "pack.exporting": "Упаковка шрифтов {done}/{total} файлов · {percent}%{vol}",
+  "pack.importing": "Импорт шрифтов {done}/{total} файлов · {percent}%{vol}",
+  "pack.volume": " · том {part}/{parts}",
+  "hint.packProgress": "Пакет объединяет данные организации и файлы шрифтов. Библиотека больше 2 ГБ делится на тома не более 2 ГБ."
+,
+  "toast.packBusy": "Предыдущая операция ещё выполняется — дождитесь её завершения"
 }

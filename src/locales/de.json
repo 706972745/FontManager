@@ -791,7 +791,7 @@
   "toast.notAnExport": "Kein ZFontManager-Export",
   "toast.notAnExportSub": "Wähl eine Datei, die mit „Bibliotheksdaten exportieren“ erstellt wurde",
   "toast.importIsSnapshot": "Das ist eine Schnappschuss-Datei",
-  "toast.importIsSnapshotSub": "Bitte über die Zeile „Schnappschüsse“ oben importieren",
+  "toast.importIsSnapshotSub": "Bitte die Import-Schaltfläche im Bereich „Snapshots“ in der Seitenleiste nutzen – hier werden nur Kuratierungsdaten zusammengeführt",
   "toast.nothingToInstall": "Nichts zu installieren",
   "toast.nothingToInstallSub": "Im Abgelegten wurden keine Schriftdateien gefunden",
   "toast.webfontsSkipped": "{count} WOFF-Datei(en) übersprungen — gleiche Schrift bereits als TTF/OTF vorhanden oder WOFF2 nicht unterstützt",
@@ -946,4 +946,23 @@
   "toast.faceDeactivated": "„{style}“ einzeln deaktiviert",
   "toast.faceDeactivatedSub": "{count} weitere Schnitte dieser Familie bleiben verfügbar",
   "toast.faceDeactivatedSolo": "In dieser Familie ist jetzt kein Schnitt mehr aktiv"
+,
+  "settings.exportPackToggle": "Schriftdateien mit exportieren",
+  "settings.exportPackHint": "Exportiert ein .ZFontManager-Paket: Ihre Sammlungsdaten plus die Schriften Ihrer Bibliothek (Systemschriften ausgenommen). Beim Import auf einem anderen Rechner wird beides wiederhergestellt. Bibliotheken über 2 GB werden in Teile von höchstens 2 GB aufgeteilt; beim Import genügt ein beliebiger Teil.",
+  "settings.exportPackTitle": "Paket exportieren",
+  "toast.packExported": "{files} Schriften gepackt ({size}, {parts} Teile)",
+  "toast.packExportFailed": "Packen fehlgeschlagen",
+  "toast.packImported": "{added} Schriften importiert, {skipped} Duplikate übersprungen, {merged} Sammlungseinträge zusammengeführt",
+  "toast.packImportFailed": "Import fehlgeschlagen",
+  "toast.packImportFailedSub": "{count} Dateien konnten nicht geschrieben werden",
+  "toast.packMissingParts": "Fehlende Teile: {parts}",
+  "toast.packMissingPartsSub": "Legen Sie alle Teile eines Satzes in einen Ordner und importieren Sie erneut",
+  "pack.preparingExport": "Bibliothek wird erfasst…",
+  "pack.preparingImport": "Paket wird gelesen…",
+  "pack.exporting": "Schriften werden gepackt {done}/{total} Dateien · {percent}%{vol}",
+  "pack.importing": "Schriften werden importiert {done}/{total} Dateien · {percent}%{vol}",
+  "pack.volume": " · Teil {part}/{parts}",
+  "hint.packProgress": "Ein Paket bündelt Sammlungsdaten und Schriftdateien. Bibliotheken über 2 GB werden in Teile von höchstens 2 GB aufgeteilt."
+,
+  "toast.packBusy": "Der vorherige Vorgang läuft noch – bitte warten, bis er fertig ist"
 }

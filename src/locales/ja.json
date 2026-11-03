@@ -775,7 +775,7 @@
   "toast.notAnExport": "ZFontManager の書き出しファイルではありません",
   "toast.notAnExportSub": "「ライブラリデータを書き出す」で作成したファイルを選んでください",
   "toast.importIsSnapshot": "これはスナップショットのファイルです",
-  "toast.importIsSnapshotSub": "上の「スナップショット」行から読み込んでください",
+  "toast.importIsSnapshotSub": "左側の「スナップショット」欄にある専用の読み込みボタンをお使いください（ここは整理データのみ）",
   "toast.nothingToInstall": "インストールするものがありません",
   "toast.nothingToInstallSub": "ドロップされたものにフォントファイルが見つかりませんでした",
   "toast.webfontsSkipped": "WOFF {count} 件をスキップしました（同じフォントの TTF/OTF があるか、WOFF2 非対応）",
@@ -929,4 +929,23 @@
   "toast.faceDeactivated": "「{style}」を単独で無効にしました",
   "toast.faceDeactivatedSub": "同じファミリーの残り {count} ウェイトは引き続き使えます",
   "toast.faceDeactivatedSolo": "このファミリーに有効なウェイトはなくなりました"
+,
+  "settings.exportPackToggle": "フォントファイルも一緒に書き出す",
+  "settings.exportPackHint": "チェックすると .ZFontManager パッケージを書き出します：整理データ＋ライブラリ内のフォント（システムフォントを除く）。別のパソコンで読み込めば両方まとめて復元できます。ライブラリが 2GB を超える場合は最大 2GB ごとの分割ファイルになり、読み込み時はどれか 1 つを選ぶだけです。",
+  "settings.exportPackTitle": "パッケージを書き出す",
+  "toast.packExported": "{files} 個のフォントをまとめました（{size}、全 {parts} 巻）",
+  "toast.packExportFailed": "パッケージ作成に失敗しました",
+  "toast.packImported": "{added} 個のフォントを読み込み、重複 {skipped} 個をスキップ、整理データ {merged} 件を統合しました",
+  "toast.packImportFailed": "読み込みに失敗しました",
+  "toast.packImportFailedSub": "{count} 個のファイルを書き込めませんでした",
+  "toast.packMissingParts": "不足している巻：{parts}",
+  "toast.packMissingPartsSub": "同じセットの分割ファイルをすべて同じフォルダに置いてから、もう一度読み込んでください",
+  "pack.preparingExport": "ライブラリを確認しています…",
+  "pack.preparingImport": "パッケージを読み込んでいます…",
+  "pack.exporting": "フォントをまとめています {done}/{total} ファイル · {percent}%{vol}",
+  "pack.importing": "フォントを読み込んでいます {done}/{total} ファイル · {percent}%{vol}",
+  "pack.volume": " · {part}/{parts} 巻",
+  "hint.packProgress": "パッケージは整理データとフォントファイルをまとめたものです。ライブラリが 2GB を超える場合は最大 2GB ごとに分割されます。"
+,
+  "toast.packBusy": "前回のパッケージ作成／読み込みがまだ終わっていません。終わってから操作してください"
 }
