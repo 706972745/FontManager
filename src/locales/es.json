@@ -807,7 +807,7 @@
   "toast.notAnExport": "No es una exportación de ZFontManager",
   "toast.notAnExportSub": "Elige un archivo creado con «Exportar los datos de la biblioteca»",
   "toast.importIsSnapshot": "Este es un archivo de instantánea",
-  "toast.importIsSnapshotSub": "Impórtalo desde la fila «Instantáneas» de arriba",
+  "toast.importIsSnapshotSub": "Usa el botón de importar de la sección «Instantáneas» de la barra lateral; aquí solo se combinan datos de organización",
   "toast.nothingToInstall": "Nada que instalar",
   "toast.nothingToInstallSub": "No se han encontrado archivos de fuente en lo que soltaste",
   "toast.webfontsSkipped": "Se omitieron {count} archivo(s) WOFF: la misma fuente ya tiene TTF/OTF o WOFF2 no es compatible",
@@ -963,4 +963,23 @@
   "toast.faceDeactivated": "Se desactivó «{style}» por separado",
   "toast.faceDeactivatedSub": "Otros {count} estilos de esta familia siguen disponibles",
   "toast.faceDeactivatedSolo": "Esta familia ya no tiene ningún estilo activo"
+,
+  "settings.exportPackToggle": "Exportar también los archivos de fuente",
+  "settings.exportPackHint": "Exporta un paquete .ZFontManager: tus datos de organización más las fuentes de la biblioteca (sin las fuentes del sistema). Al importarlo en otro equipo se restauran ambos. Si la biblioteca supera 2 GB se divide en volúmenes de 2 GB como máximo; para importar basta con un volumen.",
+  "settings.exportPackTitle": "Exportar paquete",
+  "toast.packExported": "{files} fuentes empaquetadas ({size}, {parts} volúmenes)",
+  "toast.packExportFailed": "Error al empaquetar",
+  "toast.packImported": "{added} fuentes importadas, {skipped} duplicadas omitidas, {merged} entradas de organización combinadas",
+  "toast.packImportFailed": "Error al importar",
+  "toast.packImportFailedSub": "No se pudieron escribir {count} archivos",
+  "toast.packMissingParts": "Faltan volúmenes: {parts}",
+  "toast.packMissingPartsSub": "Coloca todos los volúmenes del mismo conjunto en una carpeta y vuelve a importar",
+  "pack.preparingExport": "Revisando la biblioteca…",
+  "pack.preparingImport": "Leyendo el paquete…",
+  "pack.exporting": "Empaquetando fuentes {done}/{total} archivos · {percent}%{vol}",
+  "pack.importing": "Importando fuentes {done}/{total} archivos · {percent}%{vol}",
+  "pack.volume": " · volumen {part}/{parts}",
+  "hint.packProgress": "Un paquete reúne los datos de organización y los archivos de fuente. Las bibliotecas de más de 2 GB se dividen en volúmenes de 2 GB como máximo."
+,
+  "toast.packBusy": "La operación anterior sigue en curso; espera a que termine"
 }

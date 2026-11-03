@@ -155,6 +155,45 @@ export interface InstallProgress {
 
 export type AdobeApp = "photoshop" | "illustrator" | "coreldraw";
 
+/**
+ * 整包（`.ZFontManager`）导入导出的进度。和 `ScanProgress` 不是一回事：
+ * 那个是「读字库」，这个是自己打字/解包，所以要另外给用户看。
+ */
+export interface PackProgress {
+  kind: "export" | "import";
+  phase: string;
+  done: number;
+  total: number;
+  /** 当前第几卷 / 共几卷；单卷时都是 1 */
+  part: number;
+  parts: number;
+  bytes: number;
+  current: string;
+}
+
+/** 打包结果（见 src-tauri/src/library_pack.rs::PackExportReport） */
+export interface PackExportReport {
+  paths: string[];
+  parts: number;
+  files: number;
+  bytes: number;
+  /** 因为是系统字体副本而被排除的数量 */
+  skippedSystem: number;
+}
+
+/** 解包结果（见 src-tauri/src/library_pack.rs::PackImportReport） */
+export interface PackImportReport {
+  curation: string | null;
+  added: number;
+  skipped: number;
+  failed: number;
+  parts: number;
+  /** 用户只拷了一部分卷过来时，这里列出缺的卷号 */
+  missingParts: number[];
+  libraryDir: string;
+}
+
+
 /** 右键菜单 / 命令面板里「在 … 中应用」的目标软件（新增目标只改这一处） */
 export const ADOBE_APPS: readonly AdobeApp[] = ["photoshop", "illustrator", "coreldraw"];
 
@@ -511,6 +550,15 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
     invoke<void>("write_text_file", { path, content }),
   exportFonts: (paths: string[], destDir: string) =>
     invoke<number>("export_fonts", { paths, destDir }),
+  /**
+   * 打包「整理数据 + 字体文件」成 `.ZFontManager`（超 2GB 自动分卷）。
+   * `curation` 是整理数据的 json 原文，原样塞进包里，导入时再原样交回来合并。
+   */
+  exportLibraryPack: (dest: string, curation: string, createdAt: string) =>
+    invoke<PackExportReport>("export_library_pack", { dest, curation, createdAt }),
+  /** 解包：字体铺回字库（重复跳过），整理数据以字符串交回前端合并 */
+  importLibraryPack: (src: string) =>
+    invoke<PackImportReport>("import_library_pack", { src }),
   adobeAvailable: () => invoke<boolean>("adobe_available"),
   /**
    * 把字体库里与系统已安装字体重复的文件归置到 `<库>/_重复字体/`。

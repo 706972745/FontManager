@@ -801,7 +801,7 @@
   "toast.notAnExport": "Not a ZFontManager export",
   "toast.notAnExportSub": "Pick a file created by Export library data",
   "toast.importIsSnapshot": "This is a snapshot file",
-  "toast.importIsSnapshotSub": "Use the Snapshots row above instead of the curation import",
+  "toast.importIsSnapshotSub": "Use the import button in the Snapshots section of the sidebar — this row only merges curation data",
   "toast.nothingToInstall": "Nothing to install",
   "toast.nothingToInstallSub": "No font files found in the drop",
   "toast.webfontsSkipped": "Skipped {count} WOFF file(s) — same font already has TTF/OTF, or WOFF2 is unsupported",
@@ -946,4 +946,23 @@
   "toast.faceDeactivated": "Turned off “{style}” on its own",
   "toast.faceDeactivatedSub": "{count} other styles in this family are still available",
   "toast.faceDeactivatedSolo": "No styles in this family are turned on now"
+,
+  "settings.exportPackToggle": "Also export font files",
+  "settings.exportPackHint": "Exports a .ZFontManager package: your curation data plus the fonts in your library (system fonts excluded). Importing it on another machine restores both. Libraries over 2 GB are split into volumes of at most 2 GB; import any one volume.",
+  "settings.exportPackTitle": "Export package",
+  "toast.packExported": "Packed {files} fonts ({size}, {parts} volumes)",
+  "toast.packExportFailed": "Packing failed",
+  "toast.packImported": "Imported {added} fonts, skipped {skipped} duplicates, merged {merged} curation entries",
+  "toast.packImportFailed": "Import failed",
+  "toast.packImportFailedSub": "{count} files could not be written",
+  "toast.packMissingParts": "Missing volumes: {parts}",
+  "toast.packMissingPartsSub": "Put every volume of the same set in one folder, then import again",
+  "pack.preparingExport": "Counting library files…",
+  "pack.preparingImport": "Reading package…",
+  "pack.exporting": "Packing fonts {done}/{total} files · {percent}%{vol}",
+  "pack.importing": "Importing fonts {done}/{total} files · {percent}%{vol}",
+  "pack.volume": " · volume {part}/{parts}",
+  "hint.packProgress": "A package bundles curation data with font files. Libraries over 2 GB are split into volumes of at most 2 GB each."
+,
+  "toast.packBusy": "The previous pack or import is still running — wait for it to finish"
 }

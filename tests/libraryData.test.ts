@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  curationFile,
   emptyCuration,
+  isPackPath,
   mergeCuration,
   parseCuration,
   type CurationData,
@@ -143,4 +145,26 @@ test("字段形状不对时逐条丢掉，不让一条脏数据把整个导入�
   assert.deepEqual(parsed.data.favorites, ["Inter"]);
   assert.deepEqual(parsed.data.notes, { Inter: "正常" });
   assert.deepEqual(parsed.data.copyrightStatus, {});
+});
+
+test("整包内的整理数据与单独导出的 json 是同一份 schema，能互相顶替", () => {
+  const file = curationFile(
+    data({ tags: { Lora: ["衬线"] }, copyrightStatus: { Lora: "paid" } }),
+    "2026-11-03T00:00:00.000Z",
+  );
+  const parsed = parseCuration(JSON.parse(JSON.stringify(file)));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.data.tags, { Lora: ["衬线"] });
+  assert.deepEqual(parsed.data.copyrightStatus, { Lora: "paid" });
+});
+
+test("整包路径判定：大小写都认，别把 .json 当整包", () => {
+  assert.equal(isPackPath("D://备份//ZFonts-2026-11-03.ZFontManager"), true);
+  assert.equal(isPackPath("D://备份//ZFonts-2026-11-03.zfontmanager"), true);
+  assert.equal(isPackPath("/home/u/ZFonts-2026-11-03-part2.ZFontManager"), true);
+  assert.equal(isPackPath("D://备份//zfontmanager-library.json"), false);
+  assert.equal(isPackPath("D://备份//ZFontManager"), false);
+  // 名字里带 .ZFontManager 但结尾不是：防止把「打包日志.txt」认成整包
+  assert.equal(isPackPath("D://备份//ZFonts.ZFontManager.txt"), false);
 });

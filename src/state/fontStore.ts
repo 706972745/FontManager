@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { setUnpreviewableHook } from "../lib/fontLoader";
+import { formatBytes, setUnpreviewableHook } from "../lib/fontLoader";
 import { pickRemovedFamilyNames, withoutFamilies } from "../lib/containerRemove";
 
 /** 快照数量上限（与后端 MAX_SNAPSHOTS 一致）：超过就拒绝，不再悄悄淘汰最旧的 */
@@ -31,6 +31,7 @@ import {
   type OnlineInstallScope,
   type OnlineProgress,
   type PendingBatch,
+  type PackProgress,
   type ScanProgress,
   type Snapshot,
   type SnapshotEntry,
@@ -58,9 +59,8 @@ import {
 import { contextMenuSize } from "../lib/menuMetrics";
 import { parentDir } from "../lib/onlineCoverage";
 import {
-  CURATION_APP,
-  CURATION_KIND,
-  CURATION_VERSION,
+  curationFile,
+  isPackPath,
   mergeCuration,
   parseCuration,
   type CurationData,
@@ -194,6 +194,14 @@ export interface Family {
 interface FontStore {
   phase: "scanning" | "ready" | "error";
   scanProgress: ScanProgress;
+  /**
+   * 整包（`.ZFontManager`）打包/解包进度。
+   *
+   * 和 `scanProgress` 分开存：那个是「读字库」，这个是「自己写/解 6GB 的包」，
+   * 两者可能同时进行（导入完会 rescan），混一个槽位就会互相覆盖。
+   * null = 当前没有打包/解包任务。
+   */
+  packProgress: PackProgress | null;
   /**
    * 应用快照（启用/停用一大批字体）的进度。
    *
@@ -528,6 +536,13 @@ interface FontStore {
   setCopyrightExpiry: (family: string, date: string | null) => void;
   exportLibraryData: (dest: string) => Promise<void>;
   importLibraryData: (src: string) => Promise<void>;
+  /**
+   * 打包「整理数据 + 字体文件」成 `.ZFontManager`（超 2GB 自动分卷）。
+   * 放在阻塞线程池里跑，进度走 `pack:progress` 事件，界面只负责显示。
+   */
+  exportLibraryPack: (dest: string) => Promise<void>;
+  /** 导入时自动分辨：`.ZFontManager` 走解包，`.json` 走整理数据 */
+  importLibraryFile: (src: string) => Promise<void>;
   setNav: (n: Nav) => void;
   select: (family: string | null) => void;
 }
@@ -860,7 +875,98 @@ function persistPrefs(get: () => FontStore) {
       collectionFaces: s.collectionFaces,
     });
   }, 600);
-}/** 被取消那次应用里「已经跑完的批次」，供底部那条常驻提示的「撤销」使用 */
+}
+
+/** 整理数据的导出内容：单独导 json 与整包内嵌**共用这一份**，格式必须完全一致 */
+function curationPayload(s: FontStore, now: Date) {
+  return curationFile(
+    {
+      tags: s.tags,
+      collections: s.collections,
+      collectionFaces: s.collectionFaces,
+      favorites: s.favorites,
+      notes: s.notes,
+      copyrightStatus: s.copyrightStatus,
+      copyrightExpiry: s.copyrightExpiry,
+    },
+    now.toISOString(),
+  );
+}
+
+/**
+ * 把导入的整理数据按「只增不减 / 本地优先」合并进当前状态。
+ *
+ * 单独导 json 与解整包都走这里 —— 两套导入逻辑一旦分家，规则迟早跑偏
+ * （比如一边给标签做并集、另一边直接覆盖）。返回真正补进去的条目数。
+ */
+async function applyCurationMerge(
+  get: () => FontStore,
+  set: (partial: Partial<FontStore>) => void,
+  data: CurationData,
+): Promise<number> {
+  const s = get();
+  const local: CurationData = {
+    tags: s.tags,
+    collections: s.collections,
+    collectionFaces: s.collectionFaces,
+    favorites: s.favorites,
+    notes: s.notes,
+    copyrightStatus: s.copyrightStatus,
+    copyrightExpiry: s.copyrightExpiry,
+  };
+  const merged = mergeCuration(local, data);
+  if (merged.touched === 0) return 0;
+  // 标签 / 备注走后端逐条命令（它们各自有落盘与联动），分组 / 收藏 / 版权走 prefs
+  for (const family of Object.keys(merged.addedTags)) {
+    await get().setFamilyTags(family, merged.tags[family] ?? []);
+  }
+  for (const [name, members] of Object.entries(merged.changedCollections)) {
+    await ipc.setCollection(name, merged.collections[name] ?? members);
+  }
+  for (const family of merged.addedFavorites) {
+    await ipc.setFavorite(family, true);
+  }
+  for (const [family, note] of Object.entries(merged.addedNotes)) {
+    await get().setFamilyNote(family, note);
+  }
+  set({
+    tags: merged.tags,
+    collections: merged.collections,
+    collectionFaces: merged.collectionFaces,
+    favorites: merged.favorites,
+    notes: merged.notes,
+    copyrightStatus: merged.copyrightStatus,
+    copyrightExpiry: merged.copyrightExpiry,
+  });
+  persistPrefs(get);
+  return merged.touched;
+}
+
+function emptyPackProgress(kind: "export" | "import"): PackProgress {
+  return {
+    kind,
+    phase: kind,
+    done: 0,
+    total: 0,
+    part: 1,
+    parts: 1,
+    bytes: 0,
+    current: "",
+  };
+}
+
+/** 收尾时让 100% 多停 0.9 秒再收起，否则用户最后一眼看到的是 97%，以为没做完 */
+function clearPackProgressSoon(
+  set: (partial: Partial<FontStore>) => void,
+  get: () => FontStore,
+  kind: "export" | "import",
+) {
+  setTimeout(() => {
+    if (get().packProgress?.kind === kind) set({ packProgress: null });
+  }, 900);
+}
+
+/** 被取消那次应用里「已经跑完的批次」，供底部那条常驻提示的「撤销」使用 */
 let undoPending: ApplyBatch[] = [];
 
 /**
@@ -1238,6 +1344,7 @@ async function warnIfNoCjk(face: { path: string; faceIndex: number }, name: stri
 export const useFontStore = create<FontStore>((set, get) => ({
   phase: "scanning",
   scanProgress: { done: 0, total: 0 },
+  packProgress: null,
   applyProgress: null,
   applyBusy: false,
   applyNotice: null,
@@ -1348,6 +1455,11 @@ export const useFontStore = create<FontStore>((set, get) => ({
     initStarted = true;
     await listen<ScanProgress>("scan:progress", (e) => {
       set({ scanProgress: e.payload });
+    });
+    // 打包 / 解包 .ZFontManager 的进度：清单一律走这一条事件，
+    // 前端不做任何「估算」，done/total 由后端按文件数如实给。
+    await listen<PackProgress>("pack:progress", (e) => {
+      set({ packProgress: e.payload });
     });
     // 边扫边显示：原生侧每解析一批就推一批过来，界面立刻能铺卡片，
     // 不用等整库扫完（几千个字体要好几秒）才「啪」地一次性出现。
@@ -3642,20 +3754,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   exportLibraryData: async (dest) => {
     // 导出口径见 lib/libraryData.ts 顶部注释：标签 + 分组（字族级 / 字重级）+ 收藏 + 备注
     // + 手动版权状态 + 到期日期。**快照不在里面**，它有自己的文件格式与入口。
-    const s = get();
-    const payload = {
-      app: CURATION_APP,
-      kind: CURATION_KIND,
-      version: CURATION_VERSION,
-      exportedAt: new Date().toISOString(),
-      tags: s.tags,
-      collections: s.collections,
-      collectionFaces: s.collectionFaces,
-      favorites: s.favorites,
-      notes: s.notes,
-      copyrightStatus: s.copyrightStatus,
-      copyrightExpiry: s.copyrightExpiry,
-    };
+    const payload = curationPayload(get(), new Date());
     try {
       await ipc.writeTextFile(dest, JSON.stringify(payload, null, 2));
       toast.success(t("toast.libraryDataExported"), dest, "install");
@@ -3676,51 +3775,107 @@ export const useFontStore = create<FontStore>((set, get) => ({
         }
         return;
       }
-      const s = get();
-      const local: CurationData = {
-        tags: s.tags,
-        collections: s.collections,
-        collectionFaces: s.collectionFaces,
-        favorites: s.favorites,
-        notes: s.notes,
-        copyrightStatus: s.copyrightStatus,
-        copyrightExpiry: s.copyrightExpiry,
-      };
-      const merged = mergeCuration(local, parsed.data);
-      if (merged.touched === 0) {
+      const touched = await applyCurationMerge(get, set, parsed.data);
+      if (touched === 0) {
         toast.info(t("toast.libraryDataImported"), t("toast.entriesMerged", { count: 0 }));
         return;
       }
-      // 标签 / 备注走后端逐条命令（它们各自有落盘与联动），分组 / 收藏 / 版权走 prefs
-      for (const family of Object.keys(merged.addedTags)) {
-        await get().setFamilyTags(family, merged.tags[family] ?? []);
-      }
-      for (const [name, members] of Object.entries(merged.changedCollections)) {
-        await ipc.setCollection(name, merged.collections[name] ?? members);
-      }
-      for (const family of merged.addedFavorites) {
-        await ipc.setFavorite(family, true);
-      }
-      for (const [family, note] of Object.entries(merged.addedNotes)) {
-        await get().setFamilyNote(family, note);
-      }
-      set({
-        tags: merged.tags,
-        collections: merged.collections,
-        collectionFaces: merged.collectionFaces,
-        favorites: merged.favorites,
-        notes: merged.notes,
-        copyrightStatus: merged.copyrightStatus,
-        copyrightExpiry: merged.copyrightExpiry,
-      });
-      persistPrefs(get);
       toast.success(
         t("toast.libraryDataImported"),
-        t("toast.entriesMerged", { count: merged.touched }),
+        t("toast.entriesMerged", { count: touched }),
         "restore",
       );
     } catch (e) {
       toast.error(t("toast.importFailed"), String(e));
+    }
+  },
+  /**
+   * 整包导出：整理数据 + 字体文件。
+   *
+   * 这一步可能要写 6 GB（本机字库实测 6.3 GB / 5551 个文件），所以：
+   * 全部在 Rust 的阻塞线程池里做，界面不卡；进度只信后端的 `pack:progress`；
+   * 超 2 GB 由后端自动分卷，前端只负责把结果念给用户听。
+   */
+  exportLibraryPack: async (dest) => {
+    // 一次只干一趟：两个 6GB 的包同时写盘只会互相拖慢，还会抢同一个进度条
+    if (get().packProgress) {
+      toast.info(t("toast.packBusy"));
+      return;
+    }
+    const now = new Date();
+    set({ packProgress: emptyPackProgress("export") });
+    try {
+      const report = await ipc.exportLibraryPack(
+        dest,
+        JSON.stringify(curationPayload(get(), now), null, 2),
+        now.toISOString(),
+      );
+      // 让 100% 多停一下再收，否则用户最后一眼看到的是 97%，以为没做完
+      clearPackProgressSoon(set, get, "export");
+      toast.success(
+        t("toast.packExported", {
+          files: report.files,
+          size: formatBytes(report.bytes),
+          parts: report.parts,
+        }),
+        report.paths[0] ?? dest,
+        "install",
+      );
+    } catch (e) {
+      set({ packProgress: null });
+      toast.error(t("toast.packExportFailed"), String(e));
+    }
+  },
+
+  /**
+   * 导入时自动分辨：`.ZFontManager` 解包（字体先落盘、整理数据照旧合并），
+   * 其它一律按整理数据 json 处理 —— 用户在同一个「导入」按钮里选什么都行。
+   */
+  importLibraryFile: async (src) => {
+    if (!isPackPath(src)) {
+      await get().importLibraryData(src);
+      return;
+    }
+    if (get().packProgress) {
+      toast.info(t("toast.packBusy"));
+      return;
+    }
+    set({ packProgress: emptyPackProgress("import") });
+    try {
+      const report = await ipc.importLibraryPack(src);
+      let merged = 0;
+      if (report.curation) {
+        const parsed = parseCuration(JSON.parse(report.curation));
+        // 包里整理数据坏了不该让字体白导：字体已经落盘，这里只放弃合并
+        if (parsed.ok) merged = await applyCurationMerge(get, set, parsed.data);
+      }
+      // 新字体进了字库目录，必须重扫才会出现在列表里
+      if (report.added > 0) await get().rescan();
+      clearPackProgressSoon(set, get, "import");
+      toast.success(
+        t("toast.packImported", {
+          added: report.added,
+          skipped: report.skipped,
+          merged,
+        }),
+        report.libraryDir,
+        "restore",
+      );
+      if (report.missingParts.length > 0) {
+        toast.error(
+          t("toast.packMissingParts", { parts: report.missingParts.join(" / ") }),
+          t("toast.packMissingPartsSub"),
+        );
+      }
+      if (report.failed > 0) {
+        toast.error(
+          t("toast.packImportFailed"),
+          t("toast.packImportFailedSub", { count: report.failed }),
+        );
+      }
+    } catch (e) {
+      set({ packProgress: null });
+      toast.error(t("toast.packImportFailed"), String(e));
     }
   },
   setNav: (nav) => {

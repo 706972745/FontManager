@@ -807,7 +807,7 @@
   "toast.notAnExport": "Ce n’est pas un export ZFontManager",
   "toast.notAnExportSub": "Choisissez un fichier créé par « Exporter les données de la bibliothèque »",
   "toast.importIsSnapshot": "C’est un fichier d’instantané",
-  "toast.importIsSnapshotSub": "Importez-le via la ligne « Instantanés » ci-dessus",
+  "toast.importIsSnapshotSub": "Utilisez le bouton d'import de la section « Instantanés » dans la barre latérale — ici, seules les données d'organisation sont fusionnées",
   "toast.nothingToInstall": "Rien à installer",
   "toast.nothingToInstallSub": "Aucun fichier de police dans ce que vous avez déposé",
   "toast.webfontsSkipped": "{count} fichier(s) WOFF ignoré(s) : la même police existe déjà en TTF/OTF, ou WOFF2 n'est pas pris en charge",
@@ -963,4 +963,23 @@
   "toast.faceDeactivated": "« {style} » désactivé séparément",
   "toast.faceDeactivatedSub": "{count} autres styles de cette famille restent disponibles",
   "toast.faceDeactivatedSolo": "Cette famille n'a plus aucun style activé"
+,
+  "settings.exportPackToggle": "Exporter aussi les fichiers de police",
+  "settings.exportPackHint": "Exporte un paquet .ZFontManager : vos données de classement plus les polices de la bibliothèque (hors polices système). L'import sur un autre ordinateur restaure les deux. Au-delà de 2 Go, la bibliothèque est découpée en volumes de 2 Go maximum ; à l'import, un seul volume suffit.",
+  "settings.exportPackTitle": "Exporter le paquet",
+  "toast.packExported": "{files} polices empaquetées ({size}, {parts} volumes)",
+  "toast.packExportFailed": "Échec de l'empaquetage",
+  "toast.packImported": "{added} polices importées, {skipped} doublons ignorés, {merged} entrées de classement fusionnées",
+  "toast.packImportFailed": "Échec de l'import",
+  "toast.packImportFailedSub": "{count} fichiers n'ont pas pu être écrits",
+  "toast.packMissingParts": "Volumes manquants : {parts}",
+  "toast.packMissingPartsSub": "Placez tous les volumes du même ensemble dans un dossier, puis réimportez",
+  "pack.preparingExport": "Analyse de la bibliothèque…",
+  "pack.preparingImport": "Lecture du paquet…",
+  "pack.exporting": "Empaquetage des polices {done}/{total} fichiers · {percent}%{vol}",
+  "pack.importing": "Import des polices {done}/{total} fichiers · {percent}%{vol}",
+  "pack.volume": " · volume {part}/{parts}",
+  "hint.packProgress": "Un paquet regroupe les données de classement et les fichiers de police. Les bibliothèques de plus de 2 Go sont découpées en volumes de 2 Go maximum."
+,
+  "toast.packBusy": "L'opération précédente est encore en cours — attendez qu'elle se termine"
 }
