@@ -58,6 +58,14 @@ import {
 import { contextMenuSize } from "../lib/menuMetrics";
 import { parentDir } from "../lib/onlineCoverage";
 import {
+  CURATION_APP,
+  CURATION_KIND,
+  CURATION_VERSION,
+  mergeCuration,
+  parseCuration,
+  type CurationData,
+} from "../lib/libraryData";
+import {
   buildFaceIndex,
   buildFaceIndexCached,
   entryFromFace,
@@ -3632,15 +3640,21 @@ export const useFontStore = create<FontStore>((set, get) => ({
   setIncompleteOnly: (incompleteOnly) => set({ incompleteOnly }),
 
   exportLibraryData: async (dest) => {
-    const { tags, collections, favorites, notes } = get();
+    // 导出口径见 lib/libraryData.ts 顶部注释：标签 + 分组（字族级 / 字重级）+ 收藏 + 备注
+    // + 手动版权状态 + 到期日期。**快照不在里面**，它有自己的文件格式与入口。
+    const s = get();
     const payload = {
-      app: "ZFontManager",
-      version: 1,
+      app: CURATION_APP,
+      kind: CURATION_KIND,
+      version: CURATION_VERSION,
       exportedAt: new Date().toISOString(),
-      tags,
-      collections,
-      favorites,
-      notes,
+      tags: s.tags,
+      collections: s.collections,
+      collectionFaces: s.collectionFaces,
+      favorites: s.favorites,
+      notes: s.notes,
+      copyrightStatus: s.copyrightStatus,
+      copyrightExpiry: s.copyrightExpiry,
     };
     try {
       await ipc.writeTextFile(dest, JSON.stringify(payload, null, 2));
@@ -3652,60 +3666,57 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   importLibraryData: async (src) => {
     try {
-      const raw: unknown = JSON.parse(await ipc.readTextFile(src));
-      const d = raw as Partial<{
-        app: string;
-        tags: Record<string, string[]>;
-        collections: Record<string, string[]>;
-        favorites: string[];
-        notes: Record<string, string>;
-      }>;
-      if (d?.app !== "ZFontManager") {
-        toast.error(t("toast.notAnExport"), t("toast.notAnExportSub"));
+      const parsed = parseCuration(JSON.parse(await ipc.readTextFile(src)));
+      if (!parsed.ok) {
+        // 快照文件被导进「整理数据」这一行：说清该去哪儿，别让用户对着「这不是导出文件」发懵
+        if (parsed.reason === "isSnapshot") {
+          toast.error(t("toast.importIsSnapshot"), t("toast.importIsSnapshotSub"));
+        } else {
+          toast.error(t("toast.notAnExport"), t("toast.notAnExportSub"));
+        }
         return;
       }
-      let touched = 0;
-      const state = get();
-      if (d.tags) {
-        for (const [family, list] of Object.entries(d.tags)) {
-          if (!Array.isArray(list)) continue;
-          const existing = state.tags[family] ?? [];
-          const merged = [...new Set([...existing, ...list.map(String)])];
-          if (merged.length === existing.length) continue;
-          await get().setFamilyTags(family, merged);
-          touched++;
-        }
+      const s = get();
+      const local: CurationData = {
+        tags: s.tags,
+        collections: s.collections,
+        collectionFaces: s.collectionFaces,
+        favorites: s.favorites,
+        notes: s.notes,
+        copyrightStatus: s.copyrightStatus,
+        copyrightExpiry: s.copyrightExpiry,
+      };
+      const merged = mergeCuration(local, parsed.data);
+      if (merged.touched === 0) {
+        toast.info(t("toast.libraryDataImported"), t("toast.entriesMerged", { count: 0 }));
+        return;
       }
-      if (d.collections) {
-        for (const [name, members] of Object.entries(d.collections)) {
-          if (!Array.isArray(members)) continue;
-          const existing = get().collections[name];
-          const merged = [...new Set([...(existing ?? []), ...members.map(String)])];
-          if (existing && merged.length === existing.length) continue;
-          set({ collections: { ...get().collections, [name]: merged } });
-          await ipc.setCollection(name, merged);
-          touched++;
-        }
+      // 标签 / 备注走后端逐条命令（它们各自有落盘与联动），分组 / 收藏 / 版权走 prefs
+      for (const family of Object.keys(merged.addedTags)) {
+        await get().setFamilyTags(family, merged.tags[family] ?? []);
       }
-      if (Array.isArray(d.favorites)) {
-        for (const family of d.favorites.map(String)) {
-          if (!get().favorites.includes(family)) {
-            set({ favorites: [...get().favorites, family] });
-            await ipc.setFavorite(family, true);
-            touched++;
-          }
-        }
+      for (const [name, members] of Object.entries(merged.changedCollections)) {
+        await ipc.setCollection(name, merged.collections[name] ?? members);
       }
-      if (d.notes) {
-        for (const [family, note] of Object.entries(d.notes)) {
-          if (typeof note !== "string" || get().notes[family]) continue;
-          await get().setFamilyNote(family, note);
-          touched++;
-        }
+      for (const family of merged.addedFavorites) {
+        await ipc.setFavorite(family, true);
       }
+      for (const [family, note] of Object.entries(merged.addedNotes)) {
+        await get().setFamilyNote(family, note);
+      }
+      set({
+        tags: merged.tags,
+        collections: merged.collections,
+        collectionFaces: merged.collectionFaces,
+        favorites: merged.favorites,
+        notes: merged.notes,
+        copyrightStatus: merged.copyrightStatus,
+        copyrightExpiry: merged.copyrightExpiry,
+      });
+      persistPrefs(get);
       toast.success(
         t("toast.libraryDataImported"),
-        t("toast.entriesMerged", { count: touched }),
+        t("toast.entriesMerged", { count: merged.touched }),
         "restore",
       );
     } catch (e) {
