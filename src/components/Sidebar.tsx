@@ -47,6 +47,12 @@ function NavRow({
   const intro = useIntro();
   const current = useFontStore((s) => s.nav);
   const setNav = useFontStore((s) => s.setNav);
+  /**
+   * 样张视图下侧栏收成「只有图标」的一条（用户 2026-11-05）。
+   * 文字用 CSS 藏掉之后，可读名称和悬停说明都得补回来 —— 否则这一列就剩几个
+   * 无法辨认的图标，键盘用户还会失去行名。
+   */
+  const compact = useFontStore((s) => s.viewMode === "specimen");
   const active = navKey(current) === navKey(nav);
   return (
     <motion.button
@@ -59,6 +65,8 @@ function NavRow({
         nav.kind === "collection" || nav.kind === "snapshot" ? nav.name : undefined
       }
       data-hint={hint}
+      data-hint-text={compact ? label : undefined}
+      aria-label={compact ? label : undefined}
       onClick={() => setNav(nav)}
       onContextMenu={onContextMenu}
       initial={intro ? { opacity: 0, x: -12 } : false}

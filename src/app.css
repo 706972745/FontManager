@@ -155,6 +155,41 @@ body,
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-backdrop-filter: blur(24px) saturate(140%);
   z-index: 2;
+  transition: width var(--t-state) ease, padding var(--t-state) ease;
+}
+
+/**
+ * 样张视图下侧栏收成图标条（用户 2026-11-05）。
+ * 只藏文字、不重排结构：NavRow 的 label 在 CSS 里藏掉，靠 aria-label +
+ * data-hint-text 保留可读名称与悬停说明（Sidebar.tsx 里按 viewMode 补上）。
+ * 段落之间加一条细线，否则「浏览 / 分组 / 快照 / 标签」四段图标会连成一片。
+ */
+.app-shell.shell-specimen .sidebar {
+  width: 62px;
+  padding: 10px 7px 12px;
+}
+.app-shell.shell-specimen .sidebar .nav-label,
+.app-shell.shell-specimen .sidebar .nav-count,
+.app-shell.shell-specimen .sidebar .nav-no,
+.app-shell.shell-specimen .sidebar .sidebar-heading-row,
+.app-shell.shell-specimen .sidebar .sidebar-add,
+.app-shell.shell-specimen .sidebar .sidebar-hint,
+.app-shell.shell-specimen .sidebar .nav-kbd {
+  display: none;
+}
+.app-shell.shell-specimen .sidebar .nav-row {
+  justify-content: center;
+  gap: 0;
+  padding: 6px 0;
+}
+.app-shell.shell-specimen .sidebar-section {
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(var(--ink-rgb), 0.05);
+}
+.app-shell.shell-specimen .sidebar-section:last-child {
+  border-bottom: 0;
+  margin-bottom: 0;
 }
 
 .sidebar-scroll {
@@ -2990,45 +3025,192 @@ h2.detail-title.copy-name {
   color: var(--text-tertiary);
 }
 
-.waterfall-view {
+/* ===== 样张视图（2026-11-05，替换原来的瀑布流） =====
+   一排多格的「字体样张墙」：每格顶部保留卡片头部的全部信息，下面用当前字号
+   把示例文字铺开。列数由 SpecimenView 根据可用宽度算好后写进 grid-template-columns。 */
+.specimen-scroll {
   /* 同 .grid-scroll：高度必须有界，否则虚拟列表退化成全量渲染 */
   height: 100%;
   overflow-y: auto;
-  padding: 18px 24px 32px;
+  padding: 14px 18px;
+  overscroll-behavior: contain;
+  /* 滚动条出现 / 消失不再挤压内容宽度：列数只跟窗口宽度走，
+     否则拖字号时内容高度过临界点会让整面格子横向抽动 */
+  scrollbar-gutter: stable;
 }
-.waterfall-head {
-  display: flex;
-  align-items: baseline;
+.specimen-inner {
+  position: relative;
+}
+.specimen-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: grid;
   gap: 10px;
-  padding-bottom: 14px;
-  margin-bottom: 6px;
-  border-bottom: 1px solid rgba(var(--ink-rgb), 0.05);
+  /* 行高（含这 10px 行间距）由 SpecimenView 按字号精确算出并内联写入；
+     格子 height:100% 撑满内容区，正文区吃掉剩余空间 —— 上下留白永远相等 */
+  padding-bottom: 10px;
 }
-.waterfall-title {
-  font-size: var(--fs-20);
-  font-weight: 600;
-  letter-spacing: -0.005em;
+.specimen-tile {
+  height: 100%;
 }
-.waterfall-sub {
-  font-size: var(--fs-11);
-  color: var(--text-tertiary);
-}
-.waterfall-full-line {
+.specimen-tile {
+  min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: 14px;
-  padding: 8px 0;
-  line-height: 1.15;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 13px 12px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(var(--ink-rgb), 0.045), rgba(var(--ink-rgb), 0.02));
+  border: 1px solid rgba(var(--ink-rgb), 0.06);
+  cursor: pointer;
+  transition: border-color var(--t-quick) ease, background var(--t-quick) ease;
+}
+.specimen-tile:hover {
+  border-color: rgba(var(--ink-rgb), 0.13);
+  background: linear-gradient(180deg, rgba(var(--ink-rgb), 0.06), rgba(var(--ink-rgb), 0.028));
+}
+.specimen-tile.card-selected,
+.specimen-tile.card-selected:hover {
+  border-color: color-mix(in srgb, var(--accent-a) 70%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-a) 32%, transparent);
+}
+/* 补足最后一行的空格子：只占位，不画也不响应 */
+.specimen-tile-empty {
+  visibility: hidden;
+  pointer-events: none;
+}
+.specimen-head {
+  display: flex;
+  align-items: center;
+  /* 8px：开关的热区向左外扩 7px，间距小于它就会盖住星标右沿那一像素 */
+  gap: 8px;
+  min-width: 0;
+  /* 行高是 JS 精确算的（见 SpecimenView.rowHeight），头部高度必须钉死 */
+  height: 22px;
+  flex: none;
+}
+/* 一格只有三百多像素：头部的徽章、星标、开关都比卡片里小一号 */
+.specimen-head .badge {
+  font-size: 9px;
+  padding: 2px 5px;
+  letter-spacing: 0.05em;
+}
+.specimen-head .star-btn {
+  padding: 3px;
+}
+.specimen-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
-  border-bottom: 1px solid rgba(var(--ink-rgb), 0.025);
+  text-overflow: ellipsis;
 }
-.waterfall-full-line .waterfall-px {
-  width: 26px;
+.specimen-gap {
+  flex: 1 1 auto;
+  min-width: 4px;
 }
-.waterfall-text {
+.specimen-os {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink-rgb), 0.07);
+}
+.specimen-os-lock {
+  /* 与卡片里的锁标记同一个外观，只把内边距收小 */
+  padding: 2px 5px;
+  font-size: 9px;
+}
+.specimen-tools {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  /* 同上：工具行高度钉死，行高公式才成立 */
+  height: 20px;
+  flex: none;
+}
+.specimen-tools .member-chip {
+  padding: 2px 5px;
+  font-size: 9px;
+  max-width: 78px;
+}
+.specimen-weight {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  max-width: 132px;
+  padding: 2px 4px 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  background: var(--e2);
+  border: 1px solid rgba(var(--ink-rgb), 0.08);
+  transition: color var(--t-quick) ease, border-color var(--t-quick) ease;
+}
+.specimen-weight > span {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.specimen-weight:hover {
+  color: var(--text-primary);
+  border-color: rgba(var(--ink-rgb), 0.18);
+}
+.specimen-styles {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.specimen-more {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.05);
+}
+.specimen-body {
+  /* 占满头部以下的所有剩余高度，文字在其中**垂直居中**：
+     上下的留白天然相等，而且格子高度不随字号挤在一起（用户 2026-11-05） */
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+.specimen-text {
+  width: 100%;
+  margin: 0;
+  line-height: 1.12;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+/* 字体还没到 / 加载失败：用界面字体占位，位置不跳 */
+.specimen-text-pending {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+.specimen-text-failed {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
 }
 
 .compare-backdrop {

@@ -48,7 +48,12 @@ function copyName(text: string, what: string) {
     .catch((e) => toast.error(translate("toast.couldntCopy"), String(e)));
 }
 
-const WATERFALL = [14, 20, 28, 40, 56];
+/**
+ * 详情面板的字号阶梯。最低 24px（用户 2026-11-05）：
+ * 比这更小的行在这里只剩一条灰线，看不出字形 —— 想看小字表现请用样张视图，
+ * 那边的预览字号可以调到 8px。
+ */
+const WATERFALL = [24, 32, 44, 60, 80];
 
 function StyleRow({
   face,

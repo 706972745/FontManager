@@ -1,5 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef } from "react";
+import { Lock } from "lucide-react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { formatBytes } from "../lib/fontLoader";
 import { useFontStore, type Family } from "../state/fontStore";
@@ -126,13 +127,24 @@ export function FontList({ families }: { families: Family[] }) {
                 </span>
                 <span className="col-size tabular">{formatBytes(fam.totalSize)}</span>
                 <span className="col-status">
-                  <PillToggle
-                    on={fam.active}
-                    mixed={fam.partial}
-                    disabled={!fam.deactivatable}
-                    onChange={(on) => void setFamilyActive(fam.name, on)}
-                    label={t(fam.active ? "card.deactivate" : "card.activate", { name: fam.name })}
-                  />
+                  {fam.deactivatable ? (
+                    <PillToggle
+                      on={fam.active}
+                      mixed={fam.partial}
+                      onChange={(on) => void setFamilyActive(fam.name, on)}
+                      label={t(fam.active ? "card.deactivate" : "card.activate", { name: fam.name })}
+                    />
+                  ) : (
+                    /* 系统字体与卡片界面同口径：开关换成「系统」锁标记（用户 2026-11-05） */
+                    <span
+                      className="card-os-lock"
+                      data-hint-text={t("card.osManaged")}
+                      aria-label={t("card.osManaged")}
+                    >
+                      <Lock size={11} strokeWidth={1.75} />
+                      {t("card.osManagedShort")}
+                    </span>
+                  )}
                 </span>
               </div>
             );

@@ -8,7 +8,7 @@ import {
   LayoutGrid,
   List,
   RefreshCw,
-  Rows3,
+  Columns3,
   Search,
   Type,
   X,
@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
-import { familiesFor, SIZES, useFontStore, type SortMode } from "../state/fontStore";
+import { familiesFor, MIN_PREVIEW_SIZE_INDEX, SIZES, useFontStore, type SortMode } from "../state/fontStore";
 import { useFontCss } from "../lib/fontLoader";
 import type { Classification, FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
@@ -603,7 +603,10 @@ export function TopBar() {
   const { fontFamily: sampleFont } = useFontCss(sampleFace);
   const setSampleText = useFontStore((s) => s.setSampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
+  // 样张视图的字号单独记一档（切过去初始 32px，调到 8px 也不影响卡片视图）
+  const specimenSizeIndex = useFontStore((s) => s.specimenSizeIndex);
   const setSizeIndex = useFontStore((s) => s.setSizeIndex);
+  const setSpecimenSizeIndex = useFontStore((s) => s.setSpecimenSizeIndex);
   const viewMode = useFontStore((s) => s.viewMode);
   const setViewMode = useFontStore((s) => s.setViewMode);
   const search = useFontStore((s) => s.search);
@@ -626,7 +629,16 @@ export function TopBar() {
   }, [searchText, search, setSearch]);
 
   const intro = useIntro();
-  const fill = (sizeIndex / (SIZES.length - 1)) * 100;
+  /**
+   * 预览字号下限随视图走（用户 2026-11-05）：
+   * 样张视图是挑字用的，可以一路降到 8px 看小字表现；
+   * 卡片 / 列表低于 24px 只剩一团灰线，没有意义，所以滑条从 24px 起。
+   */
+  const inSpecimen = viewMode === "specimen";
+  const minSizeIndex = inSpecimen ? 0 : MIN_PREVIEW_SIZE_INDEX;
+  const shownSizeIndex = Math.max(minSizeIndex, inSpecimen ? specimenSizeIndex : sizeIndex);
+  const fill =
+    ((shownSizeIndex - minSizeIndex) / (SIZES.length - 1 - minSizeIndex)) * 100;
 
   return (
     <motion.header
@@ -674,19 +686,24 @@ export function TopBar() {
         />
       </div>
 
-      <div className="topbar-size" style={{ "--fill": `${fill}%` } as CSSProperties}>
-        <input
-          type="range"
-          data-hint="hint.size"
-          min={0}
-          max={SIZES.length - 1}
-          step={1}
-          value={sizeIndex}
-          onChange={(e) => setSizeIndex(Number(e.target.value))}
-          aria-label={t("top.sizeAria")}
-        />
-        <span className="size-value tabular">{SIZES[sizeIndex]}</span>
-      </div>
+      {/* 列表视图的行不使用预览字号，滑条在这里没有意义 —— 直接隐藏（用户 2026-11-05） */}
+      {viewMode !== "list" && (
+        <div className="topbar-size" style={{ "--fill": `${fill}%` } as CSSProperties}>
+          <input
+            type="range"
+            data-hint="hint.size"
+            min={minSizeIndex}
+            max={SIZES.length - 1}
+            step={1}
+            value={shownSizeIndex}
+            onChange={(e) =>
+              inSpecimen ? setSpecimenSizeIndex(Number(e.target.value)) : setSizeIndex(Number(e.target.value))
+            }
+            aria-label={t("top.sizeAria")}
+          />
+          <span className="size-value tabular">{SIZES[shownSizeIndex]}</span>
+        </div>
+      )}
 
       <FilterMenu />
 
@@ -707,7 +724,7 @@ export function TopBar() {
           if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
           e.preventDefault();
           e.stopPropagation();
-          const modes = ["grid", "list", "waterfall"] as const;
+          const modes = ["grid", "list", "specimen"] as const;
           const cur = modes.findIndex((m) => m === viewMode);
           const next = modes[(cur + (e.key === "ArrowRight" ? 1 : -1) + modes.length) % modes.length];
           setViewMode(next);
@@ -716,7 +733,7 @@ export function TopBar() {
           ]?.focus();
         }}
       >
-        {(["grid", "list", "waterfall"] as const).map((mode) => (
+        {(["grid", "list", "specimen"] as const).map((mode) => (
           <motion.button
             data-hint="hint.viewMode"
             key={mode}
@@ -733,7 +750,7 @@ export function TopBar() {
             ) : mode === "list" ? (
               <List size={15} strokeWidth={1.5} />
             ) : (
-              <Rows3 size={15} strokeWidth={1.5} />
+              <Columns3 size={15} strokeWidth={1.5} />
             )}
           </motion.button>
         ))}
