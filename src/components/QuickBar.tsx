@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openContextMenu } from "../design/primitives/ContextMenu";
+import { useMarquee } from "../design/primitives/useMarquee";
 import { easeTop, staggerDelay, spring } from "../design/springs";
 import { MemberChip } from "./MemberChip";
 import { useListFontCss } from "../lib/fontLoader";
@@ -93,6 +94,8 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const t = useT();
   // 速览里同样按界面语言显示字体名（与完整界面一个口径）
   const displayName = useDisplayName();
+  /** 悬停跑马灯：示例文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
+  const previewMarquee = useMarquee();
   const sampleText = useFontStore((s) => s.sampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
   // 版权状态：手动设置优先，否则按版权信息自动识别（与完整界面卡片一致）
@@ -172,6 +175,8 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       tabIndex={0}
       className="qb-item"
       data-hint-text={t("quickbar.copyHint", { name: family.name })}
+      onMouseEnter={previewMarquee.enter}
+      onMouseLeave={previewMarquee.leave}
       onClick={() => copyText(family.name, t("copy.familyName"))}
       onKeyDown={(e) => {
         // div[role=button] 不会自己响应键盘：Enter / Space 得手动接（§5 第 31 条）。
@@ -204,7 +209,8 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
             </span>
           ) : (
             <motion.span
-              className="qb-item-sample"
+              ref={previewMarquee.measureRef}
+              className={`qb-item-sample ${previewMarquee.open ? "marquee-open" : ""}`}
               style={
                 fontFamily
                   ? { fontFamily, fontStyle, fontWeight: previewWeight, fontSize: size }
@@ -214,7 +220,12 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
               animate={animated ? { opacity: 1, y: 0 } : undefined}
               transition={animated ? spring : undefined}
             >
-              {text}
+              <span
+                className={`marquee-roll ${previewMarquee.open ? "marquee-roll-on" : ""}`}
+                style={previewMarquee.moverStyle}
+              >
+                {text}
+              </span>
             </motion.span>
           )}
         </span>

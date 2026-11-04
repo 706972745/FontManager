@@ -1,9 +1,10 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { motion } from "motion/react";
 import { ChevronDown, Lock, Monitor, Star } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
 import { PillToggle } from "../design/primitives/PillToggle";
+import { useMarquee } from "../design/primitives/useMarquee";
 import { useListFontCss } from "../lib/fontLoader";
 import { listChars } from "../lib/listChars";
 import { copyrightExpired, familyCopyrightClass } from "../lib/license";
@@ -91,6 +92,9 @@ const SpecimenTile = memo(function SpecimenTile({
   const displayName = useDisplayName();
   const sampleText = useFontStore((s) => s.sampleText);
   const selected = useFontStore((s) => s.selection.includes(family.name));
+  // 对比挑选模式需要「已挑中」的视觉反馈；普通点击的选中只改状态不画线框
+  // （用户 2026-11-05：点击后不要出现线框）
+  const picking = useFontStore((s) => s.comparePicking);
   const favorite = useFontStore((s) => s.favorites.includes(family.name));
   const toggleFavorite = useFontStore((s) => s.toggleFavorite);
   const setFamilyActive = useFontStore((s) => s.setFamilyActive);
@@ -100,6 +104,9 @@ const SpecimenTile = memo(function SpecimenTile({
   const { snapshotBadges, collectionBadges } = useFamilyMembership(family.name, family.faces);
 
   const [faceId, setFaceId] = useState<string | undefined>(() => rememberedFace(family.name));
+
+  /** 悬停跑马灯：预览文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
+  const previewMarquee = useMarquee();
 
   /** 字重菜单用去重后的字面（系统 + 库里同名字面只列一次） */
   const pickable = useMemo(
@@ -164,7 +171,7 @@ const SpecimenTile = memo(function SpecimenTile({
 
   return (
     <motion.article
-      className={`specimen-tile ${selected ? "card-selected" : ""}`}
+      className={`specimen-tile ${selected && picking ? "card-selected" : ""}`}
       data-family={family.name}
       tabIndex={0}
       role="button"
@@ -185,6 +192,8 @@ const SpecimenTile = memo(function SpecimenTile({
         selectWith(family.name, "single", useFontStore.getState().visibleOrder);
       }}
       onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(family))}
+      onMouseEnter={previewMarquee.enter}
+      onMouseLeave={previewMarquee.leave}
       whileTap={{ opacity: 0.96 }}
     >
       <header className="specimen-head">
@@ -274,16 +283,14 @@ const SpecimenTile = memo(function SpecimenTile({
         )}
       </div>
 
-      {/* 正文区：minHeight 保证小字号时上下留白依然充足（CSS 里 flex:1 垂直居中） */}
-      <div
-        className="specimen-body"
-        style={{ minHeight: Math.max(64, Math.round(size * 1.6)) }}
-      >
+      {/* 正文区：flex 撑满剩余高度（CSS 里水平+垂直双居中） */}
+      <div className="specimen-body">
         {noteShown ? (
           <ScriptChip status={scriptStatus} />
         ) : fontFamily ? (
           <p
-            className="specimen-text"
+            ref={previewMarquee.measureRef}
+            className={`specimen-text ${previewMarquee.open ? "marquee-open" : ""}`}
             style={{
               fontFamily,
               fontSize: size,
@@ -291,20 +298,31 @@ const SpecimenTile = memo(function SpecimenTile({
               fontWeight: previewFace === lead ? undefined : previewFace?.weight,
             }}
           >
-            {text}
+            <span
+              className={`marquee-roll ${previewMarquee.open ? "marquee-roll-on" : ""}`}
+              style={previewMarquee.moverStyle}
+            >
+              {text}
+            </span>
           </p>
         ) : failed ? (
           <p className="specimen-text specimen-text-failed">{t("card.noPreview")}</p>
         ) : (
           <p
-            className="specimen-text specimen-text-pending"
+            ref={previewMarquee.measureRef}
+            className={`specimen-text specimen-text-pending ${previewMarquee.open ? "marquee-open" : ""}`}
             style={{
               fontSize: size,
               fontStyle: previewFace?.italic ? "italic" : "normal",
               fontWeight: previewFace === lead ? undefined : previewFace?.weight,
             }}
           >
-            {text}
+            <span
+              className={`marquee-roll ${previewMarquee.open ? "marquee-roll-on" : ""}`}
+              style={previewMarquee.moverStyle}
+            >
+              {text}
+            </span>
           </p>
         )}
       </div>
@@ -318,65 +336,94 @@ export function SpecimenView({ families }: { families: Family[] }) {
   const sizeIndex = useFontStore((s) => s.specimenSizeIndex);
   const size = SIZES[sizeIndex];
   const selectedFamily = useFontStore((s) => s.selectedFamily);
-  const [width, setWidth] = useState(0);
+  const [viewport, setViewport] = useState({ w: 0, h: 0 });
 
-  // 列数跟着可用宽度走
+  // 跟踪滚动容器的宽高（列数跟宽度走、可见行数跟高度走）
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    setWidth(el.clientWidth);
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? 0;
-      if (w > 0) setWidth(w);
+    setViewport({ w: el.clientWidth, h: el.clientHeight });
+    const ro = new ResizeObserver(() => {
+      setViewport({ w: el.clientWidth, h: el.clientHeight });
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // 列数固定在 2~3（用户 2026-11-05：最大化时一行最多 3 个、最少 2 个）
-  const cols = width > 0 ? Math.max(2, Math.min(3, Math.floor((width - 36) / 340))) : 3;
+  // 横向一行 2~3 格（用户 2026-11-05：最多 3 个、最少 2 个，其余靠滚动看）
+  const cols =
+    viewport.w > 0 ? Math.max(2, Math.min(3, Math.floor((viewport.w - 36) / 340))) : 3;
   const rowCount = Math.max(1, Math.ceil(families.length / cols));
 
   /**
-   * 行高必须是**精确且统一**的定值（不是估算 + 逐行测量）。
+   * 行高必须是**精确、统一、且与字号无关**的定值（不是估算 + 逐行测量）。
    *
-   * 原因：拖字号滑条时每行高度都变，若行高靠 ResizeObserver 逐行量，
-   * 视口上方各行的高度增量会让内容整体上下跳（用户 2026-11-05 报的
-   * 「切换字号时按钮上下跳动」）。每格结构完全一致（名字单行省略、正文裁切），
-   * 行高可以算准：格子内 上10 + 下12 内边距 + 2 边框 + 头部 22 + 间距 6
-   * + 工具行 20 + 间距 6 + 正文区（flex 撑满剩余，min 见下）= 78 + 正文区，
-   * 再加行间距 10 = 88 + 正文区。CSS 里格子撑满行高、正文区吃掉剩余空间，
-   * 上下留白永远相等；虚拟列表直接用这个值定位，误差为 0。
+   * 与字号无关的原因：拖字号滑条时若行高跟着变（哪怕只在大字号档变），
+   * 视口里各行的高度增量就会把下面的内容顶上/顶下——用户 2026-11-05 两次
+   * 报的「拖滑条时开关按钮上下跳动」，残留根因正是 88/96px 档行高从
+   * 视口钳制值再长出去那一截。现在行高恒等于「视口行区高度 ÷ 4」：
+   * 一屏正好最多 4 行（用户定的密度上限），拖动全程行位置零移动，
+   * 字号滑条只改示例文字大小，和卡片界面的按钮一样纹丝不动。
+   * 极矮窗口（一半视口都装不下一格）保住格子结构下限 152px：
+   * 上10 + 下12 内边距 + 2 边框 + 头部 22 + 间距 6 + 工具行 20 + 间距 6
+   * + 正文最少 64 = 152。正文区 flex 撑满剩余空间，上下留白永远相等。
    */
-  const rowHeight = 88 + Math.max(64, Math.round(size * 1.6));
+  const rowsSpan = viewport.h > 60 ? viewport.h - 14 : 0; // 减顶内边距，行区可用高度
+  const loRow = rowsSpan > 0 ? Math.ceil(rowsSpan / 4) : 152;
+  const hiRow = rowsSpan > 0 ? Math.floor(rowsSpan / 2) : 0;
+  const rowHeight =
+    rowsSpan > 0 ? Math.max(152, Math.min(loRow, Math.max(hiRow, 152))) : 152;
   const rowHeightRef = useRef(rowHeight);
 
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
-    overscan: 3,
+    overscan: 4,
     getItemKey: (i) => `${i}:${cols}`,
   });
 
-  // 字号变了：行高按比例映射 scrollTop，视口里正看着的那几行原地不动
-  useEffect(() => {
+  /**
+   * 字号变了：行高按比例映射 scrollTop，视口里正看着的那几行原地不动。
+   *
+   * 必须是 useLayoutEffect：拖滑条时每一步都改行高，若等绘制完才补偿
+   * scrollTop，用户每一步都会看到一帧「内容先跳走再弹回来」——这就是
+   * 「拖滑条时按钮上下跳动」在上一版还残留的原因（上一版用的 useEffect）。
+   * 布局阶段在绘制前补偿完，错位帧根本不会被画出来。
+   *
+   * 两处细节：
+   * 1. 公式要把容器 14px 顶内边距算进去——行格子从 y=14 开始铺，
+   *    直接按 scrollTop 整体等比会偏 14×|ratio-1| 像素；
+   * 2. CSS 里 .specimen-scroll 已加 overflow-anchor:none，关掉浏览器的
+   *    滚动锚定，否则它和我们这套补偿各修各的，一样会抖。
+   */
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const prev = rowHeightRef.current;
     rowHeightRef.current = rowHeight;
-    if (prev !== rowHeight && el.scrollTop > 0) {
-      el.scrollTop = Math.max(0, Math.round((el.scrollTop * rowHeight) / prev));
+    if (prev !== rowHeight && prev > 0 && el.scrollTop > 14) {
+      el.scrollTop = Math.max(
+        0,
+        Math.round(((el.scrollTop - 14) * rowHeight) / prev + 14),
+      );
     }
     virtualizer.measure();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowHeight]);
 
-  // 选中项来自搜索 / 方向键 / 速览回到主界面：滚到它所在的那一行
+  // 选中项来自搜索 / 方向键 / 速览回到主界面：只有目标行**不在可视区**才滚动，
+  // 点可见格子不能触发滚动（否则一点内容就跳一下，用户 2026-11-05）
   useEffect(() => {
     if (!selectedFamily) return;
     const idx = families.findIndex((f) => f.name === selectedFamily);
-    if (idx >= 0) virtualizer.scrollToIndex(Math.floor(idx / cols), { align: "auto" });
+    const el = scrollRef.current;
+    if (idx < 0 || !el) return;
+    const top = Math.floor(idx / cols) * rowHeight;
+    const bottom = top + rowHeight;
+    if (top < el.scrollTop || bottom > el.scrollTop + el.clientHeight) {
+      virtualizer.scrollToIndex(Math.floor(idx / cols), { align: "auto" });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFamily]);
 
