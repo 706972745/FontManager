@@ -674,13 +674,21 @@ async function enterQuickbar() {
     const autoHide = useFontStore.getState().quickbarAutoHide;
     const dockHeight = autoHide ? Math.round(DOCK_HEIGHT_HINT * scale) : fullHeight;
     /*
-     * 速览停在显示器**工作区左上角**（用户 2026-11-04 指定）。
-     * 原来是 x 沿用主窗口当前位置再做 clamp，所以面板贴着顶边、但横向还停在
-     * 「主窗口原来那个 x」，看起来像随手一放。改成固定吸附左上角。
+     * 速览落点 = **主窗口当前所在的位置**（用户 2026-11-04 指定）。
+     *
+     * 用户把主界面拖到哪儿，速览就从哪儿出现、收回时也回到那儿 —— 不再固定吸附到
+     * 显示器左上角。但仍要 clamp 在显示器工作区内：主窗口贴着右/下边缘、或者
+     * 多显示器跨屏时，直接照搬坐标会把速览推到屏幕外面去。
      */
     const area = monitor?.workArea ?? monitor;
-    const dockX = area ? Math.round(area.position.x) : pos.x;
-    const dockY = area ? Math.round(area.position.y) : pos.y;
+    let dockX = Math.round(pos.x);
+    let dockY = Math.round(pos.y);
+    if (area) {
+      const maxX = area.position.x + area.size.width - width;
+      const maxY = area.position.y + area.size.height - dockHeight;
+      dockX = Math.min(Math.max(dockX, area.position.x), Math.max(area.position.x, maxX));
+      dockY = Math.min(Math.max(dockY, area.position.y), Math.max(area.position.y, maxY));
+    }
 
     // 收起成一条后远小于「放得下右键菜单」的最小尺寸，先解除；展开时再补回来
     await win.setMinSize(null);
