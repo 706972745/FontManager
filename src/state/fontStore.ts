@@ -8,7 +8,14 @@ export const SNAPSHOT_LIMIT = 5;
 /** 与后端 parser::UNPREVIEWABLE_REASON 保持一致（用前缀判断，别改一半） */
 export const UNPREVIEWABLE_REASON = "软件里无法预览（字体格式不受支持）";
 import { listen } from "@tauri-apps/api/event";
-import { adoptQuickbarDock, DOCK_HEIGHT_HINT, restoreQuickbarDock } from "../lib/useQuickbarDock";
+import {
+  adoptQuickbarDock,
+  DOCK_HEIGHT_HINT,
+  OFFSCREEN_PAD,
+  restoreQuickbarDock,
+  RETRACT_IN_MS,
+  RETRACT_OUT_MS,
+} from "../lib/useQuickbarDock";
 import {
   currentMonitor,
   getCurrentWindow,
@@ -633,9 +640,6 @@ const LEGACY_SAMPLE_TEXTS = new Set(["The quick brown fox jumps over the lazy do
 const HIDE_SETTLE_MS = 140;
 /** 换好界面后到「展开显示」之间留的一小段时间：给主界面渲染一帧 */
 const SHOW_SETTLE_MS = 150;
-/** 进入速览前旧界面渐隐的时长：和窗口形变衔接成「淡出 → 收起 → 淡入」 */
-const UI_FADE_OUT_MS = 150;
-
 async function enterQuickbar() {
   const win = getCurrentWindow();
   try {
@@ -669,46 +673,62 @@ async function enterQuickbar() {
     // 否则会收成 34px 提示条、热键又被关掉，等于进来就出不去（§5 第 1 条）。
     const autoHide = useFontStore.getState().quickbarAutoHide;
     const dockHeight = autoHide ? Math.round(DOCK_HEIGHT_HINT * scale) : fullHeight;
-    let x = pos.x;
-    // 顶边对齐到工作区顶（避开任务栏）
-    const y = monitor
-      ? Math.round(monitor.workArea?.position?.y ?? monitor.position.y)
-      : pos.y;
-    if (monitor) {
-      const maxX = monitor.position.x + monitor.size.width - width;
-      x = Math.min(Math.max(x, monitor.position.x), Math.max(monitor.position.x, maxX));
-    }
+    /*
+     * 速览停在显示器**工作区左上角**（用户 2026-11-04 指定）。
+     * 原来是 x 沿用主窗口当前位置再做 clamp，所以面板贴着顶边、但横向还停在
+     * 「主窗口原来那个 x」，看起来像随手一放。改成固定吸附左上角。
+     */
+    const area = monitor?.workArea ?? monitor;
+    const dockX = area ? Math.round(area.position.x) : pos.x;
+    const dockY = area ? Math.round(area.position.y) : pos.y;
 
     // 收起成一条后远小于「放得下右键菜单」的最小尺寸，先解除；展开时再补回来
     await win.setMinSize(null);
 
-    // 窗口形变：从主界面几何直接收成「屏幕顶部的一条」，期间内容钉在速览尺寸上
+    /*
+     * 切换动画 = 速览收起时那一套「整块滑出屏幕 → 屏幕外换装 → 从外面落回」。
+     *
+     * 原来是「窗口原地缩小到顶部一条」：完整界面的顶栏、搜索框会被越缩越小的窗口
+     * 现场重排，用户看到的是内容被挤扁再跳变。换成滑出之后，窗口全程保持主界面尺寸，
+     * 内容只是「移出视口」，不重排也不裁剪；换装发生在屏幕外，任何跳变都看不见。
+     *
+     * 两段的时长与曲线和「收起成细线」完全一致（180ms 出 / 160ms 回），观感统一。
+     */
     const ms = morphDuration();
-    // 先让旧界面渐隐再形变：不然完整界面会被越缩越小的窗口现场重排（顶栏、搜索框
-    // 挤成一条），等 React 换装速览内容时又啪地跳变。淡出走合成器线程的 CSS 动画，
-    // 主线程这时正忙着渲染速览内容也卡不住它；旧内容隐掉后再收窗口，跳变就看不见了。
+    // 屏幕外的停留位置：整块挪到工作区上沿之外
+    const offY = (area ? area.position.y : 0) - size.height - OFFSCREEN_PAD;
+
     if (ms > 0) {
-      document.body.classList.add("ui-fade-out");
-      await sleep(UI_FADE_OUT_MS);
+      // 1) 主界面整块向上滑出（尺寸不变）
+      await morphWindow(
+        { x: pos.x, y: pos.y, width: size.width, height: size.height },
+        { x: pos.x, y: offY, width: size.width, height: size.height },
+        RETRACT_OUT_MS,
+      );
     }
-    // 先切界面再把窗口收过来：内容一上来就以速览的尺寸渲染（钉住），
-    // 窗口只是逐步裁掉多余的部分，不会看到内容被挤压重排。
+
+    // 2) 屏幕外换装：切界面 + 换成速览尺寸 + 挪到目标位置的正上方
     useFontStore.setState({
       quickbar: true,
       morph: ms > 0 ? { width: targetWidth, height: targetHeight } : null,
     });
-    await morphWindow(
-      { x: pos.x, y: pos.y, width: size.width, height: size.height },
-      { x, y, width, height: dockHeight },
-      ms,
-    );
     await win.setSize(new PhysicalSize(width, dockHeight)).catch(() => {});
-    await win.setPosition(new PhysicalPosition(x, y)).catch(() => {});
+    await win.setPosition(new PhysicalPosition(dockX, offY)).catch(() => {});
+
+    if (ms > 0) {
+      // 3) 从屏幕外落回左上角
+      await morphWindow(
+        { x: dockX, y: offY, width, height: dockHeight },
+        { x: dockX, y: dockY, width, height: dockHeight },
+        RETRACT_IN_MS,
+      );
+    }
+
     // 形变是逐帧动画，窗口被别的程序挡住 / 刚被隐藏过时，个别帧的 setSize/setPosition
     // 会被系统吞掉，最后停在「半路」的几何上：宽度已经是速览的、位置还留在主界面。
-    // 所以动画结束后显式落一次终态，保证 dock 状态机接管时的窗口真的贴着顶边。
+    // 所以动画结束后显式落一次终态，保证 dock 状态机接管时的窗口真的贴着左上角。
     await win.setSize(new PhysicalSize(width, dockHeight)).catch(() => {});
-    await win.setPosition(new PhysicalPosition(x, y)).catch(() => {});
+    await win.setPosition(new PhysicalPosition(dockX, dockY)).catch(() => {});
     // 窗口已经是顶部一条：把收起态交给 dock，展开时还原成完整的速览尺寸
     // 窗口已经到目标几何：autoHide 开着时窗口是顶部一条，把收起态交给 dock；
     // 关着时窗口本来就是展开尺寸，没有收起态可接管（接管了会立刻被 scheduleShrink 压成细线）。
@@ -723,6 +743,28 @@ async function enterQuickbar() {
     // 窗口几何调不动也要让界面切过去（顶多是全尺寸的速览），不能整个功能失效
     console.warn("[quickbar] 调整窗口几何失败，仅切换界面", e);
     useFontStore.setState({ quickbar: true });
+    /*
+     * 兜底落位：新动画的第一段会把**整个主窗口**推到工作区上沿之外，
+     * 万一第二段落回失败（系统吞掉 setPosition / monitor 信息拿不到），
+     * 窗口就停在屏幕外 —— 用户看到的是「点了速览，软件消失了」。
+     * 这里必须把它拽回可见区域，宁可位置不完美也不能让窗口没了。
+     */
+    try {
+      const m = await currentMonitor();
+      const a = m?.workArea ?? m;
+      const s = await win.scaleFactor();
+      await win.setSize(
+        new PhysicalSize(Math.round(QUICKBAR_WIDTH * s), Math.round(DOCK_HEIGHT_HINT * s)),
+      );
+      await win.setPosition(
+        new PhysicalPosition(
+          Math.round(a?.position?.x ?? 80),
+          Math.round(a?.position?.y ?? 80),
+        ),
+      );
+    } catch {
+      /* 连兜底都失败就只能靠用户重新点热键 */
+    }
   } finally {
     // 渐隐类只在「完整界面还在场上」时有意义，速览挂载后规则命中不到任何元素；
     // 但必须摘掉，否则下次回到完整界面会被它瞬间隐身

@@ -37,12 +37,12 @@ const ANIM_MS = 200;
  * DWM 的圆角阈值时四角会从圆角跳成直角。改成整块往上滑出屏幕后，圆角是「滑走」
  * 而不是「变形」，也不裁内容。
  */
-const RETRACT_OUT_MS = 180;
-const RETRACT_IN_MS = 160;
+export const RETRACT_OUT_MS = 180;
+export const RETRACT_IN_MS = 160;
 /** 屏幕外换内容后的等待（毫秒）：给 React 一帧时间把细线画出来 */
 const BAR_SWAP_MS = 70;
 /** 滑出时多走这么多像素，确保整窗真的在屏幕外（外框比客户区高一点） */
-const OFFSCREEN_PAD = 24;
+export const OFFSCREEN_PAD = 24;
 /**
  * 收起后分两个阶段：
  * - hint：34px，抓手 + 一行提示（告诉用户快捷键），停留一小会儿；
