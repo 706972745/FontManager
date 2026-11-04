@@ -9,6 +9,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderSync,
+  Info,
   Languages,
   MessageSquarePlus,
   Scaling,
@@ -47,6 +48,23 @@ const EXPORT_FONTS_KEY = "zfm.exportFonts";
 function packFileName(now = new Date()) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `ZFonts-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.ZFontManager`;
+}
+
+/**
+ * 说明性小字的「悬停版」（2026-11-04 用户要求）。
+ *
+ * 原来每条设置项下面都压着一行灰色说明，一屏里一半是解释文字，扫读时反而找不到设置项本身。
+ * 现在说明收进标题右侧的 ⓘ，悬停 1 秒由全局 <HoverHintHost> 弹出，和项目里其它按钮同一套机制。
+ *
+ * 边界：**只收「说明」**。连接状态、扫描进度、去重结果这类实时信息必须常驻，
+ * 收进悬停里就等于让用户看不见当前状态了。
+ */
+function SettingHint({ text }: { text: string }) {
+  return (
+    <span className="settings-hint" data-hint-text={text} role="img" aria-label={text} tabIndex={0}>
+      <Info size={12} strokeWidth={1.7} />
+    </span>
+  );
 }
 
 /**
@@ -364,16 +382,16 @@ export function SettingsOverlay() {
               <div className="settings-row">
                 <div>
                   <div className="settings-label">
-                    <Languages size={13} strokeWidth={1.5} /> {t("settings.language")}
-                  </div>
-                  <div className="settings-sub">{t("settings.languageSub")}</div>
+                    <Languages size={13} strokeWidth={1.5} /> {t("settings.language")}<SettingHint text={t("settings.languageSub")} /></div>
                 </div>
                 <LanguageSelect />
               </div>
               <div className="settings-translate">
                 <div className="settings-translate-text">
-                  <div className="settings-translate-title">{t("settings.translateTitle")}</div>
-                  <div className="settings-sub">{t("settings.translateSub")}</div>
+                  <div className="settings-translate-title">
+                    {t("settings.translateTitle")}
+                    <SettingHint text={t("settings.translateSub")} />
+                  </div>
                 </div>
                 <div className="settings-data-actions">
                   <button
@@ -401,8 +419,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.closeToTray")}</div>
-                  <div className="settings-sub">{t("settings.closeToTraySub")}</div>
+                  <div className="settings-label">{t("settings.closeToTray")}<SettingHint text={t("settings.closeToTraySub")} /></div>
                 </div>
                 <PillToggle
                   on={closeToTray}
@@ -413,8 +430,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.autostart")}</div>
-                  <div className="settings-sub">{t("settings.autostartSub")}</div>
+                  <div className="settings-label">{t("settings.autostart")}<SettingHint text={t("settings.autostartSub")} /></div>
                 </div>
                 <PillToggle
                   on={autostart}
@@ -449,8 +465,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.startMinimized")}</div>
-                  <div className="settings-sub">{t("settings.startMinimizedSub")}</div>
+                  <div className="settings-label">{t("settings.startMinimized")}<SettingHint text={t("settings.startMinimizedSub")} /></div>
                 </div>
                 <PillToggle
                   on={startMinimized}
@@ -461,8 +476,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.restoreOnLaunch")}</div>
-                  <div className="settings-sub">{t("settings.restoreOnLaunchSub")}</div>
+                  <div className="settings-label">{t("settings.restoreOnLaunch")}<SettingHint text={t("settings.restoreOnLaunchSub")} /></div>
                 </div>
                 <PillToggle
                   on={restoreOnLaunch}
@@ -473,8 +487,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.quickbarHotkey")}</div>
-                  <div className="settings-sub">{t("settings.quickbarHotkeySub")}</div>
+                  <div className="settings-label">{t("settings.quickbarHotkey")}<SettingHint text={t("settings.quickbarHotkeySub")} /></div>
                 </div>
                 <div className="hotkey-edit">
                   <button
@@ -500,8 +513,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.quickbarHotkeyOpens")}</div>
-                  <div className="settings-sub">{t("settings.quickbarHotkeyOpensSub")}</div>
+                  <div className="settings-label">{t("settings.quickbarHotkeyOpens")}<SettingHint text={t("settings.quickbarHotkeyOpensSub")} /></div>
                 </div>
                 <PillToggle
                   on={quickbarHotkeyOpens}
@@ -516,8 +528,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.watch")}</div>
-                  <div className="settings-sub">{t("settings.watchSub")}</div>
+                  <div className="settings-label">{t("settings.watch")}<SettingHint text={t("settings.watchSub")} /></div>
                 </div>
                 <PillToggle
                   on={settings.watchEnabled}
@@ -530,8 +541,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.autoActivate")}</div>
-                  <div className="settings-sub">{t("settings.autoActivateSub")}</div>
+                  <div className="settings-label">{t("settings.autoActivate")}<SettingHint text={t("settings.autoActivateSub")} /></div>
                 </div>
                 <PillToggle
                   on={settings.autoActivateImports}
@@ -544,8 +554,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row settings-col">
                 <div>
-                  <div className="settings-label">{t("settings.watchedFolders")}</div>
-                  <div className="settings-sub">{t("settings.watchedFoldersSub")}</div>
+                  <div className="settings-label">{t("settings.watchedFolders")}<SettingHint text={t("settings.watchedFoldersSub")} /></div>
                 </div>
                 <div className="settings-folders">
                   {settings.extraDirs.map((dir) => (
@@ -590,8 +599,7 @@ export function SettingsOverlay() {
               <div className="detail-heading">{t("settings.libraryFolder")}</div>
               <div className="settings-row settings-col">
                 <div>
-                  <div className="settings-label">{t("settings.libraryFolder")}</div>
-                  <div className="settings-sub">{t("settings.libraryFolderSub")}</div>
+                  <div className="settings-label">{t("settings.libraryFolder")}<SettingHint text={t("settings.libraryFolderSub")} /></div>
                 </div>
                 <div className="settings-folders">
                   <div className={`settings-folder ${customDirActive ? "settings-dim" : ""}`}>
@@ -613,9 +621,7 @@ export function SettingsOverlay() {
                           onChange={(on) => setCustomDirEnabled(on)}
                           label={t("settings.libraryCustom")}
                         />
-                        <span className="settings-folder-path">{t("settings.libraryCustom")}</span>
-                      </div>
-                      <div className="settings-sub">{t("settings.libraryCustomSub")}</div>
+                        <span className="settings-folder-path">{t("settings.libraryCustom")}</span><SettingHint text={t("settings.libraryCustomSub")} /></div>
                     </div>
                     <button className="settings-add-folder" onClick={() => void pickLibraryDir()}>
                       <FolderPlus size={13} strokeWidth={1.5} />
@@ -642,7 +648,10 @@ export function SettingsOverlay() {
 
             {!IS_LINUX && (
               <section className="settings-section">
-                <div className="detail-heading">{t("settings.affinity")}</div>
+                <div className="detail-heading">
+                {t("settings.affinity")}
+                <SettingHint text={t("settings.affinityHelp")} />
+              </div>
                 <div className="settings-row">
                   <div>
                     <div className="settings-label">{t("settings.affinityConnection")}</div>
@@ -652,8 +661,7 @@ export function SettingsOverlay() {
                 </div>
                 <div className="settings-row" data-relation="enable-below">
                   <div>
-                    <div className="settings-label">{t("settings.affinityEnable")}</div>
-                    <div className="settings-sub">{t("settings.affinityEnableSub")}</div>
+                    <div className="settings-label">{t("settings.affinityEnable")}<SettingHint text={t("settings.affinityEnableSub")} /></div>
                   </div>
                   <PillToggle
                     on={settings.affinityEnabled}
@@ -667,8 +675,7 @@ export function SettingsOverlay() {
                 </div>
                 <div className="settings-row">
                   <div>
-                    <div className="settings-label">{t("settings.affinityDeactivate")}</div>
-                    <div className="settings-sub">{t("settings.affinityDeactivateSub")}</div>
+                    <div className="settings-label">{t("settings.affinityDeactivate")}<SettingHint text={t("settings.affinityDeactivateSub")} /></div>
                   </div>
                   <PillToggle
                     on={settings.affinityDeactivateOnQuit}
@@ -678,16 +685,19 @@ export function SettingsOverlay() {
                     label={t("settings.affinityDeactivate")}
                   />
                 </div>
-                <div className="settings-sub">{t("settings.affinityHelp")}</div>
+
               </section>
             )}
 
             <section className="settings-section">
-              <div className="detail-heading">{t("settings.online")}</div>
+              <div className="detail-heading">
+                {t("settings.online")}
+                <SettingHint text={`${t("settings.onlineHelp")}
+${t("settings.onlineHosts")}`} />
+              </div>
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.onlineEnable")}</div>
-                  <div className="settings-sub">{t("settings.onlineEnableSub")}</div>
+                  <div className="settings-label">{t("settings.onlineEnable")}<SettingHint text={t("settings.onlineEnableSub")} /></div>
                 </div>
                 <PillToggle
                   on={settings.onlineFontsEnabled}
@@ -698,8 +708,7 @@ export function SettingsOverlay() {
                   label={t("settings.onlineEnable")}
                 />
               </div>
-              <div className="settings-sub settings-hosts detail-mono">{t("settings.onlineHosts")}</div>
-              <div className="settings-sub">{t("settings.onlineHelp")}</div>
+
             </section>
 
             <section className="settings-section">
@@ -707,10 +716,8 @@ export function SettingsOverlay() {
               <div className="settings-row">
                 <div>
                   <div className="settings-label">
-                    <DatabaseBackup size={13} strokeWidth={1.5} /> {t("settings.curation")}
-                  </div>
-                  <div className="settings-sub">{t("settings.curationSub")}</div>
-                  <label className="settings-check">
+                    <DatabaseBackup size={13} strokeWidth={1.5} /> {t("settings.curation")}<SettingHint text={t("settings.curationSub")} /></div>
+                  <label className="settings-check" data-hint-text={t("settings.exportPackHint")}>
                     <input
                       type="checkbox"
                       checked={exportFonts}
@@ -726,7 +733,6 @@ export function SettingsOverlay() {
                     />
                     <span>{t("settings.exportPackToggle")}</span>
                   </label>
-                  <div className="settings-sub">{t("settings.exportPackHint")}</div>
                 </div>
                 <div className="settings-data-actions">
                   <button className="settings-data-btn" onClick={() => void exportData()}>
@@ -741,10 +747,14 @@ export function SettingsOverlay() {
               </div>
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.dedupe")}</div>
-                  <div className="settings-sub">{t("settings.dedupeSub")}</div>
-                  <div className="settings-sub">{t("settings.dedupeWhy")}</div>
-                  <div className="settings-sub">{t("settings.dedupeRule")}</div>
+                  <div className="settings-label">
+                    {t("settings.dedupe")}
+                    <SettingHint
+                      text={`${t("settings.dedupeSub")}
+${t("settings.dedupeWhy")}
+${t("settings.dedupeRule")}`}
+                    />
+                  </div>
                 </div>
                 <div className="settings-data-actions">
                   <button
@@ -775,8 +785,10 @@ export function SettingsOverlay() {
                   <div className="settings-label">
                     <FolderSync size={13} strokeWidth={1.5} /> {t("settings.labelResync")}
                   </div>
-                  <div className="settings-sub">{t("settings.labelResyncSub")}</div>
-                  <div className="settings-sub">{t("settings.labelResyncWhy")}</div>
+                  <SettingHint
+                    text={`${t("settings.labelResyncSub")}
+${t("settings.labelResyncWhy")}`}
+                  />
                 </div>
                 <div className="settings-data-actions">
                   <button
@@ -795,9 +807,7 @@ export function SettingsOverlay() {
               <div className="settings-row">
                 <div>
                   <div className="settings-label">
-                    <SunMoon size={13} strokeWidth={1.5} /> {t("settings.theme")}
-                  </div>
-                  <div className="settings-sub">{t("settings.themeSub")}</div>
+                    <SunMoon size={13} strokeWidth={1.5} /> {t("settings.theme")}<SettingHint text={t("settings.themeSub")} /></div>
                 </div>
                 <div
                   className="view-toggle sound-toggle"
@@ -822,9 +832,7 @@ export function SettingsOverlay() {
               <div className="settings-row">
                 <div>
                   <div className="settings-label">
-                    <Eye size={13} strokeWidth={1.5} /> {t("settings.reduceMotion")}
-                  </div>
-                  <div className="settings-sub">{t("settings.reduceMotionSub")}</div>
+                    <Eye size={13} strokeWidth={1.5} /> {t("settings.reduceMotion")}<SettingHint text={t("settings.reduceMotionSub")} /></div>
                 </div>
                 <PillToggle
                   on={motionPref === "reduced"}
@@ -835,9 +843,7 @@ export function SettingsOverlay() {
               <div className="settings-row">
                 <div>
                   <div className="settings-label">
-                    <Eye size={13} strokeWidth={1.5} /> {t("settings.reduceTransparency")}
-                  </div>
-                  <div className="settings-sub">{t("settings.reduceTransparencySub")}</div>
+                    <Eye size={13} strokeWidth={1.5} /> {t("settings.reduceTransparency")}<SettingHint text={t("settings.reduceTransparencySub")} /></div>
                 </div>
                 <PillToggle
                   on={transparencyPref === "reduced"}
@@ -883,9 +889,7 @@ export function SettingsOverlay() {
               <div className="settings-row">
                 <div>
                   <div className="settings-label">
-                    <Volume2 size={13} strokeWidth={1.5} /> {t("settings.interfaceSounds")}
-                  </div>
-                  <div className="settings-sub">{t("settings.interfaceSoundsSub")}</div>
+                    <Volume2 size={13} strokeWidth={1.5} /> {t("settings.interfaceSounds")}<SettingHint text={t("settings.interfaceSoundsSub")} /></div>
                 </div>
                 <div
                   className="view-toggle sound-toggle"

@@ -5,6 +5,8 @@ mod affinity;
 mod comhost;
 mod copyright;
 mod diag;
+#[cfg(target_os = "windows")]
+mod file_assoc;
 mod font_types;
 mod fontcache;
 mod installer;
@@ -2400,6 +2402,14 @@ pub fn run() {
             }
             // 首实例：等「再点一次图标」的信号，收到就通知前端把完整界面叫出来
             single_instance::watch(app.handle().clone());
+            // 导出的 `.ZFontManager` 整包在资源管理器里显示专属图标（Z + fills）。
+            // 只写 HKCU 的一个 DefaultIcon 值，不动打开方式；后台跑，失败也不影响启动。
+            #[cfg(target_os = "windows")]
+            std::thread::spawn(|| match file_assoc::ensure_pack_icon() {
+                Ok(true) => eprintln!("[file-assoc] .ZFontManager icon registered"),
+                Ok(false) => {}
+                Err(e) => eprintln!("[file-assoc] skipped: {e}"),
+            });
             // 系统级 Alt + `：注册成全局热键，任何软件在前台时都能把速览拉下来
             window_dock::start_hotkey_listener(app.handle().clone(), quickbar_hotkey);
             if let Some(window) = app.get_webview_window("main") {

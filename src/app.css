@@ -3315,6 +3315,26 @@ h2.detail-title.copy-name {
   line-height: 1.5;
 }
 
+/* 说明性文字收进悬停后的入口（2026-11-04）：
+   标题右侧一个很小的 ⓘ，默认半透明，悬停/聚焦时亮起来。
+   必须给 outline 留位置：它是 tabIndex=0 的可聚焦元素，键盘用户也要能用。 */
+.settings-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  opacity: 0.55;
+  border-radius: 50%;
+  cursor: help;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.settings-hint:hover,
+.settings-hint:focus-visible {
+  opacity: 1;
+  color: var(--text-secondary);
+  outline: none;
+}
+
 /* 设置里的小勾选项（目前只有「导出时连字体一起打包」）：
    用原生 checkbox + accent-color，别自绘——这里不需要动效，越朴素越不容易点错 */
 .settings-check {

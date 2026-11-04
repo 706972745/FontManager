@@ -981,5 +981,7 @@
   "pack.volume": " · volume {part}/{parts}",
   "hint.packProgress": "Un paquet regroupe les données de classement et les fichiers de police. Les bibliothèques de plus de 2 Go sont découpées en volumes de 2 Go maximum."
 ,
-  "toast.packBusy": "L'opération précédente est encore en cours — attendez qu'elle se termine"
+  "toast.packBusy": "L'opération précédente est encore en cours — attendez qu'elle se termine",
+  "menu.snapshotFromCollection": "Nouvel instantané depuis cette collection",
+  "toast.emptyCollection": "Cette collection ne contient encore aucune police"
 }

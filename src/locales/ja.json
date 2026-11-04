@@ -947,5 +947,7 @@
   "pack.volume": " · {part}/{parts} 巻",
   "hint.packProgress": "パッケージは整理データとフォントファイルをまとめたものです。ライブラリが 2GB を超える場合は最大 2GB ごとに分割されます。"
 ,
-  "toast.packBusy": "前回のパッケージ作成／読み込みがまだ終わっていません。終わってから操作してください"
+  "toast.packBusy": "前回のパッケージ作成／読み込みがまだ終わっていません。終わってから操作してください",
+  "menu.snapshotFromCollection": "このコレクションからスナップショットを作成",
+  "toast.emptyCollection": "このコレクションにはまだフォントがありません"
 }

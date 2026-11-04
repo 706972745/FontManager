@@ -218,6 +218,8 @@ export function Sidebar() {
   const renameCollection = useFontStore((s) => s.renameCollection);
   const pendingCollectionFor = useFontStore((s) => s.pendingCollectionFor);
   const snapshots = useFontStore((s) => s.snapshots);
+  // 分组右键：把整组字体一键收进同名新快照（2026-11-04）
+  const createSnapshotFromCollection = useFontStore((s) => s.createSnapshotFromCollection);
   const deleteSnapshot = useFontStore((s) => s.deleteSnapshot);
   const renameSnapshot = useFontStore((s) => s.renameSnapshot);
   const applySnapshot = useFontStore((s) => s.applySnapshot);
@@ -453,6 +455,10 @@ export function Sidebar() {
                       },
                     },
                     { kind: "separator" },
+                    {
+                      label: translate("menu.snapshotFromCollection"),
+                      action: () => void createSnapshotFromCollection(name),
+                    },
                     {
                       kind: "submenu",
                       label: translate("menu.snapshots"),

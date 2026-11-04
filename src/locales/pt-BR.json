@@ -981,5 +981,7 @@
   "pack.volume": " · volume {part}/{parts}",
   "hint.packProgress": "Um pacote reúne os dados de organização e os arquivos de fonte. Bibliotecas acima de 2 GB são divididas em volumes de no máximo 2 GB."
 ,
-  "toast.packBusy": "A operação anterior ainda está em andamento; aguarde terminar"
+  "toast.packBusy": "A operação anterior ainda está em andamento; aguarde terminar",
+  "menu.snapshotFromCollection": "Novo instantâneo desta coleção",
+  "toast.emptyCollection": "Esta coleção ainda não tem fontes"
 }

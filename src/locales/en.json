@@ -964,5 +964,7 @@
   "pack.volume": " · volume {part}/{parts}",
   "hint.packProgress": "A package bundles curation data with font files. Libraries over 2 GB are split into volumes of at most 2 GB each."
 ,
-  "toast.packBusy": "The previous pack or import is still running — wait for it to finish"
+  "toast.packBusy": "The previous pack or import is still running — wait for it to finish",
+  "menu.snapshotFromCollection": "New snapshot from this collection",
+  "toast.emptyCollection": "This collection has no fonts yet"
 }
