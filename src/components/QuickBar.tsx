@@ -94,8 +94,6 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const t = useT();
   // 速览里同样按界面语言显示字体名（与完整界面一个口径）
   const displayName = useDisplayName();
-  /** 悬停跑马灯：示例文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
-  const previewMarquee = useMarquee();
   const sampleText = useFontStore((s) => s.sampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
   // 版权状态：手动设置优先，否则按版权信息自动识别（与完整界面卡片一致）
@@ -103,6 +101,8 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const copyrightExpiry = useFontStore((s) => s.copyrightExpiry[family.name]);
   const { snapshotBadges, collectionBadges } = useFamilyMembership(family.name, family.faces);
   const size = SIZES[sizeIndex];
+  /** 悬停跑马灯：示例文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
+  const previewMarquee = useMarquee(size);
   const lead = family.faces.find((f) => f.style === "Regular") ?? family.faces[0];
   /**
    * 速览里只列**已启用**的字重（用户 2026-10-31：「可单独显示已经启用的字重，没启用的字重不会显示出来」）。
