@@ -674,21 +674,15 @@ async function enterQuickbar() {
     const autoHide = useFontStore.getState().quickbarAutoHide;
     const dockHeight = autoHide ? Math.round(DOCK_HEIGHT_HINT * scale) : fullHeight;
     /*
-     * 速览落点 = **主窗口当前所在的位置**（用户 2026-11-04 指定）。
-     *
-     * 用户把主界面拖到哪儿，速览就从哪儿出现、收回时也回到那儿 —— 不再固定吸附到
-     * 显示器左上角。但仍要 clamp 在显示器工作区内：主窗口贴着右/下边缘、或者
-     * 多显示器跨屏时，直接照搬坐标会把速览推到屏幕外面去。
+     * 速览落点（用户 2026-11-04 三次修正后的最终口径）：**固定贴显示器左上角**。
+     * - 横向不跟主窗口走，固定取工作区左边缘（工作区左沿在侧边任务栏时不是 0，
+     *   照搬显示器 position.x 会被任务栏压住，所以要取 workArea）；
+     * - 纵向固定贴显示器物理顶部 0px：用 `monitor.position.y` 而不是工作区顶，
+     *   否则「任务栏置顶」时会退到任务栏下沿，贴不到真正的 0。
      */
     const area = monitor?.workArea ?? monitor;
-    let dockX = Math.round(pos.x);
-    let dockY = Math.round(pos.y);
-    if (area) {
-      const maxX = area.position.x + area.size.width - width;
-      const maxY = area.position.y + area.size.height - dockHeight;
-      dockX = Math.min(Math.max(dockX, area.position.x), Math.max(area.position.x, maxX));
-      dockY = Math.min(Math.max(dockY, area.position.y), Math.max(area.position.y, maxY));
-    }
+    const dockX = Math.round(area ? area.position.x : 0);
+    const dockY = Math.round(monitor ? monitor.position.y : 0);
 
     // 收起成一条后远小于「放得下右键菜单」的最小尺寸，先解除；展开时再补回来
     await win.setMinSize(null);
@@ -703,8 +697,9 @@ async function enterQuickbar() {
      * 两段的时长与曲线和「收起成细线」完全一致（180ms 出 / 160ms 回），观感统一。
      */
     const ms = morphDuration();
-    // 屏幕外的停留位置：整块挪到工作区上沿之外
-    const offY = (area ? area.position.y : 0) - size.height - OFFSCREEN_PAD;
+    // 屏幕外的停留位置：整块挪到**显示器**上沿之外（用 monitor.position.y，
+    // 任务栏置顶时工作区顶不在 0，按工作区算会停在屏幕里、露出半截）
+    const offY = (monitor ? monitor.position.y : 0) - size.height - OFFSCREEN_PAD;
 
     if (ms > 0) {
       // 1) 主界面整块向上滑出（尺寸不变）
@@ -724,7 +719,7 @@ async function enterQuickbar() {
     await win.setPosition(new PhysicalPosition(dockX, offY)).catch(() => {});
 
     if (ms > 0) {
-      // 3) 从屏幕外落回左上角
+      // 3) 从屏幕外落回显示器顶部
       await morphWindow(
         { x: dockX, y: offY, width, height: dockHeight },
         { x: dockX, y: dockY, width, height: dockHeight },
