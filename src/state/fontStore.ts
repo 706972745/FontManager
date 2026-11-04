@@ -562,6 +562,21 @@ interface FontStore {
 /** 速览界面窗口尺寸（逻辑像素）：窄竖排面板，高度再翻一倍，靠滚动展示更多字体 */
 const QUICKBAR_WIDTH = 400;
 const QUICKBAR_HEIGHT = 992;
+/**
+ * 速览窗口相对显示器左沿的横向偏移（用户 2026-11-04 指定）。
+ *
+ * 基准：2048 宽的屏幕上距左沿 400 逻辑像素（≈ 屏宽的 19.5%）。**不同分辨率按屏宽等比换算**，
+ * 保证「在屏幕上的相对位置」一致，而不是在 1366 上显得太靠右、在 4K 上显得太靠左：
+ * - 2048 宽 → 400
+ * - 1920 宽 → 375
+ * - 1366 宽 → 267
+ * - 3840 宽 → 750
+ * 只设下限 160（小屏别贴死左沿）；上界由 maxX（屏宽 - 窗口宽）兜底，不会跑出屏幕。
+ * 这里用的是**逻辑像素**：Windows 的 125% / 150% / 200% 缩放由 scale 换算成物理像素。
+ */
+const QUICKBAR_DOCK_OFFSET_BASE = 400;
+const QUICKBAR_DOCK_OFFSET_BASE_WIDTH = 2048;
+const QUICKBAR_DOCK_OFFSET_MIN = 160;
 
 /**
  * 速览界面里右键菜单必须能被完整放下，窗口最小尺寸由此推导：
@@ -674,14 +689,24 @@ async function enterQuickbar() {
     const autoHide = useFontStore.getState().quickbarAutoHide;
     const dockHeight = autoHide ? Math.round(DOCK_HEIGHT_HINT * scale) : fullHeight;
     /*
-     * 速览落点（用户 2026-11-04 三次修正后的最终口径）：**固定贴显示器左上角**。
-     * - 横向不跟主窗口走，固定取工作区左边缘（工作区左沿在侧边任务栏时不是 0，
-     *   照搬显示器 position.x 会被任务栏压住，所以要取 workArea）；
+     * 速览落点（用户 2026-11-04 五次修正后的最终口径）：**距显示器左上角 (400, 0)**，
+     * 且要适配不同分辨率。
      * - 纵向固定贴显示器物理顶部 0px：用 `monitor.position.y` 而不是工作区顶，
-     *   否则「任务栏置顶」时会退到任务栏下沿，贴不到真正的 0。
+     *   否则「任务栏置顶」时会退到任务栏下沿，贴不到真正的 0；
+     * - 横向在显示器左沿基础上右移，偏移量按屏宽等比换算（2048 宽 → 400），
+     *   夹在 160~400 之间；基准取 workArea 左沿，侧边任务栏时不会被压住。
      */
     const area = monitor?.workArea ?? monitor;
-    const dockX = Math.round(area ? area.position.x : 0);
+    const baseX = area ? area.position.x : 0;
+    const areaLogicalWidth = area ? area.size.width / scale : QUICKBAR_DOCK_OFFSET_BASE_WIDTH;
+    const offsetLogical = Math.max(
+      QUICKBAR_DOCK_OFFSET_MIN,
+      (areaLogicalWidth * QUICKBAR_DOCK_OFFSET_BASE) / QUICKBAR_DOCK_OFFSET_BASE_WIDTH,
+    );
+    const wantX = Math.round(baseX + offsetLogical * scale);
+    // 兜底：偏移 + 窗口宽度可能超出屏宽（小屏 / 侧边任务栏），别把速览推到屏幕外
+    const maxX = area ? Math.round(baseX + area.size.width - width) : wantX;
+    const dockX = Math.max(baseX, Math.min(wantX, maxX));
     const dockY = Math.round(monitor ? monitor.position.y : 0);
 
     // 收起成一条后远小于「放得下右键菜单」的最小尺寸，先解除；展开时再补回来
