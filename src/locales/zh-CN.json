@@ -955,5 +955,7 @@
   "pack.volume": " · 第 {part}/{parts} 卷",
   "hint.packProgress": "整包会把整理数据和字体文件打在一起。字库超过 2GB 时自动分卷，每卷不超过 2GB。"
 ,
-  "toast.packBusy": "上一趟打包或导入还没结束，等它跑完再点"
+  "toast.packBusy": "上一趟打包或导入还没结束，等它跑完再点",
+  "menu.snapshotFromCollection": "用分组内容新建快照",
+  "toast.emptyCollection": "这个分组里还没有字体"
 }

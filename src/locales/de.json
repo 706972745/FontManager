@@ -964,5 +964,7 @@
   "pack.volume": " · Teil {part}/{parts}",
   "hint.packProgress": "Ein Paket bündelt Sammlungsdaten und Schriftdateien. Bibliotheken über 2 GB werden in Teile von höchstens 2 GB aufgeteilt."
 ,
-  "toast.packBusy": "Der vorherige Vorgang läuft noch – bitte warten, bis er fertig ist"
+  "toast.packBusy": "Der vorherige Vorgang läuft noch – bitte warten, bis er fertig ist",
+  "menu.snapshotFromCollection": "Neuer Schnappschuss aus dieser Sammlung",
+  "toast.emptyCollection": "Diese Sammlung enthält noch keine Schriften"
 }

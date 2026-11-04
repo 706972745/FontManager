@@ -424,6 +424,11 @@ interface FontStore {
   /** 批量把字族移出分组（只删成员关系，不删字体）。一条都没命中时静默返回。 */
   removeFamiliesFromCollection: (collection: string, families: string[]) => Promise<void>;
   createSnapshot: (name: string) => Promise<void>;
+  /**
+   * 把某个分组的字体一次性收进一个**同名新快照**（2026-11-04 用户需求）。
+   * 「分组里的字体」按分组视图的口径算，见实现处注释。
+   */
+  createSnapshotFromCollection: (collection: string) => Promise<void>;
   deleteSnapshot: (name: string) => Promise<void>;
   renameSnapshot: (from: string, to: string) => Promise<void>;
   toggleFamilyInSnapshot: (snapshot: string, family: string) => Promise<void>;
@@ -2576,6 +2581,57 @@ export const useFontStore = create<FontStore>((set, get) => ({
       );
     } catch (e) {
       set({ snapshots: prev, pendingSnapshotFor: prevPending, pendingSnapshotFace: prevPendingFace });
+      toast.error(t("toast.couldntCreateSnapshot"), String(e));
+    }
+  },
+
+  createSnapshotFromCollection: async (collection) => {
+    const clean = collection.trim();
+    if (!clean) return;
+    const st = get();
+    // 扫描没跑完时 fonts 只是「已经扫到的那部分」，这时候建快照会缺一堆字面。
+    if (st.phase === "scanning") {
+      toast.info(t("snap.waitScan"));
+      return;
+    }
+    if (st.snapshots.some((s) => s.name === clean)) {
+      toast.error(t("toast.snapshotExists"), t("toast.nameTakenSub", { name: clean }));
+      return;
+    }
+    if (st.snapshots.length >= SNAPSHOT_LIMIT) {
+      toast.error(t("toast.snapshotLimitReached"), t("toast.snapshotLimitSub", { max: SNAPSHOT_LIMIT }));
+      return;
+    }
+    /**
+     * 「分组里的字体」= 分组视图里能看到的那一批：
+     * 整族成员（collections）算整族所有字面；只加了字重级成员（collectionFaces）的，
+     * 只收那几笔。口径与 lib/collectionScope.ts::collectionFaceScope 保持一致 ——
+     * 否则「只往分组里放了一个字重」的组会把整族都塞进快照。
+     */
+    const whole = new Set(st.collections[clean] ?? []);
+    const facesInGroup = new Set(st.collectionFaces[clean] ?? []);
+    const seen = new Set<string>();
+    const entries: SnapshotEntry[] = [];
+    for (const f of st.fonts) {
+      if (!whole.has(f.family) && !facesInGroup.has(faceKey(f))) continue;
+      const entry = entryFromFace(f);
+      if (seen.has(entry.key)) continue;
+      seen.add(entry.key);
+      entries.push(entry);
+    }
+    if (entries.length === 0) {
+      toast.error(t("toast.emptyCollection"));
+      return;
+    }
+    const prev = st.snapshots;
+    const createdAt = Date.now();
+    set({ snapshots: [...prev, { name: clean, createdAt, entries }] });
+    try {
+      const saved = await ipc.saveSnapshot({ name: clean, createdAt, entries });
+      set({ snapshots: saved });
+      toast.success(t("toast.createdSnapshot", { name: clean }));
+    } catch (e) {
+      set({ snapshots: prev });
       toast.error(t("toast.couldntCreateSnapshot"), String(e));
     }
   },
