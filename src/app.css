@@ -465,7 +465,9 @@ body,
   color: var(--accent-a);
 }
 .topbar-sample {
-  flex: 2 1 120px;
+  /* 原来是 2:1，示例文字框宽度是搜索框的两倍，整个工具栏看起来一边重一边轻。
+     1.5:1 仍保证示例文字有足够空间，但两边不再失衡。 */
+  flex: 1.5 1 120px;
   min-width: 0;
 }
 .topbar-search {
@@ -2362,6 +2364,11 @@ h2.detail-title.copy-name {
   width: 100%;
 }
 .sidebar-hint {
+  /* 这是个「占位按钮」，虚线框应该占满整行才看得出「这里能放东西」。
+     原来是 inline button，框只包住文字，右侧留一大截空白，看着像没对齐。 */
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
   font-size: var(--fs-11);
   color: var(--text-tertiary);
   text-align: left;
@@ -3243,6 +3250,26 @@ h2.detail-title.copy-name {
   background: rgba(var(--scrim-rgb), 0.42);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+}
+
+/*
+ * 浅色主题的设置层（C5）。
+ *
+ * 原来的写法在浅色下是「深灰遮罩 + 深灰面板底」双层叠加：
+ *   背景 #ededed → 盖 rgba(40,40,40,.42) → 变成 #9a9a9a 中灰；
+ *   面板再叠 rgba(40,40,40,.3) 之后再压 82% 白 → 又回到 #ededed。
+ * 也就是说面板和画布最后是同一个灰，层次完全消失 —— 这就是「打开设置发灰」。
+ *
+ * 浅色主题的正确层次是：遮罩只轻轻压暗（不改变色相），面板走接近纯白的高不透明度，
+ * 靠边框和投影分层。深色主题那套 scrim 叠加是对的，不动。
+ */
+:root[data-theme="light"] .settings-backdrop {
+  background: rgba(18, 18, 26, 0.16);
+}
+
+:root[data-theme="light"] .settings-panel {
+  background: var(--settings-glass-grad), rgba(255, 255, 255, 0.55);
+  border-color: rgba(18, 18, 26, 0.1);
 }
 
 .settings-panel {
@@ -5373,6 +5400,34 @@ body.ui-fade-out .app-frame {
   }
 }
 
+/*
+ * 「减弱动态效果」开关（设置 → 外观）的补漏。
+ *
+ * 原来这个开关只覆盖了 5 组规则（pill / toast / install-fill / 扫描图标 / spin），
+ * 其余 4 处只写了 `@media (prefers-reduced-motion: reduce)` —— 那个媒体查询读的是
+ * **Windows 系统的**动画开关，用户在软件里单独打开开关时不生效。
+ * 于是「开了减弱动态，速览最小化还是滑、界面退出还是淡」。
+ *
+ * 这里把漏掉的补齐。两个都保留系统的支持：`@media` 与 `[data-motion]` 并存，
+ * 任一命中都生效（系统关了动画、或者软件内开了开关，都算）。
+ *
+ * **故意不盖掉的**：`.spin` / `.load-fill-indeterminate` 这类载入指示器由各自的
+ * 规则处理 —— 它们停下来会让人以为程序卡死。这里补的是纯装饰性的位移与淡出。
+ */
+:root[data-motion="reduced"] body.qb-minimizing .qb-content {
+  animation-duration: 1ms;
+}
+
+:root[data-motion="reduced"] .morph-fade,
+:root[data-motion="reduced"] body.ui-fade-out .app-frame {
+  animation-duration: 1ms;
+}
+
+/* 进度条走到 100% 再停，否则关掉动画会卡在一个不满的宽度上 */
+:root[data-motion="reduced"] .load-fill-indeterminate {
+  width: 100%;
+}
+
 /**
  * 速览收起后的那一条：抓手条下面一行提示。
  * hint 阶段窗口 34px 高，提示行占 20px；收成横线（bar 阶段）后它淡出并压到 0 高。
@@ -5896,4 +5951,60 @@ body.ui-fade-out .app-frame {
 }
 .load-cancel:active {
   background: var(--bg-active, rgba(255,255,255,.1));
+}
+
+/* ============================================================================
+ * 「减弱透明度」开关（设置 → 外观）
+ *
+ * 这个开关以前是**完全无效**的：`applyTransparencyPref()` 会给 <html> 写
+ * `data-transparency`，但样式表里一条 `[data-transparency]` 规则都没有（grep 为 0）。
+ * 也就是说用户打开它，界面一点变化都没有。
+ *
+ * 它是低配机器唯一能一键关掉全部毛玻璃的入口，必须真的生效。
+ * 关掉 backdrop-filter 之后，原本靠模糊撑起来的半透明底（侧栏 1.5%、详情 2.5%）
+ * 会变成「几乎全透明、内容糊在一起」，所以这两处要补上实色底。
+ *
+ * 浮层类（各种 backdrop）只去掉模糊即可 —— 它们本来就是半透明遮罩，
+ * 不依赖模糊也看得清层次。
+ * ========================================================================= */
+
+:root[data-transparency="reduced"] .sidebar,
+:root[data-transparency="reduced"] .detail,
+:root[data-transparency="reduced"] .dropchoice,
+:root[data-transparency="reduced"] .diag-hud,
+:root[data-transparency="reduced"] .compare-backdrop,
+:root[data-transparency="reduced"] .settings-backdrop,
+:root[data-transparency="reduced"] .settings-panel,
+:root[data-transparency="reduced"] .palette-backdrop,
+:root[data-transparency="reduced"] .online-detail-backdrop {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 常驻面板：模糊没了就得有实色底，否则文字压在内容上 */
+:root[data-transparency="reduced"] .sidebar,
+:root[data-transparency="reduced"] .detail {
+  background: #141416;
+}
+
+:root[data-transparency="reduced"] .settings-panel,
+:root[data-transparency="reduced"] .dropchoice,
+:root[data-transparency="reduced"] .diag-hud {
+  background: #17171a;
+}
+
+:root[data-theme="light"][data-transparency="reduced"] .sidebar,
+:root[data-theme="light"][data-transparency="reduced"] .detail {
+  background: #f7f7f8;
+}
+
+:root[data-theme="light"][data-transparency="reduced"] .settings-panel,
+:root[data-theme="light"][data-transparency="reduced"] .dropchoice,
+:root[data-theme="light"][data-transparency="reduced"] .diag-hud {
+  background: #ffffff;
+}
+
+/* 设置层在关掉模糊后要维持「比画布亮一层」的层次 */
+:root[data-theme="light"][data-transparency="reduced"] .settings-backdrop {
+  background: rgba(18, 18, 26, 0.24);
 }

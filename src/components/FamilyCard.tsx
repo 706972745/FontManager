@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AlertTriangle, ChevronRight, Lock, Star } from "lucide-react";
 import { memo, useMemo, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
@@ -68,6 +68,15 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const intro = useIntro();
   const sampleText = useFontStore((s) => s.sampleText);
   const sizeIndex = useFontStore((s) => s.sizeIndex);
+  /**
+   * 展开字重列表用的是 `height: 0 → auto` 动画。高度不是 transform，
+   * 每一帧都要重排卡内所有字重行；低配机器上点开一个 20 字重的族会明显顿一下。
+   * `MotionConfig reducedMotion` 管不到 height，所以这里显式接管开关：
+   * 系统开了减弱动效、或用户在软件里开了，就直接给最终高度，不做逐帧过渡。
+   */
+  const motionPref = useFontStore((s) => s.motionPref);
+  const systemReduce = useReducedMotion();
+  const noMotion = systemReduce || motionPref === "reduced";
   const setFamilyActive = useFontStore((s) => s.setFamilyActive);
   const selectWith = useFontStore((s) => s.selectWith);
   const selected = useFontStore((s) => s.selection.includes(family.name));
@@ -413,7 +422,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0, transition: { ...springSnappy } }}
-            transition={springSoft}
+            transition={noMotion ? { duration: 0 } : springSoft}
           >
             {shownFaces.map((face, i) => (
               <FacePreview

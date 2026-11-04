@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
@@ -661,6 +661,17 @@ export function DetailPanel() {
   const sampleText = useFontStore((s) => s.sampleText);
 
   const panelWidth = useFontStore((s) => s.panelWidth);
+  /**
+   * 详情面板的展开是**宽度动画**（0 → panelWidth）。宽度不是 transform，
+   * 每帧都要重排整个主区域，还要重算面板上的 32px 毛玻璃 —— 低配机器上这一下最贵。
+   *
+   * `MotionConfig reducedMotion` 只管 transform / layout，**管不到 width**，
+   * 所以软件里的「减弱动态效果」开关对这里原本是失效的。这里显式接管：
+   * 系统开了减弱动效、或者用户在本软件里开了开关，都直接给最终宽度，不逐帧过渡。
+   */
+  const motionPref = useFontStore((s) => s.motionPref);
+  const systemReduce = useReducedMotion();
+  const noMotion = systemReduce || motionPref === "reduced";
   const setPanelWidth = useFontStore((s) => s.setPanelWidth);
   const dragging = useRef(false);
   /** 正在拖左边缘调宽：此时宽度必须实时跟手，不能再走弹簧（会拖出「粘手」感） */
@@ -909,7 +920,7 @@ export function DetailPanel() {
           animate={{ width: panelWidth, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           /* 宽度变化用固定缓动而不是弹簧：布局动画上的回弹会让人看见列表「退半步再回来」 */
-          transition={resizing ? { duration: 0 } : intro ? easeTop : INTRO_OFF}
+          transition={resizing || noMotion ? { duration: 0 } : intro ? easeTop : INTRO_OFF}
         >
           <div
             className="detail-resize"
