@@ -200,7 +200,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
       : t("detail.copyright");
 
   /** 悬停跑马灯：预览文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
-  const previewMarquee = useMarquee();
+  const previewMarquee = useMarquee(size);
 
   return (
     <motion.article

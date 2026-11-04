@@ -106,7 +106,7 @@ const SpecimenTile = memo(function SpecimenTile({
   const [faceId, setFaceId] = useState<string | undefined>(() => rememberedFace(family.name));
 
   /** 悬停跑马灯：预览文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
-  const previewMarquee = useMarquee();
+  const previewMarquee = useMarquee(size);
 
   /** 字重菜单用去重后的字面（系统 + 库里同名字面只列一次） */
   const pickable = useMemo(
