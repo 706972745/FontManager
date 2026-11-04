@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AlertTriangle, ChevronRight, Lock, Star } from "lucide-react";
 import { memo, useMemo, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
+import { useMarquee } from "../design/primitives/useMarquee";
 import { spring, springSnappy, springSoft } from "../design/springs";
 import { useListFontCss } from "../lib/fontLoader";
 import { listChars } from "../lib/listChars";
@@ -198,6 +199,9 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
       ? `${t("copyright.expiryDate")}: ${copyrightExpiry}`
       : t("detail.copyright");
 
+  /** 悬停跑马灯：预览文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
+  const previewMarquee = useMarquee();
+
   return (
     <motion.article
       className={`family-card ${selected ? "card-selected" : ""}`}
@@ -222,6 +226,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
         selectWith(family.name, "single", useFontStore.getState().visibleOrder);
       }}
       onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(family))}
+      onMouseEnter={previewMarquee.enter}
+      onMouseLeave={previewMarquee.leave}
 
       /*
        * 停用态原来用 `scale: 0.99` 表达，结果每次点开关，整张卡片都会缩放一下：
@@ -386,7 +392,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
           ) : fontFamily ? (
             <motion.p
               key="real"
-              className="preview-text"
+              ref={previewMarquee.measureRef}
+              className={`preview-text ${previewMarquee.open ? "marquee-open" : ""}`}
               style={{
                 fontFamily,
                 fontSize: size,
@@ -397,7 +404,12 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
               animate={{ opacity: 1, y: 0 }}
               transition={intro ? spring : INTRO_OFF}
             >
-              {text}
+              <span
+                className={`marquee-roll ${previewMarquee.open ? "marquee-roll-on" : ""}`}
+                style={previewMarquee.moverStyle}
+              >
+                {text}
+              </span>
             </motion.p>
           ) : failed ? (
             <p key="failed" className="preview-text preview-failed">

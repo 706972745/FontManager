@@ -1141,7 +1141,8 @@ body,
   background: rgba(var(--ink-rgb), 0.025);
   backdrop-filter: blur(32px) saturate(140%) brightness(1.05);
   -webkit-backdrop-filter: blur(32px) saturate(140%) brightness(1.05);
-  box-shadow: -24px 0 48px rgba(0, 0, 0, 0.2);
+  /* 不加投影（用户 2026-11-05）：面板与内容之间用 1px 分隔线分层就够了，
+     原来的 -24px 0 48px 大阴影会在浅色下把左边一溜内容压灰 */
   z-index: 3;
   /* 宽度本身参与动画（0 → panelWidth），展开途中把还没露出来的内容裁掉。
      滚动挪到 .detail-inner：外层裁剪、内层滚动，两层各管一件事。 */
@@ -3037,6 +3038,9 @@ h2.detail-title.copy-name {
   /* 滚动条出现 / 消失不再挤压内容宽度：列数只跟窗口宽度走，
      否则拖字号时内容高度过临界点会让整面格子横向抽动 */
   scrollbar-gutter: stable;
+  /* 字号变化时本组件自己按行高等比补偿 scrollTop（SpecimenView）；
+     浏览器的滚动锚定也在做同一件事，两套修正叠加就会抖 —— 关掉它 */
+  overflow-anchor: none;
 }
 .specimen-inner {
   position: relative;
@@ -3054,6 +3058,9 @@ h2.detail-title.copy-name {
 }
 .specimen-tile {
   height: 100%;
+  /* 点击后的焦点留在格子上（tabIndex=0），但不要画框：
+     键盘 Tab 导航仍走 :focus-visible 默认焦点环 */
+  outline: none;
 }
 .specimen-tile {
   min-width: 0;
@@ -3109,6 +3116,23 @@ h2.detail-title.copy-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 悬停跑马灯：样张 / 卡片 / 速览的截断重点文本共用（2026-11-05）。
+   外层保持 overflow:hidden + ellipsis（.marquee-open 展开期间改 clip），
+   内层 .marquee-roll 做 transform 位移：进入慢（按距离 0.6~4s 线性），
+   离开快（180ms ease）。见 design/primitives/useMarquee.ts。 */
+.marquee-open {
+  text-overflow: clip;
+}
+.marquee-roll {
+  display: inline-block;
+  vertical-align: bottom;
+  transform: translateX(0);
+  transition: transform 180ms ease;
+  will-change: transform;
+}
+.marquee-roll-on {
+  transition: transform var(--marquee-dur, 2400ms) linear;
 }
 .specimen-gap {
   flex: 1 1 auto;
@@ -3186,11 +3210,12 @@ h2.detail-title.copy-name {
   background: rgba(var(--ink-rgb), 0.05);
 }
 .specimen-body {
-  /* 占满头部以下的所有剩余高度，文字在其中**垂直居中**：
-     上下的留白天然相等，而且格子高度不随字号挤在一起（用户 2026-11-05） */
+  /* 占满头部以下的所有剩余高度，文字**水平 + 垂直双居中**（用户 2026-11-05）：
+     上下的留白天然相等，而且格子高度不随字号挤在一起 */
   flex: 1 1 auto;
   display: flex;
   align-items: center;
+  justify-content: center;
   min-width: 0;
   overflow: hidden;
 }
@@ -3198,6 +3223,7 @@ h2.detail-title.copy-name {
   width: 100%;
   margin: 0;
   line-height: 1.12;
+  text-align: center;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -3472,6 +3498,12 @@ h2.detail-title.copy-name {
  */
 :root[data-theme="light"] .settings-backdrop {
   background: rgba(18, 18, 26, 0.16);
+}
+
+/* 浅色画布要纯白（用户 2026-11-05）：.app-frame::before 的冷灰光晕是
+   深色主题的深度装饰，叠在纯白上就是一层雾 —— 浅色下整块不画 */
+:root[data-theme="light"] .app-frame::before {
+  display: none;
 }
 
 :root[data-theme="light"] .settings-panel {
