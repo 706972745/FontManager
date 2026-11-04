@@ -2004,19 +2004,33 @@ mod tests {
         }
         let chars = "Hello IIEOzoAa";
         let (mut ok, mut skip, mut fail) = (0usize, 0usize, 0usize);
-        for path in &targets {
+        for spec in &targets {
+            // 支持 `路径#字面序号`，用来验 TTC 多面（默认第 0 面）。
+            // Windows 文件名不会出现 `#数字` 结尾，按最后一段数字判断足够安全。
+            let (path, face_index) = match spec.rsplit_once('#') {
+                Some((p, idx)) if !p.is_empty() && idx.chars().all(|c| c.is_ascii_digit()) && !idx.is_empty() => {
+                    (p.to_string(), idx.parse::<u32>().unwrap_or(0))
+                }
+                _ => (spec.clone(), 0u32),
+            };
+            let path = &path;
             let p = Path::new(path);
             let orig = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
             let t0 = std::time::Instant::now();
-            let got = ensure_list_subset_font(p, 0, chars);
+            let got = ensure_list_subset_font(p, face_index, chars);
             let ms = t0.elapsed().as_millis();
             let Some((out, bytes)) = got else {
                 skip += 1;
-                // 区分两种 SKIP：格式不适用（CFF/TTC/可变）与「一个字符都不命中」。
+                // 区分两种 SKIP：格式不适用（可变字体 / 体积太小）与「一个字符都不命中」。
                 // 后者对纯汉字字体是正常的 —— 它的 cmap 里没有任何拉丁字形。
                 let hits = fs::read(p)
                     .ok()
-                    .and_then(|d| tables_of(&d, 0).map(|t| (d, t)))
+                    .and_then(|d| {
+                        let offs = face_offsets(&d)?;
+                        let i = (face_index as usize).min(offs.len().saturating_sub(1));
+                        let t = tables_of(&d, *offs.get(i)?)?;
+                        Some((d, t))
+                    })
                     .and_then(|(d, t)| unicode_pairs(&d, &t))
                     .map(|m| {
                         chars
@@ -2025,15 +2039,40 @@ mod tests {
                             .count()
                     })
                     .unwrap_or(0);
-                println!("SKIP {path} ({orig} bytes, {ms}ms) hit={hits}");
+                println!("SKIP {path}#{face_index} ({orig} bytes, {ms}ms) hit={hits}");
                 continue;
             };
-            assert!(bytes < orig, "产物没变小: {path}");
+            assert!(bytes < orig, "产物没变小: {path}#{face_index}");
             let data = fs::read(&out).expect("读不到产物");
             let tables = tables_of(&data, 0).expect("产物表目录读不出来");
             let map = unicode_pairs(&data, &tables).expect("产物 cmap 读不出来");
             for c in chars.chars() {
                 assert!(map.contains_key(&(c as u32)), "子集缺字 {c}: {path}");
+            }
+            // TTC 输入：产物必须是**单面** sfnt（OTS 只认单面），
+            // 且字形数必须取自 face_index 那一面 —— 这条专抓「永远拿第 0 面」的实现错误：
+            // 总取 offsets[0] 时体积、cmap 断言照样全过，只有字形数对不上。
+            if let Ok(src) = fs::read(p) {
+                if src.len() > 4 && &src[0..4] == b"ttcf" {
+                    assert_ne!(&data[0..4], b"ttcf", "产物仍是集合字体: {path}#{face_index}");
+                    let offs = face_offsets(&src).expect("原文件面偏移读不出来");
+                    let i = (face_index as usize).min(offs.len().saturating_sub(1));
+                    let src_tables = tables_of(&src, offs[i]).expect("原文件表目录读不出来");
+                    let want = src_tables
+                        .iter()
+                        .find(|t| &t.tag == b"maxp")
+                        .and_then(|t| u16_at(&src, t.offset + 4))
+                        .unwrap_or(0);
+                    let got = tables
+                        .iter()
+                        .find(|t| &t.tag == b"maxp")
+                        .and_then(|t| u16_at(&data, t.offset + 4))
+                        .unwrap_or(0);
+                    assert_eq!(
+                        got, want,
+                        "产物字形数与原文件第 {face_index} 面不一致: {path}"
+                    );
+                }
             }
             // CFF 产物必须自己再解析一遍：**这一条不能省**。
             // 曾经因为 usize 的 to_be_bytes 是 8 字节，INDEX 偏移每个多写 4 字节，
@@ -2088,13 +2127,80 @@ mod tests {
             }
             ok += 1;
             println!(
-                "OK   {path} {orig} -> {bytes} ({:.2}%) {ms}ms cmap={}",
+                "OK   {path}#{face_index} {orig} -> {bytes} ({:.2}%) {ms}ms cmap={}",
                 bytes as f64 * 100.0 / orig as f64,
                 map.len()
             );
         }
         println!("汇总 ok={ok} skip={skip} fail={fail}");
         assert_eq!(fail, 0);
+    }
+
+    /// A4 决策数据：`GSUB + GPOS` 在**子集产物**里占多大。
+    ///
+    /// `ZFM_SHARE_LIST=清单文件 cargo test layout_share -- --ignored --nocapture`
+    /// 清单每行一个字体路径，支持 `路径#字面序号`（默认第 0 面）。
+    ///
+    /// 为什么不能只看原文件占比：子集化把 glyf 砍掉九成，布局表却原样搬过去，
+    /// 所以原文件里占 5% 的表，在产物里可能占一半。判据是产物里的占比。
+    /// 只有「> 10% 的字体数量」够多，A4（裁 layout 表）才值得做。
+    #[test]
+    #[ignore]
+    fn layout_share() {
+        let Ok(list) = std::env::var("ZFM_SHARE_LIST") else {
+            return;
+        };
+        let text = fs::read_to_string(list).expect("读不到清单");
+        let chars = "Hello IIEOzoAa";
+        let (mut over10, mut measured, mut skipped) = (0usize, 0usize, 0usize);
+        let mut gain_bytes = 0u64;
+        println!("share%\t产物\tlayout\tGSUB\tGPOS\t原文件\t路径");
+        for spec in text.lines() {
+            let spec = spec.trim();
+            if spec.is_empty() {
+                continue;
+            }
+            let (path, face_index) = match spec.rsplit_once('#') {
+                Some((p, idx))
+                    if !p.is_empty() && !idx.is_empty() && idx.chars().all(|c| c.is_ascii_digit()) =>
+                {
+                    (p.to_string(), idx.parse::<u32>().unwrap_or(0))
+                }
+                _ => (spec.to_string(), 0u32),
+            };
+            let p = Path::new(&path);
+            let orig = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+            let Some((out, bytes)) = ensure_list_subset_font(p, face_index, chars) else {
+                skipped += 1;
+                continue;
+            };
+            let Ok(data) = fs::read(&out) else { continue };
+            let Some(tables) = tables_of(&data, 0) else {
+                continue;
+            };
+            let gsub = tables
+                .iter()
+                .find(|t| &t.tag == b"GSUB")
+                .map(|t| t.len)
+                .unwrap_or(0) as u64;
+            let gpos = tables
+                .iter()
+                .find(|t| &t.tag == b"GPOS")
+                .map(|t| t.len)
+                .unwrap_or(0) as u64;
+            let layout = gsub + gpos;
+            let share = layout as f64 * 100.0 / bytes.max(1) as f64;
+            measured += 1;
+            if share > 10.0 {
+                over10 += 1;
+                gain_bytes += layout;
+            }
+            println!("{share:.1}\t{bytes}\t{layout}\t{gsub}\t{gpos}\t{orig}\t{path}");
+        }
+        println!(
+            "汇总：测了 {measured}，跳过 {skipped}，layout 占比 >10% 的有 {over10}（这些字体 layout 合计 {} KB）",
+            gain_bytes / 1024
+        );
     }
 
     /// 批量：`ZFM_REPAIR_LIST=清单文件 cargo test ...`，文件里每行 `路径#序号`。
