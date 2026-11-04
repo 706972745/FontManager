@@ -14,7 +14,7 @@ import { TopBar } from "./components/TopBar";
 import { TrashView } from "./components/TrashView";
 import { OnlineView } from "./components/OnlineView";
 import { AboutView } from "./components/AboutView";
-import { WaterfallView } from "./components/WaterfallView";
+import { SpecimenView } from "./components/SpecimenView";
 import { SnapshotBar } from "./components/SnapshotBar";
 import { CompareOverlay } from "./components/CompareOverlay";
 import { SelectionBar } from "./components/SelectionBar";
@@ -260,8 +260,8 @@ function MainContent() {
           Object.keys(copyrightStatus).length > 0
         }
       />
-    ) : viewMode === "waterfall" ? (
-      <WaterfallView families={families} />
+    ) : viewMode === "specimen" ? (
+      <SpecimenView families={families} />
     ) : viewMode === "grid" ? (
       <FontGrid families={families} />
     ) : (
@@ -281,6 +281,7 @@ function MainContent() {
 export default function App() {
   const t = useT();
   const init = useFontStore((s) => s.init);
+  const viewMode = useFontStore((s) => s.viewMode);
   const motionPref = useFontStore((s) => s.motionPref);
   const quickbar = useFontStore((s) => s.quickbar);
   const morph = useFontStore((s) => s.morph);
@@ -592,7 +593,7 @@ export default function App() {
         transition={intro ? easeTop : INTRO_OFF}
       >
         <Titlebar />
-        <div className="app-shell">
+        <div className={viewMode === "specimen" ? "app-shell shell-specimen" : "app-shell"}>
           <Sidebar />
           <div className="app-main">
             <TopBar />
@@ -604,7 +605,9 @@ export default function App() {
             <ApplyProgress />
             <WarmFooter />
           </div>
-          <DetailPanel />
+          {/* 样张视图是「挑字」界面：详情面板要收起来，否则中间只剩两列，
+              四千多款字体翻起来太窄（用户 2026-11-05 明确要求不显示） */}
+          {viewMode !== "specimen" && <DetailPanel />}
         </div>
       </motion.div>
       <DropZone />

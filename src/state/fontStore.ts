@@ -123,7 +123,16 @@ async function warnMissingLicenses(faces: FontFace[]) {
 
 let initStarted = false;
 
-export type ViewMode = "grid" | "list" | "waterfall";
+export type ViewMode = "grid" | "list" | "specimen";
+
+/**
+ * 预览字号的下限（SIZES 下标）。
+ *
+ * 用户 2026-11-05：卡片 / 列表 / 详情里阅览字号最低 24px（再小就只剩一团灰线，
+ * 看不出字形）；只有新的「样张」视图例外，可以一路调到 8px —— 挑字时就是要看
+ * 小字号下的表现。SIZES = [8, 14, 18, 24, 32, 48, 64, 96]，24px 的下标是 3。
+ */
+export const MIN_PREVIEW_SIZE_INDEX = 3;
 export type MotionPref = "system" | "reduced";
 export type TransparencyPref = "full" | "reduced";
 export type UiScale = "auto" | number;
@@ -316,6 +325,12 @@ interface FontStore {
 
   sampleText: string;
   sizeIndex: number;
+  /**
+   * 样张视图自己的预览字号档位（SIZES 下标，最低可以到 0 = 8px）。
+   * 与卡片 / 列表的 `sizeIndex` 分开记：切到样张初始 32px（用户 2026-11-05），
+   * 在样张里调到 8px 也不会把卡片视图的字号一起带小。
+   */
+  specimenSizeIndex: number;
   viewMode: ViewMode;
   sort: SortMode;
   search: string;
@@ -522,6 +537,7 @@ interface FontStore {
 
   setSampleText: (t: string) => void;
   setSizeIndex: (i: number) => void;
+  setSpecimenSizeIndex: (i: number) => void;
   setViewMode: (m: ViewMode) => void;
   /** 切换速览界面（会压缩/还原窗口大小与位置） */
   setQuickbar: (on: boolean) => Promise<void>;
@@ -927,6 +943,7 @@ function persistPrefs(get: () => FontStore) {
     void ipc.setPrefs({
       sampleText: s.sampleText,
       sizeIndex: s.sizeIndex,
+      specimenSizeIndex: s.specimenSizeIndex,
       viewMode: s.viewMode,
       sort: s.sort,
       panelWidth: s.panelWidth,
@@ -1488,6 +1505,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   sampleText: t("preview.defaultSample"),
   sizeIndex: 3,
+  specimenSizeIndex: 4,
   viewMode: "grid",
   sort: "name",
   quickbar: false,
@@ -1564,12 +1582,22 @@ export const useFontStore = create<FontStore>((set, get) => ({
           typeof prefs.sampleText === "string" && !LEGACY_SAMPLE_TEXTS.has(prefs.sampleText)
             ? prefs.sampleText
             : get().sampleText,
-        sizeIndex: typeof prefs.sizeIndex === "number" ? prefs.sizeIndex : get().sizeIndex,
-        viewMode: (["grid", "list", "waterfall"] as const).includes(
-          prefs.viewMode as ViewMode,
-        )
-          ? (prefs.viewMode as ViewMode)
-          : "grid",
+        sizeIndex: Math.max(
+          MIN_PREVIEW_SIZE_INDEX,
+          typeof prefs.sizeIndex === "number" ? prefs.sizeIndex : get().sizeIndex,
+        ),
+        // 样张自己的字号档：默认 4 = 32px（用户 2026-11-05 指定初始值）
+        specimenSizeIndex:
+          typeof prefs.specimenSizeIndex === "number"
+            ? Math.max(0, Math.min(SIZES.length - 1, prefs.specimenSizeIndex))
+            : 4,
+        viewMode:
+          // 老的「瀑布流」偏好直接迁移成样张视图
+          prefs.viewMode === "waterfall"
+            ? "specimen"
+            : (["grid", "list", "specimen"] as const).includes(prefs.viewMode as ViewMode)
+              ? (prefs.viewMode as ViewMode)
+              : "grid",
         sort: (["name", "styles", "size", "glyphs", "added"] as const).includes(prefs.sort as SortMode)
           ? (prefs.sort as SortMode)
           : "name",
@@ -3661,10 +3689,19 @@ export const useFontStore = create<FontStore>((set, get) => ({
     persistPrefs(get);
   },
   setSizeIndex: (sizeIndex) => {
-    set({ sizeIndex });
+    // 非样张视图不允许低于 24px（滑条本身就挡住了，这里再兜一层：
+    // 命令面板 / 快捷键 / 旧偏好都可能绕过滑条）
+    const min = get().viewMode === "specimen" ? 0 : MIN_PREVIEW_SIZE_INDEX;
+    set({ sizeIndex: Math.max(min, Math.min(SIZES.length - 1, sizeIndex)) });
+    persistPrefs(get);
+  },
+  setSpecimenSizeIndex: (specimenSizeIndex) => {
+    set({ specimenSizeIndex: Math.max(0, Math.min(SIZES.length - 1, specimenSizeIndex)) });
     persistPrefs(get);
   },
   setViewMode: (viewMode) => {
+    // 卡片 / 列表与样张的字号各记各的：切到样张从 32px 起（首次）或上次的档位，
+    // 切回来卡片视图的字号原样保留 —— 不再互相踩。
     set({ viewMode });
     persistPrefs(get);
   },

@@ -17,7 +17,7 @@ import {
   PowerOff,
   Clock,
   RefreshCw,
-  Rows3,
+  Columns3,
   Search,
   Settings,
   Star,
@@ -153,10 +153,10 @@ export function CommandPalette() {
         run: () => s.setViewMode("list"),
       },
       {
-        id: "view-waterfall",
-        label: t("palette.viewWaterfall"),
-        icon: <Rows3 size={14} strokeWidth={1.5} />,
-        run: () => s.setViewMode("waterfall"),
+        id: "view-specimen",
+        label: t("palette.viewSpecimen"),
+        icon: <Columns3 size={14} strokeWidth={1.5} />,
+        run: () => s.setViewMode("specimen"),
       },
       ...(["dark", "light", "system"] as const).map(
         (mode): Cmd => ({
