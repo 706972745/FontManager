@@ -3119,7 +3119,7 @@ h2.detail-title.copy-name {
 }
 /* 悬停跑马灯：样张 / 卡片 / 速览的截断重点文本共用（2026-11-05）。
    外层保持 overflow:hidden + ellipsis（.marquee-open 展开期间改 clip），
-   内层 .marquee-roll 做 transform 位移：进入慢（按距离 0.6~4s 线性），
+   内层 .marquee-roll 做 transform 位移：进入慢（按距离 1.2~8s 线性），
    离开快（180ms ease）。见 design/primitives/useMarquee.ts。 */
 .marquee-open {
   text-overflow: clip;
@@ -3132,7 +3132,7 @@ h2.detail-title.copy-name {
   will-change: transform;
 }
 .marquee-roll-on {
-  transition: transform var(--marquee-dur, 2400ms) linear;
+  transition: transform var(--marquee-dur, 4800ms) linear;
 }
 .specimen-gap {
   flex: 1 1 auto;

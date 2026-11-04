@@ -20,7 +20,8 @@ import type { CSSProperties } from "react";
  * - 位移放在内层 .marquee-roll 上，不碰外层的 framer-motion 动画
  *   （motion.p 的 y 动画由 framer 管 transform，外层再写 style.transform 会互抢）；
  * - 展开期间外层加 .marquee-open（text-overflow: clip），省略号不会压在滑出来的文字上；
- * - 速度约 28ms/px（全程 0.6~4s 线性），回滚固定 180ms —— 进入慢、离开快。
+ * - 速度约 56ms/px（全程 1.2~8s 线性，用户 2026-11-05 要求比初版慢一半），
+ *   回滚固定 180ms —— 进入慢、离开快。
  */
 export function useMarquee() {
   const measureRef = useRef<any>(null);
@@ -40,7 +41,7 @@ export function useMarquee() {
     open: shift !== 0,
     moverStyle: {
       transform: `translateX(${shift}px)`,
-      "--marquee-dur": `${Math.min(4000, Math.max(600, Math.abs(shift) * 28))}ms`,
+      "--marquee-dur": `${Math.min(8000, Math.max(1200, Math.abs(shift) * 56))}ms`,
     } as CSSProperties,
   };
 }
