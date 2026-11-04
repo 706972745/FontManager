@@ -792,8 +792,9 @@ body,
     var(--shadow-ground),
     0 12px 32px rgba(0, 0, 0, 0.18);
   overflow: hidden;
-  transition: filter var(--t-state) ease, opacity var(--t-state) ease,
-    border-color var(--t-quick) ease, box-shadow var(--t-state) ease;
+  /* opacity 交给 framer-motion 逐帧写，这里再叠一层 CSS transition 会拖慢它 */
+  transition: filter var(--t-state) ease, border-color var(--t-quick) ease,
+    box-shadow var(--t-state) ease;
 }
 
 .family-card:hover {
@@ -820,7 +821,11 @@ body,
   align-items: center;
   gap: 10px;
   min-width: 0;
-  overflow: hidden;
+  /* 这里原来有 overflow: hidden。它会把开关的热区伪元素在右边缘切掉 ——
+     开关是卡片里最靠右的元素，热区往外扩的那几像素正好落在裁剪线上，
+     于是"点开关右边一点点"照样穿到卡片上。卡片的 overflow: hidden 已经兜底，
+     头部自己不必再裁一次；名字用 text-overflow: ellipsis 收口，不依赖这里。
+     （2026-11-04 开关热区修复） */
 }
 .card-name {
   font-size: var(--fs-14);
@@ -1047,8 +1052,28 @@ body,
   padding: 2px;
   justify-content: flex-start;
   flex-shrink: 0;
+  /* 热区伪元素要相对按钮定位 */
+  position: relative;
   transition: background var(--t-quick) ease, box-shadow var(--t-quick) ease,
     border-color var(--t-quick) ease;
+}
+
+/**
+ * 把开关的点击热区补成外扩 6px 的圆角矩形（视觉尺寸一点不变）。
+ *
+ * 用户 2026-11-04 报「这的按钮会偏移」：开关是 34×19 的胶囊，圆角半径接近半个高度，
+ * 四个角上有一圈**不属于按钮**的像素；点在那里命中判定落到下面的卡片上 ——
+ * 卡片一被选中就打开详情面板，整列瞬间变窄，开关跟着往左跳一大截，
+ * 看起来就是「点了一下开关，按钮自己偏移了」。
+ * 低配/手快的时候更容易点到边角，所以是「时不时」出现。
+ *
+ * 伪元素属于按钮自己，事件目标仍是按钮；外扩后圆角外的边角也能命中。
+ */
+.pill-toggle::before {
+  content: "";
+  position: absolute;
+  inset: -6px -7px;
+  border-radius: 10px;
 }
 .pill-lg {
   --pill-w: 46px;

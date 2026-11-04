@@ -223,9 +223,20 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
       }}
       onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(family))}
 
-      animate={{ scale: family.active ? 1 : 0.99 }}
+      /*
+       * 停用态原来用 `scale: 0.99` 表达，结果每次点开关，整张卡片都会缩放一下：
+       * 卡片是中心缩放，右边缘（以及贴右的星标、开关）会横移约 4px，点完还要回弹。
+       * 用户报的「点击按钮时按钮会偏移」就是这个。改成 opacity —— 只改明暗、
+       * 不碰几何，按钮位置在任何状态下都恒定。
+       */
+      animate={{ opacity: family.active ? 1 : 0.94 }}
       whileHover={{ y: -1 }}
-      whileTap={{ scale: family.active ? 0.99 : 0.98 }}
+      /*
+       * 原来还有 whileTap={{ scale: 0.99 }}：点击卡片切详情时整卡缩一下，
+       * 贴右的星标 / 开关跟着横移约 4px 再弹回 —— 用户报的「切换详细面板时按钮偏移」
+       * 就是这一下。这里给一个不改变几何的按下反馈（轻微压暗），位置始终不动。
+       */
+      whileTap={{ opacity: 0.96 }}
       transition={spring}
       layout="position"
     >
@@ -246,6 +257,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
             className="card-expand"
             aria-label={t(expanded ? "card.collapseStyles" : "card.expandStyles")}
             aria-expanded={expanded}
+            /* 同星标：别让这次按下触发父卡片的 whileTap 缩放 */
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               setExpanded((v) => !v);
@@ -305,6 +318,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
           className={`star-btn ${favorite ? "star-on" : ""}`}
           aria-label={t(favorite ? "card.unfavorite" : "card.favorite", { name: family.name })}
           aria-pressed={favorite}
+          /* 阻止冒泡到卡片：否则父级的 whileTap 会让整卡缩一下，按钮跟着位移 */
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             playStar(!favorite);
