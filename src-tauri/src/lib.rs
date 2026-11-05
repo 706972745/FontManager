@@ -2171,6 +2171,7 @@ fn api_status() -> serde_json::Value {
                 "enabled": cfg.enabled,
                 "running": crate::api::is_running(),
                 "port": cfg.port,
+                "requestedPort": cfg.want_port,
                 "token": cfg.token,
                 "dangerous": cfg.dangerous,
                 "base": if cfg.port == 0 { String::new() } else { format!("http://127.0.0.1:{}/api/v1", cfg.port) },
@@ -2201,6 +2202,30 @@ fn api_set_enabled(enabled: bool) -> Result<(), String> {
 }
 
 /// 允许 / 禁止「危险写」（导入、覆盖类操作）。默认禁止。
+/// 设置监听的端口。0 = 自动；1024 以下要提权，一律拒绝。
+/// 存进 prefs 后立刻按新配置重启监听（在跑就换端口，没开就只记下）。
+#[tauri::command]
+fn api_set_port(port: u16) -> Result<u16, String> {
+    let Some(hub) = crate::api::hub() else {
+        return Err("本地 API 还没初始化".into());
+    };
+    if port != 0 && port < 1024 {
+        return Err("端口要大于 1023；1024 以下需要管理员权限".into());
+    }
+    {
+        let mut state = hub.store.0.lock().map_err(|e| e.to_string())?;
+        let want = crate::api::normalize_port(if port == 0 { None } else { Some(port as i64) });
+        if let Some(p) = state.prefs.as_object_mut() {
+            p.insert("apiPort".into(), serde_json::json!(want));
+        } else {
+            state.prefs = serde_json::json!({ "apiPort": want });
+        }
+        store::save(&state)?;
+    }
+    crate::api::apply_prefs();
+    Ok(crate::api::current_port())
+}
+
 #[tauri::command]
 fn api_set_dangerous(on: bool) -> Result<(), String> {
     let Some(hub) = crate::api::hub() else {
@@ -2240,12 +2265,16 @@ fn plugins_list() -> Vec<crate::plugins::PluginInfo> {    crate::plugins::list()
 }
 
 #[tauri::command]
-fn plugin_set_enabled(id: String, enabled: bool) -> Result<(), String> {
+fn plugin_set_enabled(store: State<Store>, id: String, enabled: bool) -> Result<(), String> {
     if enabled {
-        crate::plugins::enable(&id).map(|_| ())
+        crate::plugins::enable(&id).map(|_| ())?;
     } else {
-        crate::plugins::disable(&id)
+        crate::plugins::disable(&id)?;
     }
+    // 记住这次选择：下次启动照着开回来（不然每次开机都要手动点一遍）
+    crate::plugins::remember(store.inner(), &id, enabled);
+    let state = store.0.lock().map_err(|e| e.to_string())?;
+    store::save(&state)
 }
 
 #[tauri::command]
@@ -2389,6 +2418,12 @@ pub fn run() {
             if let Some(store) = app.try_state::<Store>() {
                 crate::api::init(store.inner().clone());
             }
+            // 上次开着的插件：等 API 监听就绪再拉起来（插件要拿 apiBase 和受限令牌）。
+            // 放线程里跑，manifest 多、解释器慢都不挡首屏。
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                crate::plugins::start_enabled();
+            });
             // 网络层学到的「原始地址不可达」要跨重启记住：每次翻转才写盘一次，开销可忽略
             {
                 let handle = app.handle().clone();
@@ -2599,6 +2634,7 @@ pub fn run() {
             api_status,
             api_set_enabled,
             api_set_dangerous,
+            api_set_port,
             api_reset_token,
             plugins_list,
             plugin_set_enabled,

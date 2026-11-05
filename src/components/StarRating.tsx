@@ -1,9 +1,9 @@
 /**
  * 收藏星标 + 评分（1.2.4）。
  *
- * 用户口径：鼠标停在卡片右上角那颗星上，下面浮出 5 颗星，点一下就打分 ——
- * 不必先收藏、也不必打开详情面板。最低 1 星；面板里单独给「清除评分」，
- * 免得「点当前那颗星」到底算改分还是取消说不清。
+ * 用户口径（2026-11-05 更新）：**直接点星标＝收下并给一星**；再点一次（已经有一星时）
+ * 就取消收藏、顺手清掉评分。想给 2~5 星仍然是把鼠标停在星上、在浮层里点。
+ * 这样「收藏」和「打分」不用分两步，一秒就能标完一批。
  *
  * 评分时若该族还没收藏，顺手收进来（评分本来就是「收藏的评级」，不该出现
  * 「有 5 星却不在收藏里」这种自相矛盾的状态）。
@@ -125,15 +125,18 @@ export function StarRating({
         <motion.button
           ref={btnRef}
           className={`star-btn ${favorite ? "star-on" : ""}`}
-          aria-label={favorite ? labels.remove : labels.add}
+          aria-label={favorite && rating > 0 ? labels.remove : labels.add}
           aria-pressed={favorite}
           aria-haspopup="true"
           aria-expanded={open}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
-            playStar(!favorite);
+            // 已收藏且已有评分 → 这一次点击是「取消」；否则就是「收下并给一星」
+            const undo = favorite && rating > 0;
+            playStar(!undo);
             void toggleFavorite(family);
+            setRating(family, undo ? 0 : 1);
           }}
           whileTap={{ scale: 0.85 }}
         >

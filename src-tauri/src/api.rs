@@ -61,6 +61,8 @@ pub const PERMS: &[&str] = &[
 pub struct Cfg {
     pub enabled: bool,
     pub port: u16,
+    /// 用户指定的端口；0 = 自动挑一个空闲端口
+    pub want_port: u16,
     pub token: String,
     pub dangerous: bool,
 }
@@ -108,6 +110,18 @@ fn prefs_bool(prefs: &Value, key: &str) -> bool {
     prefs.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
 }
 
+/// 端口口径：0 或缺失 = 自动；超出 1024..=65535 的一律当自动（1024 以下要提权，别答应）
+pub fn normalize_port(v: Option<i64>) -> u16 {
+    match v {
+        Some(n) if (1024..=65535).contains(&n) => n as u16,
+        _ => 0,
+    }
+}
+
+fn prefs_port(prefs: &Value, key: &str) -> u16 {
+    normalize_port(prefs.get(key).and_then(|v| v.as_i64()))
+}
+
 fn prefs_str(prefs: &Value, key: &str) -> Option<String> {
     prefs
         .get(key)
@@ -118,11 +132,31 @@ fn prefs_str(prefs: &Value, key: &str) -> Option<String> {
 }
 
 /// 读 prefs 决定：起 / 停 / 用新令牌重起。设置页改完、启动时都走这里。
+/// 清掉上一个进程留下的 `api.json`。
+///
+/// 正常退出会走 `RunEvent::Exit` → `stop()` → 删文件；但任务管理器强杀、蓝屏、
+/// 断电都走不到那里，文件会带着端口和令牌一直留在 `%APPDATA%` 里。下一个进程
+/// 要是没开 API，这份残留就再没人管了，客户端照着它连只会得到「拒绝连接」。
+fn cleanup_stale() {
+    let path = api_json_path();
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let stale = match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(v) => v.get("pid").and_then(|p| p.as_u64()) != Some(std::process::id() as u64),
+        // 文件坏了也算残留
+        Err(_) => true,
+    };
+    if stale {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
 pub fn apply_prefs() {
+    cleanup_stale();
     let Some(hub) = hub() else { return };
     let prefs = prefs_of(&hub);
     let enabled = prefs_bool(&prefs, "apiEnabled");
     let dangerous = prefs_bool(&prefs, "apiDangerous");
+    let want_port = prefs_port(&prefs, "apiPort");
     let token = prefs_str(&prefs, "apiToken").unwrap_or_default();
     let token = if token.is_empty() {
         // 第一次开启：生成一个 32 位十六进制令牌并写回 prefs
@@ -141,9 +175,11 @@ pub fn apply_prefs() {
     {
         let Ok(mut cfg) = hub.cfg.lock() else { return };
         // 令牌换了 / 开关变了 → 重启监听
-        let need_restart = cfg.port == 0 || cfg.token != token || cfg.enabled != enabled;
+        let need_restart =
+            cfg.port == 0 || cfg.token != token || cfg.enabled != enabled || cfg.want_port != want_port;
         cfg.enabled = enabled;
         cfg.dangerous = dangerous;
+        cfg.want_port = want_port;
         if cfg.token != token {
             cfg.token = token.clone();
         }
@@ -179,6 +215,13 @@ pub fn apply_prefs() {
     // 令牌表：主令牌全权（显式 drop 掉 guard：它借的是 hub，别让它活过函数尾）
     let registered = hub.tokens.lock().map(|mut t| t.insert(token, Scope::full("app")));
     drop(registered);
+}
+
+/// 当前实际监听端口；没在跑就是 0
+pub fn current_port() -> u16 {
+    hub()
+        .and_then(|h| h.cfg.lock().ok().map(|c| c.port))
+        .unwrap_or(0)
 }
 
 pub fn stop() {
@@ -232,6 +275,9 @@ struct ApiDoc<'a> {
     version: &'a str,
     dangerous: bool,
     started_at: u64,
+    /// 写这份文件的进程 id。软件被强杀时 api.json 会留下来，
+    /// 客户端（MCP / 插件）可以先对一下 pid 再决定要不要连。
+    pid: u32,
 }
 
 fn write_api_json(port: u16, token: &str, dangerous: bool) {
@@ -242,6 +288,7 @@ fn write_api_json(port: u16, token: &str, dangerous: bool) {
         version: env!("CARGO_PKG_VERSION"),
         dangerous,
         started_at: services::now_ms(),
+        pid: std::process::id(),
     };
     let _ = std::fs::create_dir_all(store::app_data_dir());
     if let Ok(text) = serde_json::to_string_pretty(&doc) {
@@ -252,16 +299,33 @@ fn write_api_json(port: u16, token: &str, dangerous: bool) {
 // ───────────────────────────── 启停 ─────────────────────────────
 
 fn start_server(hub: &Arc<Hub>) -> Result<u16, String> {
-    let (token, dangerous) = {
+    let (token, dangerous, want_port) = {
         let cfg = hub.cfg.lock().map_err(|e| e.to_string())?;
-        (cfg.token.clone(), cfg.dangerous)
+        (cfg.token.clone(), cfg.dangerous, cfg.want_port)
     };
-    let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
-        .map_err(|e| format!("绑定 127.0.0.1:0 失败：{e}"))?;
+    // 用户指定了端口就先试那个；被占用（常见：另一个实例、别的开发服务）就退回随机，
+    // 宁可端口跟设置里写的不一样，也不能让「开启本地 API」直接失败。
+    let bind = |port: u16| TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
+    let listener = if want_port > 0 {
+        match bind(want_port) {
+            Ok(l) => l,
+            Err(e) => {
+                crate::diag::log(&format!(
+                    "[api] 端口 {want_port} 绑定失败（{e}），改用随机端口"
+                ));
+                bind(0).map_err(|e| format!("绑定 127.0.0.1:0 失败：{e}"))?
+            }
+        }
+    } else {
+        bind(0).map_err(|e| format!("绑定 127.0.0.1:0 失败：{e}"))?
+    };
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
 
-    let app = routes().layer(middleware::from_fn_with_state(hub.clone(), auth));
+    // 后 layer 的更靠外：请求依次经过 auth（认令牌）→ require_perm（查权限）→ handler
+    let app = routes()
+        .layer(middleware::from_fn(require_perm))
+        .layer(middleware::from_fn_with_state(hub.clone(), auth));
     let app = app.with_state(hub.clone());
 
     let handle = tauri::async_runtime::spawn(async move {
@@ -290,6 +354,48 @@ fn start_server(hub: &Arc<Hub>) -> Result<u16, String> {
 }
 
 // ───────────────────────────── 路由 ─────────────────────────────
+
+/// 路径 + 方法 → 这条路由需要的权限（`None` = 只需令牌，不要额外权限）。
+///
+/// 为什么放在中间件里而不是各 handler 开头：带 `Json<T>` 的 handler，axum 会**先解析
+/// body** 再进函数体 —— 没权限的请求会先撞上反序列化错误返回 422，让人以为「参数写错了」，
+/// 还会把「接口存在」暴露出去。放在中间件里就是「先鉴权、再解析」。
+fn perm_for(method: &str, path: &str) -> Option<&'static str> {
+    let p = path.strip_prefix("/api/v1").unwrap_or(path);
+    match method {
+        _ if p == "/health" => None,
+        "GET" if p == "/fonts" || p == "/fonts/families" => Some("read:fonts"),
+        "POST" if p.starts_with("/fonts/") => Some("write:fonts"),
+        "GET" if p == "/snapshots" => Some("read:snapshot"),
+        _ if p.starts_with("/snapshots") => Some("write:snapshot"),
+        "GET" if p == "/curation" => Some("read:curation"),
+        _ if p.starts_with("/curation") => Some("write:curation"),
+        "POST" if p == "/export/pack" => Some("export"),
+        "GET" if p.starts_with("/jobs/") => Some("export"),
+        "POST" if p == "/import" => Some("import"),
+        _ => None,
+    }
+}
+
+/// 权限闸门：`auth` 之后跑，handler 之前跑
+async fn require_perm(req: Request, next: Next) -> Response {
+    let Some(scope) = req.extensions().get::<Scope>().cloned() else {
+        // 走到这里说明 auth 没挂上（配置问题），当未授权处理而不是放行
+        return fail(StatusCode::UNAUTHORIZED, "缺少有效令牌");
+    };
+    if let Some(need) = perm_for(req.method().as_str(), req.uri().path()) {
+        if !scope.allow(need) {
+            return fail(
+                StatusCode::FORBIDDEN,
+                format!(
+                    "令牌「{}」没有「{need}」权限。插件要这项能力，就在它的 plugin.json 的 permissions 里加上",
+                    scope.name
+                ),
+            );
+        }
+    }
+    next.run(req).await
+}
 
 fn routes() -> Router<Arc<Hub>> {
     Router::new()
@@ -367,7 +473,7 @@ fn map_err(e: String) -> Response {
 
 // ───────────────────────────── 处理器 ─────────────────────────────
 
-async fn health(State(hub): State<Arc<Hub>>) -> impl IntoResponse {
+async fn health(State(hub): State<Arc<Hub>>, Extension(scope): Extension<Scope>) -> impl IntoResponse {
     let cfg = hub.cfg.lock().map(|c| c.clone()).unwrap_or_default();
     Json(json!({
         "ok": true,
@@ -376,7 +482,10 @@ async fn health(State(hub): State<Arc<Hub>>) -> impl IntoResponse {
         "dangerous": cfg.dangerous,
         "faces": fonts::face_count(),
         "families": fonts::families().len(),
-        "permissions": PERMS,
+        // 当前**这枚令牌**的权限（不是全局清单）：插件据此就知道自己能干什么
+        "permissions": scope.perms,
+        "tokenName": scope.name,
+        "allPermissions": PERMS,
     }))
 }
 
@@ -779,4 +888,23 @@ fn chrono_like_stamp() -> String {
     // 不引 chrono：用系统时间戳够了（文件名只求不重名）
     let secs = services::now_secs();
     format!("{secs}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 端口口径：0 / 缺失 / 越界一律当自动，1024..=65535 原样保留
+    #[test]
+    fn port_normalization_bounds() {
+        assert_eq!(normalize_port(None), 0);
+        assert_eq!(normalize_port(Some(0)), 0);
+        assert_eq!(normalize_port(Some(80)), 0, "1024 以下要提权，不接受");
+        assert_eq!(normalize_port(Some(1023)), 0);
+        assert_eq!(normalize_port(Some(1024)), 1024);
+        assert_eq!(normalize_port(Some(51482)), 51482);
+        assert_eq!(normalize_port(Some(65535)), 65535);
+        assert_eq!(normalize_port(Some(65536)), 0);
+        assert_eq!(normalize_port(Some(-1)), 0);
+    }
 }

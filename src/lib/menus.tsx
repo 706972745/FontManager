@@ -655,21 +655,35 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
     );
   }
 
-  // 1.3.0：插件追加的菜单项（只有启用的插件才在缓存里，没插件时这一段不执行）
-  const pluginEntries = pluginMenuItems().flatMap((p) =>
-    p.menus
-      .filter((m) => m.on === "family")
-      .map((m) => ({
-        label: `${m.title} · ${p.name}`,
+  // 1.3.0：插件项收进和「分组 / 快照」同级的二级菜单。
+  // 装到三五个插件时，平铺在菜单底部会把「移到回收站」这类常用项挤到看不见。
+  const pluginGroups = pluginMenuItems()
+    .map((p) => ({
+      plugin: p,
+      menus: p.menus.filter((m) => m.on === "family"),
+    }))
+    .filter((g) => g.menus.length > 0);
+  if (pluginGroups.length > 0) {
+    const multi = pluginGroups.length > 1;
+    items.push(
+      { kind: "separator" },
+      {
+        kind: "submenu",
+        label: t("menu.plugins"),
         icon: <Puzzle size={14} strokeWidth={1.5} />,
-        action: () =>
-          void ipc
-            .pluginInvoke(p.id, "context-menu", { family: family.name })
-            .catch((e) => toast.error(String(e))),
-      })),
-  );
-  if (pluginEntries.length > 0) {
-    items.push({ kind: "separator" }, ...pluginEntries);
+        items: pluginGroups.flatMap((g) =>
+          g.menus.map(
+            (m): MenuItem => ({
+              label: multi ? `${m.title} · ${g.plugin.name}` : m.title,
+              action: () =>
+                void ipc
+                  .pluginInvoke(g.plugin.id, "context-menu", { family: family.name })
+                  .catch((e) => toast.error(String(e))),
+            }),
+          ),
+        ),
+      },
+    );
   }
   return items;
 }

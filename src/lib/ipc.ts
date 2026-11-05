@@ -616,6 +616,8 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   /** 本地 API 状态：是否开启 / 实际端口 / 访问令牌 / 是否允许危险写 */
   apiStatus: () => invoke<ApiStatus>("api_status"),
   apiSetEnabled: (enabled: boolean) => invoke<void>("api_set_enabled", { enabled }),
+  /** 指定监听端口；0 = 自动。返回改完之后实际在用的端口 */
+  apiSetPort: (port: number) => invoke<number>("api_set_port", { port }),
   apiSetDangerous: (on: boolean) => invoke<void>("api_set_dangerous", { on }),
   /** 重置令牌（旧令牌立即失效），返回新令牌 */
   apiResetToken: () => invoke<string>("api_reset_token"),
@@ -633,6 +635,8 @@ export interface ApiStatus {
   enabled: boolean;
   running: boolean;
   port: number;
+  /** 用户指定的端口（0 = 自动）；与 port 不同说明指定端口被占用、已回退 */
+  requestedPort?: number;
   token: string;
   dangerous: boolean;
   base: string;
