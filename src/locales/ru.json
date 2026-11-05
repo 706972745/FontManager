@@ -1064,5 +1064,7 @@
   "about.featAutomation": "Внешние плагины, локальный API и MCP — автоматизация по желанию",
   "about.featOnline": "Обзор и загрузка Google Fonts и Nerd Fonts",
   "about.featPrivacy": "Приватность прежде всего: шрифты остаются локально, всё работает офлайн",
-  "detail.licenseEmbedded": "Авторские право вшиты в файл шрифта"
+  "detail.licenseEmbedded": "Авторские право вшиты в файл шрифта",
+  "menu.typeToSearch": "Введите для поиска шрифтов…",
+  "menu.searchNoMatch": "Нет подходящих шрифтов"
 }

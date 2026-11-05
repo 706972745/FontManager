@@ -1,10 +1,12 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Check, ChevronRight } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Check, ChevronRight, Search } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode, MouseEvent as ReactMouseEvent } from "react";
 import { create } from "zustand";
 import { recordContextMenuSize } from "../../lib/menuMetrics";
+import { useT } from "../../lib/i18n";
+import { useFontStore } from "../../state/fontStore";
 import { springSnappy } from "../springs";
 
 export type MenuItem =
@@ -330,6 +332,53 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
   const close = useMenuStore((s) => s.close);
+  const t = useT();
+  /**
+   * 菜单内「打字即搜」（用户 2026-11-05：右键菜单开着时直接打字就要能搜字体）。
+   *
+   * - `null` = 还没开始打字：菜单保持原样；敲下第一个可打印字符后进入搜索模式，
+   *   顶部出现搜索框（首字符已填入并聚焦），字符不会再触发别处。
+   * - 有词时列出全库匹配字族（最多 8 条），原菜单项暂时让位——方向键只在结果里走；
+   *   清空输入自动回到原菜单，Esc 先清词、再按一次才关菜单。
+   * - 选中 = `select(family)`（完整面板打开详情并滚过去）；速览面板没有「详情」，
+   *   额外派发 `zfm-quickbar-search`，QuickBar 收到后把族名填进自己的搜索框。
+   */
+  const [search, setSearch] = useState<string | null>(null);
+  const searchActiveRef = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const fonts = useFontStore((s) => s.fonts);
+
+  const familyNames = useMemo(() => {
+    const seen = new Set<string>();
+    for (const f of fonts) seen.add(f.family);
+    return [...seen];
+  }, [fonts]);
+
+  const hits = useMemo(() => {
+    if (search === null) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    return familyNames.filter((n) => n.toLowerCase().includes(q)).slice(0, 8);
+  }, [search, familyNames]);
+
+  const searching = search !== null && search.trim() !== "";
+
+  const setSearchBoth = (v: string | null) => {
+    searchActiveRef.current = v !== null;
+    setSearch(v);
+  };
+
+  // 从「没在搜」进入搜索时把焦点交给输入框（autofocus 只在挂载时生效，
+  // 而输入框是先有普通菜单、打字后才挂载的，两种时序都要覆盖）
+  useEffect(() => {
+    if (search !== null) searchRef.current?.focus();
+  }, [search === null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pick = (family: string) => {
+    useFontStore.getState().select(family);
+    window.dispatchEvent(new CustomEvent("zfm-quickbar-search", { detail: family }));
+    close();
+  };
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -344,7 +393,8 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
     });
     // 回填实测尺寸：速览界面用它保证窗口最小尺寸放得下菜单
     recordContextMenuSize(w, h);
-  }, [x, y]);
+    // 搜索框出现/结果增减都会改菜单高度，要重新 clamp，否则底部超出窗口
+  }, [x, y, search !== null, hits.length]);
 
   useEffect(() => {
     const el = ref.current;
@@ -366,6 +416,16 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
         : (cur - 1 + items.length) % items.length;
       items[next].focus();
     };
+    /** 打字即搜：第一个可打印字符开启搜索模式（IME 合成中的键不动，交给输入框） */
+    const onType = (e: KeyboardEvent) => {
+      if (searchActiveRef.current) return;
+      if (e.key.length !== 1) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setSearchBoth(e.key);
+    };
     /**
      * Tab 逃出菜单会跑到背后被遮住的界面上（视觉上「焦点消失了」）。
      * 菜单是模态的，Tab 直接关掉菜单并把焦点还回去最稳（§5 第 23 条）。
@@ -376,9 +436,11 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
       close();
     };
     el.addEventListener("keydown", onKey);
+    el.addEventListener("keydown", onType, true);
     el.addEventListener("keydown", onTab);
     return () => {
       el.removeEventListener("keydown", onKey);
+      el.removeEventListener("keydown", onType, true);
       el.removeEventListener("keydown", onTab);
     };
   }, [items, close]);
@@ -394,7 +456,60 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
       transition={springSnappy}
       role="menu"
     >
-      <MenuItems items={items} close={close} />
+      {search !== null && (
+        <div className="ctx-search-wrap">
+          <Search size={13} strokeWidth={2} aria-hidden />
+          <input
+            ref={searchRef}
+            className="ctx-search"
+            value={search}
+            placeholder={t("menu.typeToSearch")}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => setSearchBoth(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const active =
+                  document.activeElement instanceof HTMLButtonElement &&
+                  document.activeElement.classList.contains("ctx-hit")
+                    ? document.activeElement
+                    : null;
+                const target =
+                  active ??
+                  ref.current?.querySelector<HTMLButtonElement>("button.ctx-hit:not(:disabled)");
+                target?.click();
+                return;
+              }
+              if (e.key === "Escape") {
+                // 窗口级 capture 的 Escape（ContextMenuHost）已经把「清词优先」处理掉了，
+                // 走到这里说明搜索框是空的：恢复普通菜单
+                e.preventDefault();
+                e.stopPropagation();
+                setSearchBoth(null);
+              }
+            }}
+          />
+        </div>
+      )}
+      {searching ? (
+        hits.length === 0 ? (
+          <div className="ctx-nomatch">{t("menu.searchNoMatch")}</div>
+        ) : (
+          hits.map((name) => (
+            <button
+              key={name}
+              role="menuitem"
+              className="ctx-item ctx-hit"
+              onClick={() => pick(name)}
+            >
+              <span className="ctx-label">{name}</span>
+            </button>
+          ))
+        )
+      ) : (
+        <MenuItems items={items} close={close} />
+      )}
     </motion.div>
   );
 }
@@ -410,6 +525,19 @@ export function ContextMenuHost() {
     // 其他监听（App 的全局快捷键就会顺手把选择也清了 —— §5 第 22 条）。
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // 菜单内搜索框有词时，第一下 Esc 先清词回到原菜单（与速览搜索框同口径），
+      // 第二下才关菜单。必须绕过 React 的 value tracker 再派发 input 事件，
+      // 受控 input 的 onChange 才会真的收到空串。
+      const input = document.querySelector<HTMLInputElement>(".ctx-search");
+      if (input && input.value !== "") {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+        setter?.call(input, "");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.focus();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
       e.preventDefault();
       e.stopImmediatePropagation();
       close();

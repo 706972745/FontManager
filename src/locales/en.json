@@ -1030,5 +1030,7 @@
   "about.featAutomation": "Out-of-process plugins, local API and MCP — opt-in automation",
   "about.featOnline": "Browse and download Google Fonts & Nerd Fonts",
   "about.featPrivacy": "Privacy first: fonts stay local, every feature works offline",
-  "detail.licenseEmbedded": "Copyright embedded in the font file"
+  "detail.licenseEmbedded": "Copyright embedded in the font file",
+  "menu.typeToSearch": "Type to search fonts…",
+  "menu.searchNoMatch": "No matching fonts"
 }

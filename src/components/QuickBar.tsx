@@ -355,6 +355,14 @@ export function QuickBar() {
   const morph = useFontStore((s) => s.morph);
   const [query, setQuery] = useState("");
 
+  // 右键菜单里「打字即搜」选中字体后（ContextMenu 派发），速览没有详情面板可跳，
+  // 就把族名填进速览自己的搜索框——列表立刻过滤出这一族，用户看得到结果。
+  useEffect(() => {
+    const onPick = (e: Event) => setQuery((e as CustomEvent<string>).detail);
+    window.addEventListener("zfm-quickbar-search", onPick);
+    return () => window.removeEventListener("zfm-quickbar-search", onPick);
+  }, []);
+
   // 拖到屏幕顶部时整个速览窗口收起成一条（contentHeight 用于动画期间钉住内容高度）
   const { docked, contentHeight, phase, bar } = useQuickbarDock(autoHide);
 

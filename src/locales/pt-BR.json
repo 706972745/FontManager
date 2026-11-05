@@ -1047,5 +1047,7 @@
   "about.featAutomation": "Plugins fora do processo, API local e MCP — automação opcional",
   "about.featOnline": "Navegue e baixe Google Fonts e Nerd Fonts",
   "about.featPrivacy": "Privacidade em primeiro lugar: fontes ficam locais, tudo funciona offline",
-  "detail.licenseEmbedded": "Copyright embutido no arquivo da fonte"
+  "detail.licenseEmbedded": "Copyright embutido no arquivo da fonte",
+  "menu.typeToSearch": "Digite para buscar fontes…",
+  "menu.searchNoMatch": "Nenhuma fonte correspondente"
 }

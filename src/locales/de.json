@@ -1030,5 +1030,7 @@
   "about.featAutomation": "Plugins außerhalb des Prozesses, lokale API und MCP – optional",
   "about.featOnline": "Google Fonts & Nerd Fonts durchsuchen und herunterladen",
   "about.featPrivacy": "Privatsphäre zuerst: Schriften bleiben lokal, alles funktioniert offline",
-  "detail.licenseEmbedded": "Urheberrecht direkt in der Schriftdaten eingebettet"
+  "detail.licenseEmbedded": "Urheberrecht direkt in der Schriftdaten eingebettet",
+  "menu.typeToSearch": "Tippen, um Schriften zu suchen …",
+  "menu.searchNoMatch": "Keine passenden Schriften"
 }
