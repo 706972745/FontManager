@@ -71,8 +71,9 @@ What this fork adds on top of that foundation:
 - **Automation, first-class.** An opt-in local HTTP API, an out-of-process plugin system
   with per-plugin permission tokens, and an MCP server — so agents and scripts can query
   fonts, toggle families and manage snapshots without touching the interface.
-- **A Windows-first release track** — NSIS and MSI installers, font-library folders with
-  their own identity, and interface refinements across all nine languages.
+- **A Windows-first release track** — NSIS and MSI installers, up to 3 library
+  folders with one-click switching (each badged with its own folder icon), and
+  interface refinements across all nine languages.
 
 Everything that made the original good is still here: live previews everywhere,
 one-click activation, and the iron rule that **your font files stay on your machine**.
@@ -93,10 +94,11 @@ one-click activation, and the iron rule that **your font files stay on your mach
 ### 1. First launch: get fonts into the library
 
 1. Drag a **font folder** or a **ZIP** straight onto the app window
-   (or: Settings → library locations → "Add" and pick a folder)
+   (or: Settings → Library folders → "Add folder…" and pick a folder)
 2. The scan runs, and every card is then previewed in the font's **own letterforms**
-3. Want a second library? Settings → library locations → "Add"; click a row to
-   change its directory, and the "switch" button at the end of a row makes it the active one
+3. Want a second library? Settings → Library folders → "Add folder…"; click a row to
+   change its directory, and the "switch" button at the end of a row makes it the
+   active one (see [section 17](#17-multiple-libraries-up-to-3-folders-one-click-switching))
 
 > A ZIP mixing several families? It is **rejected as a whole** with a reason —
 > by design, so your library never fills with junk in one drop.
@@ -299,7 +301,22 @@ Right-click a family → "Apply in {app}…":
 
 ![Shortcut list](shortcuts.png)
 
-### 17. Look & language
+### 17. Multiple libraries: up to 3 folders, one-click switching
+
+![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png)
+
+Fonts scattered across folders? **Settings → Library folders**:
+
+1. The default library is the "字体库" folder next to the install directory; flip on
+   "**Use custom folders**" to add your own
+2. "**Add folder…**" takes up to 3 library folders, each badged with FontManager's
+   **dedicated folder icon** — easy to spot in Explorer
+3. The "**Switch**" button at the end of a row makes that library current; the scan
+  follows instantly. The folder button opens it in Explorer, the ✕ removes it
+4. The library list travels with the app — export your data on one machine and it
+  comes along
+
+### 18. Look & language
 
 ![Settings: language / system / library — every toggle in one column](settings.png)
 
@@ -308,7 +325,7 @@ In settings: light / dark theme · interface sounds on/off · **reduced motion**
 (简体中文 · 繁體中文 · English · 日本語 · Deutsch · Español · Français ·
 Português (Brasil) · Русский).
 
-### 18. Go further: plugins / API / MCP
+### 19. Go further: plugins / API / MCP
 
 Want the app to **work by itself**? Next section.
 
