@@ -1018,5 +1018,7 @@
   "menu.searchNoMatch": "沒有符合的字型",
   "menu.typeToSearchEnabled": "搜尋已啟用的字型…（Tab：全部）",
   "sc.ctxTypeSearch": "右鍵選單中打字，直接搜尋字型並定位",
-  "sc.ctxScope": "選單搜尋中：切換 已啟用 / 全部字型"
+  "sc.ctxScope": "選單搜尋中：切換 已啟用 / 全部字型",
+  "menu.scopeAll": "全部字型",
+  "menu.scopeEnabled": "已啟用"
 }

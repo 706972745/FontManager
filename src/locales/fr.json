@@ -1052,5 +1052,7 @@
   "menu.searchNoMatch": "Aucune police correspondante",
   "menu.typeToSearchEnabled": "Rechercher les polices activées… (Tab : toutes)",
   "sc.ctxTypeSearch": "Tapez dans le menu contextuel pour rechercher et atteindre une police",
-  "sc.ctxScope": "Dans la recherche du menu : basculer activées / toutes"
+  "sc.ctxScope": "Dans la recherche du menu : basculer activées / toutes",
+  "menu.scopeAll": "Toutes les polices",
+  "menu.scopeEnabled": "Activées"
 }

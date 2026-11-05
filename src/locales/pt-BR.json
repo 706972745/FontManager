@@ -1052,5 +1052,7 @@
   "menu.searchNoMatch": "Nenhuma fonte correspondente",
   "menu.typeToSearchEnabled": "Buscar fontes ativadas… (Tab: todas)",
   "sc.ctxTypeSearch": "Digite no menu de contexto para buscar e ir até uma fonte",
-  "sc.ctxScope": "Na busca do menu: alternar ativadas / todas"
+  "sc.ctxScope": "Na busca do menu: alternar ativadas / todas",
+  "menu.scopeAll": "Todas as fontes",
+  "menu.scopeEnabled": "Ativadas"
 }
