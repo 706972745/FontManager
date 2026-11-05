@@ -2251,6 +2251,38 @@ fn default_library_dir() -> String {
     scanner::managed_font_dir().to_string_lossy().into_owned()
 }
 
+/// 在资源管理器里「定位到」某个路径：打开**它所在的文件夹**并选中它。
+///
+/// 不能用 tauri-plugin-opener 的 `revealItemInDir`：它对**目录**走的是
+/// `SHOpenFolderAndSelectItems`，本机实测会直接钻进这个目录本身 —— 用户在设置页
+/// 点库地址旁的文件夹按钮，看到的是「打开了字体库」，而不是「打开字体库所在的位置」。
+/// `explorer /select,` 对目录和文件都是打开父目录并选中（Win11 实测），所以统一走它。
+#[tauri::command]
+fn reveal_path(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("no such path: {path}"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // 结尾的反斜杠会把引号转义掉（"C:\a\"），先削掉
+        let mut shown = p.display().to_string();
+        while shown.len() > 3 && (shown.ends_with('\\') || shown.ends_with('/')) {
+            shown.pop();
+        }
+        let mut cmd = std::process::Command::new("explorer.exe");
+        cmd.raw_arg(format!("/select,\"{shown}\""));
+        // explorer.exe 成功时也常返回 1，退出码不可信，起了就算成功
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        tauri_plugin_opener::reveal_item_in_dir(p).map_err(|e| e.to_string())
+    }
+}
+
 fn allow_dir(app: &tauri::AppHandle, dir: &std::path::Path) {
     let dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     let _ = app.asset_protocol_scope().allow_directory(&dir, true);
@@ -2509,6 +2541,25 @@ pub fn run() {
             }
             // 首实例：等「再点一次图标」的信号，收到就通知前端把完整界面叫出来
             single_instance::watch(app.handle().clone());
+            // 库里那份 `.zfm-folder.ico` 是随二进制走的：换版本（比如 1.2.6 把图标
+            // 重画成和软件内一致）后要重新盖一次，否则资源管理器还显示旧图。
+            // 图标只是显示层，失败只记日志，不挡启动。
+            #[cfg(target_os = "windows")]
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let Some(store) = handle.try_state::<Store>() else { return };
+                    let dir = {
+                        let Ok(st) = store.0.lock() else { return };
+                        st.active_library_dir().map(|s| s.to_owned())
+                    };
+                    if let Some(dir) = dir {
+                        if let Err(e) = library_marker::apply(&dir) {
+                            diag::log(&format!("[startup] 库文件夹图标应用失败：{e}"));
+                        }
+                    }
+                });
+            }
             // 三种导出扩展名各注册专属图标 + 双击用本程序打开导入。
             // 只写 HKCU，后台跑，失败也不影响启动。
             #[cfg(target_os = "windows")]
@@ -2683,6 +2734,7 @@ pub fn run() {
             get_settings,
             set_settings,
             default_library_dir,
+            reveal_path,
             apply_library_folder_icon,
             open_url,
             adobe_available,
