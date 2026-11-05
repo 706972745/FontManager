@@ -24,8 +24,9 @@ All notable changes to FontManager are documented here. The format follows
 - 设置页里「默认」地址和每条库地址右侧的文件夹按钮，现在直接在资源管理器里**打开这个
   文件夹**（面包屑停在「字体库」，看到库里那些字体文件夹）。
 - 之前两种写法都会落到父目录并把「字体库」选中：`tauri-plugin-opener` 的
-  `revealItemInDir` 走 `SHOpenFolderAndSelectItems`，`explorer /select,` 同理。
-  现在改成 `explorer "<目录>"`（新增 Rust 命令 `open_folder`）。
+  `revealItemInDir` 走 `SHOpenFolderAndSelectItems`，`explorer /select,` 同理；
+  直接 `spawn("explorer.exe", 目录)` 更糟——参数会被丢掉、落到「文档」。
+  现在走 `ShellExecuteW` 的 `open` 动词（新增 Rust 命令 `open_folder`）。
 - 按钮提示同步改为「打开这个文件夹」（9 种语言）。
 
 ### 改：默认字体库放到软件安装目录下
