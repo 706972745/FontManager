@@ -2863,6 +2863,18 @@ h2.detail-title.copy-name {
   font-size: 12px;
   color: rgba(var(--ink-rgb), 0.45);
 }
+/* 结果列表自身滚动：全库 4194 族宽泛词能命中上百条，截 8 条会「搜不到」；
+   前 30 条 + 底部剩余提示（用户 2026-11-06 口径：全部字体都要能搜到） */
+.ctx-hits {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ctx-more {
+  padding: 6px 9px 7px;
+  font-size: 11.5px;
+  color: rgba(var(--ink-rgb), 0.45);
+}
 .ctx-item {
   padding: 6px 9px;
   min-height: 30px;

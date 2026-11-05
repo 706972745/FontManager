@@ -1054,5 +1054,6 @@
   "sc.ctxTypeSearch": "Escribe en el menú contextual para buscar y saltar a una fuente",
   "sc.ctxScope": "En la búsqueda del menú: alternar activadas / todas",
   "menu.scopeAll": "Todas las fuentes",
-  "menu.scopeEnabled": "Activadas"
+  "menu.scopeEnabled": "Activadas",
+  "menu.searchMore": "{n} coincidencias más — sigue escribiendo para filtrar"
 }

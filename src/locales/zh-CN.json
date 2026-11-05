@@ -1028,5 +1028,6 @@
   "sc.ctxTypeSearch": "右键菜单中打字，直接搜索字体并定位",
   "sc.ctxScope": "菜单搜索中：切换 已启用 / 全部字体",
   "menu.scopeAll": "全部字体",
-  "menu.scopeEnabled": "已启用"
+  "menu.scopeEnabled": "已启用",
+  "menu.searchMore": "还有 {n} 个匹配 —— 继续输入可缩小范围"
 }
