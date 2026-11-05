@@ -41,7 +41,10 @@
 
 ## SHA-256
 
-见下方 Assets 校验（发布时计算并附于本节）。
+```
+07c7bc2e3d6f0416408deb07207f3221137d2c078af8f414d53fc6788dfe2832  FontManager_1.2.4_x64-setup.exe
+001972068fa90971d0d9d05a12c82fbd353390165f79b506996dc1d557d36447  FontManager_1.2.4_x64_en-US.msi
+```
 
 ## 升级说明
 
