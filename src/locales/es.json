@@ -1049,5 +1049,8 @@
   "about.featPrivacy": "Privacidad primero: las fuentes se quedan en tu equipo, todo funciona sin conexión",
   "detail.licenseEmbedded": "Copyright incrustado en el archivo de la fuente",
   "menu.typeToSearch": "Escribe para buscar fuentes…",
-  "menu.searchNoMatch": "Sin fuentes coincidentes"
+  "menu.searchNoMatch": "Sin fuentes coincidentes",
+  "menu.typeToSearchEnabled": "Buscar fuentes activadas… (Tab: todas)",
+  "sc.ctxTypeSearch": "Escribe en el menú contextual para buscar y saltar a una fuente",
+  "sc.ctxScope": "En la búsqueda del menú: alternar activadas / todas"
 }

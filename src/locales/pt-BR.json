@@ -1049,5 +1049,8 @@
   "about.featPrivacy": "Privacidade em primeiro lugar: fontes ficam locais, tudo funciona offline",
   "detail.licenseEmbedded": "Copyright embutido no arquivo da fonte",
   "menu.typeToSearch": "Digite para buscar fontes…",
-  "menu.searchNoMatch": "Nenhuma fonte correspondente"
+  "menu.searchNoMatch": "Nenhuma fonte correspondente",
+  "menu.typeToSearchEnabled": "Buscar fontes ativadas… (Tab: todas)",
+  "sc.ctxTypeSearch": "Digite no menu de contexto para buscar e ir até uma fonte",
+  "sc.ctxScope": "Na busca do menu: alternar ativadas / todas"
 }

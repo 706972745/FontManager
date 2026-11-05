@@ -347,12 +347,25 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   const searchActiveRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const fonts = useFontStore((s) => s.fonts);
+  const sessionActivated = useFontStore((s) => s.sessionActivated);
+  // 菜单打开那一刻判定环境：速览默认只搜已启用字体（Tab 可切全部），完整界面恒为全部。
+  // 用户口径（2026-11-05）：速览选中已启用字体 = 在速览里滚动定位；选中未启用字体 =
+  // 退回完整界面字体库并滚动到该族；完整界面 = 搜全部、保持当前浏览方式滚动定位。
+  const [inQuickbar] = useState(() => document.querySelector(".qb-frame") !== null);
+  const [scope, setScope] = useState<"enabled" | "all">(inQuickbar ? "enabled" : "all");
 
   const familyNames = useMemo(() => {
     const seen = new Set<string>();
-    for (const f of fonts) seen.add(f.family);
+    if (scope === "enabled") {
+      // 与速览顶栏「已启用 N」同口径：任一面启用，或会话级临时启用
+      for (const f of fonts) {
+        if (f.active || sessionActivated.includes(f.family)) seen.add(f.family);
+      }
+    } else {
+      for (const f of fonts) seen.add(f.family);
+    }
     return [...seen];
-  }, [fonts]);
+  }, [fonts, scope, sessionActivated]);
 
   const hits = useMemo(() => {
     if (search === null) return [];
@@ -375,8 +388,19 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   }, [search === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pick = (family: string) => {
-    useFontStore.getState().select(family);
-    window.dispatchEvent(new CustomEvent("zfm-quickbar-search", { detail: family }));
+    const st = useFontStore.getState();
+    const fam = st.fonts.find((f) => f.family === family);
+    const enabled = !!fam && (fam.active || st.sessionActivated.includes(family));
+    if (!inQuickbar || !enabled) {
+      // 完整界面（或速览里选中了未启用字体）：切到字体库视图、选中并滚动到该族。
+      // 三个视图（卡片/列表/样张）都监听 selectedFamily 自动 scrollToIndex。
+      if (st.nav.kind !== "library") st.setNav({ kind: "library" });
+      st.select(family);
+      if (inQuickbar) void st.setQuickbar(false);
+    } else {
+      // 速览里选中已启用字体：不动界面，速览列表内滚动定位（QuickBar 监听）
+      window.dispatchEvent(new CustomEvent("zfm-quickbar-search", { detail: { family } }));
+    }
     close();
   };
 
@@ -463,11 +487,23 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
             ref={searchRef}
             className="ctx-search"
             value={search}
-            placeholder={t("menu.typeToSearch")}
+            placeholder={
+              inQuickbar && scope === "enabled"
+                ? t("menu.typeToSearchEnabled")
+                : t("menu.typeToSearch")
+            }
             spellCheck={false}
             autoComplete="off"
             onChange={(e) => setSearchBoth(e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === "Tab" && inQuickbar) {
+                // 速览：Tab 在「已启用 / 全部」之间切搜索范围（不关菜单）。
+                // stopPropagation 同时压掉原生冒泡上 el 的 onTab（那里是关菜单）。
+                e.preventDefault();
+                e.stopPropagation();
+                setScope((s) => (s === "enabled" ? "all" : "enabled"));
+                return;
+              }
               if (e.key === "Enter") {
                 e.preventDefault();
                 const active =

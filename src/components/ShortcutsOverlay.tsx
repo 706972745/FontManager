@@ -41,6 +41,9 @@ const SECTIONS: [TKey, [string[], TKey][]][] = [
       [["Del"], "sc.trashInContext"],
       [["Shift", "Del"], "sc.trash"],
       [["Shift", "F10"], "sc.contextMenu"],
+      // 右键菜单「打字即搜」（2026-11-05）：菜单开着时直接敲键盘就进入字体搜索
+      [["A–Z 0–9"], "sc.ctxTypeSearch"],
+      [["Tab"], "sc.ctxScope"],
     ],
   ],
   [

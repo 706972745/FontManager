@@ -1049,5 +1049,8 @@
   "about.featPrivacy": "Confidentialité d'abord : les polices restent locales, tout marche hors ligne",
   "detail.licenseEmbedded": "Copyright intégré au fichier de police",
   "menu.typeToSearch": "Tapez pour rechercher des polices…",
-  "menu.searchNoMatch": "Aucune police correspondante"
+  "menu.searchNoMatch": "Aucune police correspondante",
+  "menu.typeToSearchEnabled": "Rechercher les polices activées… (Tab : toutes)",
+  "sc.ctxTypeSearch": "Tapez dans le menu contextuel pour rechercher et atteindre une police",
+  "sc.ctxScope": "Dans la recherche du menu : basculer activées / toutes"
 }

@@ -1032,5 +1032,8 @@
   "about.featPrivacy": "Privacy first: fonts stay local, every feature works offline",
   "detail.licenseEmbedded": "Copyright embedded in the font file",
   "menu.typeToSearch": "Type to search fonts…",
-  "menu.searchNoMatch": "No matching fonts"
+  "menu.searchNoMatch": "No matching fonts",
+  "menu.typeToSearchEnabled": "Search enabled fonts… (Tab: all)",
+  "sc.ctxTypeSearch": "Type in a context menu to search and jump to a font",
+  "sc.ctxScope": "In menu search: toggle enabled / all fonts"
 }
