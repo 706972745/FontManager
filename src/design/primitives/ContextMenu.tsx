@@ -451,8 +451,22 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
       setSearchBoth(e.key);
     };
     /**
+     * 搜索模式下 Tab = 切换搜索范围（已启用 ↔ 全部），**必须挂在捕获层**。
+     * 挂在输入框的 React 合成事件里抢不过容器冒泡层的 onTab（原生冒泡先于
+     * React 的 root 委托触发，菜单会先被关掉——用户实测「Tab 没法用」就是它）。
+     * 用户口径：只要出现了搜索，Tab 就归搜索用，不再关菜单。
+     */
+    const onTabScope = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      if (!searchActiveRef.current) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setScope((s) => (s === "enabled" ? "all" : "enabled"));
+    };
+    /**
      * Tab 逃出菜单会跑到背后被遮住的界面上（视觉上「焦点消失了」）。
      * 菜单是模态的，Tab 直接关掉菜单并把焦点还回去最稳（§5 第 23 条）。
+     * 搜索模式下不走这里 —— onTabScope 在捕获层已经把 Tab 截走了。
      */
     const onTab = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
@@ -461,10 +475,12 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
     };
     el.addEventListener("keydown", onKey);
     el.addEventListener("keydown", onType, true);
+    el.addEventListener("keydown", onTabScope, true);
     el.addEventListener("keydown", onTab);
     return () => {
       el.removeEventListener("keydown", onKey);
       el.removeEventListener("keydown", onType, true);
+      el.removeEventListener("keydown", onTabScope, true);
       el.removeEventListener("keydown", onTab);
     };
   }, [items, close]);
@@ -488,22 +504,14 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
             className="ctx-search"
             value={search}
             placeholder={
-              inQuickbar && scope === "enabled"
-                ? t("menu.typeToSearchEnabled")
-                : t("menu.typeToSearch")
+              scope === "enabled" ? t("menu.typeToSearchEnabled") : t("menu.typeToSearch")
             }
             spellCheck={false}
             autoComplete="off"
             onChange={(e) => setSearchBoth(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Tab" && inQuickbar) {
-                // 速览：Tab 在「已启用 / 全部」之间切搜索范围（不关菜单）。
-                // stopPropagation 同时压掉原生冒泡上 el 的 onTab（那里是关菜单）。
-                e.preventDefault();
-                e.stopPropagation();
-                setScope((s) => (s === "enabled" ? "all" : "enabled"));
-                return;
-              }
+              // Tab 不在这里处理：容器捕获层的 onTabScope 先于一切冒泡截走它
+              //（切搜索范围）；完整界面/速览一致 —— 搜索模式下 Tab 永远不关菜单
               if (e.key === "Enter") {
                 e.preventDefault();
                 const active =
