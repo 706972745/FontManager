@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.3.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -235,6 +235,13 @@ catalogue, 1,984 families.
 **Importing** is always: double-click the file, or drop it on the window.
 Files are recognized by **content**, not extension.
 
+Every FontManager-specific file carries a **sticker-style icon**, easy to spot
+in Explorer: app icon **.Z** · snapshot export **.S** · pack-with-fonts **.P** ·
+data-only export **.L** · library folder **.F** (gray folder + pulled-out
+sheet + black letter):
+
+![FontManager icon set: sticker-paper style (black & white & gray)](icons-overview.png)
+
 ### 11. Trash: regret is allowed
 
 1. Right-click a family → move to trash (bulk works too) — uninstalled from the
@@ -277,7 +284,8 @@ Right-click a family → "Apply in {app}…":
    hotkey", see below)
 2. It lists only **activated** fonts: click a name to copy, ★ to favorite,
    the toggle to switch off, "> 3" to expand a family's faces, right-click for
-   the full menu
+   the full menu (type right in that menu to search fonts — enabled by
+   default, <kbd>Tab</kbd> for all; see section 16)
 3. Top bar: activated count · search · preview text & size · a **pin** ·
    "full window" to morph back
 4. Done? Drag it back to the top edge and it collapses to a hairline that
@@ -296,6 +304,17 @@ Right-click a family → "Apply in {app}…":
 
 ![Command palette](palette.png)
 
+- **Type-to-search in any context menu**: with any right-click menu open
+  (cards / list / specimens / QuickBar / detail panel), just **start typing** —
+  a search box appears on top and filters the whole library live.
+  <kbd>↑</kbd><kbd>↓</kbd> to pick, <kbd>Enter</kbd> or click to jump: the app
+  switches to the right view and scrolls the family into view.
+  <kbd>Esc</kbd> clears the query first, then closes the menu
+- **Tab toggles the search scope**: while searching, <kbd>Tab</kbd> (or the
+  badge next to the box) switches between "enabled ↔ all fonts" — the QuickBar
+  searches enabled fonts by default (picking one scrolls the QuickBar list;
+  picking a disabled one returns to the full window and locates it), the full
+  window searches all
 - <kbd>?</kbd> (or the sidebar "Shortcuts" entry): the full shortcut list —
   navigation / selection / actions on selection / snapshots
 
