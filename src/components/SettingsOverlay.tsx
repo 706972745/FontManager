@@ -43,6 +43,9 @@ const REQUEST_LANGUAGE_URL =
 /** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
 const EXPORT_FONTS_KEY = "zfm.exportFonts";
 
+/** 最多保存几个字体库地址（与后端 store::MAX_LIBRARY_DIRS 一致） */
+const MAX_LIBRARY_DIRS = 3;
+
 /** 保存对话框的默认文件名：ZFonts-2026-11-03.P-FontManager */
 function packFileName(now = new Date()) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -230,10 +233,58 @@ export function SettingsOverlay() {
     void updateSettings({ ...settings, extraDirs: [...settings.extraDirs, dir] });
   };
 
-  const pickLibraryDir = async () => {
+  /** 已保存的库地址：后端会把当前库排在第一个；老版本 state 没列表时兜底成单条 */
+  const libraryDirs =
+    settings.libraryDirs.length > 0
+      ? settings.libraryDirs
+      : settings.libraryDir
+        ? [settings.libraryDir]
+        : [];
+
+  /** 点库地址行 = 切到这个库。同一个库不重复触发（换库要重扫，代价不小） */
+  const switchLibraryDir = (dir: string) => {
+    if (settings.libraryDirEnabled && settings.libraryDir === dir) return;
+    void updateSettings({ ...settings, libraryDir: dir, libraryDirEnabled: true });
+  };
+
+  /** 添加库：最多 3 个；已经在列表里就直接切过去，不重复加 */
+  const addLibraryDir = async () => {
+    if (libraryDirs.length >= MAX_LIBRARY_DIRS) {
+      toast.info(t("settings.libraryLimit", { count: MAX_LIBRARY_DIRS }));
+      return;
+    }
     const dir = await open({ directory: true, title: t("settings.libraryFolderTitle") });
     if (!dir) return;
-    void updateSettings({ ...settings, libraryDir: dir, libraryDirEnabled: true });
+    if (libraryDirs.includes(dir)) {
+      switchLibraryDir(dir);
+      return;
+    }
+    void updateSettings({
+      ...settings,
+      libraryDir: dir,
+      libraryDirs: [...libraryDirs, dir],
+      libraryDirEnabled: true,
+    });
+  };
+
+  /** 从列表里摘掉一个库地址（只动清单，不动硬盘上的字体文件）；摘的是当前库就顺延到第一个 */
+  const removeLibraryDir = (dir: string) => {
+    const next = libraryDirs.filter((d) => d !== dir);
+    if (next.length === 0) {
+      void updateSettings({
+        ...settings,
+        libraryDir: null,
+        libraryDirs: [],
+        libraryDirEnabled: false,
+      });
+      return;
+    }
+    void updateSettings({
+      ...settings,
+      libraryDirs: next,
+      libraryDir: settings.libraryDir === dir ? next[0] : settings.libraryDir,
+      libraryDirEnabled: true,
+    });
   };
 
   const setCustomDirEnabled = (on: boolean) => {
@@ -625,23 +676,65 @@ export function SettingsOverlay() {
                         />
                         <span className="settings-folder-path">{t("settings.libraryCustom")}</span><SettingHint text={t("settings.libraryCustomSub")} /></div>
                     </div>
-                    <button className="settings-add-folder" onClick={() => void pickLibraryDir()}>
+                    <button
+                      className="settings-add-folder"
+                      onClick={() => void addLibraryDir()}
+                      disabled={libraryDirs.length >= MAX_LIBRARY_DIRS}
+                      data-hint-text={
+                        libraryDirs.length >= MAX_LIBRARY_DIRS
+                          ? t("settings.libraryLimit", { count: MAX_LIBRARY_DIRS })
+                          : undefined
+                      }
+                    >
                       <ArtIcon name="folder" size={14} />
                       {t("settings.libraryAddFolder")}
                     </button>
                   </div>
-                  {settings.libraryDir && (
-                    <div className={`settings-folder ${customDirActive ? "" : "settings-dim"}`}>
-                      <button
-                        className="path-link detail-mono settings-folder-path"
-                        data-hint-text={settings.libraryDir}
-                        onClick={() =>
-                          void revealItemInDir(settings.libraryDir ?? "").catch(() => {})
-                        }
-                      >
-                        <ArtIcon name="folder" size={14} />
-                        <span className="settings-folder-path">{settings.libraryDir}</span>
-                      </button>
+                  {libraryDirs.length > 0 && (
+                    <div className="settings-library-list">
+                      {libraryDirs.map((dir) => {
+                        const active = customDirActive && dir === settings.libraryDir;
+                        return (
+                          <div
+                            key={dir}
+                            className={`settings-folder settings-library-row ${
+                              active ? "settings-library-active" : ""
+                            } ${customDirActive ? "" : "settings-dim"}`}
+                          >
+                            {/* 整行可点：切到这个库 */}
+                            <button
+                              className="path-link detail-mono settings-folder-path"
+                              data-hint-text={t("settings.librarySwitchHint")}
+                              aria-pressed={active}
+                              onClick={() => switchLibraryDir(dir)}
+                            >
+                              <ArtIcon name="folder" size={14} />
+                              <span className="settings-folder-path">{dir}</span>
+                              {active && (
+                                <span className="settings-library-current">
+                                  {t("settings.libraryCurrent")}
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              className="settings-library-open"
+                              data-hint-text={t("settings.libraryReveal")}
+                              aria-label={t("settings.libraryReveal")}
+                              onClick={() => void revealItemInDir(dir).catch(() => {})}
+                            >
+                              <FolderOpen size={13} strokeWidth={1.5} />
+                            </button>
+                            <button
+                              className="settings-library-remove"
+                              data-hint-text={t("settings.libraryRemove")}
+                              aria-label={t("settings.libraryRemove")}
+                              onClick={() => removeLibraryDir(dir)}
+                            >
+                              <X size={12} strokeWidth={1.5} />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

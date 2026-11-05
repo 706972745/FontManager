@@ -236,6 +236,8 @@ export interface AppSettings {
   watchEnabled: boolean;
   autoActivateImports: boolean;
   libraryDir: string | null;
+  /** 保存过的库地址（最多 3 个），设置页可一键切换 */
+  libraryDirs: string[];
   libraryDirEnabled: boolean;
   affinityEnabled: boolean;
   affinityDeactivateOnQuit: boolean;
@@ -372,6 +374,9 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   setWindowTransitions: (disabled: boolean) =>
     invoke<void>("set_window_transitions", { disabled }),
   defaultLibraryDir: () => invoke<string>("default_library_dir"),
+  /** 给字体库文件夹挂上软件专属图标（灰底文件夹 + 抽出的纸 + 黑 F） */
+  applyLibraryFolderIcon: (dir: string) =>
+    invoke<void>("apply_library_folder_icon", { dir }),
   affinityConnection: () => invoke<AffinityConnection>("affinity_connection"),
   affinitySessionActivate: (paths: string[]) =>
     invoke<string[]>("affinity_session_activate", { paths }),

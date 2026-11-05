@@ -7,6 +7,9 @@ use std::sync::Mutex;
 /// 软件最多保存的快照数量（超出后滚动淘汰最旧的）
 pub const MAX_SNAPSHOTS: usize = 5;
 
+/// 最多保存几个字体库地址（用户 2026-11-05 定的上限）
+pub const MAX_LIBRARY_DIRS: usize = 3;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotEntry {
@@ -74,6 +77,11 @@ pub struct AppState {
     pub registry_backup: HashMap<String, String>,
 
     pub library_dir: Option<String>,
+
+    /// 用户保存过的字体库地址（最多 [`MAX_LIBRARY_DIRS`] 个，含当前生效的那个）。
+    /// 设置页可以一键在这些库之间切换；`library_dir` 始终指向列表里的某一个。
+    #[serde(default)]
+    pub library_dirs: Vec<String>,
 
     pub library_dir_enabled: bool,
 

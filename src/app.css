@@ -3728,6 +3728,52 @@ h2.detail-title.copy-name {
   font-size: var(--fs-11);
   color: var(--text-secondary);
 }
+/* ---- 字体库地址列表（最多 3 个，可切换 / 删除） ---- */
+.settings-library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-library-row {
+  transition: background var(--t-quick) ease, border-color var(--t-quick) ease;
+}
+.settings-library-row:hover {
+  border-color: rgba(var(--ink-rgb), 0.12);
+}
+.settings-library-active {
+  background: color-mix(in srgb, var(--accent-a) 8%, var(--e1));
+  border-color: color-mix(in srgb, var(--accent-a) 28%, transparent);
+}
+/* 整行可点：切到这个库 */
+.settings-library-row button.path-link {
+  cursor: pointer;
+  gap: 7px;
+  text-align: left;
+}
+.settings-library-current {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--accent-a);
+  border: 1px solid color-mix(in srgb, var(--accent-a) 35%, transparent);
+}
+.settings-library-open,
+.settings-library-remove {
+  flex-shrink: 0;
+}
+/* 默认的 .settings-folder button:hover 是危险色，这里给「打开目录」单独配色 */
+.settings-library-row button.settings-library-open:hover {
+  color: var(--accent-a);
+}
+.settings-library-row button.settings-library-remove:hover:not(:disabled) {
+  color: var(--error);
+}
+.settings-library-row button:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
 .settings-dim {
   filter: saturate(0.5);
   opacity: 0.45;

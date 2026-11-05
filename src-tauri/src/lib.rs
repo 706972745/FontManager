@@ -12,6 +12,7 @@ mod font_types;
 mod fontcache;
 mod installer;
 mod library_pack;
+mod library_marker;
 mod net;
 mod online;
 mod parser;
@@ -2111,20 +2112,64 @@ struct Settings {
     watch_enabled: bool,
     auto_activate_imports: bool,
     library_dir: Option<String>,
+    /// 保存过的库地址清单（最多 store::MAX_LIBRARY_DIRS 个），供设置页一键切换
+    #[serde(default)]
+    library_dirs: Vec<String>,
     library_dir_enabled: bool,
     affinity_enabled: bool,
     affinity_deactivate_on_quit: bool,
     online_fonts_enabled: bool,
 }
 
+/// 把「当前库 + 库清单」理成一致状态：
+/// - 去掉空串与重复项，保持用户添加顺序；
+/// - 当前库一定在清单里（老版本 state 只有 library_dir，这里顺手补上）；
+/// - 清单非空但当前库为空、且启用了自定义库时，取清单第一个。
+///
+/// 超过上限时**保留前 MAX_LIBRARY_DIRS 个**（前端已经拦了，这里是兜底）。
+fn normalize_library_dirs(
+    current: Option<String>,
+    dirs: Vec<String>,
+    enabled: bool,
+) -> (Option<String>, Vec<String>) {
+    let current = current
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty());
+    // 当前库排第一，其余按用户添加顺序去重
+    let mut list: Vec<String> = Vec::new();
+    if let Some(c) = current.as_ref() {
+        list.push(c.clone());
+    }
+    for d in dirs {
+        let d = d.trim().to_string();
+        if !d.is_empty() && !list.contains(&d) {
+            list.push(d);
+        }
+    }
+    list.truncate(store::MAX_LIBRARY_DIRS);
+
+    let current = match current {
+        Some(c) if list.contains(&c) => Some(c),
+        _ if enabled => list.first().cloned(),
+        _ => None,
+    };
+    (current, list)
+}
+
 #[tauri::command]
 fn get_settings(store: State<Store>) -> Result<Settings, String> {
     let state = store.0.lock().map_err(|e| e.to_string())?;
+    let (library_dir, library_dirs) = normalize_library_dirs(
+        state.library_dir.clone(),
+        state.library_dirs.clone(),
+        state.library_dir_enabled,
+    );
     Ok(Settings {
         extra_dirs: state.extra_dirs.clone(),
         watch_enabled: state.watch_enabled,
         auto_activate_imports: state.auto_activate_imports,
-        library_dir: state.library_dir.clone(),
+        library_dir,
+        library_dirs,
         library_dir_enabled: state.library_dir_enabled,
         affinity_enabled: state.affinity_enabled,
         affinity_deactivate_on_quit: state.affinity_deactivate_on_quit,
@@ -2138,13 +2183,19 @@ fn set_settings(
     store: State<Store>,
     settings: Settings,
 ) -> Result<(), String> {
+    let (library_dir, library_dirs) = normalize_library_dirs(
+        settings.library_dir.clone(),
+        settings.library_dirs.clone(),
+        settings.library_dir_enabled,
+    );
     {
         let mut state = store.0.lock().map_err(|e| e.to_string())?;
         let old_library = state.active_library_dir().map(|s| s.to_owned());
         state.extra_dirs = settings.extra_dirs.clone();
         state.watch_enabled = settings.watch_enabled;
         state.auto_activate_imports = settings.auto_activate_imports;
-        state.library_dir = settings.library_dir.clone();
+        state.library_dir = library_dir.clone();
+        state.library_dirs = library_dirs;
         state.library_dir_enabled = settings.library_dir_enabled;
         state.affinity_enabled = settings.affinity_enabled;
         state.affinity_deactivate_on_quit = settings.affinity_deactivate_on_quit;
@@ -2167,17 +2218,32 @@ fn set_settings(
         }
         store::save(&state)?;
     }
+    // 自定义库生效时，把「库文件夹图标」挂上去（换库后图标跟着走）。
+    // 图标只是显示层的东西：失败只记日志，不影响换库。
+    if settings.library_dir_enabled {
+        if let Some(dir) = library_dir.as_deref() {
+            if let Err(e) = library_marker::apply(dir) {
+                crate::diag::log(&format!("[store] 库文件夹图标应用失败：{e}"));
+            }
+        }
+    }
     allow_dir(
         &app,
         &scanner::effective_managed_dir(
             settings
                 .library_dir_enabled
-                .then(|| settings.library_dir.as_deref())
+                .then(|| library_dir.as_deref())
                 .flatten(),
         ),
     );
     allow_previews(&app, &settings.extra_dirs);
     apply_watch(&app, settings.watch_enabled, &settings.extra_dirs)
+}
+
+/// 单独给某个目录挂库图标（设置页「应用图标」入口，以及换库时的补挂）。
+#[tauri::command]
+fn apply_library_folder_icon(dir: String) -> Result<(), String> {
+    library_marker::apply(&dir)
 }
 
 #[tauri::command]
@@ -2617,6 +2683,7 @@ pub fn run() {
             get_settings,
             set_settings,
             default_library_dir,
+            apply_library_folder_icon,
             open_url,
             adobe_available,
             apply_font_in_app,
