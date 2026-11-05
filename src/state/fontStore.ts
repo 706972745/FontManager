@@ -1505,7 +1505,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   settingsOpen: false,
   helpOpen: false,
   paletteOpen: false,
-  settings: { extraDirs: [], watchEnabled: false, autoActivateImports: false, libraryDir: null, libraryDirEnabled: false, affinityEnabled: false, affinityDeactivateOnQuit: true, onlineFontsEnabled: false },
+  settings: { extraDirs: [], watchEnabled: false, autoActivateImports: false, libraryDir: null, libraryDirs: [], libraryDirEnabled: false, affinityEnabled: false, affinityDeactivateOnQuit: true, onlineFontsEnabled: false },
   affinityConnection: null,
   onlineFamilies: null,
   onlineFetchedAt: null,
@@ -3506,7 +3506,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
       prev.extraDirs.length !== settings.extraDirs.length ||
       prev.extraDirs.some((d, i) => d !== settings.extraDirs[i]) ||
       prev.libraryDir !== settings.libraryDir ||
-      prev.libraryDirEnabled !== settings.libraryDirEnabled;
+      prev.libraryDirEnabled !== settings.libraryDirEnabled ||
+      prev.libraryDirs.length !== settings.libraryDirs.length ||
+      prev.libraryDirs.some((d, i) => d !== settings.libraryDirs[i]);
     if (!dirsChanged) return;
     const before = get().fonts.length;
     await get().rescan();
