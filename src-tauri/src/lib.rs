@@ -2308,24 +2308,8 @@ fn plugins_open_dir() -> Result<(), String> {    let dir = crate::plugins::plugi
     open_folder(dir.to_string_lossy().into_owned())
 }
 
-/// 界面用：Python / Node.js 解释器各找到了哪个（找不到返回 null）
-#[tauri::command]
-fn plugin_runtimes() -> serde_json::Value {
-    crate::plugins::runtimes_json()
-}
-
-/// 手动指定解释器路径（path 传空串 = 恢复自动探测），返回重新探测的结果
-#[tauri::command]
-fn set_plugin_runtime(
-    store: State<Store>,
-    kind: String,
-    path: String,
-) -> Result<serde_json::Value, String> {
-    crate::plugins::set_runtime(store.inner(), &kind, &path)?;
-    // 改了解释器，就把「上次开着但没起来」的插件再拉一遍 —— 不然用户还得自己找回去一个个点
-    crate::plugins::start_enabled();
-    Ok(crate::plugins::runtimes_json())
-}
+/// 界面不再展示解释器（插件自带 runtime/ 或软件静默探测），但 set_runtime /
+/// runtimes_json 保留：prefs `pluginRuntime` 手工指定仍是隐藏的兜底出口。
 
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -2684,8 +2668,6 @@ pub fn run() {
             plugin_set_enabled,
             plugin_invoke,
             plugins_open_dir,
-            plugin_runtimes,
-            set_plugin_runtime,
             get_settings,
             set_settings,
             default_library_dir,
