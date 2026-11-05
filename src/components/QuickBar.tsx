@@ -60,6 +60,7 @@ const QB_ROOT_MARGIN = experiment.quickbarRootMargin();
 import type { FontFace } from "../lib/ipc";
 import { buildFaceIndexCached, entryFaceIds, faceKey } from "../lib/snapshotKey";
 import { FilterMenu } from "./TopBar";
+import { StarRating } from "./StarRating";
 
 /**
  * 只有屏幕上看得见的头几张卡片走 motion 入场动画。
@@ -233,6 +234,15 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
           <span className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`} data-hint-text={licTitle}>
             {t(`copyright.${licCls}` as TKey)}
           </span>
+          {/* 速览里也能一键收藏 / 打一星（与卡片同一套交互，别让人非得回主界面） */}
+          <StarRating
+            family={family.name}
+            iconSize={12}
+            labels={{
+              add: t("card.favorite", { name: family.name }),
+              remove: t("card.unfavorite", { name: family.name }),
+            }}
+          />
           {scope.total > 1 && (
             <button
               data-hint="hint.qbExpand"

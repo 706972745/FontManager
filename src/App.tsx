@@ -296,6 +296,8 @@ export default function App() {
   const t = useT();
   const init = useFontStore((s) => s.init);
   const viewMode = useFontStore((s) => s.viewMode);
+  // 在线面板要把主工具栏藏掉，这里得知道当前停在哪一页
+  const nav = useFontStore((s) => s.nav);
   const motionPref = useFontStore((s) => s.motionPref);
   const quickbar = useFontStore((s) => s.quickbar);
   const morph = useFontStore((s) => s.morph);
@@ -635,7 +637,9 @@ export default function App() {
         <div className={viewMode === "specimen" ? "app-shell shell-specimen" : "app-shell"}>
           <Sidebar />
           <div className="app-main">
-            <TopBar />
+            {/* 在线面板自带搜索与筛选：主工具栏（字号 / 排序 / 对比 / 视图切换）在那里
+                全是死控件，留着只会让人以为坏了 */}
+            {nav.kind !== "online" && <TopBar />}
             <main className="app-content">
               <MainContent />
             </main>

@@ -316,6 +316,7 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
                 }
             }
             crate::diag::log(&format!("[plugin:{pid}] stdout 结束，插件可能已退出"));
+            retire_dead(&pid);
         });
     }
     if let Some(err) = child.stderr.take() {
@@ -352,6 +353,85 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
         running: true,
         error: None,
     }))
+}
+
+// ───────────────────── 启用状态的记忆（重启后自动恢复） ─────────────────────
+
+pub const PREFS_KEY: &str = "pluginsEnabled";
+
+/// 用户在设置里开过哪些插件 —— 存在 prefs 里，下次启动照着开回来。
+/// 只记 id，不记令牌：令牌每次启用现签，旧的下次启动本来也失效了。
+pub fn remembered(store: &store::Store) -> Vec<String> {
+    store
+        .0
+        .lock()
+        .ok()
+        .and_then(|st| st.prefs.get(PREFS_KEY).cloned())
+        .and_then(|v| v.as_array().cloned())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 记住 / 忘掉一个插件的启用状态（调用方负责 save）
+pub fn remember(store: &store::Store, id: &str, on: bool) {
+    let Ok(mut st) = store.0.lock() else { return };
+    let mut list = st
+        .prefs
+        .get(PREFS_KEY)
+        .and_then(|v| v.as_array().cloned())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if on {
+        if !list.iter().any(|x| x == id) {
+            list.push(id.to_string());
+        }
+    } else {
+        list.retain(|x| x != id);
+    }
+    if let Some(obj) = st.prefs.as_object_mut() {
+        obj.insert(PREFS_KEY.into(), json!(list));
+    }
+}
+
+/// 启动时把上次开着的插件拉起来。失败只记日志 —— 插件是附加物，
+/// 缺个解释器、manifest 写坏了，都不该挡住软件启动。
+pub fn start_enabled() {
+    let Some(api) = crate::api::hub() else { return };
+    let ids = remembered(&api.store);
+    if ids.is_empty() {
+        return;
+    }
+    for id in ids {
+        match enable(&id) {
+            Ok(p) => crate::diag::log(&format!("[plugin] 按上次的状态自动启用：{} v{}", p.id, p.version)),
+            Err(e) => crate::diag::log(&format!("[plugin] 自动启用「{id}」失败：{e}")),
+        }
+    }
+}
+
+/// 插件进程已经没了（崩溃 / 自己退出 / 被任务管理器结束）：
+/// 把运行时表和它的令牌一起收掉。
+///
+/// 不收的话界面会一直显示「已启用」，用户再点开关还会被告知「已经在运行」——
+/// 明明什么都没在跑。收掉之后 `list()` 会如实显示未启用，点一下就能重新拉起。
+fn retire_dead(id: &str) {
+    let dead = runtimes().lock().ok().and_then(|mut r| r.remove(id));
+    let Some(mut rt) = dead else { return };
+    let _ = rt.child.kill();
+    if let Some(api) = crate::api::hub() {
+        if let Ok(mut t) = api.tokens.lock() {
+            t.remove(&rt.token);
+        }
+    }
+    crate::diag::log(&format!("[plugin:{id}] 进程已退出，运行时与令牌已回收"));
 }
 
 /// 停用插件：杀进程 + 撤销令牌

@@ -1,20 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence, motion } from "motion/react";
-import {
-  ArrowUpRight,
-  BookOpen,
-  DatabaseBackup,
-  Eye,
-  FolderOpen,
-  FolderSync,
-  Info,
-  Languages,
-  MessageSquarePlus,
-  Scaling,
-  SunMoon,
-  Volume2,
-  X,
-} from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, RefreshCw, Scaling, SunMoon, Volume2, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -90,6 +76,17 @@ function radioKeys(e: ReactKeyboardEvent<HTMLDivElement>) {
   next.click();
 }
 
+/** 端口草稿的显示口径：0 = 自动 → 空串 */
+function portText(port: number | undefined): string {
+  return port && port > 0 ? String(port) : "";
+}
+
+/** 令牌掩码：留头尾各 4 位，中间固定长度（不按真实长度画，免得泄漏位数） */
+function maskToken(token: string): string {
+  if (token.length <= 10) return "•".repeat(12);
+  return `${token.slice(0, 4)}${"•".repeat(16)}${token.slice(-4)}`;
+}
+
 export function SettingsOverlay() {
   const t = useT();
   const openState = useFontStore((s) => s.settingsOpen);
@@ -160,16 +157,53 @@ export function SettingsOverlay() {
   const [api, setApi] = useState<Awaited<ReturnType<typeof ipc.apiStatus>> | null>(null);
   const [plugins, setPlugins] = useState<Awaited<ReturnType<typeof ipc.pluginsList>>>([]);
   const [apiBusy, setApiBusy] = useState(false);
+  /** 令牌默认藏起来：设置页常开在边上，明文令牌容易被旁人 / 录屏带走 */
+  const [showToken, setShowToken] = useState(false);
+  const [portDraft, setPortDraft] = useState("");
 
   useEffect(() => {
     if (!openState) return;
     let alive = true;
-    void ipc.apiStatus().then((s) => alive && setApi(s)).catch(() => {});
+    void ipc
+      .apiStatus()
+      .then((s) => {
+        if (!alive) return;
+        setApi(s);
+        setPortDraft(portText(s.port || s.requestedPort || 0));
+      })
+      .catch(() => {});
     void ipc.pluginsList().then((p) => alive && setPlugins(p)).catch(() => {});
     return () => {
       alive = false;
     };
   }, [openState]);
+
+  /** 请求的端口被占用、实际换了端口 —— 这时候要明说，别让人以为设置没生效 */
+  const portFellBack =
+    !!api?.running && (api?.requestedPort ?? 0) > 0 && api?.port !== api?.requestedPort;
+
+  /** 0 表示自动，输入框里就留空，让 placeholder 说话 */
+  const commitPort = async () => {
+    const raw = portDraft.trim();
+    const want = raw === "" ? 0 : Number(raw);
+    if (raw !== "" && (!Number.isFinite(want) || want < 1024 || want > 65535)) {
+      toast.error(t("toast.apiPortInvalid"));
+      setPortDraft(portText(api?.port || api?.requestedPort || 0));
+      return;
+    }
+    // 框里显示的就是当前实际端口：没动过就什么都不做（否则「自动」会被误存成固定端口）
+    if (want === (api?.port || api?.requestedPort || 0)) return;
+    try {
+      await ipc.apiSetPort(want);
+      const s = await ipc.apiStatus();
+      setApi(s);
+      setPortDraft(portText(s.port || s.requestedPort || 0));
+      toast.success(t("toast.apiPortChanged"));
+    } catch (e) {
+      toast.error(String(e));
+      setPortDraft(portText(api?.port || api?.requestedPort || 0));
+    }
+  };
 
   const toggleApi = async (on: boolean) => {
     setApiBusy(true);
@@ -177,6 +211,7 @@ export function SettingsOverlay() {
       await ipc.apiSetEnabled(on);
       const s = await ipc.apiStatus();
       setApi(s);
+      setPortDraft(portText(s.port || s.requestedPort || 0));
       toast.success(on ? t("toast.apiOn", { port: String(s.port) }) : t("toast.apiOff"));
     } catch (e) {
       toast.error(String(e));
@@ -878,20 +913,56 @@ export function SettingsOverlay() {
                     <span>{t("settings.apiOn")}</span>
                   </div>
                   <div className="settings-sub">
-                    {apiBusy
-                      ? "…"
-                      : api?.running && api.port
-                        ? `${t("settings.apiPort")} ${api.port}`
-                        : t("settings.apiOff")}
+                    {/* 端口不在这里重复：它在下面输入框里（2026-11-05 用户口径） */}
+                    {apiBusy ? "…" : api?.running && api.port ? "127.0.0.1" : t("settings.apiOff")}
+                    {portFellBack && (
+                      <span className="settings-port-warn">
+                        {" · "}
+                        {t("settings.apiPortFallback", { port: String(api?.requestedPort ?? 0) })}
+                      </span>
+                    )}
                   </div>
                 </div>
+              </div>
+              {/* 端口：留空＝自动；填了就用这个（被占用会自动退回随机，并在上面提示） */}
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">{t("settings.apiPort")}</div>
+                  <div className="settings-sub">{t("settings.apiPortHint")}</div>
+                </div>
+                <input
+                  className="settings-port-input tabular"
+                  type="text"
+                  inputMode="numeric"
+                  value={portDraft}
+                  placeholder={t("settings.apiPortAuto")}
+                  aria-label={t("settings.apiPort")}
+                  onChange={(e) => setPortDraft(e.target.value.replace(/[^0-9]/g, ""))}
+                  onBlur={() => void commitPort()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void commitPort();
+                    }
+                    if (e.key === "Escape") setPortDraft(portText(api?.port || api?.requestedPort || 0));
+                  }}
+                />
               </div>
               {api?.enabled && api.token && (
                 <>
                   <div className="settings-row settings-col">
                     <div className="settings-label">{t("settings.apiToken")}</div>
                     <div className="settings-row">
-                      <code className="detail-mono settings-api-token">{api.token}</code>
+                      <code className="detail-mono settings-api-token">
+                        {showToken ? api.token : maskToken(api.token)}
+                      </code>
+                      <button
+                        className="settings-library-switch"
+                        aria-pressed={showToken}
+                        onClick={() => setShowToken((v) => !v)}
+                      >
+                        {showToken ? t("settings.apiHide") : t("settings.apiReveal")}
+                      </button>
                       <button className="settings-library-switch" onClick={() => void copyToken()}>
                         {t("settings.apiCopy")}
                       </button>
@@ -926,10 +997,16 @@ export function SettingsOverlay() {
                 <div className="settings-sub">
                   {plugins.length === 0 ? t("settings.pluginsEmpty") : t("settings.pluginsCount", { count: String(plugins.length) })}
                 </div>
-                <button className="settings-add-folder" onClick={() => void ipc.pluginsOpenDir()}>
-                  <FolderOpen size={13} strokeWidth={1.5} />
-                  {t("settings.pluginsOpenDir")}
-                </button>
+                <div className="settings-row settings-row-tight">
+                  <button className="settings-add-folder" onClick={() => void refreshPlugins()}>
+                    <RefreshCw size={13} strokeWidth={1.5} />
+                    {t("settings.pluginsRefresh")}
+                  </button>
+                  <button className="settings-add-folder" onClick={() => void ipc.pluginsOpenDir()}>
+                    <FolderOpen size={13} strokeWidth={1.5} />
+                    {t("settings.pluginsOpenDir")}
+                  </button>
+                </div>
               </div>
               {plugins.map((p) => (
                 <div key={p.id} className="settings-row">
@@ -942,11 +1019,21 @@ export function SettingsOverlay() {
                       />
                       <span>{p.name}</span>
                       <span className="settings-plugin-version">v{p.version}</span>
+                      {p.running && <span className="settings-plugin-running" aria-hidden />}
                     </div>
                     <div className="settings-sub">
                       {p.error ?? p.description ?? p.permissions.join(" · ")}
                     </div>
                   </div>
+                  {/* 每个插件单独给一个入口：装上几个之后，「打开插件目录」再自己找太麻烦 */}
+                  <button
+                    className="settings-library-open"
+                    aria-label={t("settings.pluginsOpenOne")}
+                    data-hint-text={t("settings.pluginsOpenOne")}
+                    onClick={() => void ipc.openFolder(p.dir).catch(() => {})}
+                  >
+                    <FolderOpen size={13} strokeWidth={1.5} />
+                  </button>
                 </div>
               ))}
             </section>
