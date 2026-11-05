@@ -156,8 +156,6 @@ export function SettingsOverlay() {
   // ── 1.3.0：本地 API 与插件 ──
   const [api, setApi] = useState<Awaited<ReturnType<typeof ipc.apiStatus>> | null>(null);
   const [plugins, setPlugins] = useState<Awaited<ReturnType<typeof ipc.pluginsList>>>([]);
-  /** 1.3.1：Python / Node.js 解释器探测结果 —— 插件跑不起来，九成是这里空着 */
-  const [runtimes, setRuntimes] = useState<Awaited<ReturnType<typeof ipc.pluginRuntimes>> | null>(null);
   const [apiBusy, setApiBusy] = useState(false);
   /** 令牌默认藏起来：设置页常开在边上，明文令牌容易被旁人 / 录屏带走 */
   const [showToken, setShowToken] = useState(false);
@@ -175,31 +173,10 @@ export function SettingsOverlay() {
       })
       .catch(() => {});
     void ipc.pluginsList().then((p) => alive && setPlugins(p)).catch(() => {});
-    void ipc.pluginRuntimes().then((r) => alive && setRuntimes(r)).catch(() => {});
     return () => {
       alive = false;
     };
   }, [openState]);
-
-  /** 手动指定解释器（Python / Node.js 各一条） */
-  const pickRuntime = async (kind: "python" | "node") => {
-    const picked = await open({ multiple: false, directory: false }).catch(() => null);
-    if (typeof picked !== "string" || !picked) return;
-    try {
-      setRuntimes(await ipc.setPluginRuntime(kind, picked));
-      toast.success(t("toast.pluginRuntimeSaved"));
-      await refreshPlugins();
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
-  const clearRuntime = async (kind: "python" | "node") => {
-    try {
-      setRuntimes(await ipc.setPluginRuntime(kind, ""));
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
 
   /** 请求的端口被占用、实际换了端口 —— 这时候要明说，别让人以为设置没生效 */
   const portFellBack =
@@ -643,46 +620,8 @@ export function SettingsOverlay() {
                   </button>
                 </div>
               </div>
-              {/* 解释器 = 插件的命门：以前只写死 "python"，机器上没装、或装的不是 PATH 里那份，
-                  插件就永远起不来，界面上只剩一个关着的开关。这里把「找到没、在哪」摊开给用户看。 */}
-              {/* 1.3.1：解释器 = 插件的命门。以前只写死 "python"，机器上没装/装的不是 PATH 里那个，
-                  插件就永远起不来，界面上只留一个关着的开关。这里把「找到没、在哪」摊开给用户看。 */}
-{(["python", "node"] as const).map((kind) => {
-                const info = runtimes?.[kind] ?? null;
-                return (
-                  <div className="settings-row settings-runtime-row" key={kind}>
-                    <div className="settings-runtime-info">
-                      <div className="settings-label">
-                        {t(kind === "python" ? "settings.pluginRuntimePython" : "settings.pluginRuntimeNode")}
-                        <SettingHint text={t("settings.pluginRuntimeSub")} />
-                      </div>
-                      <div className="settings-sub settings-runtime-path" title={info?.path ?? ""}>
-                        {info
-                          ? `${info.manual ? t("settings.pluginRuntimeManual") : t("settings.pluginRuntimeFound")} · ${info.version} · ${info.path}`
-                          : t("settings.pluginRuntimeMissing")}
-                      </div>
-                    </div>
-                    <div className="settings-row settings-row-tight settings-runtime-actions">
-                      <button
-                        className="settings-add-folder"
-                        title={t("settings.pluginRuntimePickHint")}
-                        onClick={() => void pickRuntime(kind)}
-                      >
-                        {t("settings.pluginRuntimePick")}
-                      </button>
-                      {info?.manual && (
-                        <button
-                          className="settings-add-folder"
-                          title={t("settings.pluginRuntimeAutoHint")}
-                          onClick={() => void clearRuntime(kind)}
-                        >
-                          {t("settings.pluginRuntimeAuto")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {/* 解释器两行已移除（2026-11-05 用户口径）：插件自带运行环境（runtime/ + interpreterPath）
+                  或由软件静默自动探测，正常情况用户永远不需要看见或手动指定解释器。 */}
             </section>
 
             <section className="settings-section">

@@ -387,60 +387,6 @@ fn override_for(kind: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// 给界面用：两种解释器各自找到了什么（找不到就是 null）
-pub fn runtimes_json() -> Value {
-    let mut obj = serde_json::Map::new();
-    for kind in ["python", "node"] {
-        let ov = override_for(kind);
-        let hit = resolve(kind, ov.as_deref());
-        obj.insert(
-            kind.to_string(),
-            match hit {
-                Some((path, _, version)) => json!({
-                    "path": path,
-                    "version": version,
-                    "manual": ov.is_some(),
-                }),
-                None => Value::Null,
-            },
-        );
-    }
-    Value::Object(obj)
-}
-
-/// 记下手动指定的解释器；传空串 = 恢复自动探测
-pub fn set_runtime(store: &store::Store, kind: &str, path: &str) -> Result<(), String> {
-    if !path.is_empty() && !Path::new(path).is_file() {
-        return Err(format!("这个路径不是文件：{path}"));
-    }
-    if !path.is_empty() && !probe(path, &[], kind).is_some() {
-        return Err("这个文件跑不起来（不是可用的解释器？）".into());
-    }
-    let mut st = store.0.lock().map_err(|e| e.to_string())?;
-    let mut map = st
-        .prefs
-        .get("pluginRuntime")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-    if !map.is_object() {
-        map = json!({});
-    }
-    if let Some(o) = map.as_object_mut() {
-        if path.is_empty() {
-            o.remove(kind);
-        } else {
-            o.insert(kind.to_string(), json!(path));
-        }
-    }
-    if let Some(p) = st.prefs.as_object_mut() {
-        p.insert("pluginRuntime".into(), map.clone());
-    }
-    if let Ok(mut c) = resolved_cache().lock() {
-        c.clear(); // 换了路径就不该再信上次的探测结果
-    }
-    store::save(&st)
-}
-
 fn command_for(dir: &Path, m: &PluginManifest) -> Result<(Command, String), String> {
     let entry = dir.join(&m.entry);
     if !entry.is_file() {

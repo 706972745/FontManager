@@ -6625,24 +6625,6 @@ body.ui-fade-out .app-frame {
   margin-left: 2px;
   flex-shrink: 0;
 }
-/* 插件区：清单头和下面每一行插件当成一组，间距 6px（用分区的 10px 会被看成两个分区） */
-/* 插件解释器行：路径可能很长，左侧要能收缩（min-width:0），按钮组不许被挤出去 */
-.settings-runtime-row {
-  gap: 12px;
-}
-.settings-runtime-info {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.settings-runtime-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.settings-runtime-actions {
-  flex: 0 0 auto;
-  align-self: center;
-}
 .settings-plugin-group {
   display: flex;
   flex-direction: column;
