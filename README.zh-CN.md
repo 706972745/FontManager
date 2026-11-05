@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.3.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -204,6 +204,11 @@ TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还�
 
 **导入**一律是：双击文件，或拖进窗口。导入按**文件内容**识别，不看后缀。
 
+FontManager 的专属文件都有**贴纸风格图标**，资源管理器里一眼认出：
+软件图标 **.Z** · 快照导出 **.S** · 导出-含字体 **.P** · 导出-仅数据 **.L** · 文件库文件夹 **.F**（灰底 + 抽出的纸 + 黑字母）：
+
+![FontManager 图标方案：贴纸纸片风（黑白灰）](icons-overview.png)
+
 ### 11. 回收站：删错了能后悔
 
 1. 右键字族 → 移到回收站（批量同理）——从系统卸载但文件先收着
@@ -235,6 +240,7 @@ TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还�
 1. 任何界面按 <kbd>Alt</kbd>+<kbd>`</kbd>——主窗口收成**贴顶速览面板**
    （热键在 设置 → 系统 → 「速览快捷键」里改，见下图）
 2. 只显示**已启用**的字体：点名字复制、★ 收藏、开关直接启停、"> 3" 展开同族字重、右键出全套菜单
+   （右键菜单里**直接打字**就能搜字体：默认搜已启用的，<kbd>Tab</kbd> 切换全部——见第 16 节）
 3. 顶部：搜索已启用字体 · 改预览文字和字号 · **图钉**固定 · 「完整界面」回主窗口
 4. 不用了：拖回屏幕顶它自己收成一条细线，鼠标靠近再展开；或按 <kbd>Alt</kbd>+<kbd>`</kbd> 收回
 
@@ -250,6 +256,11 @@ TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还�
 
 ![命令面板：输入即达](palette.png)
 
+- **右键菜单打字即搜**：任何右键菜单（卡片 / 列表 / 样张 / 速览 / 详情面板）出现后**直接打字**，
+  顶部立刻出现搜索框，全库字体实时过滤——<kbd>↑</kbd><kbd>↓</kbd> 选择、<kbd>Enter</kbd> 或点击选中，
+  自动跳到对应视图并滚动到该字体位置；<kbd>Esc</kbd> 先清空搜索、再按一次关菜单
+- **Tab 切搜索范围**：搜索时按 <kbd>Tab</kbd>（或点搜索框旁的徽章）在「已启用 ↔ 全部字体」间切换——
+  速览默认只搜已启用字体（选中就在速览内定位；选中未启用的会自动退回完整界面并定位），完整界面默认全部
 - <kbd>?</kbd>（或侧栏「快捷键」）：完整快捷键表——导航 / 选择 / 对选中操作 / 快照全都在
 
 ![快捷键表](shortcuts.png)
