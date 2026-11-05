@@ -11,7 +11,7 @@ export const APP_LICENSE = "GPL-3.0";
  *
  * 2026-11-05：1.3.0 是开发版（本地 API / 插件 / MCP 刚落地，还没对外发布），先置 null。
  */
-export const APP_EDITION: "stable" | null = null;
+export const APP_EDITION: "stable" | null = "stable";
 
 /** 展示用版本串：正式版带通道标记（`1.1.0 正式版`），开发版只有版本号 */
 export function displayVersion(t: (key: "about.edition") => string): string {

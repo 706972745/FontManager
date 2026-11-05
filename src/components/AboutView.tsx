@@ -1,6 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "motion/react";
-import { ArrowUpRight, Download, Globe } from "lucide-react";
+import {
+  ArrowUpRight,
+  Download,
+  Globe,
+  Puzzle,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Star,
+} from "lucide-react";
 import { spring, springSoft, staggerDelay } from "../design/springs";
 import { toast } from "../design/primitives/Toast";
 import { t as translate, useT, type TKey } from "../lib/i18n";
@@ -51,6 +60,16 @@ const STACK = ["Tauri v2", "Rust", "React 19", "TypeScript", "Vite", "pnpm"];
 /** 本定制版的代码仓库 */
 const CUSTOM_BUILD_URL = "https://github.com/706972745/FontManager";
 
+/** 这款软件现在真正有的能力（2026-11-05 重写口径：与 README 功能导览一致） */
+const FEATURES: { key: TKey; icon: React.ReactNode }[] = [
+  { key: "about.featPreview", icon: <Search size={14} strokeWidth={1.5} /> },
+  { key: "about.featToggle", icon: <SlidersHorizontal size={14} strokeWidth={1.5} /> },
+  { key: "about.featOrganize", icon: <Star size={14} strokeWidth={1.5} /> },
+  { key: "about.featAutomation", icon: <Puzzle size={14} strokeWidth={1.5} /> },
+  { key: "about.featOnline", icon: <Globe size={14} strokeWidth={1.5} /> },
+  { key: "about.featPrivacy", icon: <ShieldCheck size={14} strokeWidth={1.5} /> },
+];
+
 export function AboutView() {
   const t = useT();
   return (
@@ -67,6 +86,22 @@ export function AboutView() {
       </div>
       <p className="about-desc">{t("about.desc")}</p>
 
+      {/* 1.3.2：功能一览。About 是「这个软件现在是什么」，得跟 README 的功能导览对得上 */}
+      <div className="about-features" aria-label={t("about.featuresTitle")}>
+        {FEATURES.map((f, i) => (
+          <motion.div
+            key={f.key}
+            className="about-feature"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...springSoft, delay: staggerDelay(i) }}
+          >
+            <span className="about-feature-icon">{f.icon}</span>
+            <span className="about-feature-text">{t(f.key)}</span>
+          </motion.div>
+        ))}
+      </div>
+
       <div className="about-stack" aria-label={t("about.stackAria")}>
         {STACK.map((t) => (
           <span key={t} className="about-chip tabular">
@@ -75,6 +110,11 @@ export function AboutView() {
         ))}
       </div>
 
+      {/* 链接区标题：说清血缘（从 ZFontManager 0.8.0 迭代而来）+ 这些链接指向原作者 */}
+      <div className="about-links-head">
+        <h2 className="about-links-title">{t("about.linksTitle")}</h2>
+        <p className="about-links-sub">{t("about.linksSub")}</p>
+      </div>
       <div className="about-links">
         {LINKS.map((l, i) => (
           <motion.button

@@ -2152,7 +2152,18 @@ fn get_prefs(store: State<Store>) -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn set_prefs(store: State<Store>, prefs: serde_json::Value) -> Result<(), String> {
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
-    state.prefs = prefs;
+    // ⚠️ 必须**合并**而不是整体赋值：前端 persistPrefs 只发 UI 偏好白名单，
+    // 直接 `state.prefs = prefs` 会把后端写的 pluginsEnabled / apiEnabled /
+    // pluginRuntime 这些键一起抹掉 —— 插件「关了设置就变关闭」「API 莫名其妙关了」
+    // 就是这么来的（2026-11-05 真机抓到：state.json 里插件与 API 的键全没了）。
+    match (prefs.as_object(), state.prefs.as_object_mut()) {
+        (Some(incoming), Some(current)) => {
+            for (k, v) in incoming {
+                current.insert(k.clone(), v.clone());
+            }
+        }
+        _ => state.prefs = prefs,
+    }
     store::save(&state)?;
     drop(state);
     // 本地 API 的开关 / 令牌 / 危险操作授权都存在 prefs 里：存完立刻生效，不必重启
@@ -2269,7 +2280,9 @@ fn plugin_set_enabled(store: State<Store>, id: String, enabled: bool) -> Result<
     if enabled {
         crate::plugins::enable(&id).map(|_| ())?;
     } else {
-        crate::plugins::disable(&id)?;
+        // 插件可能自己先退了（解释器不对 / 崩了）：这时候关开关不该报错，
+        // 用户的本意就是「别再让它开」，记住这个选择就行。
+        let _ = crate::plugins::disable(&id);
     }
     // 记住这次选择：下次启动照着开回来（不然每次开机都要手动点一遍）
     crate::plugins::remember(store.inner(), &id, enabled);
@@ -2279,15 +2292,39 @@ fn plugin_set_enabled(store: State<Store>, id: String, enabled: bool) -> Result<
 
 #[tauri::command]
 fn plugin_invoke(id: String, hook: String, payload: serde_json::Value) -> Result<(), String> {
-    crate::plugins::invoke(&id, &hook, payload)
+    // 插件这条路上任何 panic 都不该把主界面带走：拦下来换成一条错误返回前端。
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::plugins::invoke(&id, &hook, payload)
+    })) {
+        Ok(r) => r,
+        Err(_) => Err("插件调用出错了（已拦下，软件继续运行）；详情见日志".into()),
+    }
 }
 
 /// 打开插件目录（不存在就先建一个，用户往里放同名文件夹即可）
 #[tauri::command]
-fn plugins_open_dir() -> Result<(), String> {
-    let dir = crate::plugins::plugins_dir();
+fn plugins_open_dir() -> Result<(), String> {    let dir = crate::plugins::plugins_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("建目录失败：{e}"))?;
     open_folder(dir.to_string_lossy().into_owned())
+}
+
+/// 界面用：Python / Node.js 解释器各找到了哪个（找不到返回 null）
+#[tauri::command]
+fn plugin_runtimes() -> serde_json::Value {
+    crate::plugins::runtimes_json()
+}
+
+/// 手动指定解释器路径（path 传空串 = 恢复自动探测），返回重新探测的结果
+#[tauri::command]
+fn set_plugin_runtime(
+    store: State<Store>,
+    kind: String,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    crate::plugins::set_runtime(store.inner(), &kind, &path)?;
+    // 改了解释器，就把「上次开着但没起来」的插件再拉一遍 —— 不然用户还得自己找回去一个个点
+    crate::plugins::start_enabled();
+    Ok(crate::plugins::runtimes_json())
 }
 
 #[tauri::command]
@@ -2351,6 +2388,13 @@ async fn apply_font_in_app(
         }
     }
     Ok(outcome)
+}
+
+/// panic 钩子从这里落盘（main.rs 里 set_hook 调它）。
+/// 发布版没有控制台，闪退现场只剩这一条线索 —— 别删。
+pub fn log_panic(msg: &str) {
+    crate::diag::log(&format!("[panic] {msg}"));
+    eprintln!("[panic] {msg}");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2640,6 +2684,8 @@ pub fn run() {
             plugin_set_enabled,
             plugin_invoke,
             plugins_open_dir,
+            plugin_runtimes,
+            set_plugin_runtime,
             get_settings,
             set_settings,
             default_library_dir,

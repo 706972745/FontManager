@@ -4,6 +4,30 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] — 2026-11-05（正式版）
+
+> 1.3.x 线的收口版：把 1.3.0 开发版的插件 / API / MCP 补齐到可日常使用，并修掉三处真 bug。
+
+### 新增
+
+- **本地 API 端口可自定义**（设置 → 本地 API；留空自动，被占用自动回退并提示）。
+- **插件系统可用性**：解释器自动探测（PATH + 常见目录，跳过商店引导桩），
+  设置里可手动指定 Python / Node.js 路径；**插件可自带解释器**（plugin.json 的 `interpreterPath`）
+  或直接用自包含 `.exe` 入口——插件按规则开发，主程序无需为其适配。
+- **插件右键菜单**：多条菜单按插件分组展示；`menu` 字段传给插件以区分菜单项。
+- **MCP 服务器**与接入文档（`mcp/README.md`），插件开发指南（`docs/PLUGINS.md`）。
+- 设置 → 本地 API 的地址牌与端口框同款样式；速览星标；在线面板精简；9 语言包补齐全部新文案。
+
+### 修复
+
+- **插件在正常启动的软件里永远起不来**：解释器写死 `python`，从资源管理器启动时拿不到
+  开发环境 PATH（WindowsApps 的 `python.exe` 只是下载引导桩）。改为候选 + 探活 + 缓存。
+- **插件「启用后立刻退出」**：按行读 stdout 遇到非 UTF-8（中文 Windows 上 Python 默认按 GBK
+  写管道）第一行即断，误判插件退出并误杀进程。改为按字节读 + 宽松解码，并强制子进程 UTF-8。
+- **设置偏好被整包覆盖**：保存界面偏好会把 `pluginsEnabled / apiEnabled / pluginRuntime`
+  一起抹掉（表现为「重开设置插件全关」「API 莫名关闭」）。改为合并写入。
+- 导出样张对纯拉丁字体不再出现豆腐块；面板细节与浅色主题底色统一。
+
 ## [1.3.0] — 2026-11-05（开发版，未发布）
 
 **对外开放能力：service 层 + 本地 HTTP API + MCP + 进程外插件。界面体验零变化。**

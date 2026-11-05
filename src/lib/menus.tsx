@@ -664,24 +664,31 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
     }))
     .filter((g) => g.menus.length > 0);
   if (pluginGroups.length > 0) {
-    const multi = pluginGroups.length > 1;
     items.push(
       { kind: "separator" },
       {
         kind: "submenu",
         label: t("menu.plugins"),
         icon: <Puzzle size={14} strokeWidth={1.5} />,
-        items: pluginGroups.flatMap((g) =>
-          g.menus.map(
-            (m): MenuItem => ({
-              label: multi ? `${m.title} · ${g.plugin.name}` : m.title,
-              action: () =>
-                void ipc
-                  .pluginInvoke(g.plugin.id, "context-menu", { family: family.name })
-                  .catch((e) => toast.error(String(e))),
-            }),
-          ),
-        ),
+        items: pluginGroups.flatMap((g, gi) => {
+          const rows: MenuItem[] = g.menus.map((m) => ({
+            label: m.title,
+            action: () =>
+              void ipc
+                // menu 带上点的是哪一项：插件可以挂多条菜单（导出 / 设置保存位置…）
+                .pluginInvoke(g.plugin.id, "context-menu", { family: family.name, menu: m.title })
+                .catch((e) => toast.error(String(e))),
+          }));
+          // 只装了一个插件：直接列菜单项，不用加一层小标题
+          if (pluginGroups.length === 1) return rows;
+          // 多个插件：每个插件先来一行灰标题，插件之间加分隔线，
+          // 否则「导出示例图」「统计这个字族」混在一起，看不出是谁的功能
+          return [
+            ...(gi > 0 ? [{ kind: "separator" } as MenuItem] : []),
+            { kind: "heading", label: g.plugin.name } as MenuItem,
+            ...rows,
+          ];
+        }),
       },
     );
   }
