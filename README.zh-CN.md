@@ -143,6 +143,71 @@ FontManager 把核心能力开放给自动化——**默认关闭、仅限本机
 | **插件** | 独立进程，通过 stdin/stdout 的 JSON + **受限令牌**通信——插件崩溃绝不会带走主程序。插件可以自带解释器（`interpreterPath`），也可以直接是自包含的 `.exe` | [docs/PLUGINS.md](docs/PLUGINS.md) |
 | **MCP 服务器** | 把本地 API 包装成 MCP 工具，让 Agent（WorkBuddy、Claude、Cursor…）在对话里驱动你的字体库 | [mcp/README.md](mcp/README.md) |
 
+### 📥 安装现成插件
+
+官方插件集中在 **[FontManager-Plugin](https://github.com/706972745/FontManager-Plugin)** 仓库，
+每个插件独立目录、**自带运行环境**，下载解压即用（机器上不用装 Python）：
+
+1. 到 [插件库 Releases](https://github.com/706972745/FontManager-Plugin/releases/latest) 下载想要的插件 ZIP
+2. 解压出插件文件夹（如 `specimen-export`）
+3. FontManager → **设置 → 插件 → 「打开插件目录」**，把文件夹放进去
+4. **设置 → 插件** 里打开插件开关（或点「重新扫描」）
+5. 在任意字族上**右键 → 插件 ›** 使用
+
+### 🖥️ 使用本地 API
+
+1. **设置 → 本地 API** 打开开关——地址牌显示实际地址（如 `127.0.0.1:58202`），端口可在下面输入框自定义
+2. **令牌**默认打码隐藏，点眼睛显示；泄露了就点「重置令牌」（旧的立即失效）
+3. 所有请求都要带请求头：`Authorization: Bearer <令牌>`
+4. 试试看（PowerShell / curl）：
+
+```powershell
+$cfg = Get-Content "$env:APPDATA\FontManager\api.json" | ConvertFrom-Json
+# 健康检查
+curl.exe -H "Authorization: Bearer $($cfg.token)" $cfg.base/health
+# 搜字体
+curl.exe -H "Authorization: Bearer $($cfg.token)" "$($cfg.base)/fonts?q=思源&limit=10"
+# 启用一个字族（写入系统，任何应用的字体菜单立刻可用）
+curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: application/json" `
+  -d '{"family":"Noto Sans SC"}' $cfg.base/fonts/activate
+```
+
+常用端点速查：
+
+| 端点 | 作用 |
+|---|---|
+| `GET /health` | 健康检查 + 字体总数 |
+| `GET /fonts` `GET /fonts/families` | 列出 / 搜索字体（q、limit、offset） |
+| `POST /fonts/activate` `POST /fonts/deactivate` | 启用 / 停用字族 |
+| `POST /fonts/scan` | 触发一次库扫描 |
+| `GET/POST /snapshots` `POST /snapshots/{name}/apply` | 快照：列表 / 创建 / 应用 |
+| `GET/PUT /curation*` | 备注、评分、收藏、标签 |
+
+> 每条路由都有权限检查；插件的受限令牌越权会被直接拒绝（403）。
+
+### 🤖 接入 MCP（让 Agent 驱动你的字体库）
+
+1. 设置 → 本地 API 开关打开（MCP 靠它工作）
+2. 在 MCP 客户端配置里加一项（路径换成自己的绝对路径）：
+
+```json
+{
+  "mcpServers": {
+    "fontmanager": {
+      "command": "node",
+      "args": ["C:\\path\\to\\mcp\\index.mjs"]
+    }
+  }
+}
+```
+
+3. 完事。MCP 服务器**自动读** `%APPDATA%\FontManager\api.json` 拿端口和令牌，
+   重置令牌也不用改配置。WorkBuddy：连接器管理 → 自定义 MCP → 粘贴配置 → 点「信任」；
+   Claude Desktop / Cursor 同理。
+
+之后就可以在对话里说「列出我的思源字体」「应用快照 上班配置」——
+10 个工具详见 **[mcp/README.md](mcp/README.md)**。
+
 这些默认都没有开启；把本地 API 关掉，所有层同时失效。
 
 ---
