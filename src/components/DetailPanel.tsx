@@ -12,7 +12,7 @@ import { FormatBadge } from "./FamilyCard";
 import { buildFaceMenu, exportFace, exportFamily } from "../lib/menus";
 import { openContextMenuAt } from "../design/primitives/ContextMenu";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { classifyLicense, copyrightExpired, normalizeCopyright } from "../lib/license";
+import { classifyLicense, copyrightExpired, familyCopyrightClass, normalizeCopyright } from "../lib/license";
 import { faceKey } from "../lib/snapshotKey";
 import { parentDir } from "../lib/onlineCoverage";
 import { playTag } from "../lib/sound";
@@ -781,6 +781,17 @@ export function DetailPanel() {
         .sort()
     : [];
   const dirsKey = writableDirs.join("\n");
+  /* 字体文件 name 表里自带的版权信息（2026-11-05 用户口径两段）：
+   * ① 绝不自动生成版权文件 —— 没有授权文档时不写任何东西进字体目录；
+   * ② 只有当这个字族的版权结论**明确**（商用免费 / 个人免费 / 收费 / 限时，含手动指定）
+   *    且字体文件自带版权文字时，才在「版权文件」一行显示「字体文件自带版权信息」；
+   *    判不出结论（未知）就照旧显示「未找到」，不假装知道。 */
+  const manualCopyrightRaw = useFontStore((s) => (family ? s.copyrightStatus[family.name] : undefined));
+  const copyrightVerdict = family ? familyCopyrightClass(family.faces, manualCopyrightRaw ?? null) : "unknown";
+  const embeddedCopyright =
+    copyrightVerdict !== "unknown"
+      ? family?.faces.map((f) => (f.copyright ?? "").trim()).find((c) => c.length > 0) ?? ""
+      : "";
   // 「目录 + 文件名」成对存：只留文件名点开时拼不出路径（用户 2026-10-30 要求能点开）
   const [licenseFiles, setLicenseFiles] = useState<{ dir: string; name: string }[] | null>(null);
   const [licenseSearching, setLicenseSearching] = useState(false);
@@ -1201,7 +1212,12 @@ export function DetailPanel() {
                     <span className="license-file-missing">{t("detail.licenseFileSystem")}</span>
                   ) : (
                     <span className="license-file-actions">
-                      <span className="license-file-missing">{t("detail.licenseFileNone")}</span>
+                      <span
+                        className={embeddedCopyright ? "license-file-embedded" : "license-file-missing"}
+                        title={embeddedCopyright || undefined}
+                      >
+                        {embeddedCopyright ? t("detail.licenseEmbedded") : t("detail.licenseFileNone")}
+                      </span>
                       <button
                         className="license-file-search"
                         onClick={() => void searchLicense()}
