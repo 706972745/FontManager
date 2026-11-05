@@ -1,10 +1,10 @@
 {
   "about.customBuild": "Compilación personalizada de IIEOzo en GitHub",
-  "about.desc": "Un gestor de fuentes derivado del FontManager 0.8.0 de código abierto de TheHolyOneZ y personalizado para IIEOzo. Previsualiza, etiqueta, agrupa y crea instantáneas, activa e instala: miles de fuentes organizadas en un solo equipo y siempre en local.",
+  "about.desc": "Un gestor de fuentes derivado del ZFontManager 0.8.0 de código abierto de TheHolyOneZ y personalizado para IIEOzo. Previsualiza, etiqueta, agrupa y crea instantáneas, activa e instala: miles de fuentes organizadas en un solo equipo y siempre en local.",
   "about.githubUser": "TheHolyOneZ en GitHub",
   "about.landing": "Página del proyecto y descargas",
   "about.moreProjects": "Más proyectos",
-  "about.source": "Código fuente de FontManager",
+  "about.source": "Código fuente de ZFontManager",
   "about.stackAria": "Tecnologías",
   "about.version": "Versión {version} · {license}",
   "about.edition": "Estable",

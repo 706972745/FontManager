@@ -1,10 +1,10 @@
 {
   "about.customBuild": "IIEOzo 定制版 GitHub 地址",
-  "about.desc": "在 TheHolyOneZ 开源的 FontManager 0.8.0 基础上迭代、为 IIEOzo 定制的字体管理器。预览、标签、分组与快照、启停与安装——几千款字体也能在一台机器上整理清楚，字体文件始终留在本地。",
+  "about.desc": "在 TheHolyOneZ 开源的 ZFontManager 0.8.0 基础上迭代、为 IIEOzo 定制的字体管理器。预览、标签、分组与快照、启停与安装——几千款字体也能在一台机器上整理清楚，字体文件始终留在本地。",
   "about.githubUser": "TheHolyOneZ 的 GitHub",
   "about.landing": "介绍与下载页",
   "about.moreProjects": "更多项目",
-  "about.source": "FontManager 源代码",
+  "about.source": "ZFontManager 源代码",
   "about.stackAria": "技术栈",
   "about.version": "版本 {version} · {license}",
   "about.edition": "正式版",

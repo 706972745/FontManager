@@ -1,10 +1,10 @@
 {
   "about.customBuild": "Build personnalisé IIEOzo sur GitHub",
-  "about.desc": "Un gestionnaire de polices dérivé du FontManager 0.8.0 open source de TheHolyOneZ, personnalisé pour IIEOzo. Aperçu, étiquettes, groupes et instantanés, activation et installation : des milliers de polices organisées sur une seule machine, toujours en local.",
+  "about.desc": "Un gestionnaire de polices dérivé du ZFontManager 0.8.0 open source de TheHolyOneZ, personnalisé pour IIEOzo. Aperçu, étiquettes, groupes et instantanés, activation et installation : des milliers de polices organisées sur une seule machine, toujours en local.",
   "about.githubUser": "TheHolyOneZ sur GitHub",
   "about.landing": "Page de présentation et téléchargement",
   "about.moreProjects": "Autres projets",
-  "about.source": "Code source de FontManager",
+  "about.source": "Code source de ZFontManager",
   "about.stackAria": "Technologies",
   "about.version": "Version {version} · {license}",
   "about.edition": "Stable",

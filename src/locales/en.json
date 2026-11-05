@@ -1,10 +1,10 @@
 {
   "about.customBuild": "IIEOzo custom build on GitHub",
-  "about.desc": "A font manager iterated from TheHolyOneZ’s open-source FontManager 0.8.0 and customised for IIEOzo. Preview, tag, group and snapshot, activate and install — thousands of fonts stay organised on one machine, and every file stays local.",
+  "about.desc": "A font manager iterated from TheHolyOneZ’s open-source ZFontManager 0.8.0 and customised for IIEOzo. Preview, tag, group and snapshot, activate and install — thousands of fonts stay organised on one machine, and every file stays local.",
   "about.githubUser": "TheHolyOneZ on GitHub",
   "about.landing": "Landing & download page",
   "about.moreProjects": "More projects",
-  "about.source": "FontManager source",
+  "about.source": "ZFontManager source",
   "about.stackAria": "Tech stack",
   "about.version": "Version {version} · {license}",
   "about.edition": "Stable",
