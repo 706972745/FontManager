@@ -45,7 +45,7 @@ and MCP when you want your tools to join in.
 ## 📖 Table of contents
 
 - [Why FontManager?](#-why-fontmanager)
-- [Feature tour](#-feature-tour)
+- [Feature guide (step by step)](#-feature-guide-step-by-step)
 - [Plugins, local API & MCP](#-plugins-local-api--mcp)
 - [Keyboard shortcuts](#️-keyboard-shortcuts)
 - [Translations](#-translations)
@@ -85,119 +85,202 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ---
 
-## 🎯 Feature tour
+## 🎯 Feature guide (step by step)
 
-### Your whole library, rendered live
+> Every feature below is written as "follow the clicks". After this section you
+> know what every button in the app does.
+
+### 1. First launch: get fonts into the library
+
+1. Drag a **font folder** or a **ZIP** straight onto the app window
+   (or: Settings → library locations → "Add" and pick a folder)
+2. The scan runs, and every card is then previewed in the font's **own letterforms**
+3. Want a second library? Settings → library locations → "Add"; click a row to
+   change its directory, and the "switch" button at the end of a row makes it the active one
+
+> A ZIP mixing several families? It is **rejected as a whole** with a reason —
+> by design, so your library never fills with junk in one drop.
+
+### 2. Know the main window
 
 ![Main window: the library, live previews and the detail panel](main.png)
 
-- **Three views** — cards / list / waterfall, one click in the toolbar; every card
-  is previewed in the font's **own letterforms**
-- **Toolbar** — search, custom preview text, an 8-step preview-size slider (8–96px),
-  filter and sorting
-- **Virtualized lists** — thousands of faces scroll smoothly; previews load on
-  demand behind an LRU cache
-- **Smart classification** — CJK families recognized by name, monospace / serif /
-  sans-serif auto-sorted, variable fonts (VAR) and OpenType features surfaced
+**Sidebar** (top to bottom):
 
-### The sidebar: everything starts on the left
+| Item | What it shows |
+|---|---|
+| Browse → Library | all families (the number = family count) |
+| Browse → Favorites | families you starred |
+| Browse → Recent imports | what arrived last |
+| Activated | toggles currently on |
+| Activate-until-quit | temporary ones (restore themselves on exit) |
+| Deactivated | toggles currently off |
+| System fonts | Windows' own fonts (locked) |
+| Collections | groups you build (+ to create) |
+| Snapshots | saved activation sets (see §8) |
+| Online / Trash / About / Shortcuts | downloads · removed fonts · about · key list |
 
-- **Browse** (library · favorites · recent imports) plus four state views:
-  **activated / activate-until-quit / deactivated / system fonts**
-- **Collections** for structure and **tags** you can bulk-apply to a selection
-- **Snapshots** capture the current activation set and can be applied,
-  merged into the current state, or switched to at any time
-- Bottom entries: **online fonts · trash · about · shortcuts** (press <kbd>?</kbd> any time)
+**Toolbar**: search · preview-text box (type anything, the whole library previews
+it) · size slider (8–96px, eight steps) · filter · sort · compare · refresh ·
+**three view buttons (cards / list / specimen)**.
 
-### Activate & deactivate — the killer feature
+**A font card**: format badge (TTF / OTF / VAR = variable) · family name · live
+preview line · **license badge** (free-commercial / personal / unknown…) ·
+**★ favorite** · **toggle (activate/deactivate)**.
 
-The toggle on each card writes to the system: **every app's font menu updates
-immediately.** Deactivated fonts disappear from other apps but stay in the
-library, ready to come back instantly.
+### 3. Activate / deactivate in three steps
 
-- **Activate until quit** — temporary fonts restore themselves when you exit
-- **Bulk** — select many, right-click "Activate {count}"; an interrupted bulk
-  run resumes with a prompt on next start
-- **System fonts are protected** — they wear an OS lock badge instead of a toggle
+1. Find the family (search or scroll)
+2. Click the **toggle** on the card — it writes to the system immediately
+3. Open any app's font menu — **it's already there**; switching off hides it
+   from every app (the file stays safe in the library)
 
-### The detail panel: everything about a family
+- Just need it temporarily? Right-click → **activate until quit**: everything
+  restores itself when you exit
+- Bulk: Ctrl/Shift-select cards → right-click → "Activate N" / "Deactivate N";
+  an interrupted bulk run offers to **resume** on next start
+- System fonts wear an OS lock badge — they render Windows itself, so nobody can
+  disable or delete them
+
+### 4. Three views: cards / list / specimen
+
+The three icons at the toolbar's right edge:
+
+- **Cards** (default): one card per family, live previews
+- **List**: a compact table — family / styles / format / size / toggle — best for
+  sweeping a big library
+- **Specimen**: a waterfall of large samples for the whole library with its own
+  size control — best for judging a typeface's character
+
+### 5. The detail panel: everything about one family
 
 ![Detail panel: multi-size specimen and metadata](detail.png)
 
-Click any family for live multi-size specimens, **variable-font axis sliders**,
-style / format / script / glyph counts, the full copyright text and file paths —
-plus activate, favorite and export right in the header. Name conflicts
-(several files claiming one font identity) are called out here.
+Click any card and the right panel opens:
 
-### Compare & specimens
+- **Live multi-size specimen** (large "Aa" down to small text, all real glyph
+  rendering); variable fonts get **axis sliders** (weight and friends)
+- Metadata: style count · format · class · script · the **true charset numbers**
+  (N characters · M hanzi — "does it have Chinese?" becomes a fact, not a guess)
+- The **full copyright text** with its automatic verdict; name conflicts
+  (several files claiming one identity) warn in red here
+- Header: toggle · ★ · **export all**; drag the panel's left edge to resize,
+  double-click to reset
 
-- **Compare** up to 4 families side by side (toolbar or right-click)
-- **Specimen view** exports a full-page PNG — the last look before delivery
+### 6. Favorites & ratings
 
-### Installing and importing
+1. Click the **★** on a card: favorite the family and record **one star**
+   (click again to clear)
+2. For 2–5 stars, open the detail panel and pick a value on the rating control
+3. The QuickBar's ★ works the same; the sidebar "Favorites" view filters instantly
+4. Ratings are purely your own "daily / backup" markers — the app adds no limits
 
-- **Drop it on the window** — ZIP import; a ZIP mixing several families is
-  **rejected as a whole** with a clear reason, so the library never fills with surprises
-- **Double-click install** — the `.S-FontManager / .P-FontManager / .L-FontManager`
-  container formats land straight in the library
-- **Online fonts** — browse Google Fonts by category (serif / sans / handwriting /
-  icons…) and Nerd Fonts releases; the **license text sits next to the download
-  button** and license files come along automatically
-- **Trash** — removal goes to FontManager's own trash first; restore any time,
-  permanent deletion only after confirmation
+### 7. Organize: collections, tags, notes
 
-### Apply fonts in Photoshop, Illustrator, CorelDRAW & Affinity
+- **Create a collection**: "+" next to Collections in the sidebar → name it →
+  **drag cards in** (or right-click → Collections → add)
+- **Tag**: multi-select cards → right-click → add tag; tags show on cards and in details
+- **Notes**: write directly in the detail panel (e.g. "Client A brand fonts,
+  licensed through 2027"); plugins can write notes for you too
 
-Right-click a family → "Apply in {app}…" sends it straight into your design app:
+### 8. Snapshots: photograph "which fonts are on"
+
+1. "+" next to Snapshots in the sidebar → name it → the current activation set is saved
+2. Toggle fonts freely afterwards; click a snapshot to **apply** (restore exactly) /
+   **merge into current** / **switch**
+3. **Export a snapshot**: right-click it → export → a `.S-FontManager` file —
+   send it to a colleague and they **double-click to import**
+4. Right-click also offers: clear all fonts inside / delete the snapshot
+
+### 9. Installing new fonts: four ways
+
+| How | What to do |
+|---|---|
+| Drag a ZIP | drop it on the window; it unpacks and imports |
+| Double-click | double-click a `.S-FontManager / .P-FontManager / .L-FontManager` file — the app opens and imports it (file associations registered at install) |
+| Online panel | sidebar "Online" → browse Google Fonts by category (serif / sans / handwriting / mono / icons…) and Nerd Fonts → preview → **add to library**; the license text sits next to the download button and license files come along |
+| Local API / MCP | automated imports (next section) |
+
+### 10. Export: every way out
+
+| What you want | Where |
+|---|---|
+| A single face (.ttf/.otf file) | right-click the face → export font file |
+| A family / many families | right-click → export family… / export N families… (pick a folder) |
+| A font list (metadata only) | right-click → export font list… |
+| A specimen image (PNG) | right-click → export specimen…; or the specimen view |
+| **A snapshot** | right-click the snapshot → export (`.S-FontManager`, re-importable by double-click) |
+| Curation data (tags/collections/favorites/notes/manual verdicts/expiry dates) | Settings → **export library data** (merge on another machine) |
+| **Everything** (curation + all fonts) | Settings → tick "include font files" → export pack → a `.P-FontManager` pack (auto-split above 2 GiB; import any one volume) |
+
+**Importing** is always: double-click the file, or drop it on the window.
+Files are recognized by **content**, not extension.
+
+### 11. Trash: regret is allowed
+
+1. Right-click a family → move to trash (bulk works too) — uninstalled from the
+   system but the files are kept
+2. Sidebar "Trash" → **restore** (back exactly as it was) or **delete forever**
+   (double confirmation)
+
+### 12. Licenses & duplicates: no browser needed
+
+- Every family gets an automatic **license verdict**: personal / paid /
+  free-commercial / unknown, with an **evidence sentence** (which documents were read)
+- Badges show on cards and in the QuickBar; the full text lives in the detail panel
+- On import: folders that **already have** a license file are left alone; missing
+  ones get an auto-generated license note; two contradictory licenses in one
+  folder → verdict "unknown", for you to check
+- Wrong verdict? **Override it manually** in the detail panel; it's remembered
+- **Duplicates**: files claiming the same font identity are flagged and resolved
+  from the detail panel
+
+### 13. Apply fonts in Photoshop / Illustrator / CorelDRAW / Affinity
+
+Right-click a family → "Apply in {app}…":
 
 - **Photoshop / Illustrator** — driven over COM scripting, no menu hunting
-- **CorelDRAW** — no scripting API? FontManager **drives CorelDRAW's COM object
-  model directly**, matching Chinese fonts by their localized names
-- **Affinity auto-activation** — connected to Affinity's MCP server, FontManager
-  sees which fonts your open documents are missing and activates the ones your
-  library has, so they're simply there when you select text
+- **CorelDRAW** — FontManager drives CorelDRAW's **COM object model directly**
+  (Chinese fonts matched by localized names)
+- **Affinity** — with auto-activation on, fonts missing from your open documents
+  are activated from the library automatically
 
-### ⚡ The QuickBar
+### 14. ⚡ The QuickBar: switch fonts in 1 second, anywhere
 
 ![QuickBar: the docked panel of activated fonts](quickbar.png)
 
-<kbd>Alt</kbd>+<kbd>`</kbd> (hotkey is configurable) pops the main window into a
-**docked panel pinned to the top of the screen**:
+1. Press <kbd>Alt</kbd>+<kbd>`</kbd> anywhere (hotkey configurable in settings) —
+   the main window collapses into the **docked QuickBar**
+2. It lists only **activated** fonts: click a name to copy, ★ to favorite,
+   the toggle to switch off, "> 3" to expand a family's faces, right-click for
+   the full menu
+3. Top bar: activated count · search · preview text & size · a **pin** ·
+   "full window" to morph back
+4. Done? Drag it back to the top edge and it collapses to a hairline that
+   expands as your mouse approaches — or press <kbd>Alt</kbd>+<kbd>`</kbd> again
 
-- Shows only **activated** fonts: real letterform previews, license badges
-  (free-commercial / unknown…), copyright lines, one-click ★, expandable family
-  members ("> 3")
-- Top bar: activation count, search across activated fonts, preview text & size,
-  a **pin** to keep it expanded, and "full window" to morph back
-- **Auto-hide at the top edge** — collapses to a hairline that expands as your
-  mouse approaches; drag it to other screen edges to dock
-- Right-click any row for the full context menu (activate, copy names, collect, plugins…)
+### 15. Compare
 
-### Organizing and judgment, all local
+1. Click "**Compare**" in the toolbar (or multi-select → right-click → compare N)
+2. Pick 2–4 families
+3. See the same text set side by side; remove and re-pick any time
 
-- **Favorites & ratings** — one click on ★ sets one star, up to five; notes per family
-- **Duplicate detection** flags redundant files claiming the same font identity
-- **Automatic license detection** reads the font's own license documents and
-  answers **personal-free / paid / free-commercial / unknown** with an evidence
-  sentence — badges show right on cards and in the QuickBar
+### 16. Keyboard first: command palette & shortcuts
 
-### Backup and move
+- <kbd>Ctrl</kbd>+<kbd>K</kbd>: the command palette — type to jump (views, toggles,
+  compare, apply-in-app, snapshots…)
+- <kbd>?</kbd>: the full shortcut list (search, toggles, snapshots, panels)
 
-Export the whole library as a `.ZFontManager` pack (**auto-split archives up to
-2 GiB**) — font files plus collections, tags, snapshots, notes and ratings travel
-together and import anywhere.
+### 17. Look & language
 
-### Command palette & shortcuts
+In settings: light / dark theme · interface sounds on/off · **reduced motion**
+(calmer animation, less transparency) · nine interface languages
+(简体中文 · 繁體中文 · English · 日本語 · Deutsch · Español · Français ·
+Português (Brasil) · Русский).
 
-<kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command palette: jump to views, toggle fonts,
-compare, apply in apps, snapshot operations — hands on the keyboard.
-<kbd>?</kbd> shows the full shortcut list.
+### 18. Go further: plugins / API / MCP
 
-### Themes & languages
-
-Light and dark themes, optional interface sounds, and a **reduced-motion** mode
-that calms every animation; nine languages out of the box, with a translation
-guide for contributors.
+Want the app to **work by itself**? Next section.
 
 ---
 
