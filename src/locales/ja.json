@@ -1020,5 +1020,6 @@
   "sc.ctxTypeSearch": "右クリックメニューで入力してフォントを検索・移動",
   "sc.ctxScope": "メニュー検索中：有効 / すべてを切り替え",
   "menu.scopeAll": "すべてのフォント",
-  "menu.scopeEnabled": "有効"
+  "menu.scopeEnabled": "有効",
+  "menu.searchMore": "他 {n} 件 — さらに入力すると絞り込めます"
 }

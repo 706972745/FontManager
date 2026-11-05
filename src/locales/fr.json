@@ -1054,5 +1054,6 @@
   "sc.ctxTypeSearch": "Tapez dans le menu contextuel pour rechercher et atteindre une police",
   "sc.ctxScope": "Dans la recherche du menu : basculer activées / toutes",
   "menu.scopeAll": "Toutes les polices",
-  "menu.scopeEnabled": "Activées"
+  "menu.scopeEnabled": "Activées",
+  "menu.searchMore": "{n} autres correspondances — continuez à taper pour affiner"
 }

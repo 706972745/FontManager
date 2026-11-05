@@ -357,12 +357,11 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   const familyNames = useMemo(() => {
     const seen = new Set<string>();
     if (scope === "enabled") {
-      // 与速览「已启用」同口径：可启停的字体里任一面启用、或会话级临时启用。
-      // 系统字体必须排除 —— 它们的 active 恒为真，不排除的话「已启用」范围
-      // 结果和「全部」几乎一样，Tab 切了也看不出变化（真机自测发现）。
+      // 与速览「已启用」同口径：任一面启用、或会话级临时启用。
+      // 系统字体**包含在内**（用户 2026-11-06 明确口径）：它们已安装可用，
+      // 速览列表本来就有它们 —— 这里排除反而会让「已启用」和速览对不上。
       for (const f of fonts) {
-        if (f.source !== "system" && (f.active || sessionActivated.includes(f.family)))
-          seen.add(f.family);
+        if (f.active || sessionActivated.includes(f.family)) seen.add(f.family);
       }
     } else {
       for (const f of fonts) seen.add(f.family);
@@ -374,7 +373,15 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
     if (search === null) return [];
     const q = search.trim().toLowerCase();
     if (!q) return [];
-    return familyNames.filter((n) => n.toLowerCase().includes(q)).slice(0, 8);
+    // 不截断：全量匹配交给渲染层分页（前 30 条 + 「还有 N 个」提示），
+    // 名字以关键词**开头**的排前面，目标字体更容易直接出现在第一屏
+    const matched = familyNames.filter((n) => n.toLowerCase().includes(q));
+    matched.sort((a, b) => {
+      const aa = a.toLowerCase().startsWith(q) ? 0 : 1;
+      const bb = b.toLowerCase().startsWith(q) ? 0 : 1;
+      return aa - bb;
+    });
+    return matched;
   }, [search, familyNames]);
 
   const searching = search !== null && search.trim() !== "";
@@ -393,10 +400,9 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   const pick = (family: string) => {
     const st = useFontStore.getState();
     const fam = st.fonts.find((f) => f.family === family);
-    // 「已启用」分流口径与范围过滤一致：系统字体不算（速览列表里没有它们，
-    // 选中就该退回完整界面的「系统字体」视图去定位）
-    const enabled =
-      !!fam && fam.source !== "system" && (fam.active || st.sessionActivated.includes(family));
+    // 「已启用」分流口径与范围过滤一致（含系统字体，用户 2026-11-06）；
+    // 速览里选中已启用的系统字体同样直接在速览列表滚动定位
+    const enabled = !!fam && (fam.active || st.sessionActivated.includes(family));
     if (!inQuickbar || !enabled) {
       // 完整界面（或速览里选中了未启用字体）：选对目标视图，再选中并滚动定位。
       // 系统字体不在「字体库」列表里（侧栏是独立视图），必须跳「系统字体」，
@@ -565,16 +571,25 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
         hits.length === 0 ? (
           <div className="ctx-nomatch">{t("menu.searchNoMatch")}</div>
         ) : (
-          hits.map((name) => (
-            <button
-              key={name}
-              role="menuitem"
-              className="ctx-item ctx-hit"
-              onClick={() => pick(name)}
-            >
-              <span className="ctx-label">{name}</span>
-            </button>
-          ))
+          <>
+            <div className="ctx-hits">
+              {hits.slice(0, 30).map((name) => (
+                <button
+                  key={name}
+                  role="menuitem"
+                  className="ctx-item ctx-hit"
+                  onClick={() => pick(name)}
+                >
+                  <span className="ctx-label">{name}</span>
+                </button>
+              ))}
+            </div>
+            {hits.length > 30 && (
+              <div className="ctx-more">
+                {t("menu.searchMore", { n: String(hits.length - 30) })}
+              </div>
+            )}
+          </>
         )
       ) : (
         <MenuItems items={items} close={close} />

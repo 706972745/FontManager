@@ -1037,5 +1037,6 @@
   "sc.ctxTypeSearch": "Im Kontextmenü tippen, um Schriften zu suchen und dorthin zu springen",
   "sc.ctxScope": "In der Menüsuche: Aktivierte / Alle umschalten",
   "menu.scopeAll": "Alle Schriften",
-  "menu.scopeEnabled": "Aktiviert"
+  "menu.scopeEnabled": "Aktiviert",
+  "menu.searchMore": "{n} weitere Treffer — weiter tippen zum Eingrenzen"
 }

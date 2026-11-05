@@ -1037,5 +1037,6 @@
   "sc.ctxTypeSearch": "Type in a context menu to search and jump to a font",
   "sc.ctxScope": "In menu search: toggle enabled / all fonts",
   "menu.scopeAll": "All fonts",
-  "menu.scopeEnabled": "Enabled"
+  "menu.scopeEnabled": "Enabled",
+  "menu.searchMore": "{n} more matches — keep typing to narrow down"
 }
