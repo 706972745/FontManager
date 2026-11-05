@@ -21,7 +21,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 缓存在 `%APPDATA%/ZFontManager/preview-cache`
+/// 缓存在 `%APPDATA%/FontManager/preview-cache`
 const CACHE_DIR: &str = "preview-cache";
 /// 缓存上限。老中文字体单个字面几 MB，给到 384 MB 够用又不会把硬盘吃掉
 const CACHE_LIMIT: u64 = 384 * 1024 * 1024;
@@ -834,7 +834,7 @@ pub fn cache_root() -> Option<PathBuf> {
 }
 
 fn cache_dir() -> Option<PathBuf> {
-    let dir = dirs::data_dir()?.join("ZFontManager").join(CACHE_DIR);
+    let dir = dirs::data_dir()?.join("FontManager").join(CACHE_DIR);
     fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }

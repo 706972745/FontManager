@@ -63,7 +63,7 @@ pub fn log(line: &str) {
 
 pub fn session_start() {
     log(&format!(
-        "---- ZFontManager {} on {} ----",
+        "---- FontManager {} on {} ----",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS
     ));

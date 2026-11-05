@@ -84,7 +84,7 @@ jobs:
           $toml = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
           # Cargo.lock 是跨行结构，Select-String 按行匹配会漏，必须整块读再正则
           $lockRaw = Get-Content src-tauri/Cargo.lock -Raw
-          $lock = [regex]::Match($lockRaw, 'name = "zfontmanager"\r?\nversion = "([^"]+)"').Groups[1].Value
+          $lock = [regex]::Match($lockRaw, 'name = "fontmanager"\r?\nversion = "([^"]+)"').Groups[1].Value
 
           Write-Host "tag=$tag"
           Write-Host "tauri.conf.json=$conf  package.json=$pkg  Cargo.toml=$toml  Cargo.lock=$lock"
@@ -135,7 +135,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          name: ZFontManager ${{ inputs.tag || github.ref_name }}
+          name: FontManager ${{ inputs.tag || github.ref_name }}
           body_path: release-notes.md
           files: release/*
           draft: false

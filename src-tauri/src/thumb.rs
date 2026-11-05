@@ -4,7 +4,7 @@
 //! 预览副本跟「源文件 mtime」走，缩略图还要跟「字符集 / 字号档 / DPR / 宽度 / 主题色」走，
 //! 混在一起会让 `trim_cache` 的 384MB 预算被几百张 PNG 吃光。
 //!
-//! 目录在 `%APPDATA%\ZFontManager\thumb-cache`。**新目录必须 `allow_dir`**
+//! 目录在 `%APPDATA%\FontManager\thumb-cache`。**新目录必须 `allow_dir`**
 //! （asset scope 的 `$APPDATA` 是指带应用标识的那个目录，覆盖不到这里 —— 0.9.4 踩过 os error 3）。
 //!
 //! key 由前端算好（含 face.id / 字符集 / 字号 / DPR / 宽度 / 文字颜色），
@@ -19,7 +19,7 @@ const THUMB_LIMIT: u64 = 256 * 1024 * 1024;
 
 /// 启动时给 asset 协议放行用
 pub fn root() -> Option<PathBuf> {
-    let dir = dirs::data_dir()?.join("ZFontManager").join(THUMB_DIR);
+    let dir = dirs::data_dir()?.join("FontManager").join(THUMB_DIR);
     fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }

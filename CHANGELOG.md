@@ -1,8 +1,68 @@
 # Changelog
 
-All notable changes to ZFontManager are documented here. The format follows
+All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
+
+## [1.2.4] — 2026-11-05
+
+**正式版。改名 + 三种专属文件格式 + 双击导入 + 收藏评分。**
+
+### 改名：软件统一为 FontManager
+
+软件名、窗口标题、包名、安装包名、GitHub 仓库名、说明文档一次性统一。用户手里的旧数据一律不丢：
+
+- 旧数据目录（`%APPDATA%` 与 config 里的同名旧文件夹）在启动时**自动复制到**
+  `%APPDATA%\FontManager`；新目录已存在就不动，旧目录保留不删。两个缓存目录
+  （`preview-cache` / `thumb-cache`）不搬，能重新生成，没必要复制几百 MB。
+- 改名前的整理数据备份照旧能导入：导入判定**只看文件内容**，不看 `app` 字段、
+  也不看文件后缀；数据格式升到 **v4**（文件内多一段自描述说明），v1~v3 照旧能导入。
+- 注意：改了 `productName` / `identifier`，1.2.4 的安装目录变成
+  `%LOCALAPPDATA%\FontManager`。字体库路径、字体文件本身都不受影响；上面的迁移
+  负责把整理数据带过来。
+
+### 新增：三种导出文件各有专属后缀，文件自己说明用途
+
+- 快照导出 → `.S-FontManager`；字体库整包（连字体）→ `.P-FontManager`；
+  仅整理数据 → `.L-FontManager`。
+- 每个文件里都写清**这是什么 / 怎么导回去 / 推荐后缀是什么**：两种 json 直接带
+  说明头（`purpose` / `howTo`），整包每一卷都放一份 `README-FontManager.txt`，
+  解压用记事本就能看懂。
+- **导入不再依赖后缀**：导入时按内容嗅探（zip 魔数 / JSON 结构与 kind 字段），
+  后缀被改掉、三种文件互相改名、甚至改成 `.dat`，都能正确识别并导入，
+  不会出现「改了后缀名就导入失败」。
+- 老备份兼容：旧版整包（老 zip 结构、老包内文件名）与旧 json 备份照旧能导入。
+
+### 新增：双击导出文件直接用 FontManager 导入
+
+- Windows 文件关联：三种后缀各注册一枚专属图标（S / P / L 拼贴纸片）和打开方式，
+  双击就把文件交给 FontManager 导入 —— 软件开着时把路径递给已开的实例，
+  没开着时等扫描完成后自动导入。只写 HKCU，不需要管理员权限。
+
+### 新增：收藏评分（1~5 星）
+
+- 卡片 / 详情面板 / 样张视图右上角那颗星，**悬停（或键盘聚焦）就在下方浮出 5 颗星**，
+  点一下即评分，最低 1 星。评分时如果还没收藏，会自动顺手收进收藏 —— 不会留下
+  「有星级却不在收藏里」的矛盾状态。已评分的星标右下角有个小数字角标。
+- 浮层里单独有「清除」，避免「再点一次当前那颗星」到底算改分还是取消说不清。
+- 顶栏「筛选」新增**星级**：点第 N 颗 = 至少 N 星（不是恰好 N 星），再点一次取消；
+  完整界面与速览界面共用同一份判定。
+- 评分写进 prefs，并随设置里的「导出整理数据」/ 整包一起导出；导入时与版权同口径
+  **本地优先、只补空缺**，一份旧备份不会把本机刚改过的星级冲掉。
+
+### 新增：按启用时间排序
+
+- 排序菜单多一项「按启用时间」：最近**主动启用**的字体排在最前，没启用记录的按名字排。
+- 只记用户主动启用（单族开关、临时启用、批量启用），停用不抹历史，开机自动恢复的
+  启用不算 —— 否则每次重启全库都会变成「刚刚启用」。
+
+### 调整：图标全套换代
+
+黑白灰「拼贴纸片」风：撕纸毛边 + 叠纸层次 + 半调网点 + 半透明胶带 + 剪贴字母，
+统一替换应用图标与所有导出文件 / 文件夹图标。应用图标用深色卡纸 + 白色撕纸片上的
+**Ff**，与浅色纸质的文件类图标区分得开：`S` 快照、`P` 整包（四张厚纸）、
+`L` 仅整理数据（单页）、`F` 文件库文件夹。16~1024 各尺寸 PNG、`icon.ico`、`icon.icns`、
+三种导出后缀的关联图标一并重出。
 
 ## [1.2.3] — 2026-11-05
 
@@ -54,7 +114,7 @@ All notable changes to ZFontManager are documented here. The format follows
   - 进入样张视图时**侧栏自动收成图标条**、**详情面板收起**，把宽度让给样张。
   - 名称从「瀑布流」改为「样张」（en: Specimen），顶栏提示、命令面板、
     引导文案同步更新。
-- **关于页介绍重写**：明确说明本软件是在 TheHolyOneZ 开源的 ZFontManager 0.8.0
+- **关于页介绍重写**：明确说明本软件是在 TheHolyOneZ 开源的 FontManager 0.8.0
   基础上迭代、为 IIEOzo 定制的版本，并说明预览 / 标签 / 分组与快照 / 启停与安装
   这几项能力，字体文件始终留在本地。
 
@@ -135,7 +195,7 @@ All notable changes to ZFontManager are documented here. The format follows
 ## [1.2.0] — 2026-11-04
 
 > 三件小事：分组能一键变成快照、设置页的说明文字不再一直占着版面、
-> 导出的 `.ZFontManager` 整包在资源管理器里有了自己的图标。
+> 导出的 `.FontManager` 整包在资源管理器里有了自己的图标。
 
 ### 新增：分组一键成快照
 
@@ -144,13 +204,13 @@ All notable changes to ZFontManager are documented here. The format follows
   不会因为加了一个字重就把整族塞进快照。
 - 扫描进行中、同名快照已存在、已经有 5 个快照、分组还是空的，都会给出明确提示，不静默失败。
 
-### 新增：`.ZFontManager` 整包的专属文件图标
+### 新增：`.FontManager` 整包的专属文件图标
 
 - 导出的包在资源管理器里显示「Z + fills」图标，不再是一张白纸。
-- **只写**当前用户的 `HKCU\Software\Classes\.ZFontManager\DefaultIcon` 这一个值，
+- **只写**当前用户的 `HKCU\Software\Classes\.FontManager\DefaultIcon` 这一个值，
   **不碰打开方式**：你之前用什么程序打开这个包，装完本版本之后还是什么。
 - 图标文件优先放在 exe 同目录，卸载时随安装目录一起消失、图标自动失效；
-  装到 `Program Files`（MSI 版）那里不可写时，退回 `%APPDATA%\ZFontManager`。
+  装到 `Program Files`（MSI 版）那里不可写时，退回 `%APPDATA%\FontManager`。
 - 图标内含 16/20/24/32/40/48/64/96/128/256 十种尺寸：16~40px 用纯 Z
   （fills 在这么点像素里只会糊成一团灰斑），48px 起才带 fills。
 
@@ -163,28 +223,28 @@ All notable changes to ZFontManager are documented here. The format follows
 ## [1.1.9] — 2026-11-03
 
 > 换电脑搬家不用再「先导整理数据、再手动拷字体目录」了：设置里的导出多了一个
-> 「同时导出字体文件」，勾上就出一个 `.ZFontManager` 整包，导入时字体和标签一起回来。
+> 「同时导出字体文件」，勾上就出一个 `.FontManager` 整包，导入时字体和标签一起回来。
 
-### 新增：库数据可以连字体一起打包（`.ZFontManager`）
+### 新增：库数据可以连字体一起打包（`.FontManager`）
 
 - 设置 →「库数据」→「标签、分组、备注与版权」那一行多了个勾选项。**不勾**和以前完全一样，
-  只导出一个几十 KB 的 json；**勾上**则打一个整包：`zfontmanager.json`（整理数据，schema 与
+  只导出一个几十 KB 的 json；**勾上**则打一个整包：`fontmanager.json`（整理数据，schema 与
   单独导出的完全一致）+ `fonts/<字族目录>/…` 下的全部字体文件。
 - **排除系统字体**：库目录里如果收了系统字体的副本（按 `C:\Windows\Fonts` 的文件名比对），
   不进包；符号链接（真身不在库里）也不进，免得换机器后变成死链。
-- **超 2 GB 自动分卷**：单卷上限 2 GiB，按文件边界切，命名 `ZFonts-2026-11-03-part1.ZFontManager`、
+- **超 2 GB 自动分卷**：单卷上限 2 GiB，按文件边界切，命名 `ZFonts-2026-11-03-part1.FontManager`、
   `-part2`……每卷都是**独立可用**的 zip（不是跨卷 zip64），单卷拷走也能打开看。
 - **不依赖系统 / 第三方压缩工具**：打包、分卷、解包全在程序内完成；字体按 **Stored（不压缩）**
   写入 —— 字体本身几乎压不动，deflate 换来的收益个位数百分比，却要吃满一个核好几分钟，
   弱机器上就是「导出时软件卡死」。宁可包大一点，也不让用户干等。
 - 打包在后台线程跑，底部出现实时进度条（和读字库那条同样的位置和样式）：
   「正在打包字体 1234/5551 个文件 · 22% · 第 1/3 卷」。中途关掉软件只会留下
-  `xxx.part1.ZFontManager.writing` 这样的临时文件，不会留下「看起来正常、其实缺一半」的包。
+  `xxx.part1.FontManager.writing` 这样的临时文件，不会留下「看起来正常、其实缺一半」的包。
 - 写入过程先写 `.writing` 再改名，避免半成品被当成完整包。
 
 ### 新增：导入自动识别整包
 
-- 同一个「导入」按钮同时认 `.ZFontManager` 和 `.json`：选整包就解包 + 合并整理数据，
+- 同一个「导入」按钮同时认 `.FontManager` 和 `.json`：选整包就解包 + 合并整理数据，
   选 json 就是原来的行为。
 - 解包时按原目录结构铺回字库（`fonts/` 前缀剥掉），**重复的不重复导入**：
   同一相对路径已存在 → 跳过；库里已有同名同大小的字体（可能躺在别的字族目录里）→ 也跳过。
@@ -575,7 +635,7 @@ non-commercial use" → 商用免费）。
 - **根因一**：`scanner::system_postscript_names()` 用 `OnceLock` 缓存，但**每会话第一次**
   都要把系统字体全量解析一遍（实测 301 个文件 / 576 MB / 377 ms）来判断"这个字体系统里
   有没有"。它和导入窗口重叠，用户看到的就是"导入读放大"。
-  → 结果按「目录快照」落盘到 `%APPDATA%\ZFontManager\system-ps.json`（6.2 KB，
+  → 结果按「目录快照」落盘到 `%APPDATA%\FontManager\system-ps.json`（6.2 KB，
   301 个文件的路径+大小+mtime 哈希做指纹）：系统字体没变直接读缓存（**9 ms**、0 字节读），
   变了才重建。日志 `system-ps: cache hit / rebuilt` 可核对。
 - **根因二**：`installer::install` 把文件复制进库之后，又对**副本**跑了一次
@@ -905,7 +965,7 @@ hmtx/post 对齐全部要改 —— 那是 1~2 周的活，且每一处写错都
 
 ### 新增：卡片缩略图缓存（§13，默认关闭）
 
-- Rust 新模块 `thumb.rs`：`%APPDATA%\ZFontManager\thumb-cache`，独立 256MB LRU，
+- Rust 新模块 `thumb.rs`：`%APPDATA%\FontManager\thumb-cache`，独立 256MB LRU，
   启动时 `allow_dir`（新目录不放行会报 asset 读不到）。
 - key 含**所有影响像素的输入**：字面 id、字符集、字号、DPR、预览宽度（8px 分档）、文字颜色（主题）。
 - 前端 `useCardThumb` 在 `useLayoutEffect` 里量宽度（绘制前完成，不会闪），
@@ -2599,7 +2659,7 @@ EXCEL、**苏新诗古印宋简**、ENDOS）。解析层 `name_string()` 用 `fi
 - 本版本包含 0.9.4 与 0.9.4-1 的全部修复：
   - **WOFF 智能判重 / 解包**：导入时 woff 与同名 ttf/otf 是同一字体则自动跳过；落单 WOFF1 解包还原成 sfnt（OTTO→.otf）强制入库；WOFF2 暂不支持，跳过并计数。
   - **修复「完整界面 → 速览」过渡顶栏闪现**：改为事件门控淡入（dock 接管后才显示内容），不再依赖固定时长动画。
-- 发布 Windows NSIS 安装包 `ZFontManager_0.9.5_x64-setup.exe`，并同步更新 GitHub Release 与说明文档。
+- 发布 Windows NSIS 安装包 `FontManager_0.9.5_x64-setup.exe`，并同步更新 GitHub Release 与说明文档。
 
 ## [0.9.4-1] — 2026-10-29
 
@@ -2608,7 +2668,7 @@ EXCEL、**苏新诗古印宋简**、ENDOS）。解析层 `name_string()` 用 `fi
 - **现象**（0.9.4 真机测试）：拖入/导入只含 `.woff` 的目录，弹
   「安装失败 — woff → ttf：系统找不到指定的路径。(os error 3)」，字体没进库。
   同名 ttf+woff 的判重分支正常，只有「落单 WOFF1 解包」这条路径失败。
-- **根因**：解包产物先写到 `%APPDATA%\ZFontManager\staging`，而 staging 目录
+- **根因**：解包产物先写到 `%APPDATA%\FontManager\staging`，而 staging 目录
   只会在 **zip 导入**分支里 `create_dir_all`。拖放/导入文件夹时该目录并不存在，
   `fs::write` 直接报 `ERROR_PATH_NOT_FOUND`。
 - **修法**（`installer.rs::process_webfonts`）：解包前先 `create_dir_all(staging)`，
@@ -2931,7 +2991,7 @@ TopBar 是 `flex-wrap: wrap`（宽度不够时换行成两排，注释里写明�
   现在加载失败时会向后端要一份**能加载的副本**：把字面从集合里抽出来成独立 sfnt，
   用系统代码页（936/950/932/949）把旧编码翻成 Unicode，重建 (3,1) format 4 +
   (3,10) format 12 的 cmap，顺手纠正上述几个字段，写到
-  `%APPDATA%\ZFontManager\preview-cache`，前端拿它重试一次。
+  `%APPDATA%\FontManager\preview-cache`，前端拿它重试一次。
   **原字体文件全程只读，一个字节都不改**。缓存按「mtime + 大小 + 字面序号 + 算法版本」命名，
   目录总量封顶 384 MB，超了淘汰最久没用的。
 
@@ -3180,9 +3240,9 @@ TopBar 是 `flex-wrap: wrap`（宽度不够时换行成两排，注释里写明�
   1 秒内就绪，但握手那一步拿宿主回复的 **base64 文本**直接跟 `"ready"` 比较，永不相等，于是
   每次都要干等满 10 秒判定「握手超时」→ 状态回落成 0%。后果不止是那个百分比：每次应用字体
   都退化回一次性脚本，用户点一下要等四五秒。现在先解码再比对，宿主复用恢复正常
-  （`%TEMP%\zfontmanager-comhost.log` 里能看到 `spawn: ready in xxxms`）。
+  （`%TEMP%\fontmanager-comhost.log` 里能看到 `spawn: ready in xxxms`）。
 - **已经开着时再点桌面图标，什么也没发生（还会多出一个任务栏图标）**：加入单实例守卫。
-  第二个进程只负责把 `Local\ZFontManager.Activate` 事件拍一下然后退出，已经在跑的那个实例
+  第二个进程只负责把 `Local\FontManager.Activate` 事件拍一下然后退出，已经在跑的那个实例
   收到后**退出速览 / 还原几何 / 显示并聚焦**，直接回到完整界面。不再出现两个一模一样的图标。
 - **速览界面在任务栏里留着一格**：进入速览时窗口设 `skip_taskbar`，回到完整界面才恢复——
   速览是常驻悬浮面板，收起来就剩屏幕顶端一根线，不该在任务栏占位。
@@ -3204,7 +3264,7 @@ TopBar 是 `flex-wrap: wrap`（宽度不够时换行成两排，注释里写明�
   COM 连接，原来会一直等到 25 秒超时再报一句误导性的「启动超时」。现在：APPLY 超时从 25s
   降到 12s，超时后**丢掉宿主重建并自动重试一次**（实测新连接 0.6 秒就通），两次都超时才报
   「CorelDRAW 没有响应」，并给出「可能在弹窗/导出/渲染大图」的解释。预热重试从 4 分钟延长到
-  10 分钟，避免开机 10 分钟后才用就又冷启动。`%TEMP%\zfontmanager-comhost.log` 会记录每次
+  10 分钟，避免开机 10 分钟后才用就又冷启动。`%TEMP%\fontmanager-comhost.log` 会记录每次
   握手/预热/应用的耗时，方便下次定位。
 - **窗口变窄时顶部工具栏压到详情面板标题上**：`.topbar` 改为可换行，窄窗口下工具栏自动折成
   两行，不再溢出到右侧详情面板；详情面板标题补 `min-width: 0`，字体名过长时老老实实省略号。
@@ -3395,7 +3455,7 @@ TopBar 是 `flex-wrap: wrap`（宽度不够时换行成两排，注释里写明�
 - **默认示例文本改为 `Hello IIEOzo`。** 老版本写进设置的旧默认句会在启动时自动换成新默认，
   自己改过的内容不受影响。
 - **关于面板底部新增一行小字：IIEOzo 定制版 GitHub 地址**，点击跳转到
-  <https://github.com/706972745/ZFontManager>。
+  <https://github.com/706972745/FontManager>。
 
 ## [0.8.20] — 2026-10-27
 
@@ -3720,7 +3780,7 @@ TopBar 是 `flex-wrap: wrap`（宽度不够时换行成两排，注释里写明�
     and a "清除快照内所有字体" entry in the snapshot context menu that empties
     a snapshot while keeping it.
   - Import / export: exports are named
-    `ZFontManager_<快照名>_<导出时间>.json`; importing offers 仅导入 /
+    `FontManager_<快照名>_<导出时间>.json`; importing offers 仅导入 /
     导入并切换 / 导入并合并; both v1 and v2 export formats are accepted.
 - **启动自动恢复（Restore on launch）.** The app re-activates on startup the
   fonts that were active in the previous session. Off-switch in Settings,
@@ -3740,7 +3800,7 @@ TopBar 是 `flex-wrap: wrap`（宽度不够时换行成两排，注释里写明�
 - The snapshot sidebar count counts font files while the "System fonts" view
   counts families; both are now documented to avoid confusion.
 
-[0.8.1-beta.1]: https://github.com/TheHolyOneZ/ZFontManager/compare/v0.8.0...HEAD
+[0.8.1-beta.1]: https://github.com/TheHolyOneZ/FontManager/compare/v0.8.0...HEAD
 
 ## [0.8.0] — 2026-10-23
 
@@ -3834,14 +3894,14 @@ unusually thorough investigation. (#18)
 
 - **Affinity could be taken down at startup by the font activation
   integration.** Affinity's MCP server starts accepting connections before the
-  application has finished initialising, and ZFontManager connected to it the
+  application has finished initialising, and FontManager connected to it the
   instant the process appeared — often while Affinity was still on
   "Initializing...". The request landing in that window could close Affinity
-  with no error dialog, and left ZFontManager showing
+  with no error dialog, and left FontManager showing
   "preamble read failed: error decoding response body" or a failed link to
   `localhost:6767/sse`.
 
-  ZFontManager now leaves Affinity alone for the first 20 seconds after it
+  FontManager now leaves Affinity alone for the first 20 seconds after it
   appears, and if the link still fails it retries with a widening gap (10s,
   20s, 40s, up to two minutes) instead of reconnecting on every pass. A failed
   link is only reported after three consecutive attempts, so a slow start no
@@ -3876,7 +3936,7 @@ unusually thorough investigation. (#18)
   instead. Useful when an application has no font picker and expects you to
   type the name into a config file by hand. (#14)
 
-- **System tray.** ZFontManager can now live in the tray. Three new settings
+- **System tray.** FontManager can now live in the tray. Three new settings
   under *System*:
 
   - **Close to tray** — the close button hides the window instead of quitting.
@@ -3918,7 +3978,7 @@ ThinkPad.
 
 ### Added
 
-- **Interface scale.** ZFontManager now measures the usable area of your screen
+- **Interface scale.** FontManager now measures the usable area of your screen
   at startup and picks a scale that fits the whole interface into it, so a
   small or low-resolution display shows the entire layout instead of a cropped
   one. Settings → Appearance → *Interface scale* overrides it: **Auto**, or a
@@ -3962,7 +4022,7 @@ ThinkPad.
   ten-percent-white surface that relied entirely on a backdrop blur to become
   legible. Where that blur silently does nothing, the panel was a haze. The new
   *Reduce transparency* setting makes them solid.
-- **No resize handles.** ZFontManager draws its own title bar, and drawing your
+- **No resize handles.** FontManager draws its own title bar, and drawing your
   own means the window has no resize border unless you provide one. There was
   none, so the edges were a one-pixel guessing game. All four edges and corners
   are now grabbable, with the right cursor on each. This affected Windows and
@@ -4014,7 +4074,7 @@ ThinkPad.
   serves complete fonts rather than per-script web subsets. Both hosts are
   named under the toggle. Every request passes through a single client that
   refuses if the setting is off, rejects any host not on that two-entry list,
-  follows no redirects, and identifies itself as ZFontManager.
+  follows no redirects, and identifies itself as FontManager.
 
   The licence shown is read from the repository directory the files are
   actually fetched from, so it is by construction the licence that ships beside
@@ -4125,7 +4185,7 @@ ThinkPad.
 
 - **Apply a font in Photoshop or Illustrator** (Windows and macOS). Right-click a
   family → *Apply in Photoshop…* / *Apply in Illustrator…*, or use the command
-  palette with a family selected. ZFontManager talks to the *running* app
+  palette with a family selected. FontManager talks to the *running* app
   (COM on Windows, AppleScript on macOS) and switches every selected text
   layer or text frame to the font; with nothing selected it adds a new text
   layer using the family name as sample text. A sleeping font is woken "until
@@ -4170,7 +4230,7 @@ ThinkPad.
   (skeleton shimmer, toast flashes), not only the interface springs.
 - macOS: a deactivated (parked) font lost its preview, glyph map and
   OpenType feature list because those were read from the original path.
-- Registry entries ZFontManager writes on Windows now use the names Windows
+- Registry entries FontManager writes on Windows now use the names Windows
   itself would use: `(OpenType)` for CFF files, every face named for
   collections, and a numbered suffix when a name is already taken.
 
@@ -4181,8 +4241,8 @@ ThinkPad.
 ## [0.2.0] and earlier
 
 Earlier releases predate this changelog. Their installers remain available on
-the [download page](https://zsync.eu/zfontmanager/).
+the [download page](https://zsync.eu/fontmanager/).
 
-[0.3.0]: https://github.com/TheHolyOneZ/ZFontManager/releases/tag/v0.3.0
-[0.5.1]: https://github.com/TheHolyOneZ/ZFontManager/releases/tag/v0.5.1
-[0.6.0]: https://github.com/TheHolyOneZ/ZFontManager/releases/tag/v0.6.0
+[0.3.0]: https://github.com/TheHolyOneZ/FontManager/releases/tag/v0.3.0
+[0.5.1]: https://github.com/TheHolyOneZ/FontManager/releases/tag/v0.5.1
+[0.6.0]: https://github.com/TheHolyOneZ/FontManager/releases/tag/v0.6.0

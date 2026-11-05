@@ -546,7 +546,7 @@ pub fn apply(
             Target::CorelDraw => unreachable!(),
         };
         let path = std::env::temp_dir()
-            .join(format!("zfontmanager-apply-{}.jsx", std::process::id()));
+            .join(format!("fontmanager-apply-{}.jsx", std::process::id()));
         std::fs::write(&path, script_for(target, postscript, label, family_name, aliases))
             .map_err(|e| e.to_string())?;
         let path_literal = path.to_string_lossy().replace('\'', "''");

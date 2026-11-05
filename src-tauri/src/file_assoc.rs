@@ -1,11 +1,15 @@
 #![cfg(target_os = "windows")]
-//! 给导出的 `.ZFontManager` 整包一个专属文件图标（Z + fills）。
+//! 三种导出文件的 Windows 关联（1.2.4）。
 //!
-//! 只写 `HKCU\Software\Classes\.ZFontManager\DefaultIcon` 这一个值：
-//! - 不写 `shell\open`、不改默认打开方式 —— 用户之前用什么打开这个包，
-//!   装完本软件之后还是什么，双击行为一点不变；
-//! - 图标文件优先落在 exe 同目录（卸载时随安装目录一起消失，图标自动失效），
-//!   那里不可写（例如装到 Program Files 的 MSI 版）才退回 `%APPDATA%\ZFontManager`；
+//! `.S-FontManager` 快照 / `.P-FontManager` 字体库整包 / `.L-FontManager` 整理数据：
+//! - 每个扩展名各注册一枚黑白灰拼贴纸片风图标（S / P / L，见 assets/*-icon.ico）；
+//! - 每个扩展名都写 `shell\open\command`，双击就把路径交给本程序导入。
+//!   导入端按**文件内容**分辨类型（file_kind.rs），所以后缀被改过也不影响。
+//!
+//! 约束：
+//! - 只写 HKCU，不需要管理员权限，也不动系统级 HKCR；
+//! - 图标文件优先落在 exe 同目录（卸载时随安装目录一起消失），
+//!   那里不可写（例如装到 Program Files 的 MSI 版）才退回 `%APPDATA%\FontManager`；
 //! - 值没变就不重写、不通知资源管理器刷新，避免每次启动都逼 Explorer 重建图标缓存。
 
 use std::path::{Path, PathBuf};
@@ -17,57 +21,70 @@ use windows_sys::Win32::System::Registry::{
 };
 use windows_sys::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
 
-/// 扩展名键下的 DefaultIcon；优先于 ProgID 上的同类设置，且不影响打开方式。
-const ICON_KEY: &str = r"Software\Classes\.ZFontManager\DefaultIcon";
+struct Assoc {
+    /// 不带点。连字符在 Windows 扩展名里是合法字符。
+    ext: &'static str,
+    icon_name: &'static str,
+    icon_bytes: &'static [u8],
+}
 
-/// 多尺寸（16~256）ICO，小尺寸是纯 Z、48 以上带 fills。
-const ICON_BYTES: &[u8] = include_bytes!("../assets/pack-icon.ico");
-
-const ICON_NAME: &str = "pack-icon.ico";
+const ASSOCS: [Assoc; 3] = [
+    Assoc {
+        ext: "S-FontManager",
+        icon_name: "snapshot-icon.ico",
+        icon_bytes: include_bytes!("../assets/snapshot-icon.ico"),
+    },
+    Assoc {
+        ext: "P-FontManager",
+        icon_name: "pack-icon.ico",
+        icon_bytes: include_bytes!("../assets/pack-icon.ico"),
+    },
+    Assoc {
+        ext: "L-FontManager",
+        icon_name: "data-icon.ico",
+        icon_bytes: include_bytes!("../assets/data-icon.ico"),
+    },
+];
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// 内容一致就不写盘：启动路径每次都跑，别白白写 400 KB。
-fn write_if_changed(path: &Path) -> std::io::Result<()> {
+/// 内容一致就不写盘：启动路径每次都跑，别白白写三份 50 KB。
+fn write_if_changed(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Ok(existing) = std::fs::read(path) {
-        if existing == ICON_BYTES {
+        if existing == bytes {
             return Ok(());
         }
     }
-    std::fs::write(path, ICON_BYTES)
+    std::fs::write(path, bytes)
 }
 
-/// 先试 exe 同目录，失败退回用户配置目录。返回最终落地的路径。
-fn install_icon_file() -> Option<PathBuf> {
+fn icon_dir() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let candidate = dir.join(ICON_NAME);
-            if write_if_changed(&candidate).is_ok() {
-                return Some(candidate);
+            if dir.is_dir() {
+                return Some(dir.to_path_buf());
             }
         }
     }
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("ZFontManager");
+    let dir = base.join("FontManager");
     std::fs::create_dir_all(&dir).ok()?;
-    let candidate = dir.join(ICON_NAME);
-    write_if_changed(&candidate).ok()?;
-    Some(candidate)
+    Some(dir)
 }
 
-/// 读现有 DefaultIcon 值（默认值，名字为空串）。
-fn current_value() -> Option<String> {
-    let sub = wide(ICON_KEY);
+/// 读某个键的默认值（REG_SZ）。
+fn current_value(key: &str) -> Option<String> {
+    let sub = wide(key);
     let mut key: HKEY = null_mut();
     let rc = unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, sub.as_ptr(), 0, KEY_READ, &mut key) };
     if rc != ERROR_SUCCESS {
         return None;
     }
-    let mut buf = vec![0u16; 2048];
+    let mut buf = vec![0u16; 4096];
     let mut len = (buf.len() * 2) as u32;
     let mut kind = 0u32;
     let name = wide("");
@@ -90,8 +107,8 @@ fn current_value() -> Option<String> {
     Some(String::from_utf16_lossy(words))
 }
 
-fn write_value(value: &str) -> Result<(), String> {
-    let sub = wide(ICON_KEY);
+fn write_value(key: &str, value: &str) -> Result<(), String> {
+    let sub = wide(key);
     let mut key: HKEY = null_mut();
     // RegCreateKeyW 建出来的键带写权限；这里不需要 SECURITY_ATTRIBUTES，
     // 也就不必为 RegCreateKeyExW 打开 Win32_Security 那一个大 feature。
@@ -113,20 +130,47 @@ fn write_value(value: &str) -> Result<(), String> {
     };
     unsafe { RegCloseKey(key) };
     if rc != ERROR_SUCCESS {
-        return Err(format!("couldn't write the file-association icon (error {rc})"));
+        return Err(format!("couldn't write the file-association value (error {rc})"));
     }
     Ok(())
 }
 
-/// 幂等：已经指向我们这张图标就什么都不做。返回是否真的改过注册表。
-pub fn ensure_pack_icon() -> Result<bool, String> {
-    let icon = install_icon_file().ok_or_else(|| "couldn't place the pack icon file".to_string())?;
-    let wanted = format!("{},0", icon.display());
-    if current_value().as_deref() == Some(wanted.as_str()) {
+fn set_if_changed(key: &str, wanted: &str, changed: &mut bool) -> Result<(), String> {
+    if current_value(key).as_deref() == Some(wanted) {
+        return Ok(());
+    }
+    write_value(key, wanted)?;
+    *changed = true;
+    Ok(())
+}
+
+/// 幂等：三个扩展名的图标 + 双击命令都已经指向本程序就什么都不做。
+/// 返回是否真的改过注册表（只在这种情况下才通知 Explorer 刷新）。
+pub fn ensure_associations() -> Result<bool, String> {
+    let dir = icon_dir().ok_or_else(|| "couldn't place the association icons".to_string())?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // 路径带空格也要能双击打开；%1 是资源管理器传进来的文件路径
+    let open_command = format!("\"{}\" \"%1\"", exe.display());
+    let mut changed = false;
+    for a in &ASSOCS {
+        let icon_path = dir.join(a.icon_name);
+        write_if_changed(&icon_path, a.icon_bytes)
+            .map_err(|e| format!("couldn't write {}: {e}", icon_path.display()))?;
+        let icon_value = format!("{},0", icon_path.display());
+        set_if_changed(
+            &format!(r"Software\Classes\.{}\DefaultIcon", a.ext),
+            &icon_value,
+            &mut changed,
+        )?;
+        set_if_changed(
+            &format!(r"Software\Classes\.{}\shell\open\command", a.ext),
+            &open_command,
+            &mut changed,
+        )?;
+    }
+    if !changed {
         return Ok(false);
     }
-    write_value(&wanted)?;
-    // 只刷新关联图标，不重建整个图标缓存
     unsafe {
         SHChangeNotify(
             SHCNE_ASSOCCHANGED as i32,
@@ -143,18 +187,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn icon_has_expected_frames() {
-        // ICO 头：reserved=0, type=1, count
-        assert_eq!(&ICON_BYTES[0..2], &[0, 0]);
-        assert_eq!(&ICON_BYTES[2..4], &[1, 0]);
-        let count = u16::from_le_bytes([ICON_BYTES[4], ICON_BYTES[5]]);
-        assert_eq!(count, 10, "16/20/24/32/40/48/64/96/128/256 十帧");
+    fn three_icons_have_full_frames() {
+        for a in &ASSOCS {
+            let b = a.icon_bytes;
+            assert_eq!(&b[0..2], &[0, 0], "{} ICO 头", a.ext);
+            assert_eq!(&b[2..4], &[1, 0], "{} ICO 类型", a.ext);
+            let count = u16::from_le_bytes([b[4], b[5]]);
+            assert_eq!(count, 7, "{} 应有 16/24/32/48/64/128/256 七帧", a.ext);
+            let last = 6 + (count as usize - 1) * 16;
+            assert_eq!(b[last], 0, "{} 最后一帧应是 256×256", a.ext);
+        }
     }
 
     #[test]
-    fn value_format_is_path_comma_index() {
-        // 只是确认拼法；真实写入要用户机器上的注册表，测试不碰
-        let p = PathBuf::from(r"C:\x\pack-icon.ico");
-        assert_eq!(format!("{},0", p.display()), r"C:\x\pack-icon.ico,0");
+    fn open_command_quotes_both_paths() {
+        let exe = PathBuf::from(r"C:\Program Files\FontManager\FontManager.exe");
+        assert_eq!(
+            format!("\"{}\" \"%1\"", exe.display()),
+            "\"C:\\Program Files\\FontManager\\FontManager.exe\" \"%1\""
+        );
+        assert_eq!(
+            format!("{},0", PathBuf::from(r"C:\x\pack-icon.ico").display()),
+            r"C:\x\pack-icon.ico,0"
+        );
+    }
+
+    #[test]
+    fn extensions_are_the_three_agreed_suffixes() {
+        let exts: Vec<&str> = ASSOCS.iter().map(|a| a.ext).collect();
+        assert_eq!(exts, vec!["S-FontManager", "P-FontManager", "L-FontManager"]);
     }
 }

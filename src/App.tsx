@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { ipc } from "./lib/ipc";
 import { MotionConfig, motion } from "motion/react";
 import { Camera, Clock, FilterX, FolderOpen, History, Monitor, Power, PowerOff, SearchX, Star, Tag as TagIcon, Type } from "lucide-react";
 import { useEffect, useMemo } from "react";
@@ -205,6 +206,9 @@ function MainContent() {
   const sort = useFontStore((s) => s.sort);
   const licenseFilter = useFontStore((s) => s.licenseFilter);
   const copyrightStatus = useFontStore((s) => s.copyrightStatus);
+  const ratings = useFontStore((s) => s.ratings);
+  const ratingFilter = useFontStore((s) => s.ratingFilter);
+  const activatedAt = useFontStore((s) => s.activatedAt);
 
   // 扫描中就用「已经读到的那些」先渲染；扫完 fonts 会被权威结果整体替换
   const displayFonts = phase === "scanning" && scanFonts.length > 0 ? scanFonts : fonts;
@@ -215,8 +219,9 @@ function MainContent() {
         fonts: displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search,
         classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
         variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort,
+        ratings, ratingFilter, activatedAt,
       }),
-    [displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort],
+    [displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort, ratings, ratingFilter, activatedAt],
   );
 
   // 非字族浏览页面（回收站 / 关于 / 在线栏目）没有「可见字族顺序」，必须清空：
@@ -293,6 +298,14 @@ export default function App() {
     // 启动恢复让位、只弹 ResumeBatchDialog——见 init 里的 DEF-4 注释。
     void init().then(() => {
       if (!useFontStore.getState().startMinimized) void getCurrentWindow().show();
+      // 双击 .S-/.P-/.L-FontManager 启动时，后端把路径暂存在这里；
+      // init 完成再导入，扫描流程不会被插队
+      void ipc
+        .takePendingOpenFile()
+        .then((path) => {
+          if (path) void useFontStore.getState().importLibraryFile(path);
+        })
+        .catch(() => {});
     });
   }, [init]);
 
@@ -313,6 +326,23 @@ export default function App() {
         un = f;
       })
       .catch((e) => console.warn("[single-instance] 监听唤起事件失败", e));
+    return () => un?.();
+  }, []);
+
+  // 软件已经开着时双击 .S-/.P-/.L-FontManager：第二个进程把路径写到请求文件后退出，
+  // 首实例在这里收到路径，统一走「内容嗅探 → 分发导入」。
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen<string>("app://open-file", (e) => {
+      const path = e.payload;
+      if (typeof path === "string" && path) {
+        void useFontStore.getState().importLibraryFile(path);
+      }
+    })
+      .then((f) => {
+        un = f;
+      })
+      .catch((e) => console.warn("[open-file] 监听文件打开事件失败", e));
     return () => un?.();
   }, []);
 

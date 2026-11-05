@@ -64,14 +64,15 @@ import {
   type ApplyBatch,
 } from "../lib/applyPlan";
 import { contextMenuSize } from "../lib/menuMetrics";
+import { compareActivated, isRating, meetsRating, normalizeRatings } from "../lib/rating";
 import { parentDir } from "../lib/onlineCoverage";
 import {
   curationFile,
-  isPackPath,
   mergeCuration,
   parseCuration,
   type CurationData,
 } from "../lib/libraryData";
+import { detectJsonKind, fileDescription } from "../lib/fileKinds";
 import {
   buildFaceIndex,
   buildFaceIndexCached,
@@ -136,7 +137,7 @@ export const MIN_PREVIEW_SIZE_INDEX = 3;
 export type MotionPref = "system" | "reduced";
 export type TransparencyPref = "full" | "reduced";
 export type UiScale = "auto" | number;
-export type SortMode = "name" | "styles" | "size" | "glyphs" | "added";
+export type SortMode = "name" | "styles" | "size" | "glyphs" | "added" | "activated";
 /** 快照应用方式：switch = 切换为快照（停用其他）；merge = 合并到当前启用 */
 export type SnapshotApplyMode = "switch" | "merge";
 export type SourceFilter = "all" | "system" | "user";
@@ -211,7 +212,7 @@ interface FontStore {
   phase: "scanning" | "ready" | "error";
   scanProgress: ScanProgress;
   /**
-   * 整包（`.ZFontManager`）打包/解包进度。
+   * 整包（`.FontManager`）打包/解包进度。
    *
    * 和 `scanProgress` 分开存：那个是「读字库」，这个是「自己写/解 6GB 的包」，
    * 两者可能同时进行（导入完会 rescan），混一个槽位就会互相覆盖。
@@ -262,6 +263,13 @@ interface FontStore {
    */
   collectionFaces: Record<string, string[]>;
   favorites: string[];
+  /** 1.2.4 收藏评分：字族 → 1~5 星；没有这条就是未评分 */
+  ratings: Record<string, number>;
+  /**
+   * 1.2.4 「按启用时间排序」：字族 → 最近一次**主动启用**的毫秒时间戳。
+   * 只记启用，停用不擦历史；系统字体、自动恢复的启用不写，避免开机把全库都刷成「刚刚」。
+   */
+  activatedAt: Record<string, number>;
   sessionActivated: string[];
   lastImported: string[];
   notes: Record<string, string>;
@@ -353,6 +361,8 @@ interface FontStore {
   licenseFilter: string[];
   /** 速览界面「范围」筛选：只看收藏的字族 */
   favoriteOnly: boolean;
+  /** 顶栏「筛选」→ 最低星级（0 = 不限，1~5 = 至少 N 星） */
+  ratingFilter: number;
   /** 速览界面「范围」筛选：只看属于这些分组的字族（空 = 不限） */
   collectionFilter: string[];
   /** 速览界面「范围」筛选：只看属于这些快照的字族（按快照名，空 = 不限） */
@@ -546,6 +556,9 @@ interface FontStore {
   setQuickbarHotkey: (hk: HotkeySpec) => Promise<void>;
   setQuickbarHotkeyOpens: (on: boolean) => void;
   setSort: (s: SortMode) => void;
+  /** 给字族打分 1~5 星；传 0 / null 表示清除评分（同时保留收藏状态） */
+  setRating: (family: string, stars: number) => void;
+  setRatingFilter: (n: number) => void;
   setSearch: (s: string) => void;
   toggleClassFilter: (c: Classification) => void;
   toggleScriptFilter: (s: string) => void;
@@ -565,11 +578,11 @@ interface FontStore {
   exportLibraryData: (dest: string) => Promise<void>;
   importLibraryData: (src: string) => Promise<void>;
   /**
-   * 打包「整理数据 + 字体文件」成 `.ZFontManager`（超 2GB 自动分卷）。
+   * 打包「整理数据 + 字体文件」成 `.P-FontManager`（超 2GB 自动分卷）。
    * 放在阻塞线程池里跑，进度走 `pack:progress` 事件，界面只负责显示。
    */
   exportLibraryPack: (dest: string) => Promise<void>;
-  /** 导入时自动分辨：`.ZFontManager` 走解包，`.json` 走整理数据 */
+  /** 统一导入入口：按文件内容分辨整包 / 整理数据 / 快照，与文件后缀无关 */
   importLibraryFile: (src: string) => Promise<void>;
   setNav: (n: Nav) => void;
   select: (family: string | null) => void;
@@ -935,6 +948,19 @@ function scheduleCopyrightRescan(get: () => FontStore) {
   }, 1000);
 }
 
+/**
+ * 1.2.4 「按启用时间排序」的取样点：只在**用户主动启用成功**后调用。
+ * 不写 session（临时启用）时的全库恢复，也不写停用 —— 停用不该把历史抹掉。
+ */
+function markActivated(names: string[]) {
+  if (names.length === 0) return;
+  const now = Date.now();
+  const next = { ...useFontStore.getState().activatedAt };
+  for (const n of names) next[n] = now;
+  useFontStore.setState({ activatedAt: next });
+  persistPrefs(() => useFontStore.getState());
+}
+
 let prefsTimer: ReturnType<typeof setTimeout> | undefined;
 function persistPrefs(get: () => FontStore) {
   clearTimeout(prefsTimer);
@@ -962,6 +988,8 @@ function persistPrefs(get: () => FontStore) {
       lastActivePaths: s.fonts.filter((f) => f.active).map((f) => f.path),
       copyrightStatus: s.copyrightStatus,
       copyrightExpiry: s.copyrightExpiry,
+      ratings: s.ratings,
+      activatedAt: s.activatedAt,
       quickbarHotkey: s.quickbarHotkey,
       quickbarHotkeyOpens: s.quickbarHotkeyOpens,
       collectionFaces: s.collectionFaces,
@@ -980,6 +1008,7 @@ function curationPayload(s: FontStore, now: Date) {
       notes: s.notes,
       copyrightStatus: s.copyrightStatus,
       copyrightExpiry: s.copyrightExpiry,
+      ratings: s.ratings,
     },
     now.toISOString(),
   );
@@ -1005,6 +1034,7 @@ async function applyCurationMerge(
     notes: s.notes,
     copyrightStatus: s.copyrightStatus,
     copyrightExpiry: s.copyrightExpiry,
+    ratings: s.ratings,
   };
   const merged = mergeCuration(local, data);
   if (merged.touched === 0) return 0;
@@ -1029,6 +1059,7 @@ async function applyCurationMerge(
     notes: merged.notes,
     copyrightStatus: merged.copyrightStatus,
     copyrightExpiry: merged.copyrightExpiry,
+    ratings: merged.ratings,
   });
   persistPrefs(get);
   return merged.touched;
@@ -1459,6 +1490,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   collectionFaces: {},
   snapshots: [],
   favorites: [],
+  ratings: {},
+  activatedAt: {},
   sessionActivated: [],
   lastImported: [],
   notes: {},
@@ -1528,6 +1561,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   incompleteOnly: false,
   licenseFilter: [],
   favoriteOnly: false,
+  ratingFilter: 0,
   collectionFilter: [],
   snapshotFilter: [],
   copyrightStatus: {},
@@ -1549,7 +1583,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     await listen<ScanProgress>("scan:progress", (e) => {
       set({ scanProgress: e.payload });
     });
-    // 打包 / 解包 .ZFontManager 的进度：清单一律走这一条事件，
+    // 打包 / 解包 .FontManager 的进度：清单一律走这一条事件，
     // 前端不做任何「估算」，done/total 由后端按文件数如实给。
     await listen<PackProgress>("pack:progress", (e) => {
       set({ packProgress: e.payload });
@@ -1598,7 +1632,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
             : (["grid", "list", "specimen"] as const).includes(prefs.viewMode as ViewMode)
               ? (prefs.viewMode as ViewMode)
               : "grid",
-        sort: (["name", "styles", "size", "glyphs", "added"] as const).includes(prefs.sort as SortMode)
+        sort: (["name", "styles", "size", "glyphs", "added", "activated"] as const).includes(
+          prefs.sort as SortMode,
+        )
           ? (prefs.sort as SortMode)
           : "name",
         panelWidth:
@@ -1645,6 +1681,17 @@ export const useFontStore = create<FontStore>((set, get) => ({
                   ),
               )
             : get().copyrightExpiry,
+        // 评分：只认 1~5 的整数，坏值整条丢掉（老备份里可能混进 0 / 字符串）
+        ratings: normalizeRatings(prefs.ratings),
+        activatedAt: (() => {
+          const raw = prefs.activatedAt;
+          if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+          const out: Record<string, number> = {};
+          for (const [name, v] of Object.entries(raw as Record<string, unknown>)) {
+            if (typeof v === "number" && Number.isFinite(v) && v > 0) out[name] = v;
+          }
+          return out;
+        })(),
         quickbarHotkey: normalizeHotkey(prefs.quickbarHotkey),
         quickbarHotkeyOpens: prefs.quickbarHotkeyOpens !== false,
         // 分组里的字重级成员（0.9.9-13）：只保留「分组名 → 字符串数组」这种形状
@@ -1914,6 +1961,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     if (paths.length <= APPLY_CHUNK) {
       try {
         await ipc.setFontsActive(paths, active);
+        if (active) markActivated([family]);
         persistPrefs(get);
       } catch (e) {
         set({ sessionActivated: prevSession });
@@ -1981,6 +2029,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
       return;
     }
 
+    if (active) markActivated([family]);
     persistPrefs(get);
   },
 
@@ -1996,6 +2045,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     try {
       await ipc.setFontsActiveSession(paths);
       set({ sessionActivated: [...new Set([...get().sessionActivated, family])] });
+      markActivated([family]);
       toast.success(
         t("toast.activeUntilClose", { family }),
         t("toast.activeUntilCloseSub"),
@@ -3007,8 +3057,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
       system: !!e.system,
     }));
     const payload = {
-      app: "ZFontManager",
-      kind: "snapshots",
+      // 自描述头：即使后缀被改掉，导入端也能凭内容认出「这是快照」并知道该怎么导回去
+      ...fileDescription("snapshots"),
       version: 3,
       portable: true,
       exportedAt: new Date().toISOString(),
@@ -3025,8 +3075,13 @@ export const useFontStore = create<FontStore>((set, get) => ({
   importSnapshots: async (src, mode = "none") => {
     try {
       const raw: unknown = JSON.parse(await ipc.readTextFile(src));
+      // 按内容认，不按 app 字段 / 后缀：老备份和改过名的快照文件都要能导回来
+      if (detectJsonKind(raw) !== "snapshots") {
+        toast.error(t("toast.notAnExport"), t("toast.notAnExportSub"));
+        return;
+      }
       const d = raw as Partial<{ app: string; kind: string; snapshots: unknown }>;
-      if (d?.app !== "ZFontManager" || !d.snapshots || typeof d.snapshots !== "object") {
+      if (!d.snapshots || typeof d.snapshots !== "object") {
         toast.error(t("toast.notAnExport"), t("toast.notAnExportSub"));
         return;
       }
@@ -3253,6 +3308,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
       return;
     }
 
+    if (active) markActivated(families);
     persistPrefs(get);
     toast.success(
       t(active ? "toast.activatedCount" : "toast.deactivatedCount", {
@@ -3773,6 +3829,17 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({ licenseFilter: cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c] });
   },
   setFavoriteOnly: (v) => set({ favoriteOnly: v }),
+  setRating: (family, stars) => {
+    // 最低 1 星；0 / 非整数 / >5 一律当作「清除评分」
+    const valid = isRating(stars);
+    const prev = get().ratings;
+    const next = { ...prev };
+    if (valid) next[family] = stars;
+    else delete next[family];
+    set({ ratings: next });
+    persistPrefs(get);
+  },
+  setRatingFilter: (n) => set({ ratingFilter: isRating(n) ? n : 0 }),
   toggleCollectionFilter: (name) => {
     const cur = get().collectionFilter;
     set({ collectionFilter: cur.includes(name) ? cur.filter((x) => x !== name) : [...cur, name] });
@@ -3991,12 +4058,34 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   /**
-   * 导入时自动分辨：`.ZFontManager` 解包（字体先落盘、整理数据照旧合并），
-   * 其它一律按整理数据 json 处理 —— 用户在同一个「导入」按钮里选什么都行。
+   * 统一导入入口：设置里的「导入」按钮和资源管理器双击文件都走这里。
+   *
+   * **不看后缀**，先让后端嗅探内容（zip 魔数 / JSON 里的自描述头），再分发到
+   * 整包解包、整理数据合并或快照导入。用户把 `.P-FontManager` 改成 `.dat`、
+   * 或者把三种文件互相改名，都不该出现「导入失败」或导错类型。
    */
   importLibraryFile: async (src) => {
-    if (!isPackPath(src)) {
+    let kind = "unknown";
+    try {
+      kind = await ipc.detectFileKind(src);
+    } catch {
+      // 后端嗅探读不到（权限 / 网络盘 / 特别老的格式）：退回前端按文本再判一次
+      try {
+        kind = detectJsonKind(JSON.parse(await ipc.readTextFile(src)));
+      } catch {
+        // 保持 unknown，下面给一句明确的「不是导出文件」
+      }
+    }
+    if (kind === "curation") {
       await get().importLibraryData(src);
+      return;
+    }
+    if (kind === "snapshots") {
+      await get().importSnapshots(src, "none");
+      return;
+    }
+    if (kind !== "library-pack") {
+      toast.error(t("toast.notAnExport"), t("toast.notAnExportSub"));
       return;
     }
     if (get().packProgress) {
@@ -4167,7 +4256,11 @@ export function computeFamilies(
 }
 
 /** 与完整界面列表一致的族排序（主视图与速览界面共用） */
-export function sortFamilies(families: Family[], sort: SortMode): Family[] {
+export function sortFamilies(
+  families: Family[],
+  sort: SortMode,
+  activatedAt: Record<string, number> = {},
+): Family[] {
   const out = [...families];
   switch (sort) {
     case "styles":
@@ -4181,6 +4274,10 @@ export function sortFamilies(families: Family[], sort: SortMode): Family[] {
       break;
     case "added":
       out.sort((a, b) => b.addedAt - a.addedAt || a.name.localeCompare(b.name));
+      break;
+    case "activated":
+      // 最近启用的在最前；没启用记录的按名字排，不参与「谁更旧」的比较
+      out.sort((a, b) => compareActivated(a.name, b.name, activatedAt));
       break;
     default:
       out.sort((a, b) => a.name.localeCompare(b.name));
@@ -4203,6 +4300,9 @@ export type FamilyFilterState = {
   incompleteOnly: boolean;
   licenseFilter: string[];
   copyrightStatus: Record<string, string>;
+  /** 最低星级（0 = 不限）+ 评分表 */
+  ratingFilter: number;
+  ratings: Record<string, number>;
 };
 
 /**
@@ -4243,6 +4343,9 @@ export function applyFamilyFilters(out: Family[], s: FamilyFilterState): Family[
   }
   if (s.incompleteOnly) {
     out = out.filter((f) => f.incomplete);
+  }
+  if (s.ratingFilter > 0) {
+    out = out.filter((f) => meetsRating(s.ratings, f.name, s.ratingFilter));
   }
   if (s.licenseFilter.length > 0) {
     // 必须与卡片 / 速览上的版权徽标**同一口径**（`familyCopyrightClass` 看的是代表字面）。
@@ -4290,6 +4393,9 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
   incompleteOnly: boolean;
   licenseFilter: string[];
   copyrightStatus: Record<string, string>;
+  ratingFilter: number;
+  ratings: Record<string, number>;
+  activatedAt: Record<string, number>;
   nav: Nav;
   sort: SortMode;
 }): Family[] {
@@ -4371,7 +4477,7 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
       ),
     );
   }
-  return sortFamilies(out, s.sort);
+  return sortFamilies(out, s.sort, s.activatedAt);
 }
 
 /**

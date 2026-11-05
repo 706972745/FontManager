@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Star, Trash2, X } from "lucide-react";
+import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { easeTop, spring } from "../design/springs";
@@ -15,7 +15,8 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { classifyLicense, copyrightExpired, normalizeCopyright } from "../lib/license";
 import { faceKey } from "../lib/snapshotKey";
 import { parentDir } from "../lib/onlineCoverage";
-import { playStar, playTag } from "../lib/sound";
+import { playTag } from "../lib/sound";
+import { StarRating } from "./StarRating";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
@@ -736,8 +737,6 @@ export function DetailPanel() {
     setFeatureOverrides({});
   }, [selectedFamily]);
 
-  const favorites = useFontStore((s) => s.favorites);
-  const toggleFavorite = useFontStore((s) => s.toggleFavorite);
   const snapshots = useFontStore((s) => s.snapshots);
   const toggleFamilyInSnapshot = useFontStore((s) => s.toggleFamilyInSnapshot);
 
@@ -891,7 +890,6 @@ export function DetailPanel() {
           .map(([tag, on]) => `"${tag}" ${on ? 1 : 0}`)
           .join(", ")
       : undefined;
-  const favorite = family ? favorites.includes(family.name) : false;
   const conflicts = family ? conflictsFor(fonts).get(family.name) ?? [] : [];
   const snapshotToggles = snapshots.map((sn) => ({
     name: sn.name,
@@ -959,18 +957,14 @@ export function DetailPanel() {
               >
                 {displayName(family)}
               </button>
-              <motion.button
-                className={`star-btn ${favorite ? "star-on" : ""}`}
-                aria-label={t(favorite ? "detail.unfavorite" : "detail.favorite")}
-                aria-pressed={favorite}
-                onClick={() => {
-                  playStar(!favorite);
-                  void toggleFavorite(family.name);
+              <StarRating
+                family={family.name}
+                iconSize={15}
+                labels={{
+                  add: t("detail.favorite"),
+                  remove: t("detail.unfavorite"),
                 }}
-                whileTap={{ scale: 0.85 }}
-              >
-                <Star size={15} strokeWidth={1.5} />
-              </motion.button>
+              />
               <button className="detail-close" aria-label={t("detail.close")} onClick={() => select(null)} data-hint="hint.closeDetail">
                 <X size={15} strokeWidth={1.5} />
               </button>

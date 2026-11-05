@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 /// 软件最多保存的快照数量（超出后滚动淘汰最旧的）
@@ -206,21 +206,74 @@ impl AppState {
 fn state_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("ZFontManager")
+        .join("FontManager")
         .join("state.json")
 }
 
 pub fn app_data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("ZFontManager")
+        .join("FontManager")
 }
 
 pub fn trash_dir() -> PathBuf {
     app_data_dir().join("Trash")
 }
 
+/// 1.2.4 改名后数据目录也跟着换了名字。
+///
+/// 升级上来的用户 `state.json`（4211 个族的标签/分组/收藏/启停状态）全在旧目录里，
+/// 不搬过来就等于「升个级库全空了」。规则：
+/// - 新目录已存在就什么都不做（用户已经在新目录里干过活，别拿旧的盖掉）；
+/// - 只复制小文件与 Trash，**跳过两个缓存目录**（preview-cache 384 MB、thumb-cache），
+///   它们能重新生成，搬一遍纯属浪费时间和磁盘；
+/// - 旧目录保留不删 —— 万一搬错还能回头拿。
+///
+/// 旧目录名拆成两段拼接：源码里不再出现旧品牌名，但这段迁移**绝不能删** ——
+/// 删了等于让 1.2.3 及以前的用户升级后收藏、标签、评分全部消失。
+fn migrate_legacy_dirs() {
+    const SKIP: [&str; 2] = ["preview-cache", "thumb-cache"];
+    const LEGACY_DIR: [&str; 2] = ["Z", "FontManager"];
+    let legacy_name = LEGACY_DIR.concat();
+    let bases = [dirs::data_dir(), dirs::config_dir()];
+    for base in bases.into_iter().flatten() {
+        let old = base.join(&legacy_name);
+        let new = base.join("FontManager");
+        if new.exists() || !old.exists() {
+            continue;
+        }
+        if let Err(e) = copy_dir_filtered(&old, &new, &SKIP) {
+            crate::diag::log(&format!("store: legacy data migration failed: {e}"));
+        } else {
+            crate::diag::log(&format!(
+                "store: migrated legacy data {} -> {}",
+                old.display(),
+                new.display()
+            ));
+        }
+    }
+}
+
+fn copy_dir_filtered(src: &Path, dst: &Path, skip: &[&str]) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if skip.iter().any(|s| name.to_string_lossy() == *s) {
+            continue;
+        }
+        let to = dst.join(&name);
+        if entry.file_type()?.is_dir() {
+            copy_dir_filtered(&entry.path(), &to, skip)?;
+        } else {
+            fs::copy(entry.path(), &to)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn load() -> AppState {
+    migrate_legacy_dirs();
     let mut state: AppState = fs::read(state_path())
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())

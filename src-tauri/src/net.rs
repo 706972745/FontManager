@@ -4,9 +4,9 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 pub const USER_AGENT: &str = concat!(
-    "ZFontManager/",
+    "FontManager/",
     env!("CARGO_PKG_VERSION"),
-    " (+https://zsync.eu/zfontmanager/)"
+    " (+https://zsync.eu/fontmanager/)"
 );
 
 pub const ALLOWED_HOSTS: [&str; 6] = [

@@ -47,7 +47,7 @@ struct CacheFile {
 fn cache_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("ZFontManager")
+        .join("FontManager")
         .join("font-cache.json")
 }
 

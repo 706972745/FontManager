@@ -5,9 +5,7 @@ import {
   BookOpen,
   DatabaseBackup,
   Eye,
-  FolderDown,
   FolderOpen,
-  FolderPlus,
   FolderSync,
   Info,
   Languages,
@@ -20,6 +18,7 @@ import {
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { LoaderCircle } from "lucide-react";
+import { ArtIcon } from "./ArtIcon";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { springSoft } from "../design/springs";
 import { ipc } from "../lib/ipc";
@@ -36,18 +35,18 @@ import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 const IS_LINUX = navigator.platform.toUpperCase().includes("LINUX");
 
 const TRANSLATE_GUIDE_URL =
-  "https://github.com/TheHolyOneZ/ZFontManager/blob/main/docs/TRANSLATING.md";
+  "https://github.com/TheHolyOneZ/FontManager/blob/main/docs/TRANSLATING.md";
 
 const REQUEST_LANGUAGE_URL =
-  "https://github.com/TheHolyOneZ/ZFontManager/issues/new?title=Language%20request%3A%20";
+  "https://github.com/TheHolyOneZ/FontManager/issues/new?title=Language%20request%3A%20";
 
 /** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
 const EXPORT_FONTS_KEY = "zfm.exportFonts";
 
-/** 保存对话框的默认文件名：ZFonts-2026-11-03.ZFontManager */
+/** 保存对话框的默认文件名：ZFonts-2026-11-03.P-FontManager */
 function packFileName(now = new Date()) {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `ZFonts-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.ZFontManager`;
+  return `ZFonts-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.P-FontManager`;
 }
 
 /**
@@ -312,13 +311,14 @@ export function SettingsOverlay() {
   };
 
   const exportData = async () => {
-    // 勾了「连字体一起」就走整包（.ZFontManager，超 2GB 自动分卷），否则还是轻量的 json
+    // 勾了「连字体一起」就走整包（.P-FontManager，超 2GB 自动分卷），
+    // 否则只出整理数据（.L-FontManager）。文件里自带用途说明，见 lib/fileKinds.ts
     const dest = await save({
       title: exportFonts ? t("settings.exportPackTitle") : t("settings.exportDataTitle"),
-      defaultPath: exportFonts ? packFileName() : "zfontmanager-library.json",
+      defaultPath: exportFonts ? packFileName() : "fontmanager-library.L-FontManager",
       filters: exportFonts
-        ? [{ name: "ZFontManager", extensions: ["ZFontManager"] }]
-        : [{ name: "JSON", extensions: ["json"] }],
+        ? [{ name: "FontManager", extensions: ["P-FontManager"] }]
+        : [{ name: "FontManager", extensions: ["L-FontManager"] }],
     });
     if (!dest) return;
     // 整包要写很久，进度条在窗口底部：设置面板留着会把它盖住
@@ -332,13 +332,15 @@ export function SettingsOverlay() {
       title: t("settings.importDataTitle"),
       multiple: false,
       filters: [
-        { name: "ZFontManager", extensions: ["ZFontManager", "json"] },
+        // 三种导出文件都收：S 快照 / P 整包 / L 整理数据；json 是老备份
+        { name: "FontManager", extensions: ["P-FontManager", "S-FontManager", "L-FontManager"] },
         { name: "JSON", extensions: ["json"] },
       ],
     });
     if (typeof src !== "string") return;
-    // 整包要解很久，同样把面板收起来，让底部进度条露出来
-    if (/\.zfontmanager$/i.test(src)) setSettingsOpen(false);
+    // 整包要解很久，同样把面板收起来，让底部进度条露出来。
+    // 只是近似判断：真正的类型按内容嗅探（后缀被改过的文件也能正确导入）
+    if (/\.(s|p)-fontmanager$/i.test(src)) setSettingsOpen(false);
     await useFontStore.getState().importLibraryFile(src);
   };
 
@@ -559,7 +561,7 @@ export function SettingsOverlay() {
                 <div className="settings-folders">
                   {settings.extraDirs.map((dir) => (
                     <div key={dir} className="settings-folder">
-                      <FolderOpen size={13} strokeWidth={1.5} />
+                      <ArtIcon name="folder" size={14} />
                       <span className="detail-mono settings-folder-path">{dir}</span>
                       <button
                         data-hint="hint.removeFolder"
@@ -580,7 +582,7 @@ export function SettingsOverlay() {
                     onClick={() => void addFolder()}
                     disabled={scanning}
                   >
-                    <FolderPlus size={13} strokeWidth={1.5} />
+                    <ArtIcon name="folder" size={14} />
                     {t("settings.addFolder")}
                   </button>
                   {scanning && (
@@ -609,7 +611,7 @@ export function SettingsOverlay() {
                       data-hint-text={defaultLibDir}
                       onClick={() => void revealItemInDir(defaultLibDir).catch(() => {})}
                     >
-                      <FolderOpen size={13} strokeWidth={1.5} />
+                      <ArtIcon name="folder" size={14} />
                       <span className="settings-folder-path">{defaultLibDir}</span>
                     </button>
                   </div>
@@ -624,7 +626,7 @@ export function SettingsOverlay() {
                         <span className="settings-folder-path">{t("settings.libraryCustom")}</span><SettingHint text={t("settings.libraryCustomSub")} /></div>
                     </div>
                     <button className="settings-add-folder" onClick={() => void pickLibraryDir()}>
-                      <FolderPlus size={13} strokeWidth={1.5} />
+                      <ArtIcon name="folder" size={14} />
                       {t("settings.libraryAddFolder")}
                     </button>
                   </div>
@@ -637,7 +639,7 @@ export function SettingsOverlay() {
                           void revealItemInDir(settings.libraryDir ?? "").catch(() => {})
                         }
                       >
-                        <FolderOpen size={13} strokeWidth={1.5} />
+                        <ArtIcon name="folder" size={14} />
                         <span className="settings-folder-path">{settings.libraryDir}</span>
                       </button>
                     </div>
@@ -735,12 +737,17 @@ ${t("settings.onlineHosts")}`} />
                   </label>
                 </div>
                 <div className="settings-data-actions">
-                  <button className="settings-data-btn" onClick={() => void exportData()}>
-                    <FolderDown size={13} strokeWidth={1.5} />
+                  <button
+                    className="settings-data-btn"
+                    onClick={() => void exportData()}
+                    title={exportFonts ? t("settings.exportPackTitle") : t("settings.exportDataTitle")}
+                  >
+                    {/* 勾了「连字体一起」显示整包图标，否则显示纯整理数据图标 */}
+                    <ArtIcon name={exportFonts ? "exportPack" : "exportData"} size={14} />
                     {t("settings.export")}
                   </button>
                   <button className="settings-data-btn" onClick={() => void importData()}>
-                    <FolderOpen size={13} strokeWidth={1.5} />
+                    <FolderOpen size={14} strokeWidth={1.5} />
                     {t("settings.import")}
                   </button>
                 </div>
@@ -915,7 +922,7 @@ ${t("settings.labelResyncWhy")}`}
 
             <footer className="settings-footer tabular">
               <img className="settings-footer-icon" src="/favicon.png" alt="" draggable={false} />
-              ZFontManager {displayVersion(t)} · {APP_LICENSE} · {t("settings.footerNote")} ·{" "}
+              FontManager {displayVersion(t)} · {APP_LICENSE} · {t("settings.footerNote")} ·{" "}
               <button
                 className="settings-replay"
                 onClick={() => {

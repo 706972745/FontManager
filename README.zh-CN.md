@@ -4,16 +4,16 @@
 
 <div align="center">
 
-<img src="src-tauri/icons/128x128.png" alt="ZFontManager icon" width="110" />
+<img src="src-tauri/icons/128x128.png" alt="FontManager icon" width="110" />
 
-# ZFontManager（中文增强版）
+# FontManager（中文增强版）
 
 **跨平台字体管理器：预览、整理、一键启用/停用字体，字体文件永不离开你的电脑。**
 
-本分支在 [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) 的基础上进行了中文本地化与功能增强。
+本分支在 [TheHolyOneZ/FontManager](https://github.com/TheHolyOneZ/FontManager) 的基础上进行了中文本地化与功能增强。
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.2.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.2.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 
@@ -49,7 +49,7 @@
   - **合并到当前启用**——在当前已启用的基础上叠加启用快照内的字体，不会先停用再启用
   - **加入快照**——把此刻所有已启用的字体加进这个快照（自动去重）
   - **清理 N 个缺失文件**——快照里记录过、但本机已经找不到的条目，一键移除
-  - **导出**——导出为 JSON，文件名自动带快照名与导出时间（`ZFontManager_快照名_导出时间.json`）
+  - **导出**——导出为字体快照文件，文件名自动带快照名与导出时间（`FontManager_快照名_导出时间.S-FontManager`）
   - **删除快照**——删掉整个快照记录，不动字体文件本身
   - 应用时底部会出现**进度条 + 取消**：上千个字体要逐个激活、可能要几分钟，随时能停；
     停下后提示里的**撤销**会把已经动过的部分原样还原，不会留在"启用了一半"的状态
@@ -76,7 +76,7 @@
 
 ### ⬇ 安装
 
-到 [Releases](../../releases/latest) 页面下载 **`ZFontManager_1.0.0_x64-setup.exe`**（安装程序，推荐）或 **`ZFontManager_1.0.0_x64_en-US.msi`**（MSI 包，适合批量部署），双击安装即可。已有旧版本的数据与整理成果会完整保留。
+到 [Releases](../../releases/latest) 页面下载 **`FontManager_1.0.0_x64-setup.exe`**（安装程序，推荐）或 **`FontManager_1.0.0_x64_en-US.msi`**（MSI 包，适合批量部署），双击安装即可。已有旧版本的数据与整理成果会完整保留。
 
 ### 🔨 从源码构建
 
@@ -103,7 +103,7 @@ Windows 安装包**没有做代码签名**，下载/安装时可能被浏览器�
 
 <div align="center">
 
-<img src="main.png" alt="ZFontManager — 素材库视图：实时字体预览、启用开关与详情面板" width="920" />
+<img src="main.png" alt="FontManager — 素材库视图：实时字体预览、启用开关与详情面板" width="920" />
 
 <sub>素材库：每个字族都以它自己的字形实时渲染，一次点击即可在任何应用的字体菜单中使用。</sub>
 
@@ -113,7 +113,7 @@ Windows 安装包**没有做代码签名**，下载/安装时可能被浏览器�
 
 ## 📖 目录
 
-- [为什么选择 ZFontManager？](#-为什么选择-zfontmanager)
+- [为什么选择 FontManager？](#-为什么选择-fontmanager)
 - [功能导览](#-功能导览)
   - [整个字体库，实时渲染](#整个字体库实时渲染)
   - [启用与停用——核心功能](#启用与停用核心功能)
@@ -147,7 +147,7 @@ Windows 安装包**没有做代码签名**，下载/安装时可能被浏览器�
   - [性能与规模](#九性能与规模真机实测)
 - [键盘快捷键](#-键盘快捷键)
 - [翻译](#-翻译)
-- [获取 ZFontManager](#-获取-zfontmanager)
+- [获取 FontManager](#-获取-fontmanager)
 - [平台说明](#-平台说明)
 - [隐私](#-隐私)
 - [常见问题](#-常见问题)
@@ -158,11 +158,11 @@ Windows 安装包**没有做代码签名**，下载/安装时可能被浏览器�
 
 ---
 
-## 💡 为什么选择 ZFontManager？
+## 💡 为什么选择 FontManager？
 
 如果你在 Linux 上和字体打过交道，你懂那种感受：字体散落在各个文件夹里，预览就得一个个打开文件，想"管理"它们意味着打开终端然后听天由命。Windows 和 macOS 的情况好一些——但好用的工具都要花真金白银。
 
-ZFontManager 一并解决这两个问题：
+FontManager 一并解决这两个问题：
 
 - **一个应用，三大平台。** 在 Linux、Windows 和 macOS 上都是同样清爽的界面。
 - **原生且快速。** 不是套壳网页——启动快，数百个字族滚动如丝般顺滑，在你的桌面上就像原生应用一样自在。
@@ -170,7 +170,7 @@ ZFontManager 一并解决这两个问题：
 - **属于你。** 免费、开源（GPL-3.0）、无账号、无云端、无遥测。一切都在你自己的电脑上完成。
 
 > [!NOTE]
-> ZFontManager 目前为 **0.9.0**（本分支），更新内容见[更新日志](CHANGELOG.md)。日常使用已经非常可靠，如遇到奇怪的问题，欢迎[反馈](../../issues)。
+> FontManager 目前为 **0.9.0**（本分支），更新内容见[更新日志](CHANGELOG.md)。日常使用已经非常可靠，如遇到奇怪的问题，欢迎[反馈](../../issues)。
 
 ---
 
@@ -178,7 +178,7 @@ ZFontManager 一并解决这两个问题：
 
 ### 整个字体库，实时渲染
 
-首次启动时，ZFontManager 会扫描系统的标准字体位置——包括系统级目录和你的个人用户字体——自动建立字体库。你可以在设置里添加额外的监视文件夹，新字体一出现应用就会察觉。
+首次启动时，FontManager 会扫描系统的标准字体位置——包括系统级目录和你的个人用户字体——自动建立字体库。你可以在设置里添加额外的监视文件夹，新字体一出现应用就会察觉。
 
 每个字族都以**它自己的字形**显示，而不是列表里一个干巴巴的名字。在顶部的预览框里输入任意一句话——你的品牌名、正在做的标题——**整个字体库**会立刻用它重新渲染。字号滑块可以把预览从小字调到海报大小。
 
@@ -196,7 +196,7 @@ ZFontManager 一并解决这两个问题：
 
 这正是字体**管理器**和字体**查看器**的分水岭。
 
-庞大的字体库很爽——直到你在设计软件里打开字体菜单，要从 900 个条目里翻找。在 ZFontManager 里**停用**一个字体，会把它从其他应用的字体菜单中移除，**但不会卸载它**。文件原地不动，字体只是去睡觉了。再拨一次开关，它就回来。
+庞大的字体库很爽——直到你在设计软件里打开字体菜单，要从 900 个条目里翻找。在 FontManager 里**停用**一个字体，会把它从其他应用的字体菜单中移除，**但不会卸载它**。文件原地不动，字体只是去睡觉了。再拨一次开关，它就回来。
 
 - 一次点击（或按 <kbd>空格</kbd>）切换单个字族
 - 选中多个字族，批量启用/停用
@@ -210,24 +210,24 @@ ZFontManager 一并解决这两个问题：
 
 ### 先试用，再决定
 
-还不确定要不要让这个字体常驻你的菜单？右键 → **"启用直到关闭"**，让它只在本次会话中醒来。退出 ZFontManager 时，它会自动回到睡眠状态。在设计软件里试穿一件新字体，之后不用收拾任何残局。
+还不确定要不要让这个字体常驻你的菜单？右键 → **"启用直到关闭"**，让它只在本次会话中醒来。退出 FontManager 时，它会自动回到睡眠状态。在设计软件里试穿一件新字体，之后不用收拾任何残局。
 
 ### 在 Photoshop 或 Illustrator 中应用字体
 
-在 Windows 和 macOS 上，右键一个字族 → **"在 Photoshop 中应用…"** 或 **"在 Illustrator 中应用…"**（命令面板里对选中的字族也可用）。ZFontManager 把字体交给正在运行的软件：所有选中的文本图层或文本框会切换到该字体；如果什么都没选，就新建一个以字族名为示例的文本图层。休眠中的字体会先以"直到关闭"方式唤醒，试字永远不会永久安装任何东西。
+在 Windows 和 macOS 上，右键一个字族 → **"在 Photoshop 中应用…"** 或 **"在 Illustrator 中应用…"**（命令面板里对选中的字族也可用）。FontManager 把字体交给正在运行的软件：所有选中的文本图层或文本框会切换到该字体；如果什么都没选，就新建一个以字族名为示例的文本图层。休眠中的字体会先以"直到关闭"方式唤醒，试字永远不会永久安装任何东西。
 
 > [!NOTE]
 > 此集成是 0.3.0 的新功能，发布前未能在真实的 Photoshop 或 Illustrator 上充分测试。它会安全地失败（任何问题都只以提示框出现，不会改动你的文档），但如果你遇到异常，请带上应用版本和提示框内容[提个 issue](../../issues)。
 
 ### Affinity（Canva）自动启用
 
-在 Affinity 中打开文档时，ZFontManager 可以自动启用文档需要的字体，Affinity 运行期间一直保持，退出后自动停用。不会永久安装任何东西。
+在 Affinity 中打开文档时，FontManager 可以自动启用文档需要的字体，Affinity 运行期间一直保持，退出后自动停用。不会永久安装任何东西。
 
 文档用到的字体会被**整个字族**一起带入，所以每个字重和斜体都出现在 Affinity 的字体菜单里，而不只是文档碰巧用到的那一个样式。你原本已启用的样式不会被动，Affinity 关闭后依然保持启用。在字体库里匹配不到的字体名会被跳过，而不是随便换一个样式顶替。
 
 在 **设置 → Affinity by Canva 自动启用** 中开启。需要 **Affinity 3.2 或更新版本**，并在 Affinity 中开启 *设置 → Model Context Protocol*（之后重启 Affinity）。
 
-ZFontManager 会在 Affinity 出现后稍等片刻再连接，因为 Affinity 在完成启动之前就接受连接，此时发起请求可能导致它崩溃退出。因此随启动打开的文档所需的字体会晚一小会儿被启用。之后它每半分钟检查一次新打开的文档，复用已知可用的地址和协议。
+FontManager 会在 Affinity 出现后稍等片刻再连接，因为 Affinity 在完成启动之前就接受连接，此时发起请求可能导致它崩溃退出。因此随启动打开的文档所需的字体会晚一小会儿被启用。之后它每半分钟检查一次新打开的文档，复用已知可用的地址和协议。
 
 > [!NOTE]
 > Affinity（Canva 版）只提供 Windows 和 macOS 版本，因此该设置在 Linux 上不显示，监视器也不会运行。
@@ -269,7 +269,7 @@ ZFontManager 会在 Affinity 出现后稍等片刻再连接，因为 Affinity �
 
 ### 当两个字体重名时
 
-安装一个与库中现有字体冲突的字体时，ZFontManager 会明说，而不是悄悄选边站。详情面板列出涉及的每个文件，告诉你哪一份是当前启用的，并允许你逐个处理——保留、移除或送入回收站。系统字体被标记为受保护，任何方式都无法移除。
+安装一个与库中现有字体冲突的字体时，FontManager 会明说，而不是悄悄选边站。详情面板列出涉及的每个文件，告诉你哪一份是当前启用的，并允许你逐个处理——保留、移除或送入回收站。系统字体被标记为受保护，任何方式都无法移除。
 
 ### 是回收站，不是碎纸机
 
@@ -337,12 +337,12 @@ ZFontManager 会在 Affinity 出现后稍等片刻再连接，因为 Affinity �
 - **界面音效**——开关和事件的轻柔合成音反馈。三档：开、轻、关。
 - **减弱动效**——把弹性动画换成快速淡入淡出，可独立于（或叠加于）系统偏好。
 - **减弱透明度**——把磨砂玻璃换成实心面板。更好读，还去掉了应用最昂贵的绘制项，在老款核显上收益明显。
-- **界面缩放**——ZFontManager 启动时测量屏幕可用区域，自动选择一个能把整个界面装下的缩放，小屏或低分辨率显示器看到的是完整布局而不是被裁掉的。保持自动，或在 80% 到 125% 之间手动固定；大显示器上更大的缩放同样有用。
+- **界面缩放**——FontManager 启动时测量屏幕可用区域，自动选择一个能把整个界面装下的缩放，小屏或低分辨率显示器看到的是完整布局而不是被裁掉的。保持自动，或在 80% 到 125% 之间手动固定；大显示器上更大的缩放同样有用。
 - **首次启动导览**用聚光灯带你过一遍界面，一分钟掌握要点。随时可以在设置里重放。
 
 <div align="center">
 
-<img src="settings.png" alt="ZFontManager 设置——监视文件夹、备份、主题、减弱动效与界面音效" width="820" />
+<img src="settings.png" alt="FontManager 设置——监视文件夹、备份、主题、减弱动效与界面音效" width="820" />
 
 <sub>设置：监视文件夹、单文件备份、主题、动效与音效，各取所需。</sub>
 
@@ -350,7 +350,7 @@ ZFontManager 会在 Affinity 出现后稍等片刻再连接，因为 Affinity �
 
 ### 你的语言
 
-ZFontManager 首次启动时跟随桌面语言，之后随时可以在 **设置 → 语言**（或命令面板）中更改。
+FontManager 首次启动时跟随桌面语言，之后随时可以在 **设置 → 语言**（或命令面板）中更改。
 
 目前可用：**English**、**Deutsch**、**Español**、**Français**、**Português (Brasil)**、**Русский**、**日本語**、**简体中文**、**繁體中文**。
 
@@ -401,7 +401,7 @@ ZFontManager 首次启动时跟随桌面语言，之后随时可以在 **设置 
 | 单点切换 | 一次点击或按 <kbd>空格</kbd>，字体从其他软件的菜单里出现/消失，文件原地不动 |
 | 批量 | 多选后统一启用/停用，可撤销；<kbd>Ctrl</kbd>+<kbd>A</kbd> 选中当前视图全部（含筛选结果） |
 | 部分启用 | 只启用部分样式的字族显示半程开关与「N/M 已启用」，绝不冒充完全启用 |
-| 启用直到关闭 | 会话级唤醒，退出 ZFontManager 自动回到停用，不留残局 |
+| 启用直到关闭 | 会话级唤醒，退出 FontManager 自动回到停用，不留残局 |
 | 系统字体保护 | 系统不允许停用的字体标记为受保护，任何路径都无法移除；可整体隐藏 |
 | 启动恢复 | 可选：启动时自动重新启用上次会话启用的字体 |
 | 批量性能 | 千级启停走后台线程，注册表索引与系统广播每批只做一次（修掉旧版 O(n²) 假死） |
@@ -448,7 +448,7 @@ ZFontManager 首次启动时跟随桌面语言，之后随时可以在 **设置 
 | 字体样张 | 导出可分享的 PNG（字母表 + 字号 + 示例文字），对方无需装字体 |
 | 字体文件 | 导出单个样式或整个字族 |
 | 字体列表 | 导出为元数据文件，交给表格软件处理 |
-| 库数据 | 标签、合集、收藏、备注、快照一次性导出/导入，可跨电脑迁移 |
+| 库数据 | 标签、合集、收藏、备注、快照一次性导出/导入，可跨电脑迁移。三种专属后缀：快照 `.S-FontManager`、整理数据 `.L-FontManager`、整包（连字体）`.P-FontManager`，双击即导入；导入按**文件内容**识别，改了后缀也能导 |
 
 ### 八、界面与系统
 
@@ -545,9 +545,9 @@ ZFontManager 首次启动时跟随桌面语言，之后随时可以在 **设置 
 
 ---
 
-## 📦 获取 ZFontManager
+## 📦 获取 FontManager
 
-最简单的方式是[本仓库的 Releases 页面](../../releases/latest)，始终提供最新构建（上游官方下载页为 [zsync.eu/zfontmanager](https://zsync.eu/zfontmanager/)）。
+最简单的方式是[本仓库的 Releases 页面](../../releases/latest)，始终提供最新构建（上游官方下载页为 [zsync.eu/fontmanager](https://zsync.eu/fontmanager/)）。
 
 想自己构建？见下文[从源码构建](#-从源码构建)——只要三条命令。
 
@@ -555,7 +555,7 @@ ZFontManager 首次启动时跟随桌面语言，之后随时可以在 **设置 
 
 ## 🧭 平台说明
 
-ZFontManager 使用每个操作系统原生的字体机制——没有黑科技，没有"便携字体文件夹"的把戏。
+FontManager 使用每个操作系统原生的字体机制——没有黑科技，没有"便携字体文件夹"的把戏。
 
 <table>
 <tr><th align="left">平台</th><th align="left">启用机制（大白话版）</th></tr>
@@ -578,18 +578,18 @@ ZFontManager 使用每个操作系统原生的字体机制——没有黑科技�
 > [!TIP]
 > **在 Linux 上请用 `.deb` 或 `.rpm`。** 它们安装干净并使用你系统自己的库。AppImage 并非每次发布都有：GitHub Actions 生成的需要 **FUSE 2**，很多现行发行版默认已不安装，而且它们链接的是构建机器的库，老发行版可能拒绝启动。偶尔提供时只是便利，不是推荐路径。
 >
-> RPM 注册的包名是 `z-font-manager`，所以查询已装版本用 `rpm -q z-font-manager`，尽管文件名是 `ZFontManager-<version>-1.x86_64.rpm`。
+> RPM 注册的包名是 `z-font-manager`，所以查询已装版本用 `rpm -q z-font-manager`，尽管文件名是 `FontManager-<version>-1.x86_64.rpm`。
 
 两个集成功能受平台限制，在不适用的平台上自动隐藏：**Photoshop / Illustrator**（Windows 和 macOS）与 **Affinity（Canva 版）**（Windows 和 macOS）。
 
 > [!TIP]
-> **在小屏或低分辨率显示器上**，ZFontManager 启动时自适应屏幕可用区域并缩放界面，不会有东西落在任务栏下面或屏幕边缘之外。想自己定，去 设置 → 外观 → *界面缩放*。老显卡上，同一区块的 *减弱透明度* 值得打开。
+> **在小屏或低分辨率显示器上**，FontManager 启动时自适应屏幕可用区域并缩放界面，不会有东西落在任务栏下面或屏幕边缘之外。想自己定，去 设置 → 外观 → *界面缩放*。老显卡上，同一区块的 *减弱透明度* 值得打开。
 
 > [!IMPORTANT]
 > 有些应用只在启动时刷新字体列表。如果新启用的字体没有出现在已经打开的应用里，重启那个应用——那是应用的缓存，不是字体丢了。
 
 > [!WARNING]
-> **系统字体受保护。** 操作系统画自己界面所需的字体无法在 ZFontManager 中停用或删除，所以你可以放心探索。在 Windows 和 macOS 上，它们的卡片显示一个 **OS** 锁定徽章而不是开关，悬停可见原因。在 Linux 上，fontconfig 可以排除任何字体，所以一切都带开关。
+> **系统字体受保护。** 操作系统画自己界面所需的字体无法在 FontManager 中停用或删除，所以你可以放心探索。在 Windows 和 macOS 上，它们的卡片显示一个 **OS** 锁定徽章而不是开关，悬停可见原因。在 Linux 上，fontconfig 可以排除任何字体，所以一切都带开关。
 
 ---
 
@@ -614,7 +614,7 @@ ZFontManager 使用每个操作系统原生的字体机制——没有黑科技�
 
 未来新增的任何联网功能都会进这张表，默认关闭，并在你开启之前先行披露。
 
-不必只听我们说——全部源代码[公开](https://github.com/TheHolyOneZ/ZFontManager)可查。
+不必只听我们说——全部源代码[公开](https://github.com/TheHolyOneZ/FontManager)可查。
 
 ---
 
@@ -623,7 +623,7 @@ ZFontManager 使用每个操作系统原生的字体机制——没有黑科技�
 <details>
 <summary><b>停用字体会删掉它吗？</b></summary>
 <br>
-不会。停用只是把字体从其他应用的字体菜单中隐藏。文件原地不动，字体也留在你的 ZFontManager 库里（显示为变暗）。一次点击即可找回。
+不会。停用只是把字体从其他应用的字体菜单中隐藏。文件原地不动，字体也留在你的 FontManager 库里（显示为变暗）。一次点击即可找回。
 </details>
 
 <details>
@@ -641,7 +641,7 @@ ZFontManager 使用每个操作系统原生的字体机制——没有黑科技�
 <details>
 <summary><b>支持哪些字体格式？</b></summary>
 <br>
-常见的桌面格式：TTF、OTF、TTC 集合、WOFF/WOFF2，以及可变字体。你的设计软件能用的，ZFontManager 几乎都能管理。
+常见的桌面格式：TTF、OTF、TTC 集合、WOFF/WOFF2，以及可变字体。你的设计软件能用的，FontManager 几乎都能管理。
 </details>
 
 <details>
@@ -651,9 +651,9 @@ ZFontManager 使用每个操作系统原生的字体机制——没有黑科技�
 <br><br>
 如果只出现部分样式，检查该字族的开关：详情面板里的半程开关和"部分启用"表示还有一些样式没开，一次点击即可全部开启。还是没有？每次启用都会写入 <code>activation.log</code>，包含每个文件向 Windows 或 macOS 提供的名称，以及两个文件声明同名（会导致应用只显示其一）时的警告。提 issue 时附上它：
 <ul>
-<li><b>Windows：</b> <code>%APPDATA%\ZFontManager\activation.log</code></li>
-<li><b>macOS：</b> <code>~/Library/Application Support/ZFontManager/activation.log</code></li>
-<li><b>Linux：</b> <code>~/.local/share/ZFontManager/activation.log</code></li>
+<li><b>Windows：</b> <code>%APPDATA%\FontManager\activation.log</code></li>
+<li><b>macOS：</b> <code>~/Library/Application Support/FontManager/activation.log</code></li>
+<li><b>Linux：</b> <code>~/.local/share/FontManager/activation.log</code></li>
 </ul>
 </details>
 
@@ -682,8 +682,8 @@ ZFontManager 使用每个操作系统原生的字体机制——没有黑科技�
 构建它不需要读懂代码——只需装好 [Node.js](https://nodejs.org)（带 `pnpm`）、[Rust](https://rustup.rs) 和你所在平台的 [Tauri 前置依赖](https://tauri.app/start/prerequisites/)。然后：
 
 ```sh
-git clone https://github.com/706972745/ZFontManager.git
-cd ZFontManager
+git clone https://github.com/706972745/FontManager.git
+cd FontManager
 pnpm install
 pnpm tauri build
 ```
@@ -696,7 +696,7 @@ pnpm tauri build
 
 1. 更新 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 和 `src/lib/version.ts` 中的版本号，并在 `CHANGELOG.md` 中加入新段落。
 2. 推送。GitHub Actions 工作流会构建各平台安装包——Windows `.exe`/`.msi`、macOS Apple Silicon 与 Intel `.dmg`、Linux `.deb`/`.rpm` 及一个 AppImage——并附到草稿 Release。AppImage 只有在真实发行版上验证过才发布；不放也完全可以。
-3. 下载构建产物，运行 `node prepare-release.mjs --from <folder>`。它把安装包收集到 `zfontmanager/releases/`，生成 `SHA256SUMS.txt`，并更新下载页的版本、链接、大小与校验表。不随本次发布的安装包在页面上隐藏而非列出。上传 `zfontmanager/`，把更新日志段落粘进草稿，发布。
+3. 下载构建产物，运行 `node prepare-release.mjs --from <folder>`。它把安装包收集到 `fontmanager/releases/`，生成 `SHA256SUMS.txt`，并更新下载页的版本、链接、大小与校验表。不随本次发布的安装包在页面上隐藏而非列出。上传 `fontmanager/`，把更新日志段落粘进草稿，发布。
 
 </details>
 
@@ -719,7 +719,7 @@ Rust 侧负责一切接触系统的部分——扫描、安装、启用、回收
 
 ## 👤 关于开发者
 
-ZFontManager 由 **[TheHolyOneZ](https://github.com/TheHolyOneZ)** 构建——起因很简单：Linux 一直没有一个像样的字体管理器，而其他平台上好用的都要花钱。
+FontManager 由 **[TheHolyOneZ](https://github.com/TheHolyOneZ)** 构建——起因很简单：Linux 一直没有一个像样的字体管理器，而其他平台上好用的都要花钱。
 
 <div align="center">
 
@@ -727,8 +727,8 @@ ZFontManager 由 **[TheHolyOneZ](https://github.com/TheHolyOneZ)** 构建——�
 |---:|:---|
 | 👤 **开发者** | [github.com/TheHolyOneZ](https://github.com/TheHolyOneZ) |
 | 🌐 **更多项目** | [zsync.eu](https://zsync.eu) |
-| ⬇️ **下载与官网** | [zsync.eu/zfontmanager](https://zsync.eu/zfontmanager/) |
-| 💻 **本项目源码** | [github.com/TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) |
+| ⬇️ **下载与官网** | [zsync.eu/fontmanager](https://zsync.eu/fontmanager/) |
+| 💻 **本项目源码** | [github.com/TheHolyOneZ/FontManager](https://github.com/TheHolyOneZ/FontManager) |
 
 </div>
 
@@ -746,7 +746,7 @@ ZFontManager 由 **[TheHolyOneZ](https://github.com/TheHolyOneZ)** 构建——�
 
 ## 📄 许可证
 
-ZFontManager 是自由软件，基于 **[GNU 通用公共许可证 v3.0](LICENSE)** 发布。
+FontManager 是自由软件，基于 **[GNU 通用公共许可证 v3.0](LICENSE)** 发布。
 
 用人话说：你可以使用、分享和修改它——如果你分发修改后的版本，它必须对下一位同样保持自由。
 
@@ -757,7 +757,7 @@ ZFontManager 是自由软件，基于 **[GNU 通用公共许可证 v3.0](LICENSE
 
 <img src="src-tauri/icons/32x32.png" alt="" width="20" />
 
-**ZFontManager** · 你的字体，你的电脑，你说了算
+**FontManager** · 你的字体，你的电脑，你说了算
 
 <sub>由 <a href="https://github.com/TheHolyOneZ">TheHolyOneZ</a> 用心打造（外加对字体混乱的一点怨念），中文增强分支维护中。</sub>
 

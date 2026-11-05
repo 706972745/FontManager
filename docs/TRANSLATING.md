@@ -1,4 +1,4 @@
-# Translating ZFontManager
+# Translating FontManager
 
 Every piece of interface text lives in one JSON file per language under
 [`src/locales/`](../src/locales). Adding a language or fixing a single awkward
@@ -96,7 +96,7 @@ font. Use a pangram in your language if it is written in Latin script (French,
 Spanish and German all do); otherwise leave the English one, as Russian, Japanese
 and both Chinese files do.
 
-**Do not translate:** `ZFontManager`, `TheHolyOneZ`, format names (`OTF`, `TTF`,
+**Do not translate:** `FontManager`, `TheHolyOneZ`, format names (`OTF`, `TTF`,
 `WOFF`, `VAR`), `OpenType`, `PostScript`, or the URLs and domain names in the
 About page.
 

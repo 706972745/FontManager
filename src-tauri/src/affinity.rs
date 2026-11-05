@@ -155,7 +155,7 @@ impl Session {
             match session.request("initialize", serde_json::json!({
                 "protocolVersion": v,
                 "capabilities": {},
-                "clientInfo": { "name": "ZFontManager", "version": env!("CARGO_PKG_VERSION") },
+                "clientInfo": { "name": "FontManager", "version": env!("CARGO_PKG_VERSION") },
             }), CONNECT_TIMEOUT).await {
                 Ok(res) => {
                     accepted = true;

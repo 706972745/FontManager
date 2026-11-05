@@ -1,4 +1,4 @@
-# ZFontManager CorelDRAW COM companion host.
+# FontManager CorelDRAW COM companion host.
 # Long-lived PowerShell process: attaches to CorelDRAW once and keeps the
 # connection, so the expensive first-touch of the CorelDRAW automation object
 # graph (measured ~4s upfront: app 0.9s, selection 1.0s, Story 1.7s, Font 0.9s)

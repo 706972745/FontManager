@@ -33,14 +33,14 @@ const LINKS: { key: TKey; sub: string; url: string; icon: React.ReactNode }[] = 
   },
   {
     key: "about.landing",
-    sub: "zsync.eu/zfontmanager",
-    url: "https://zsync.eu/zfontmanager/",
+    sub: "zsync.eu/fontmanager",
+    url: "https://zsync.eu/fontmanager/",
     icon: <Download size={16} strokeWidth={1.5} />,
   },
   {
     key: "about.source",
-    sub: "github.com/TheHolyOneZ/ZFontManager",
-    url: "https://github.com/TheHolyOneZ/ZFontManager",
+    sub: "github.com/TheHolyOneZ/FontManager",
+    url: "https://github.com/TheHolyOneZ/FontManager",
     icon: <GithubGlyph />,
   },
 ];
@@ -48,7 +48,7 @@ const LINKS: { key: TKey; sub: string; url: string; icon: React.ReactNode }[] = 
 const STACK = ["Tauri v2", "Rust", "React 19", "TypeScript", "Vite", "pnpm"];
 
 /** 本定制版的代码仓库 */
-const CUSTOM_BUILD_URL = "https://github.com/706972745/ZFontManager";
+const CUSTOM_BUILD_URL = "https://github.com/706972745/FontManager";
 
 export function AboutView() {
   const t = useT();
@@ -60,7 +60,7 @@ export function AboutView() {
       transition={spring}
     >
       <img className="about-icon" src="/icon-512.png" alt="" draggable={false} />
-      <h1 className="about-name">ZFontManager</h1>
+      <h1 className="about-name">FontManager</h1>
       <div className="about-version tabular">
         {t("about.version", { version: displayVersion(t), license: APP_LICENSE })}
       </div>

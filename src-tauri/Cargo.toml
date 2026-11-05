@@ -1,15 +1,15 @@
 [package]
-name = "zfontmanager"
-version = "1.2.3"
+name = "fontmanager"
+version = "1.2.4"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
 authors = ["TheHolyOneZ", "IIEOzo"]
 license = "GPL-3.0-only"
-homepage = "https://zsync.eu/zfontmanager/"
-repository = "https://github.com/TheHolyOneZ/ZFontManager"
+homepage = "https://zsync.eu/fontmanager/"
+repository = "https://github.com/TheHolyOneZ/FontManager"
 edition = "2021"
 
 [lib]
-name = "zfontmanager_lib"
+name = "fontmanager_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

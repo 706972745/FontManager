@@ -8,34 +8,43 @@ import {
   parseCuration,
   type CurationData,
 } from "../src/lib/libraryData.ts";
+import { detectJsonKind } from "../src/lib/fileKinds.ts";
 
 const data = (over: Partial<CurationData>): CurationData => ({ ...emptyCuration(), ...over });
 
-test("导出文件能原样读回来（v2：含字重级分组、手动版权、到期日期）", () => {
-  const payload = {
-    app: "ZFontManager",
-    kind: "curation",
-    version: 2,
-    tags: { Lora: ["衬线"], Inter: ["无衬线", "界面"] },
-    collections: { 项目A: ["Lora"] },
-    collectionFaces: { 项目A: ["ps:lora-bold"] },
-    favorites: ["Inter"],
-    notes: { Lora: "手写备注" },
-    copyrightStatus: { Lora: "paid" },
-    copyrightExpiry: { Lora: "2027-01-01" },
-  };
-  const parsed = parseCuration(payload);
+test("导出文件带自描述头（用途 / 导入方式 / 推荐后缀），数据能原样读回来", () => {
+  const file = curationFile(
+    data({
+      tags: { Lora: ["衬线"], Inter: ["无衬线", "界面"] },
+      collections: { 项目A: ["Lora"] },
+      collectionFaces: { 项目A: ["ps:lora-bold"] },
+      favorites: ["Inter"],
+      notes: { Lora: "手写备注" },
+      copyrightStatus: { Lora: "paid" },
+      copyrightExpiry: { Lora: "2027-01-01" },
+    }),
+    "2026-11-05T00:00:00.000Z",
+  );
+  // 文件自己要能说清「我是什么、怎么导回去」——即使后缀被用户改掉
+  assert.equal(file.kind, "curation");
+  assert.equal(file.suffix, ".L-FontManager");
+  assert.equal(file.label, "字体整理数据");
+  assert.ok((file.purpose ?? "").includes("整理成果"));
+  assert.ok((file.howTo ?? "").includes("导入"));
+
+  const parsed = parseCuration(JSON.parse(JSON.stringify(file)));
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
-  assert.deepEqual(parsed.data.tags, payload.tags);
-  assert.deepEqual(parsed.data.collectionFaces, payload.collectionFaces);
+  assert.deepEqual(parsed.data.tags, file.tags);
+  assert.deepEqual(parsed.data.collectionFaces, file.collectionFaces);
   assert.deepEqual(parsed.data.copyrightStatus, { Lora: "paid" });
   assert.deepEqual(parsed.data.copyrightExpiry, { Lora: "2027-01-01" });
 });
 
-test("老版本（version 1、没有 kind）仍然认，缺的字段当空", () => {
+test("老备份照旧能导入：不看 app 字段、不看后缀，按内容结构认", () => {
+  // 改名前导出的文件：app 是旧品牌名、version 1 没有 kind —— 全都拦不住它被认出来
   const parsed = parseCuration({
-    app: "ZFontManager",
+    app: "Legacy Font Tool",
     version: 1,
     tags: { Lora: ["衬线"] },
     collections: {},
@@ -47,13 +56,29 @@ test("老版本（version 1、没有 kind）仍然认，缺的字段当空", () 
   assert.deepEqual(parsed.data.tags, { Lora: ["衬线"] });
   assert.deepEqual(parsed.data.copyrightStatus, {});
   assert.deepEqual(parsed.data.collectionFaces, {});
+  assert.deepEqual(parsed.data.ratings, {});
 });
 
 test("快照文件导错入口要能认出来（指引到「快照」那一行，而不是骂一句不是导出文件）", () => {
-  const parsed = parseCuration({ app: "ZFontManager", kind: "snapshots", snapshots: [] });
+  const parsed = parseCuration({ app: "FontManager", kind: "snapshots", snapshots: [] });
   assert.equal(parsed.ok, false);
   if (parsed.ok) return;
   assert.equal(parsed.reason, "isSnapshot");
+});
+
+test("内容识别：kind 缺失 / 被改 / 后缀随便换，detectJsonKind 都按结构认", () => {
+  // 没有 kind 的老备份
+  assert.equal(detectJsonKind({ version: 2, tags: {}, favorites: [] }), "curation");
+  // kind 被用户改坏了，但结构还在
+  assert.equal(detectJsonKind({ kind: "????" , snapshots: [{ name: "A", entries: [] }] }), "snapshots");
+  // 只有 tags 一个字段也认
+  assert.equal(detectJsonKind({ tags: { Inter: ["界面"] } }), "curation");
+  // 整包 manifest
+  assert.equal(detectJsonKind({ kind: "library-pack" }), "library-pack");
+  // 乱七八糟的东西不认
+  assert.equal(detectJsonKind(null), "unknown");
+  assert.equal(detectJsonKind([1, 2, 3]), "unknown");
+  assert.equal(detectJsonKind({ hello: "world" }), "unknown");
 });
 
 test("不是本软件的文件 / 乱码结构一律拒绝", () => {
@@ -133,7 +158,6 @@ test("重复导入同一份文件第二次是空操作（touched = 0）", () => 
 
 test("字段形状不对时逐条丢掉，不让一条脏数据把整个导入废掉", () => {
   const parsed = parseCuration({
-    app: "ZFontManager",
     tags: { Lora: ["衬线", 3, ""], Broken: "not-an-array" },
     favorites: ["Inter", null, ""],
     notes: { Lora: 123, Inter: "正常" },
@@ -159,12 +183,57 @@ test("整包内的整理数据与单独导出的 json 是同一份 schema，能�
   assert.deepEqual(parsed.data.copyrightStatus, { Lora: "paid" });
 });
 
-test("整包路径判定：大小写都认，别把 .json 当整包", () => {
-  assert.equal(isPackPath("D://备份//ZFonts-2026-11-03.ZFontManager"), true);
-  assert.equal(isPackPath("D://备份//ZFonts-2026-11-03.zfontmanager"), true);
-  assert.equal(isPackPath("/home/u/ZFonts-2026-11-03-part2.ZFontManager"), true);
-  assert.equal(isPackPath("D://备份//zfontmanager-library.json"), false);
-  assert.equal(isPackPath("D://备份//ZFontManager"), false);
-  // 名字里带 .ZFontManager 但结尾不是：防止把「打包日志.txt」认成整包
-  assert.equal(isPackPath("D://备份//ZFonts.ZFontManager.txt"), false);
+test("后缀辅助判定：三种后缀大小写都认，.json 与中间出现的字样不算", () => {
+  assert.equal(isPackPath("D://备份//ZFonts-2026-11-03.P-FontManager"), true);
+  assert.equal(isPackPath("D://备份//ZFonts-2026-11-03.p-fontmanager"), true);
+  assert.equal(isPackPath("D://备份//backup.S-FontManager"), true);
+  assert.equal(isPackPath("/home/u/2026-11-03.L-FontManager"), true);
+  assert.equal(isPackPath("D://备份//fontmanager-library.json"), false);
+  assert.equal(isPackPath("D://备份//FontManager"), false);
+  // 名字里带后缀但结尾不是：防止把「打包日志.txt」认成导出文件
+  assert.equal(isPackPath("D://备份//ZFonts.P-FontManager.txt"), false);
+});
+
+// ─────────────── 收藏评分（1.2.4） ───────────────
+
+test("导出文件带上评分，读回来原样不变", () => {
+  const file = curationFile(data({ favorites: ["Inter"], ratings: { Inter: 5, Lora: 2 } }), "2026-11-05T00:00:00.000Z");
+  assert.equal(file.version, 4);
+  const parsed = parseCuration(JSON.parse(JSON.stringify(file)));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.data.ratings, { Inter: 5, Lora: 2 });
+});
+
+test("老文件没有 ratings：当成全未评分，不是解析失败", () => {
+  const parsed = parseCuration({
+    kind: "curation",
+    version: 2,
+    tags: { Inter: ["界面"] },
+  });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.data.ratings, {});
+});
+
+test("评分里的坏值逐条丢掉，不污染其余整理数据", () => {
+  const parsed = parseCuration({
+    kind: "curation",
+    ratings: { Inter: 0, Lora: 6, Roboto: 2.5, Mono: "4", Sans: 3 },
+    tags: { Inter: ["界面"] },
+  });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.data.ratings, { Sans: 3 });
+  assert.deepEqual(parsed.data.tags, { Inter: ["界面"] });
+});
+
+test("合并评分：本机改过的星级优先，只补本机没有的", () => {
+  const local = data({ ratings: { Inter: 1 }, favorites: ["Inter"] });
+  const incoming = data({ ratings: { Inter: 5, Lora: 4 }, favorites: ["Inter", "Lora"] });
+  const merged = mergeCuration(local, incoming);
+  assert.deepEqual(merged.ratings, { Inter: 1, Lora: 4 });
+  assert.deepEqual(merged.adoptedRatings, ["Lora"]);
+  // 第二次导入同一份文件不应再算「有更新」
+  assert.equal(mergeCuration(merged, incoming).touched, 0);
 });

@@ -16,6 +16,10 @@
  *   备注本来就是这个口径；版权同理 —— 导入一份旧备份不该把本机刚改过的判定冲掉。
  */
 
+// 显式 .ts：这个模块被 node --test 直接加载（不经打包器），Node 不会自动补扩展名。
+import { normalizeRatings } from "./rating.ts";
+import { detectJsonKind, fileDescription, isOurSuffix } from "./fileKinds.ts";
+
 export interface CurationData {
   /** 字族 → 标签 */
   tags: Record<string, string[]>;
@@ -31,12 +35,16 @@ export interface CurationData {
   copyrightStatus: Record<string, string>;
   /** 字族 → 时间限制版权的到期日 "YYYY-MM-DD" */
   copyrightExpiry: Record<string, string>;
+  /** 1.2.4 收藏评分：字族 → 1~5 星（0 / 缺项 = 未评分，不写进文件） */
+  ratings: Record<string, number>;
 }
 
-export const CURATION_APP = "ZFontManager";
+export const CURATION_APP = "FontManager";
 export const CURATION_KIND = "curation";
-/** 1 = 只有标签/分组/收藏/备注；2 = 加字重级分组 + 手动版权 + 到期日期（仍能读 1） */
-export const CURATION_VERSION = 2;
+/** 1 = 只有标签/分组/收藏/备注；2 = 加字重级分组 + 手动版权 + 到期日期；
+ *  3 = 加收藏评分（1~5 星）；4 = 文件内写入自描述头（用途 / 导入方式 / 推荐后缀）。
+ *  数据 schema 没变，导入端 1~4 全认，缺项按空处理。 */
+export const CURATION_VERSION = 4;
 
 export const emptyCuration = (): CurationData => ({
   tags: {},
@@ -46,6 +54,7 @@ export const emptyCuration = (): CurationData => ({
   notes: {},
   copyrightStatus: {},
   copyrightExpiry: {},
+  ratings: {},
 });
 
 /** Record<string, string[]>：数组且元素是字符串，顺带去重；形状不对的整条丢掉 */
@@ -79,10 +88,10 @@ export type CurationParse =
   | { ok: false; reason: "notAnExport" | "isSnapshot" };
 
 /**
- * 整包（`.ZFontManager`，里面是整理数据 + 字体文件的 zip）的路径判定。
- * 大小写都认：Windows 上用户改文件名时大小写很容易变。
+ * 后缀辅助判定（大小写都认）。**只给文件对话框 / UI 用，导入判定一律走内容嗅探**：
+ * 用户把 `.P-FontManager` 改成 `.dat` 或 `.S-FontManager` 都不该影响导入结果。
  */
-export const isPackPath = (path: string) => /\.zfontmanager$/i.test(path.trim());
+export const isPackPath = (path: string) => isOurSuffix(path);
 
 /**
  * 整理数据的文件内容（「仅导出整理数据」和「整包」共用同一份 schema，
@@ -90,8 +99,7 @@ export const isPackPath = (path: string) => /\.zfontmanager$/i.test(path.trim())
  */
 export function curationFile(data: CurationData, exportedAt: string) {
   return {
-    app: CURATION_APP,
-    kind: CURATION_KIND,
+    ...fileDescription("curation"),
     version: CURATION_VERSION,
     exportedAt,
     ...data,
@@ -99,15 +107,15 @@ export function curationFile(data: CurationData, exportedAt: string) {
 }
 
 /**
- * 解析导入文件。老版本（version 1）没有 `kind` 字段，必须继续认；
- * `kind: "snapshots"` 的快照文件要明确拦下来并指引到「快照」那一行，
- * 否则用户会得到一句含糊的「这不是导出文件」。
+ * 解析导入文件。**按内容认，不按 `app` 字段、更不按文件后缀**：
+ * 老版本（version 1）没有 `kind`、改名前的备份 `app` 是别的字符串、用户把后缀改了，
+ * 这些情况都不能变成「不认识的格式」。快照文件仍要拦下来并指引到「快照」那一行。
  */
 export function parseCuration(raw: unknown): CurationParse {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, reason: "notAnExport" };
+  const kind = detectJsonKind(raw);
+  if (kind === "snapshots") return { ok: false, reason: "isSnapshot" };
+  if (kind !== "curation") return { ok: false, reason: "notAnExport" };
   const d = raw as Record<string, unknown>;
-  if (d.app !== CURATION_APP) return { ok: false, reason: "notAnExport" };
-  if (d.kind === "snapshots") return { ok: false, reason: "isSnapshot" };
   return {
     ok: true,
     data: {
@@ -118,6 +126,7 @@ export function parseCuration(raw: unknown): CurationParse {
       notes: stringMap(d.notes),
       copyrightStatus: stringMap(d.copyrightStatus),
       copyrightExpiry: stringMap(d.copyrightExpiry),
+      ratings: normalizeRatings(d.ratings),
     },
   };
 }
@@ -139,6 +148,8 @@ export interface CurationMergeResult extends CurationData {
   adoptedCopyright: string[];
   /** 到期日期被采用（补空缺）的族 */
   adoptedExpiry: string[];
+  /** 评分被采用（补空缺）的族（写回 prefs 用） */
+  adoptedRatings: string[];
 }
 
 /** 并集：本地已有的不删，只把导入里多出来的补上 */
@@ -180,6 +191,12 @@ export function mergeCuration(local: CurationData, incoming: CurationData): Cura
   const notes = fillGaps(local.notes, incoming.notes);
   const status = fillGaps(local.copyrightStatus, incoming.copyrightStatus);
   const expiry = fillGaps(local.copyrightExpiry, incoming.copyrightExpiry);
+  // 评分和版权一个口径：本机改过的星级不该被一份旧备份冲掉，导入只补空缺。
+  const ratingsIn: Record<string, string> = {};
+  for (const [k, v] of Object.entries(incoming.ratings)) ratingsIn[k] = String(v);
+  const ratingsLocal: Record<string, string> = {};
+  for (const [k, v] of Object.entries(local.ratings)) ratingsLocal[k] = String(v);
+  const ratings = fillGaps(ratingsLocal, ratingsIn);
 
   const addedFavorites = incoming.favorites.filter((f) => !local.favorites.includes(f));
 
@@ -190,7 +207,8 @@ export function mergeCuration(local: CurationData, incoming: CurationData): Cura
     addedFavorites.length +
     notes.adopted.length +
     status.adopted.length +
-    expiry.adopted.length;
+    expiry.adopted.length +
+    ratings.adopted.length;
 
   return {
     tags: tags.next,
@@ -200,6 +218,9 @@ export function mergeCuration(local: CurationData, incoming: CurationData): Cura
     notes: notes.next,
     copyrightStatus: status.next,
     copyrightExpiry: expiry.next,
+    ratings: Object.fromEntries(
+      Object.entries(ratings.next).map(([k, v]) => [k, Number(v)]),
+    ),
     touched,
     addedTags: tags.added,
     addedFavorites,
@@ -208,5 +229,6 @@ export function mergeCuration(local: CurationData, incoming: CurationData): Cura
     changedCollectionFaces: collectionFaces.added,
     adoptedCopyright: status.adopted,
     adoptedExpiry: expiry.adopted,
+    adoptedRatings: ratings.adopted,
   };
 }

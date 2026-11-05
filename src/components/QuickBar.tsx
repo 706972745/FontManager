@@ -326,6 +326,9 @@ export function QuickBar() {
   const incompleteOnly = useFontStore((s) => s.incompleteOnly);
   const licenseFilter = useFontStore((s) => s.licenseFilter);
   const copyrightStatus = useFontStore((s) => s.copyrightStatus);
+  const ratings = useFontStore((s) => s.ratings);
+  const ratingFilter = useFontStore((s) => s.ratingFilter);
+  const activatedAt = useFontStore((s) => s.activatedAt);
   // 速览专属作用域筛选：收藏 / 分组 / 快照（完整界面走侧栏导航，不用这三个）
   const favoriteOnly = useFontStore((s) => s.favoriteOnly);
   const collectionFilter = useFontStore((s) => s.collectionFilter);
@@ -432,6 +435,8 @@ export function QuickBar() {
       incompleteOnly,
       licenseFilter,
       copyrightStatus,
+      ratingFilter,
+      ratings,
     });
     // 收藏 / 分组 / 快照：口径与侧栏导航**完全一致**（分组取「字族级 ∪ 字重级」并集，
     // 快照用可移植标识解析成当前机器的字面 id，不能按路径比 —— TTC 一个文件多个族）。
@@ -464,11 +469,12 @@ export function QuickBar() {
     }
     const q = query.trim().toLowerCase();
     const hit = q ? scoped.filter((f) => f.name.toLowerCase().includes(q)) : scoped;
-    return sortFamilies(hit, sort);
+    return sortFamilies(hit, sort, activatedAt);
   }, [
     fonts, tags, sessionActivated, query, sort,
     classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter,
     charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus,
+    ratings, ratingFilter, activatedAt,
     favoriteOnly, collectionFilter, snapshotFilter, favorites, collections, collectionFaces, snapshots,
   ]);
 

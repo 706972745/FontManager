@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Columns3,
   Search,
+  Star,
   Type,
   X,
 } from "lucide-react";
@@ -52,7 +53,7 @@ function listboxKeys(e: ReactKeyboardEvent<HTMLElement>) {
   items[next]?.focus();
 }
 
-const SORT_MODES = ["name", "styles", "size", "glyphs", "added"] as const satisfies readonly SortMode[];
+const SORT_MODES = ["name", "styles", "size", "glyphs", "added", "activated"] as const satisfies readonly SortMode[];
 
 const SORT_KEYS: Record<SortMode, TKey> = {
   name: "sort.name",
@@ -60,6 +61,7 @@ const SORT_KEYS: Record<SortMode, TKey> = {
   size: "sort.size",
   glyphs: "sort.glyphs",
   added: "sort.added",
+  activated: "sort.activated",
 };
 
 const FORMAT_FILTERS = ["otf", "ttf", "woff", "woff2"] as const;
@@ -183,6 +185,8 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
   const setCharFilter = useFontStore((s) => s.setCharFilter);
   const favoriteOnly = useFontStore((s) => s.favoriteOnly);
   const setFavoriteOnly = useFontStore((s) => s.setFavoriteOnly);
+  const ratingFilter = useFontStore((s) => s.ratingFilter);
+  const setRatingFilter = useFontStore((s) => s.setRatingFilter);
   const collectionFilter = useFontStore((s) => s.collectionFilter);
   const toggleCollectionFilter = useFontStore((s) => s.toggleCollectionFilter);
   const snapshotFilter = useFontStore((s) => s.snapshotFilter);
@@ -202,6 +206,7 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
     (variableOnly ? 1 : 0) +
     (toggleableOnly ? 1 : 0) +
     (incompleteOnly ? 1 : 0) +
+    (ratingFilter > 0 ? 1 : 0) +
     (membership
       ? (favoriteOnly ? 1 : 0) + collectionFilter.length + snapshotFilter.length
       : 0);
@@ -295,6 +300,34 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   ))}
                 </>
               )}
+              <li className="sort-sep" role="none" />
+              <li className="filter-heading" role="none">
+                {t("filter.rating")}
+              </li>
+              <li className="filter-ratingrow" role="none">
+                <button
+                  className={`rating-any ${ratingFilter === 0 ? "rating-any-on" : ""}`}
+                  onClick={() => setRatingFilter(0)}
+                >
+                  {t("filter.ratingAll")}
+                </button>
+                <div className="rating-picks" role="group" aria-label={t("filter.rating")}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      role="option"
+                      aria-selected={ratingFilter === n}
+                      className={`rating-pick ${n <= ratingFilter ? "rating-pick-on" : ""}`}
+                      aria-label={t("filter.ratingAtLeast", { count: n })}
+                      data-hint-text={t("filter.ratingAtLeast", { count: n })}
+                      onClick={() => setRatingFilter(ratingFilter === n ? 0 : n)}
+                    >
+                      <Star size={13} strokeWidth={1.5} />
+                    </button>
+                  ))}
+                </div>
+              </li>
+              <li className="sort-sep" role="none" />
               <li className="filter-heading" role="none">
                 {t("filter.show")}
               </li>
