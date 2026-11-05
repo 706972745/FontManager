@@ -6,8 +6,9 @@
 #   ci.yml       → push / PR 时验证代码（类型检查 + 单测 + 编译检查）
 #   release.yml  → 推 v* tag 时构建两个安装包并发布到 GitHub Release（本文件）
 #
-# 说明：本项目**不做代码签名**（见 CODE_SIGNING_POLICY.md），
-# 所以 Release 正文会自动带上「未签名 + 被拦怎么处理 + SHA-256」那段说明。
+# 说明：项目通过 SignPath Foundation 免费 OV 签名（见 CODE_SIGNING_POLICY.md）。
+# release.yml 在「收集安装包」后插入签名步骤；未配置 SIGNPATH_TOKEN 时自动跳过，
+# 正文随之退回「未签名 + SHA-256」说明，与历史行为一致。
 
 name: Release (Windows)
 
@@ -113,6 +114,35 @@ jobs:
           Copy-Item $msi.FullName release/
           Get-ChildItem release | Format-Table Name, Length
 
+      # ── 代码签名（SignPath Foundation，免费 OV）──────────────────────
+      # 未配置 SIGNPATH_TOKEN 时本步骤自动跳过，发布仍为「未签名 + SHA-256」，
+      # 与现有行为完全一致；在 GitHub Secrets 配齐后自动切换为签名发布。
+      # 申请入口：https://signpath.org  →  Apply for Free Code Signing
+      - name: 代码签名（SignPath Foundation）
+        if: ${{ secrets.SIGNPATH_TOKEN != '' }}
+        shell: pwsh
+        env:
+          SIGNPATH_ORG: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_POLICY: ${{ secrets.SIGNPATH_SIGNING_POLICY }}
+          SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_TOKEN }}
+        run: |
+          Install-Module -Name SignPath -Scope CurrentUser -Force -SkipPublisherCheck
+          Import-Module SignPath
+          $files = Get-ChildItem -Path release -Include *.exe,*.msi
+          if ($files.Count -eq 0) { throw "release 里没有可签名的 exe/msi" }
+          foreach ($f in $files) {
+            Write-Host "签名：$($f.Name)"
+            Submit-SigningRequest -OrganizationId $env:SIGNPATH_ORG `
+              -ProjectSlug $env:SIGNPATH_PROJECT `
+              -SigningPolicyName $env:SIGNPATH_POLICY `
+              -ArtifactPath $f.FullName `
+              -OutputArtifactPath $f.FullName `
+              -CIUserToken $env:SIGNPATH_TOKEN `
+              -WaitForCompletion
+            Write-Host "  ✅ $($f.Name) 已签名"
+          }
+
       - name: 留存产物（万一发布失败可手动下载）
         uses: actions/upload-artifact@v4
         with:
@@ -124,10 +154,13 @@ jobs:
         shell: pwsh
         env:
           TAG_INPUT: ${{ inputs.tag }}
+          SIGNED: ${{ secrets.SIGNPATH_TOKEN != '' }}
         run: |
           $tag = if ($env:TAG_INPUT) { $env:TAG_INPUT } else { "${{ github.ref_name }}" }
           $ver = $tag.Substring(1)
-          & .\.github\scripts\make-release-notes.ps1 -Version $ver -ReleaseDir release -OutFile release-notes.md
+          $args = @('-Version', $ver, '-ReleaseDir', 'release', '-OutFile', 'release-notes.md')
+          if ($env:SIGNED -eq 'true') { $args += '-Signed' }
+          & .\.github\scripts\make-release-notes.ps1 @args
           Write-Host "---------- 正文预览 ----------"
           Get-Content release-notes.md -Encoding UTF8 | Select-Object -First 20
 

@@ -4,7 +4,8 @@
     用法（CI 与本地通用，PowerShell 5.1 与 pwsh 7 均可）：
       .\.github\scripts\make-release-notes.ps1 -Version 1.1.3 -ReleaseDir release -OutFile release-notes.md
 
-    说明：本项目不做代码签名（决定见 CODE_SIGNING_POLICY.md），正文固定输出未签名说明。
+    说明：本项目通过 SignPath Foundation 免费 OV 签名（见 CODE_SIGNING_POLICY.md）。
+    未配置签名密钥时输出未签名说明；传 -Signed 时输出已签名说明。
 
     注意：正文里大量 markdown 反引号，反引号是 PowerShell 的转义符，
     所以模板一律用**单引号 here-string**（@' ... '@），版本号用 __VER__ 占位后替换。
@@ -13,7 +14,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Version,
     [Parameter(Mandatory = $true)][string]$ReleaseDir,
     [Parameter(Mandatory = $true)][string]$OutFile,
-    [string]$Changelog = "CHANGELOG.md"
+    [string]$Changelog = "CHANGELOG.md",
+    [switch]$Signed
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,6 +82,22 @@ Get-FileHash .\FontManager___VER___x64-setup.exe -Algorithm SHA256
 > [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)。
 '@
 
+# ── 3b. 已签名说明（通过 SignPath Foundation 免费 OV 证书） ──────────
+$signSigned = @'
+### ✅ 本版本已做代码签名
+
+两个安装包已通过 **SignPath Foundation** 提供的免费 OV 代码签名证书签名
+（密钥托管在 SignPath 的 HSM 上，签名在 CI 中自动完成）。Windows 与浏览器可据此
+验证发布者，下载时不再出现「未知发布者」提示。
+
+- 安装包的数字签名发布者为 **SignPath Foundation**——它是对「该二进制确实从本项目
+  公开仓库构建」的背书，而非个人身份，这是该免费计划的固有形式。
+- 仍建议保留下方 SHA-256 用于完整性核对。
+- 签名在发布流程中自动完成；若某次发布未配置签名密钥，正文会自动退回上方「未签名」说明。
+
+> 签名策略详见仓库根目录的 [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)。
+'@
+
 # ── 4. 下载表 ──────────────────────────────────────────────────────
 $downloadTable = @'
 ### 下载
@@ -97,7 +115,7 @@ $downloadTable = @'
 > **裸 `.msi` 只在干净机器上用**；已经装过 setup.exe 的机器请继续用 setup.exe。
 '@
 
-$signBlock = $signUnsigned
+$signBlock = if ($Signed) { $signSigned } else { $signUnsigned }
 $signBlock = $signBlock.Replace("__VER__", $Version)
 $downloadTable = $downloadTable.Replace("__VER__", $Version)
 
