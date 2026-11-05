@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AlertTriangle, ChevronRight, Lock, Star } from "lucide-react";
+import { AlertTriangle, ChevronRight, Lock } from "lucide-react";
 import { memo, useMemo, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { useMarquee } from "../design/primitives/useMarquee";
@@ -21,7 +21,7 @@ import { useFamilyMembership } from "../lib/membership";
 import { faceKey } from "../lib/snapshotKey";
 import { collectionFaceScope } from "../lib/collectionScope";
 import { styleScope, styleScopeLabel } from "../lib/styleScope";
-import { playStar } from "../lib/sound";
+import { StarRating } from "./StarRating";
 import type { FontFace } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
@@ -81,8 +81,6 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
   const setFamilyActive = useFontStore((s) => s.setFamilyActive);
   const selectWith = useFontStore((s) => s.selectWith);
   const selected = useFontStore((s) => s.selection.includes(family.name));
-  const favorite = useFontStore((s) => s.favorites.includes(family.name));
-  const toggleFavorite = useFontStore((s) => s.toggleFavorite);
   const hasActiveConflict = useFontStore((s) => activeConflictsFor(s.fonts).has(family.name));
   const hasDormantConflict = useFontStore((s) => conflictsFor(s.fonts).has(family.name));
   const { snapshotBadges, collectionBadges } = useFamilyMembership(family.name, family.faces);
@@ -320,21 +318,13 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
             </span>
           )
         )}
-        <motion.button
-          className={`star-btn ${favorite ? "star-on" : ""}`}
-          aria-label={t(favorite ? "card.unfavorite" : "card.favorite", { name: family.name })}
-          aria-pressed={favorite}
-          /* 阻止冒泡到卡片：否则父级的 whileTap 会让整卡缩一下，按钮跟着位移 */
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            playStar(!favorite);
-            void toggleFavorite(family.name);
+        <StarRating
+          family={family.name}
+          labels={{
+            add: t("card.favorite", { name: family.name }),
+            remove: t("card.unfavorite", { name: family.name }),
           }}
-          whileTap={{ scale: 0.85 }}
-        >
-          <Star size={14} strokeWidth={1.5} />
-        </motion.button>
+        />
         {family.deactivatable ? (
           <PillToggle
             on={family.active}

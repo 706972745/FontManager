@@ -1,4 +1,4 @@
-# Contributing to ZFontManager
+# Contributing to FontManager
 
 Thank you for wanting to help. This document exists so that a pull request is
 a pleasure to merge rather than a week of repair work, and so you know up front
@@ -12,7 +12,7 @@ welcome as issues, always.
 
 ## The one rule that matters most
 
-**ZFontManager runs on Linux, Windows and macOS. Everything you contribute has
+**FontManager runs on Linux, Windows and macOS. Everything you contribute has
 to work on all three.**
 
 This is not a nice-to-have. It is the whole promise of the project: one font
@@ -77,7 +77,7 @@ The obvious platform bugs get caught. These are the ones that slip through:
 
 ## Interface text must be translated
 
-ZFontManager ships in nine languages. Every one of them is complete, and it
+FontManager ships in nine languages. Every one of them is complete, and it
 stays that way.
 
 If your change adds, removes or rewords **any** user-visible string:
@@ -158,13 +158,13 @@ somebody else.
 Open an issue with your operating system and version, what you expected, what
 happened instead, and steps to reproduce it. If it involves a specific font,
 saying which one helps enormously. For activation problems, attach
-`activation.log` from the app data folder (`%APPDATA%\ZFontManager` on
-Windows, `~/Library/Application Support/ZFontManager` on macOS,
-`~/.local/share/ZFontManager` on Linux).
+`activation.log` from the app data folder (`%APPDATA%\FontManager` on
+Windows, `~/Library/Application Support/FontManager` on macOS,
+`~/.local/share/FontManager` on Linux).
 
 ---
 
 ## Licence
 
-ZFontManager is GPL-3.0-only. By contributing you agree your work is licensed
+FontManager is GPL-3.0-only. By contributing you agree your work is licensed
 under the same terms.

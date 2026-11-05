@@ -7,6 +7,7 @@ mod copyright;
 mod diag;
 #[cfg(target_os = "windows")]
 mod file_assoc;
+mod file_kind;
 mod font_types;
 mod fontcache;
 mod installer;
@@ -1924,6 +1925,35 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// 按文件内容判断导出物类型（不看后缀）。双击文件打开时，前端先问这一句再决定
+/// 该解包、合并整理数据还是导入快照。
+#[tauri::command]
+fn detect_file_kind(path: String) -> String {
+    file_kind::detect(std::path::Path::new(&path)).to_string()
+}
+
+/// 「双击导出文件启动本程序」时暂存的待导入路径。前端 init 完成后来取，只给一次。
+static PENDING_OPEN_FILE: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+    std::sync::OnceLock::new();
+
+#[tauri::command]
+fn take_pending_open_file() -> Option<String> {
+    PENDING_OPEN_FILE
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.take())
+}
+
+/// 命令行第一个存在的文件 = 资源管理器双击传进来的导出文件。
+/// 注册表里的 `shell\open\command` 写成 `"exe" "%1"`，所以路径就是 argv[1]。
+fn startup_file_arg() -> Option<String> {
+    std::env::args_os()
+        .skip(1)
+        .filter_map(|a| a.into_string().ok())
+        .find(|a| std::path::Path::new(a).is_file())
+}
+
 /// 本次运行里由「启用直到关闭」打开的字体文件，退出时统一还原。
 ///
 /// 用 `HashSet` 而不是 `Vec`：同一路径反复「启用直到关闭 → 停用 → 再启用」时，
@@ -2051,7 +2081,7 @@ async fn export_library_pack(
     .map_err(|e| e.to_string())?
 }
 
-/// 解包 .ZFontManager：字体铺回字库（重复的跳过），整理数据原样交回前端合并。
+/// 解包 .FontManager：字体铺回字库（重复的跳过），整理数据原样交回前端合并。
 #[tauri::command]
 async fn import_library_pack(
     app: tauri::AppHandle,
@@ -2203,7 +2233,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
 
-    let show = MenuItem::with_id(app, "show", "Show ZFontManager", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show FontManager", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
@@ -2214,7 +2244,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     let builder = TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("ZFontManager")
+        .tooltip("FontManager")
         .menu(&menu);
 
     let builder = if cfg!(target_os = "windows") {
@@ -2338,11 +2368,22 @@ async fn apply_font_in_app(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 资源管理器双击 `.S-/.P-/.L-FontManager` 时，Windows 会把文件路径当 argv[1] 传进来。
+    let opened_file = startup_file_arg();
     // 已经有一个实例在跑：把它正开着的那个窗口（哪怕正收在屏幕顶端一根细线里）
-    // 叫回完整界面，然后自己退出。没有这一步时从桌面图标再点一次会起第二个进程，
-    // 任务栏里出现两个一模一样的图标，用户要的「打开已经开着的软件」却没反应。
-    if !single_instance::acquire() {
+    // 叫回完整界面，并把双击的文件路径一并递过去，然后自己退出。
+    if !single_instance::acquire(opened_file.as_deref()) {
         return;
+    }
+    // 自己是首实例：暂存路径，等前端 init 完成后用 take_pending_open_file 取走导入。
+    // 不能用 emit —— setup 阶段 WebView 还没开始监听，事件会丢。
+    if let Some(path) = opened_file {
+        if let Ok(mut slot) = PENDING_OPEN_FILE
+            .get_or_init(|| std::sync::Mutex::new(None))
+            .lock()
+        {
+            *slot = Some(path);
+        }
     }
 
     let mut state = store::load();
@@ -2402,11 +2443,11 @@ pub fn run() {
             }
             // 首实例：等「再点一次图标」的信号，收到就通知前端把完整界面叫出来
             single_instance::watch(app.handle().clone());
-            // 导出的 `.ZFontManager` 整包在资源管理器里显示专属图标（Z + fills）。
-            // 只写 HKCU 的一个 DefaultIcon 值，不动打开方式；后台跑，失败也不影响启动。
+            // 三种导出扩展名各注册专属图标 + 双击用本程序打开导入。
+            // 只写 HKCU，后台跑，失败也不影响启动。
             #[cfg(target_os = "windows")]
-            std::thread::spawn(|| match file_assoc::ensure_pack_icon() {
-                Ok(true) => eprintln!("[file-assoc] .ZFontManager icon registered"),
+            std::thread::spawn(|| match file_assoc::ensure_associations() {
+                Ok(true) => eprintln!("[file-assoc] S/P/L-FontManager associations registered"),
                 Ok(false) => {}
                 Err(e) => eprintln!("[file-assoc] skipped: {e}"),
             });
@@ -2499,6 +2540,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            detect_file_kind,
+            take_pending_open_file,
             set_autostart,
             get_autostart,
             resync_library_labels,

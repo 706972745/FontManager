@@ -6247,3 +6247,164 @@ body.ui-fade-out .app-frame {
 :root[data-theme="light"][data-transparency="reduced"] .settings-backdrop {
   background: rgba(18, 18, 26, 0.24);
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   1.2.4 收藏评分
+   星标外面套一层 .star-wrap 只是为了给角标一个定位锚点；评分浮层本身用
+   portal 挂到 body（卡片 / 样张格 / 详情都有 overflow:hidden，就地定位会被裁）。
+   ──────────────────────────────────────────────────────────────────────── */
+.star-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* 已评分时星标右下角的小数字，不占卡片头部宽度 */
+.star-rating-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 2px;
+  border-radius: 6px;
+  background: var(--warning);
+  color: var(--canvas);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.rating-pop {
+  position: fixed;
+  z-index: 120;
+  width: 168px;
+  padding: 7px 8px 6px;
+  border-radius: 8px;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-mass), var(--shadow-ambient);
+  transform-origin: top left;
+}
+.rating-pop-stars {
+  display: flex;
+  gap: 2px;
+}
+.rating-star {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  height: 27px;
+  border-radius: 5px;
+  color: var(--text-tertiary);
+  transition: color var(--t-quick) ease, background var(--t-quick) ease;
+}
+.rating-star:hover {
+  background: var(--e2);
+  color: var(--warning);
+}
+.rating-star-on {
+  color: var(--warning);
+}
+.rating-star-on svg {
+  fill: var(--warning);
+}
+.rating-pop-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(var(--ink-rgb), 0.08);
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+}
+.rating-pop-value {
+  white-space: nowrap;
+}
+.rating-pop-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.rating-pop-clear:hover {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+
+/* 顶栏「筛选」→ 星级：点第 N 颗 = 至少 N 星，再点一次取消 */
+.filter-ratingrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px;
+}
+.rating-any {
+  padding: 4px 7px;
+  border-radius: 4px;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.rating-any:hover {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+.rating-any-on {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.rating-picks {
+  display: flex;
+  gap: 1px;
+}
+.rating-pick {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  transition: color var(--t-quick) ease, background var(--t-quick) ease;
+}
+.rating-pick:hover {
+  background: var(--e2);
+}
+.rating-pick-on {
+  color: var(--warning);
+}
+.rating-pick-on svg {
+  fill: var(--warning);
+}
+
+:root[data-transparency="reduced"] .rating-pop {
+  background: #1b1b1b;
+}
+:root[data-theme="light"][data-transparency="reduced"] .rating-pop {
+  background: #ffffff;
+}
+
+/* ===== 1.2.4 拼贴纸片风 UI 图标 =====
+   导出文件 / 文件夹换成软件自己的黑白灰纸片图标（见 ArtIcon.tsx）。
+   这些是实心位图而不是 lucide 线性图标：按 flex 子项处理，禁止被压扁/拖动。 */
+.art-icon {
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 2px;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* 白纸在深色玻璃面板上略刺眼，压一点亮度，纸感还在。 */
+:root:not([data-theme="light"]) .art-icon {
+  filter: brightness(0.94);
+}

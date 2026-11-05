@@ -44,7 +44,7 @@ pub fn stage() -> (u8, &'static str, u32) {
 }
 
 /// 宿主出问题时的现场只存在于进程内存里，用户报「超时」我们只能猜。
-/// 这里落一份很小的日志（%TEMP%\zfontmanager-comhost.log，超过 256KB 自动重写），
+/// 这里落一份很小的日志（%TEMP%\fontmanager-comhost.log，超过 256KB 自动重写），
 /// 用来区分「宿主没起来 / 握手超时 / CorelDRAW 没响应」这三种完全不同的原因。
 pub fn log(msg: &str) {
     #[repr(C)]
@@ -75,7 +75,7 @@ pub fn log(msg: &str) {
     // SAFETY: GetLocalTime 只写这一个结构体，指针来源于栈上的合法 mut 局部变量。
     unsafe { GetLocalTime(&mut t) };
 
-    let path = std::env::temp_dir().join("zfontmanager-comhost.log");
+    let path = std::env::temp_dir().join("fontmanager-comhost.log");
     if std::fs::metadata(&path).map(|m| m.len() > 256 * 1024).unwrap_or(false) {
         let _ = std::fs::remove_file(&path);
     }
@@ -126,7 +126,7 @@ fn powershell_exe() -> String {
 fn spawn() -> Result<Host, String> {
     set_stage(10, "connecting", 0);
     let script_path = std::env::temp_dir()
-        .join(format!("zfontmanager-comhost-{}.ps1", std::process::id()));
+        .join(format!("fontmanager-comhost-{}.ps1", std::process::id()));
     // PowerShell 5.1 读无 BOM 的 UTF-8 会按 ANSI 解释，脚本里只要有中文就会乱码。
     let mut body = Vec::with_capacity(SCRIPT.len() + 3);
     body.extend_from_slice(&[0xEF, 0xBB, 0xBF]);

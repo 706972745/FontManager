@@ -2,7 +2,7 @@ import { useT } from "../lib/i18n";
 import { useFontStore } from "../state/fontStore";
 
 /**
- * 整包（`.ZFontManager`）打包 / 解包的进度条。
+ * 整包（`.FontManager`）打包 / 解包的进度条。
  *
  * 样式和位置与 `LoadProgress` 一致（贴底、一条细线 + 一句实时详情），但**互不共用状态**：
  * 那边是「读字库」，这边是「自己读写几 GB 的文件」，导入完还会再触发一次扫描，

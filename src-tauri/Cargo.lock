@@ -1199,6 +1199,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "fontmanager"
+version = "1.2.4"
+dependencies = [
+ "dirs 6.0.0",
+ "flate2",
+ "notify",
+ "reqwest",
+ "rodio",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-opener",
+ "thiserror 2.0.18",
+ "tokio",
+ "trash",
+ "ttf-parser",
+ "walkdir",
+ "windows-sys 0.59.0",
+ "zip",
+]
+
+[[package]]
 name = "foreign-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5952,33 +5979,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
-]
-
-[[package]]
-name = "zfontmanager"
-version = "1.2.3"
-dependencies = [
- "dirs 6.0.0",
- "flate2",
- "notify",
- "reqwest",
- "rodio",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-opener",
- "thiserror 2.0.18",
- "tokio",
- "trash",
- "ttf-parser",
- "walkdir",
- "windows-sys 0.59.0",
- "zip",
 ]
 
 [[package]]

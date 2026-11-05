@@ -4,7 +4,7 @@
 
 ## 为什么没有签名
 
-ZFontManager 是个人维护的免费开源项目，代码签名证书需要每年付费（主流 CA 约 1000~2500 元/年），
+FontManager 是个人维护的免费开源项目，代码签名证书需要每年付费（主流 CA 约 1000~2500 元/年），
 且 2026 年起 CA/B 论坛要求私钥必须托管在硬件安全模块中，接入成本较高。
 目前没有为发行包购买或申请代码签名证书。
 
@@ -20,7 +20,7 @@ ZFontManager 是个人维护的免费开源项目，代码签名证书需要每�
 每个 Release 的说明里都附有两个安装包的 **SHA-256**。下载后自行核对：
 
 ```powershell
-Get-FileHash .\ZFontManager_<version>_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\FontManager_<version>_x64-setup.exe -Algorithm SHA256
 ```
 
 输出与 Release 页面上的值一致，说明文件在传输过程中没有被篡改或截断。

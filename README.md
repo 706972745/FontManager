@@ -5,16 +5,16 @@
 
 <div align="center">
 
-<img src="src-tauri/icons/128x128.png" alt="ZFontManager icon" width="110" />
+<img src="src-tauri/icons/128x128.png" alt="FontManager icon" width="110" />
 
-# ZFontManager (Chinese Enhanced Fork)
+# FontManager (Chinese Enhanced Fork)
 
 **A cross-platform font manager: preview, organize, activate/deactivate fonts with one click — your font files never leave your machine.**
 
-This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) with Chinese localization and new features. **[🇨🇳 完整中文文档请看这里 →](README.zh-CN.md)**
+This fork builds on [TheHolyOneZ/FontManager](https://github.com/TheHolyOneZ/FontManager) with Chinese localization and new features. **[🇨🇳 完整中文文档请看这里 →](README.zh-CN.md)**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.2.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.2.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 
@@ -51,7 +51,7 @@ This release closes out two long-running threads — **library scale** and **men
   - **Merge into current** — add this snapshot's fonts on top of what is already enabled, without deactivating anything first
   - **Add active to snapshot** — capture every font that is enabled right now into this snapshot (deduplicated)
   - **Clean up N missing files** — remove the entries this snapshot remembers but this machine no longer has
-  - **Export** — write a JSON file, auto-named `ZFontManager_<snapshot>_<timestamp>.json`
+  - **Export** — write a snapshot file, auto-named `FontManager_<snapshot>_<timestamp>.S-FontManager`
   - **Delete snapshot** — drop the snapshot record; the font files themselves are untouched
   - Applying shows a **progress bar with a cancel button** at the bottom: activating hundreds of faces takes minutes, and you can stop at any point.
     The toast that follows offers **Undo**, which reverts exactly what was already applied, so you never end up half-switched
@@ -93,14 +93,14 @@ Licensed under the upstream GPL-3.0. Many thanks to the original author
 
 ## Demo Video
 
-[Watch ZFontManager Demo](https://github.com/TheHolyOneZ/ZFontManager/blob/main/zfontmanager.mp4)
+[Watch FontManager Demo](https://github.com/TheHolyOneZ/FontManager/blob/main/fontmanager.mp4)
 
 
 <div align="center">
 
-<img src="src-tauri/icons/128x128.png" alt="ZFontManager icon" width="110" />
+<img src="src-tauri/icons/128x128.png" alt="FontManager icon" width="110" />
 
-# ZFontManager
+# FontManager
 
 **The font manager Linux never got — and Windows &amp; macOS make you pay for.**
 
@@ -110,22 +110,22 @@ from one clean, fast, native app. Your fonts never leave your machine.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-7c3aed?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.8.0-5b21b6?style=flat-square)](https://zsync.eu/zfontmanager/)
+[![Version](https://img.shields.io/badge/Version-1.2.4-5b21b6?style=flat-square)](https://zsync.eu/fontmanager/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20·%20Windows%20·%20macOS-2d2a4a?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-4f46e5?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-24C8DB?style=flat-square)](https://tauri.app)
 
 <br>
 
-**[⬇ Download](https://zsync.eu/zfontmanager/)** ·
+**[⬇ Download](https://zsync.eu/fontmanager/)** ·
 **[🌐 Website](https://zsync.eu)** ·
-**[💻 Source Code](https://github.com/TheHolyOneZ/ZFontManager)** ·
+**[💻 Source Code](https://github.com/TheHolyOneZ/FontManager)** ·
 **[👤 The Developer](https://github.com/TheHolyOneZ)**
 
 <br>
 <br>
 
-<img src="main.png" alt="ZFontManager — library view with live font previews, activation toggles and the detail panel" width="920" />
+<img src="main.png" alt="FontManager — library view with live font previews, activation toggles and the detail panel" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -137,7 +137,7 @@ from one clean, fast, native app. Your fonts never leave your machine.
 
 ## 📖 Table of contents
 
-- [Why ZFontManager?](#-why-zfontmanager)
+- [Why FontManager?](#-why-fontmanager)
 - [Feature tour](#-feature-tour)
   - [Your whole library, rendered live](#your-whole-library-rendered-live)
   - [Activate &amp; deactivate — the killer feature](#activate--deactivate--the-killer-feature)
@@ -162,7 +162,7 @@ from one clean, fast, native app. Your fonts never leave your machine.
 - [Complete feature reference (1.0.0)](#-complete-feature-reference-100)
 - [Keyboard shortcuts](#-keyboard-shortcuts)
 - [Translations](#-translations)
-- [Getting ZFontManager](#-getting-zfontmanager)
+- [Getting FontManager](#-getting-fontmanager)
 - [Platform notes](#-platform-notes)
 - [Privacy](#-privacy)
 - [FAQ](#-faq)
@@ -173,14 +173,14 @@ from one clean, fast, native app. Your fonts never leave your machine.
 
 ---
 
-## 💡 Why ZFontManager?
+## 💡 Why FontManager?
 
 If you've ever worked with type on Linux, you know the drill: fonts live in
 scattered folders, previewing means opening each file one by one, and
 "managing" them means a terminal and crossed fingers. On Windows and macOS
 the situation is better — but the good tools cost real money.
 
-ZFontManager is the answer to both:
+FontManager is the answer to both:
 
 - **One app, three platforms.** The same clean interface on Linux, Windows and macOS.
 - **Native and fast.** Not a website in a box — it starts quickly, scrolls
@@ -192,10 +192,10 @@ ZFontManager is the answer to both:
   Everything happens on your machine.
 
 > [!NOTE]
-> ZFontManager is currently at **version 0.3.0** — see the
+> FontManager is currently at **version 0.3.0** — see the
 > [changelog](CHANGELOG.md) for what's new. It's already very usable
 > day-to-day, but expect the occasional rough edge — and please
-> [report anything odd](https://github.com/TheHolyOneZ/ZFontManager/issues)!
+> [report anything odd](https://github.com/TheHolyOneZ/FontManager/issues)!
 
 ---
 
@@ -203,7 +203,7 @@ ZFontManager is the answer to both:
 
 ### Your whole library, rendered live
 
-On first launch, ZFontManager scans the standard font locations on your
+On first launch, FontManager scans the standard font locations on your
 system — both the system-wide ones and your personal user fonts — and builds
 your library automatically. You can add extra folders to watch in Settings,
 and the app notices when new fonts appear in them.
@@ -232,7 +232,7 @@ This is what separates a font *manager* from a font *viewer*.
 
 A huge font library is wonderful — until you open the font picker in your
 design app and have to scroll past 900 entries. **Deactivating** a font in
-ZFontManager removes it from other applications' font menus *without
+FontManager removes it from other applications' font menus *without
 uninstalling it*. The files stay exactly where they are; the font just goes
 to sleep. Flip the toggle again and it's back.
 
@@ -256,14 +256,14 @@ switch.
 
 Not sure you want that font cluttering your menus permanently? Right-click →
 **"Activate until close"** wakes a font up *for this session only*. When you
-quit ZFontManager, it's automatically put back to sleep. Perfect for
+quit FontManager, it's automatically put back to sleep. Perfect for
 auditioning a typeface in your design app without any cleanup afterwards.
 
 ### Apply a font in Photoshop or Illustrator
 
 On Windows and macOS, right-click a family → **"Apply in Photoshop…"** or
 **"Apply in Illustrator…"** (also in the command palette for the selected
-family). ZFontManager hands the font to the running app: every selected text
+family). FontManager hands the font to the running app: every selected text
 layer or text frame switches to it, and if nothing is selected, a new text
 layer is added with the family name as its sample. A sleeping font is woken
 "until close" first, so auditioning never installs anything permanently.
@@ -273,12 +273,12 @@ layer is added with the family name as its sample. A sleeping font is woken
 > Photoshop or Illustrator before release. It fails safely (every problem
 > shows up as a toast, nothing is changed in your document), but if it
 > misbehaves for you, please
-> [open an issue](https://github.com/TheHolyOneZ/ZFontManager/issues) with the
+> [open an issue](https://github.com/TheHolyOneZ/FontManager/issues) with the
 > app version and what the toast said.
 
 ### Auto-activate for Affinity by Canva
 
-Open a document in Affinity and ZFontManager can switch on the fonts it asks
+Open a document in Affinity and FontManager can switch on the fonts it asks
 for, automatically, for as long as Affinity is running — then switch them back
 off when you quit. Nothing is installed permanently.
 
@@ -292,7 +292,7 @@ Turn it on under **Settings → Affinity by Canva auto activation**. It needs
 **Affinity 3.2 or newer** with *Settings → Model Context Protocol* enabled
 (restart Affinity afterwards).
 
-ZFontManager waits a short while after Affinity appears before it connects,
+FontManager waits a short while after Affinity appears before it connects,
 because Affinity accepts connections before it has finished starting and a
 request landing in that window can close it. Fonts for a document you open at
 launch are therefore activated a moment after Affinity is up, not instantly.
@@ -366,7 +366,7 @@ It's also in the command palette as *Select all*.
 
 ### When two fonts share a name
 
-Install a font that clashes with one already in your library and ZFontManager
+Install a font that clashes with one already in your library and FontManager
 says so instead of quietly picking a winner. The detail panel lists every file
 involved, tells you which copy is the active one, and lets you act on each
 file separately — keep it, remove it, or send it to the Trash. System fonts
@@ -488,7 +488,7 @@ browser, it works exactly the way you expect.
 - **Reduced transparency** — swaps the frosted glass for solid panels. Easier
   to read, and it removes the most expensive thing the app draws, which is
   worth a lot on older integrated graphics.
-- **Interface scale** — ZFontManager measures the usable area of your screen at
+- **Interface scale** — FontManager measures the usable area of your screen at
   startup and picks a scale that fits the whole interface into it, so a small
   or low-resolution display shows the entire layout rather than a cropped one.
   Leave it on Auto or pin it between 80% and 125% yourself; larger settings are
@@ -498,7 +498,7 @@ browser, it works exactly the way you expect.
 
 <div align="center">
 
-<img src="settings.png" alt="ZFontManager settings — watched folders, backup, theme, reduced motion and interface sounds" width="820" />
+<img src="settings.png" alt="FontManager settings — watched folders, backup, theme, reduced motion and interface sounds" width="820" />
 
 <sub>Settings: watched folders, one-file backup, themes, motion and sound to taste.</sub>
 
@@ -506,7 +506,7 @@ browser, it works exactly the way you expect.
 
 ### Your language
 
-ZFontManager follows your desktop language on first launch, and you can
+FontManager follows your desktop language on first launch, and you can
 override it any time in **Settings → Language** (or from the command palette).
 
 Available now: **English**, **Deutsch**, **Español**, **Français**,
@@ -563,7 +563,7 @@ Every row maps to an entry point you can actually click in the app.
 | One-click toggle | Click or press <kbd>Space</kbd>: the font appears/disappears from other apps' menus, the file never moves |
 | Bulk | Multi-select and toggle all at once, with undo; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects the current view (including filtered results) |
 | Partial activation | Families with only some faces active show a half-state toggle and "N/M active" — never masquerading as fully active |
-| Activate until quit | Session-scoped wake-up; quitting ZFontManager puts it back to sleep, nothing left behind |
+| Activate until quit | Session-scoped wake-up; quitting FontManager puts it back to sleep, nothing left behind |
 | System font protection | Fonts the OS won't let you disable are marked protected and can't be removed by any path; hide them entirely if you prefer |
 | Restore on launch | Optional: re-activate whatever was active in your last session |
 | Bulk performance | Thousands of toggles run on a background thread, with one registry rebuild and one broadcast per batch (fixes the old O(n²) freeze) |
@@ -716,14 +716,14 @@ rules are handled per language — the checker tells you which forms yours needs
 
 ---
 
-## 📦 Getting ZFontManager
+## 📦 Getting FontManager
 
 The easiest way is the official download page, which always has the latest
 build for your platform:
 
 <div align="center">
 
-### **[zsync.eu/zfontmanager](https://zsync.eu/zfontmanager/)**
+### **[zsync.eu/fontmanager](https://zsync.eu/fontmanager/)**
 
 </div>
 
@@ -734,7 +734,7 @@ Prefer to build it yourself? See
 
 ## 🧭 Platform notes
 
-ZFontManager speaks each operating system's native font language — no hacks,
+FontManager speaks each operating system's native font language — no hacks,
 no "portable font folder" tricks.
 
 <table>
@@ -778,14 +778,14 @@ system can see them; the original file is never moved, copied or deleted.
 >
 > The RPM registers itself as `z-font-manager`, so `rpm -q z-font-manager` is
 > what reports the installed version even though the file is named
-> `ZFontManager-<version>-1.x86_64.rpm`.
+> `FontManager-<version>-1.x86_64.rpm`.
 
 Two integrations are platform-bound and are hidden where they don't apply:
 **Photoshop / Illustrator** (Windows and macOS) and **Affinity by Canva**
 (Windows and macOS).
 
 > [!TIP]
-> **On a small or low-resolution screen**, ZFontManager fits itself to the
+> **On a small or low-resolution screen**, FontManager fits itself to the
 > usable area of your display at startup and scales the interface to match, so
 > nothing lands under a panel or off the bottom edge. Settings → Appearance →
 > *Interface scale* if you would rather set it yourself. On an older graphics
@@ -798,7 +798,7 @@ Two integrations are platform-bound and are hidden where they don't apply:
 
 > [!WARNING]
 > **System fonts are protected.** Fonts your operating system needs to draw
-> its own interface can't be deactivated or trashed from ZFontManager, so
+> its own interface can't be deactivated or trashed from FontManager, so
 > you can explore fearlessly. On Windows and macOS their cards show a small
 > **OS** lock badge instead of a toggle, with the reason on hover. On Linux,
 > fontconfig can exclude any font, so everything gets a toggle.
@@ -837,7 +837,7 @@ Anything added in future goes in that table, off by default, disclosed before
 you switch it on.
 
 Don't take our word for it — the entire source code is
-[public](https://github.com/TheHolyOneZ/ZFontManager).
+[public](https://github.com/TheHolyOneZ/FontManager).
 
 ---
 
@@ -848,7 +848,7 @@ Don't take our word for it — the entire source code is
 <br>
 No. Deactivating only hides the font from other applications' font menus.
 The files stay exactly where they are, and the font stays in your
-ZFontManager library (shown dimmed). One click brings it back.
+FontManager library (shown dimmed). One click brings it back.
 </details>
 
 <details>
@@ -871,7 +871,7 @@ deactivate or trash them.
 <summary><b>Which font formats are supported?</b></summary>
 <br>
 The common desktop formats: TTF, OTF, TTC collections, WOFF/WOFF2, and
-variable fonts. If your design app can use it, ZFontManager can almost
+variable fonts. If your design app can use it, FontManager can almost
 certainly manage it.
 </details>
 
@@ -891,9 +891,9 @@ one click turns on the rest. Still missing? Every activation is written to
 or macOS and a warning when two files claim the same name, which makes apps
 show only one of them. Attach it to an issue:
 <ul>
-<li><b>Windows:</b> <code>%APPDATA%\ZFontManager\activation.log</code></li>
-<li><b>macOS:</b> <code>~/Library/Application Support/ZFontManager/activation.log</code></li>
-<li><b>Linux:</b> <code>~/.local/share/ZFontManager/activation.log</code></li>
+<li><b>Windows:</b> <code>%APPDATA%\FontManager\activation.log</code></li>
+<li><b>macOS:</b> <code>~/Library/Application Support/FontManager/activation.log</code></li>
+<li><b>Linux:</b> <code>~/.local/share/FontManager/activation.log</code></li>
 </ul>
 </details>
 
@@ -917,7 +917,7 @@ read and modify under the GPL-3.0 license. There is no paid tier, no
 <summary><b>Something broke. Where do I complain?</b></summary>
 <br>
 Please do! Open an issue on
-<a href="https://github.com/TheHolyOneZ/ZFontManager/issues">the GitHub issue tracker</a>
+<a href="https://github.com/TheHolyOneZ/FontManager/issues">the GitHub issue tracker</a>
 with what you did and what happened. Screenshots help a lot, and for anything
 about activating fonts, so does <code>activation.log</code> (see above).
 </details>
@@ -932,8 +932,8 @@ the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
 platform installed. Then:
 
 ```sh
-git clone https://github.com/TheHolyOneZ/ZFontManager.git
-cd ZFontManager
+git clone https://github.com/TheHolyOneZ/FontManager.git
+cd FontManager
 pnpm install
 pnpm tauri build
 ```
@@ -954,10 +954,10 @@ For a live development window instead, use `pnpm tauri dev`.
    AppImage only if it has been tried on a real distribution; leaving it out
    is fine.
 3. Download the assets and run `node prepare-release.mjs --from <folder>`. It
-   collects the installers into `zfontmanager/releases/`, writes
+   collects the installers into `fontmanager/releases/`, writes
    `SHA256SUMS.txt`, and rewrites the download page's version, links, sizes
    and checksum table. Any installer that isn't shipping is hidden on the
-   page rather than listed. Upload `zfontmanager/`, paste the changelog
+   page rather than listed. Upload `fontmanager/`, paste the changelog
    section into the draft, publish.
 
 </details>
@@ -984,7 +984,7 @@ spec live in the <code>docs/</code> folder.
 
 ## 👤 About the developer
 
-ZFontManager is built by **[TheHolyOneZ](https://github.com/TheHolyOneZ)** —
+FontManager is built by **[TheHolyOneZ](https://github.com/TheHolyOneZ)** —
 born from the simple frustration that Linux never had a proper font manager,
 and the good ones elsewhere cost money.
 
@@ -994,8 +994,8 @@ and the good ones elsewhere cost money.
 |---:|:---|
 | 👤 **Developer** | [github.com/TheHolyOneZ](https://github.com/TheHolyOneZ) |
 | 🌐 **More projects** | [zsync.eu](https://zsync.eu) |
-| ⬇️ **Download &amp; landing page** | [zsync.eu/zfontmanager](https://zsync.eu/zfontmanager/) |
-| 💻 **This project's source** | [github.com/TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) |
+| ⬇️ **Download &amp; landing page** | [zsync.eu/fontmanager](https://zsync.eu/fontmanager/) |
+| 💻 **This project's source** | [github.com/TheHolyOneZ/FontManager](https://github.com/TheHolyOneZ/FontManager) |
 
 </div>
 
@@ -1017,7 +1017,7 @@ guide in **[docs/TRANSLATING.md](docs/TRANSLATING.md)** — no code required.
 
 ## 📄 License
 
-ZFontManager is free software, released under the
+FontManager is free software, released under the
 **[GNU General Public License v3.0](LICENSE)**.
 
 In human terms: you may use it, share it, and change it — and if you
@@ -1030,7 +1030,7 @@ distribute a changed version, it must stay just as free for the next person.
 
 <img src="src-tauri/icons/32x32.png" alt="" width="20" />
 
-**ZFontManager** · your fonts, your machine, your rules
+**FontManager** · your fonts, your machine, your rules
 
 <sub>Made with care (and a mild grudge against font chaos) by
 <a href="https://github.com/TheHolyOneZ">TheHolyOneZ</a></sub>

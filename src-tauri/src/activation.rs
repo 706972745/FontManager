@@ -209,7 +209,7 @@ fn apply(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
         .join("fontconfig")
         .join("conf.d");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let file = dir.join("99-zfontmanager.conf");
+    let file = dir.join("99-fontmanager.conf");
 
     if state.deactivated.is_empty() {
         if file.exists() {
@@ -228,7 +228,7 @@ fn apply(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
         }
         let xml = format!(
             "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">\n\
-             <!-- Managed by ZFontManager - do not edit; toggling fonts rewrites this file -->\n\
+             <!-- Managed by FontManager - do not edit; toggling fonts rewrites this file -->\n\
              <fontconfig>\n  <selectfont>\n    <rejectfont>\n{globs}    </rejectfont>\n  </selectfont>\n</fontconfig>\n"
         );
 
@@ -422,7 +422,7 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
 
         unsafe { std::env::set_var("XDG_CONFIG_HOME", &tmp) };
-        let fragment = tmp.join("fontconfig/conf.d/99-zfontmanager.conf");
+        let fragment = tmp.join("fontconfig/conf.d/99-fontmanager.conf");
 
         let mut state = AppState::default();
         let font = "/tmp/My <Fancy> & Font.ttf";

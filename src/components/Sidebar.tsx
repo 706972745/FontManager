@@ -276,9 +276,9 @@ export function Sidebar() {
     const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     const safeName = name.replace(/[\\/:*?"<>|]/g, "_").trim() || "snapshot";
     const dest = await saveFileDialog({
-      defaultPath: `ZFontManager_${safeName}_${ts}.json`,
+      defaultPath: `FontManager_${safeName}_${ts}.S-FontManager`,
       title: translate("menu.exportSnapshotTitle", { name }),
-      filters: [{ name: "JSON", extensions: ["json"] }],
+      filters: [{ name: "FontManager", extensions: ["S-FontManager"] }],
     });
     if (dest) void exportSnapshot(name, dest);
   };
@@ -287,7 +287,11 @@ export function Sidebar() {
     const src = await openFileDialog({
       multiple: false,
       title: translate("menu.importSnapshotsTitle"),
-      filters: [{ name: "JSON", extensions: ["json"] }],
+      // 新后缀和旧 json 都收：导入端按内容认，后缀被改过也没关系
+      filters: [
+        { name: "FontManager", extensions: ["S-FontManager"] },
+        { name: "JSON", extensions: ["json"] },
+      ],
     });
     if (src) void importSnapshots(src as string, mode);
   };

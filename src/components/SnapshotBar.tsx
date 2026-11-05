@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { useMemo } from "react";
-import { Camera, Download, Eraser, Plus, Repeat, Layers, Trash2 } from "lucide-react";
+import { Camera, Eraser, Plus, Repeat, Layers, Trash2 } from "lucide-react";
+import { ArtIcon } from "./ArtIcon";
 import { save } from "@tauri-apps/plugin-dialog";
 import { springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
@@ -41,9 +42,9 @@ export function SnapshotBar({ name }: { name: string }) {
     const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     const safeName = name.replace(/[\\/:*?"<>|]/g, "_").trim() || "snapshot";
     const dest = await save({
-      defaultPath: `ZFontManager_${safeName}_${ts}.json`,
+      defaultPath: `FontManager_${safeName}_${ts}.S-FontManager`,
       title: t("menu.exportSnapshotTitle", { name }),
-      filters: [{ name: "JSON", extensions: ["json"] }],
+      filters: [{ name: "FontManager", extensions: ["S-FontManager"] }],
     });
     if (dest) void exportSnapshot(name, dest);
   };
@@ -98,7 +99,7 @@ export function SnapshotBar({ name }: { name: string }) {
       )}
       <span className="snapshot-bar-spacer" />
       <button className="snapshot-btn" onClick={() => void exportFlow()} data-hint="hint.exportSnapshot">
-        <Download size={13} strokeWidth={1.5} />
+        <ArtIcon name="snapshot" size={14} />
         {t("menu.exportSnapshot")}
       </button>
       <button

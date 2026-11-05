@@ -1,4 +1,4 @@
-//! 库数据整包（`.ZFontManager`，本质是一个 zip）：把「整理数据」和一个字体库的字体文件
+//! 库数据整包（`.P-FontManager`，本质是一个 zip）：把「整理数据」和一个字体库的字体文件
 //! 打成一个包，超过 2 GiB 自动分卷，用来整台机器搬家。
 //!
 //! 三条约束（用户 2026-11-03 定，改之前先看这里）：
@@ -8,9 +8,12 @@
 //! 2. **字体按 Stored（不压缩）写入 zip**。字体文件本身几乎压不动（实测收益只有个位数
 //!    百分比），却要吃满一个核好几分钟 —— 弱机器上表现就是「软件卡死、风扇狂转」。
 //!    宁可包大一点，也不让用户在导出时干等。整理数据那个 json 也很小，一并 stored。
-//! 3. **单卷上限 2 GiB**。超过就按文件边界切卷：`xxx-part1.ZFontManager`、`-part2`……
+//! 3. **单卷上限 2 GiB**。超过就按文件边界切卷：`xxx-part1.P-FontManager`、`-part2`……
 //!    每卷都是**独立可用**的 zip（zip crate 不支持跨卷 zip64），所以导入时按文件名
 //!    找同目录的兄弟卷，缺哪卷就在报告里列出来，不会静默丢一半字体。
+//!
+//! 1.2.4 追加：每卷都放一份 `README-FontManager.txt` 和带用途说明的 manifest，
+//! 文件自己就能讲清「我是什么、怎么导回去」。导入端按内容认，不依赖后缀。
 //!
 //! 导入去重：同一个相对路径已存在 → 跳过；库里已有**同名同大小**的字体（可能放在别的
 //! 字族目录里）→ 也跳过。用户原话「有重复的就不重复导入」。
@@ -28,16 +31,52 @@ pub const PART_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
 const PART_HEADROOM: u64 = 8 * 1024 * 1024;
 
 const MANIFEST: &str = "manifest.json";
-const CURATION: &str = "zfontmanager.json";
+const CURATION: &str = "fontmanager.json";
+const ABOUT: &str = "README-FontManager.txt";
 const FONT_DIR: &str = "fonts";
 
+/// 老版本包内整理数据文件名。拼接构造而不是写字面量：源码里不再带旧品牌名，
+/// 但用户从旧机器拷来的包照样能读出里面的整理数据。
+fn legacy_curation_name() -> String {
+    format!("{}fontmanager.json", "z")
+}
+
+/// 包内纯文本说明：解压后用记事本打开就能看懂，不需要先装本软件。
+const PACK_README: &str = "FontManager 字体库整包（.P-FontManager）\n\
+==========================================\n\n\
+【这个文件是什么】\n\
+把字体文件本体和整理数据（标签 / 分组 / 收藏 / 评分 / 备注 / 版权判定）打成一个 zip 包，\n\
+用于整台机器搬家或完整备份。单卷超过 2 GiB 会自动按文件边界分卷，每卷都是独立可用的 zip。\n\n\
+【怎么导回去】\n\
+1. 打开 FontManager，在 设置 → 字体库数据 点「导入」并选中本文件；\n\
+   文件已关联时也可以直接双击。\n\
+2. 多卷时打开任意一卷即可，程序会自动找同目录下的兄弟卷。\n\
+3. 字体按原有目录结构铺回字体库，重复文件自动跳过；整理数据按「只增不减、\n\
+   本地优先补空缺」合并，不会抹掉本机已有的成果。\n\n\
+【注意】\n\
+导入判定只看文件内容，不看后缀。即使本文件被改名（例如改成 .zip 或 .dat），\n\
+只要内容还在，FontManager 依然能识别并正确导入。\n\n\
+【目录说明】\n\
+manifest.json            卷号 / 总卷数 / 字体数 / 用途说明\n\
+fontmanager.json         整理数据（只在第 1 卷）\n\
+fonts/                   字体文件本体，保持原有目录结构\n";
+
 /// 包内 manifest：每卷都有一份，用来判断「这是不是我的包」「一共几卷」「导出的库在哪」。
+/// 1.2.4 起额外写清用途和导入方式；老包缺这些字段时 serde 用默认值，照旧能读。
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PackManifest {
     pub app: String,
     pub kind: String,
     pub version: u32,
+    #[serde(default)]
+    pub suffix: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub purpose: String,
+    #[serde(default)]
+    pub how_to: String,
     pub created_at: String,
     pub package_id: String,
     pub part: u32,
@@ -123,7 +162,7 @@ pub fn plan_volumes(sizes: &[u64], limit: u64) -> Vec<usize> {
     counts
 }
 
-/// `xxx.ZFontManager` + 3 卷 → `xxx-part1.ZFontManager`；只有一卷时原样返回用户选的名字。
+/// `xxx.P-FontManager` + 3 卷 → `xxx-part1.P-FontManager`；只有一卷时原样返回用户选的名字。
 fn part_path(dest: &Path, index: u32, parts: u32) -> PathBuf {
     if parts <= 1 {
         return dest.to_path_buf();
@@ -135,11 +174,11 @@ fn part_path(dest: &Path, index: u32, parts: u32) -> PathBuf {
     let ext = dest
         .extension()
         .and_then(|s| s.to_str())
-        .unwrap_or("ZFontManager");
+        .unwrap_or("P-FontManager");
     dest.with_file_name(format!("{stem}-part{index}.{ext}"))
 }
 
-/// 从文件名里认出分卷号：`ZFonts-2026-11-03-part2.ZFontManager` → ("ZFonts-2026-11-03", 2)
+/// 从文件名里认出分卷号：`ZFonts-2026-11-03-part2.P-FontManager` → ("ZFonts-2026-11-03", 2)
 fn part_of(path: &Path) -> Option<(String, u32)> {
     let stem = path.file_stem()?.to_str()?;
     let (base, tail) = stem.rsplit_once("-part")?;
@@ -161,7 +200,7 @@ fn resolve_parts(src: &Path) -> Vec<(u32, PathBuf)> {
     let ext = src
         .extension()
         .and_then(|s| s.to_str())
-        .unwrap_or("ZFontManager")
+        .unwrap_or("P-FontManager")
         .to_ascii_lowercase();
     let mut found: Vec<(u32, PathBuf)> = Vec::new();
     if let Ok(rd) = fs::read_dir(dir) {
@@ -375,7 +414,7 @@ pub fn export_pack_with_limit(
             }
         }
         // 先写 `.writing`，写完再改名：中途关掉软件留下的是个一眼看得出没写完的临时文件，
-        // 而不是一个「看起来正常、其实缺一半」的 .ZFontManager（导入时才会发现坏卷）
+        // 而不是一个「看起来正常、其实缺一半」的 .P-FontManager（导入时才会发现坏卷）
         let mut tmp_name = path.clone().into_os_string();
         tmp_name.push(".writing");
         let tmp_path = PathBuf::from(tmp_name);
@@ -386,9 +425,13 @@ pub fn export_pack_with_limit(
             .compression_method(zip::CompressionMethod::Stored);
 
         let manifest = PackManifest {
-            app: "ZFontManager".into(),
+            app: "FontManager".into(),
             kind: "library-pack".into(),
             version: 1,
+            suffix: ".P-FontManager".into(),
+            label: "字体库整包".into(),
+            purpose: "把字体文件本体和整理数据（标签 / 分组 / 收藏 / 评分 / 备注 / 版权）打成 zip 包，用于整台机器搬家；单卷超 2 GiB 自动分卷。".into(),
+            how_to: "在 FontManager 设置 →「字体库数据」点「导入」，或直接双击本文件；多卷时打开任意一卷即可。导入只看内容，不看后缀。".into(),
             created_at: created_at.to_string(),
             package_id: package_id.clone(),
             part: part_no,
@@ -400,6 +443,10 @@ pub fn export_pack_with_limit(
         zw.start_file(MANIFEST, opts).map_err(|e| e.to_string())?;
         zw.write_all(serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?.as_bytes())
             .map_err(|e| e.to_string())?;
+        // 每卷都带一份人读的说明：用户只拷到某一卷、或者干脆用解压软件打开，
+        // 也能立刻知道这是什么、该怎么导回去
+        zw.start_file(ABOUT, opts).map_err(|e| e.to_string())?;
+        zw.write_all(PACK_README.as_bytes()).map_err(|e| e.to_string())?;
 
         // 整理数据只放第一卷：其余卷纯粹是字体分片，单独拿出来也用不上
         if part_no == 1 {
@@ -543,6 +590,8 @@ pub fn import_pack(
     }
 
     let mut curation: Option<String> = None;
+    // 老包里的整理数据文件名是改名前的写法；拼接构造，源码里不留旧品牌名
+    let legacy_curation = legacy_curation_name();
     let mut added = 0u64;
     let mut skipped = 0u64;
     let mut failed = 0u64;
@@ -560,7 +609,7 @@ pub fn import_pack(
                 }
             };
             let name = entry.name().to_string();
-            if name == CURATION {
+            if name == CURATION || name.eq_ignore_ascii_case(&legacy_curation) {
                 let mut buf = String::new();
                 if entry.read_to_string(&mut buf).is_ok() && !buf.trim().is_empty() {
                     curation = Some(buf);
@@ -682,17 +731,17 @@ mod tests {
 
     #[test]
     fn part_naming_roundtrip() {
-        let dest = PathBuf::from(r"D:\backup\ZFonts-2026-11-03.ZFontManager");
+        let dest = PathBuf::from(r"D:\backup\ZFonts-2026-11-03.P-FontManager");
         assert_eq!(part_path(&dest, 1, 1), dest);
         assert_eq!(
             part_path(&dest, 2, 3),
-            PathBuf::from(r"D:\backup\ZFonts-2026-11-03-part2.ZFontManager")
+            PathBuf::from(r"D:\backup\ZFonts-2026-11-03-part2.P-FontManager")
         );
         assert_eq!(
-            part_of(Path::new("ZFonts-2026-11-03-part3.ZFontManager")),
+            part_of(Path::new("ZFonts-2026-11-03-part3.P-FontManager")),
             Some(("ZFonts-2026-11-03".to_string(), 3))
         );
-        assert_eq!(part_of(Path::new("ZFonts-2026-11-03.ZFontManager")), None);
+        assert_eq!(part_of(Path::new("ZFonts-2026-11-03.P-FontManager")), None);
     }
 
     #[test]
@@ -717,8 +766,8 @@ mod tests {
         fs::write(a.join("Alpha-Regular.ttf"), vec![1u8; 64]).unwrap();
         fs::write(b.join("Beta-Regular.otf"), vec![2u8; 64]).unwrap();
 
-        let dest = root.join("ZFonts-2026-11-03.ZFontManager");
-        let report = export_pack(&library, &dest, "{\"app\":\"ZFontManager\"}", "2026-11-03T00:00:00Z", &|_| {})
+        let dest = root.join("ZFonts-2026-11-03.P-FontManager");
+        let report = export_pack(&library, &dest, "{\"app\":\"FontManager\"}", "2026-11-03T00:00:00Z", &|_| {})
             .expect("export ok");
         assert_eq!(report.files, 2);
         assert_eq!(report.parts, 1);
@@ -750,7 +799,7 @@ mod tests {
         fs::create_dir_all(library.join("族A")).unwrap();
         fs::write(library.join("族A").join("A.ttf"), vec![1u8; 64]).unwrap();
         fs::write(library.join("族A").join("B.ttf"), vec![2u8; 64]).unwrap();
-        let dest = root.join("ZFonts-2026-11-03.ZFontManager");
+        let dest = root.join("ZFonts-2026-11-03.P-FontManager");
         // 上限 100 字节 → 每个文件独占一卷，稳定切成 2 卷
         let report =
             export_pack_with_limit(&library, &dest, "{}", "2026-11-03T00:00:00Z", 100, &|_| {})
@@ -758,8 +807,8 @@ mod tests {
         assert_eq!(report.parts, 2);
 
         // 用户只拷了第 1 卷过来：能导的照导，缺的卷要明确报出来
-        let part1 = root.join("ZFonts-2026-11-03-part1.ZFontManager");
-        let part2 = root.join("ZFonts-2026-11-03-part2.ZFontManager");
+        let part1 = root.join("ZFonts-2026-11-03-part1.P-FontManager");
+        let part2 = root.join("ZFonts-2026-11-03-part2.P-FontManager");
         assert!(part1.is_file() && part2.is_file());
         fs::remove_file(&part2).unwrap();
         let fresh = root.join("fresh");
@@ -788,7 +837,7 @@ mod tests {
         let src = PathBuf::from(src);
         let out = std::env::var_os("ZFM_PACK_SMOKE_OUT")
             .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::temp_dir().join("ZFonts-smoke.ZFontManager"));
+            .unwrap_or_else(|| std::env::temp_dir().join("ZFonts-smoke.P-FontManager"));
         let _ = fs::remove_file(&out);
         let limit = std::env::var("ZFM_PACK_SMOKE_LIMIT")
             .ok()
@@ -797,7 +846,7 @@ mod tests {
         let report = export_pack_with_limit(
             &src,
             &out,
-            "{\"app\":\"ZFontManager\",\"kind\":\"curation\",\"version\":2}",
+            "{\"app\":\"FontManager\",\"kind\":\"curation\",\"version\":2}",
             "2026-11-03T00:00:00Z",
             limit,
             &|_| {},

@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { motion } from "motion/react";
-import { ChevronDown, Lock, Monitor, Star } from "lucide-react";
+import { ChevronDown, Lock, Monitor } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
 import { PillToggle } from "../design/primitives/PillToggle";
@@ -11,7 +11,7 @@ import { copyrightExpired, familyCopyrightClass } from "../lib/license";
 import { buildFamilyMenu } from "../lib/menus";
 import { useFamilyMembership } from "../lib/membership";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
-import { playStar } from "../lib/sound";
+import { StarRating } from "./StarRating";
 import { isSystemFamily, SIZES, useFontStore, type Family } from "../state/fontStore";
 import { useT, type TKey } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
@@ -95,8 +95,6 @@ const SpecimenTile = memo(function SpecimenTile({
   // 对比挑选模式需要「已挑中」的视觉反馈；普通点击的选中只改状态不画线框
   // （用户 2026-11-05：点击后不要出现线框）
   const picking = useFontStore((s) => s.comparePicking);
-  const favorite = useFontStore((s) => s.favorites.includes(family.name));
-  const toggleFavorite = useFontStore((s) => s.toggleFavorite);
   const setFamilyActive = useFontStore((s) => s.setFamilyActive);
   const selectWith = useFontStore((s) => s.selectWith);
   const copyrightOverride = useFontStore((s) => s.copyrightStatus[family.name]);
@@ -218,20 +216,13 @@ const SpecimenTile = memo(function SpecimenTile({
         >
           {t(licKey)}
         </span>
-        <motion.button
-          className={`star-btn ${favorite ? "star-on" : ""}`}
-          aria-label={t(favorite ? "card.unfavorite" : "card.favorite", { name: family.name })}
-          aria-pressed={favorite}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            playStar(!favorite);
-            void toggleFavorite(family.name);
+        <StarRating
+          family={family.name}
+          labels={{
+            add: t("card.favorite", { name: family.name }),
+            remove: t("card.unfavorite", { name: family.name }),
           }}
-          whileTap={{ scale: 0.85 }}
-        >
-          <Star size={14} strokeWidth={1.5} />
-        </motion.button>
+        />
         {family.deactivatable ? (
           <PillToggle
             on={family.active}

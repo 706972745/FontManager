@@ -71,7 +71,7 @@ $signUnsigned = @'
 **验证文件完整性**（推荐，用来确认下载没被篡改）：
 
 ```powershell
-Get-FileHash .\ZFontManager___VER___x64-setup.exe -Algorithm SHA256
+Get-FileHash .\FontManager___VER___x64-setup.exe -Algorithm SHA256
 ```
 
 把输出与下方 SHA-256 对照，一致即说明文件完整。
@@ -86,14 +86,14 @@ $downloadTable = @'
 
 | 文件 | 说明 |
 |---|---|
-| `ZFontManager___VER___x64-setup.exe` | NSIS 安装包，**推荐**（同版本号可覆盖安装，装到当前用户目录，不需要管理员权限） |
-| `ZFontManager___VER___x64_en-US.msi` | MSI 安装包（同一版本号的 MSI 无法覆盖安装，升级请用 setup.exe） |
+| `FontManager___VER___x64-setup.exe` | NSIS 安装包，**推荐**（同版本号可覆盖安装，装到当前用户目录，不需要管理员权限） |
+| `FontManager___VER___x64_en-US.msi` | MSI 安装包（同一版本号的 MSI 无法覆盖安装，升级请用 setup.exe） |
 
-- **`setup.exe`**：装到 `%LOCALAPPDATA%\ZFontManager`，普通用户双击即可，同版本可直接覆盖重装。
+- **`setup.exe`**：装到 `%LOCALAPPDATA%\FontManager`，普通用户双击即可，同版本可直接覆盖重装。
 - **`.msi`**：装到 `Program Files`，需要管理员权限，适合域内 GPO / Intune / SCCM 静默推送：
-  `msiexec /i ZFontManager___VER___x64_en-US.msi /qn`。
+  `msiexec /i FontManager___VER___x64_en-US.msi /qn`。
 
-> ⚠️ 两个安装器共用注册表项 `HKCU\Software\TheHolyOneZ / IIEOzo\ZFontManager` 记录安装目录，
+> ⚠️ 两个安装器共用注册表项 `HKCU\Software\TheHolyOneZ / IIEOzo\FontManager` 记录安装目录，
 > **裸 `.msi` 只在干净机器上用**；已经装过 setup.exe 的机器请继续用 setup.exe。
 '@
 
@@ -103,7 +103,7 @@ $downloadTable = $downloadTable.Replace("__VER__", $Version)
 
 # ── 5. 拼装并写出（UTF-8 无 BOM） ──────────────────────────────────
 $parts = New-Object System.Collections.Generic.List[string]
-$parts.Add("## ZFontManager $Version")
+$parts.Add("## FontManager $Version")
 $parts.Add("")
 if ($section.Count -gt 0) {
     $parts.AddRange($section)

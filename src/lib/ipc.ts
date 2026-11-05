@@ -156,7 +156,7 @@ export interface InstallProgress {
 export type AdobeApp = "photoshop" | "illustrator" | "coreldraw";
 
 /**
- * 整包（`.ZFontManager`）导入导出的进度。和 `ScanProgress` 不是一回事：
+ * 整包（`.FontManager`）导入导出的进度。和 `ScanProgress` 不是一回事：
  * 那个是「读字库」，这个是自己打字/解包，所以要另外给用户看。
  */
 export interface PackProgress {
@@ -527,6 +527,10 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
       chars,
     }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
+  /** 按文件内容判断导出物（不看后缀）："library-pack" | "curation" | "snapshots" | "unknown" */
+  detectFileKind: (path: string) => invoke<string>("detect_file_kind", { path }),
+  /** 取出「双击导出文件启动」时暂存的待导入路径，只返回一次，取完即清空 */
+  takePendingOpenFile: () => invoke<string | null>("take_pending_open_file"),
   /** 缩略图索引：目录 + 已有 key（§13）。启动时拉一次，卡片才能同步判断有没有图 */
   thumbIndex: () => invoke<{ dir: string; keys: string[] }>("thumb_index"),
   thumbPut: (key: string, data: number[]) =>
@@ -551,7 +555,7 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   exportFonts: (paths: string[], destDir: string) =>
     invoke<number>("export_fonts", { paths, destDir }),
   /**
-   * 打包「整理数据 + 字体文件」成 `.ZFontManager`（超 2GB 自动分卷）。
+   * 打包「整理数据 + 字体文件」成 `.FontManager`（超 2GB 自动分卷）。
    * `curation` 是整理数据的 json 原文，原样塞进包里，导入时再原样交回来合并。
    */
   exportLibraryPack: (dest: string, curation: string, createdAt: string) =>

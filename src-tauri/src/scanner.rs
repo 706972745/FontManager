@@ -19,7 +19,7 @@ pub fn managed_font_dir() -> PathBuf {
         dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("fonts")
-            .join("ZFontManager")
+            .join("FontManager")
     }
     #[cfg(target_os = "macos")]
     {
@@ -150,7 +150,7 @@ fn in_dup_dir(e: &walkdir::DirEntry) -> bool {
 /// 「导入 54 MB 却读了 770 MB（13.5×）」中的 **607 MB** —— 用户看到的「导入读放大」
 /// 其实是这条**每会话一次**的固定成本混进了导入窗口。
 ///
-/// 于是把结果按「目录快照」缓存到 `%APPDATA%\ZFontManager\system-ps.json`：
+/// 于是把结果按「目录快照」缓存到 `%APPDATA%\FontManager\system-ps.json`：
 /// 系统字体没变（文件名 + 大小 + mtime 全等）就直接读这个几 KB 的 JSON，
 /// 变了才重建。缓存写失败不影响功能，只是下次再重建一遍。
 pub fn system_postscript_names() -> &'static std::collections::HashSet<String> {

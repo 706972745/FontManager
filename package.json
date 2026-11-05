@@ -1,18 +1,18 @@
 {
-  "name": "zfontmanager",
+  "name": "fontmanager",
   "description": "The free, open-source font manager for Linux, Windows and macOS",
   "author": "TheHolyOneZ (https://github.com/TheHolyOneZ)",
   "license": "GPL-3.0-only",
-  "homepage": "https://zsync.eu/zfontmanager/",
+  "homepage": "https://zsync.eu/fontmanager/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/TheHolyOneZ/ZFontManager.git"
+    "url": "https://github.com/TheHolyOneZ/FontManager.git"
   },
   "bugs": {
-    "url": "https://github.com/TheHolyOneZ/ZFontManager/issues"
+    "url": "https://github.com/TheHolyOneZ/FontManager/issues"
   },
   "private": true,
-  "version": "1.2.3",
+  "version": "1.2.4",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
