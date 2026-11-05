@@ -1360,13 +1360,7 @@ fn sanitize_component(name: &str) -> String {
     cleaned.trim().to_string()
 }
 
-pub fn uninstall(path: &str, family: &str) -> Result<TrashEntry, String> {
-    let entry = uninstall_quiet(path, family)?;
-    refresh_system_font_cache();
-    Ok(entry)
-}
-
-/// `uninstall` 的本体：**不广播 WM_FONTCHANGE**（批量入口最后统一广播一次，见 `unlink_quiet`）。
+/// `uninstall_quiet` 的本体：**不广播 WM_FONTCHANGE**（批量入口最后统一广播一次，见 `unlink_quiet`）。
 ///
 /// DEF-6（2026-11-01 测试报告，高危）：旧顺序是「先动文件、后写账本」，而跨盘时
 /// `move_file` 走「复制 + 源送 Windows 回收站」——`trash` crate 的 IFileOperation
@@ -1555,13 +1549,7 @@ pub enum RestoreOutcome {
     Relinked(String),
 }
 
-pub fn unlink(path: &str, family: &str) -> Result<TrashEntry, String> {
-    let entry = unlink_quiet(path, family)?;
-    refresh_system_font_cache();
-    Ok(entry)
-}
-
-/// `unlink` 的本体：**不广播 WM_FONTCHANGE**。
+/// `unlink_quiet` 的本体：**不广播 WM_FONTCHANGE**。
 ///
 /// 批量删除要走这个版本 —— 4020 个链接字体若每个都广播一次 `WM_FONTCHANGE`，
 /// 等于向所有顶层窗口发 4020 轮通知（C8：与「每项重写整份 state」同一个毛病，
@@ -2251,7 +2239,7 @@ mod tests {
         let font = tmp.join("Fake Font.ttf");
         fs::write(&font, b"not really a font").unwrap();
 
-        let entry = uninstall(font.to_str().unwrap(), "Fake Font").unwrap();
+        let entry = uninstall_quiet(font.to_str().unwrap(), "Fake Font").unwrap();
         assert!(!font.exists(), "file should be moved out");
         assert!(Path::new(&entry.trashed_path).exists());
 
@@ -2284,7 +2272,7 @@ mod tests {
         let font = tmp.join("Ledger Font.ttf");
         fs::write(&font, b"not really a font").unwrap();
 
-        let entry = uninstall(font.to_str().unwrap(), "Ledger Font").unwrap();
+        let entry = uninstall_quiet(font.to_str().unwrap(), "Ledger Font").unwrap();
         // 账本、副本、列表三处必须同时看得到这条记录
         let sidecar = sidecar_path(Path::new(&entry.trashed_path));
         assert!(sidecar.exists(), "账本应与副本同时存在");
