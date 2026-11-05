@@ -1046,5 +1046,6 @@
   "about.featOrganize": "Grupos, instantáneas, favoritos y notas con detección de licencia",
   "about.featAutomation": "Complementos externos, API local y MCP: automatización opcional",
   "about.featOnline": "Explora y descarga Google Fonts y Nerd Fonts",
-  "about.featPrivacy": "Privacidad primero: las fuentes se quedan en tu equipo, todo funciona sin conexión"
+  "about.featPrivacy": "Privacidad primero: las fuentes se quedan en tu equipo, todo funciona sin conexión",
+  "detail.licenseEmbedded": "Copyright incrustado en el archivo de la fuente"
 }

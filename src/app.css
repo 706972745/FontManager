@@ -1377,6 +1377,10 @@ h2.detail-title.copy-name {
 .license-file-missing {
   color: var(--text-tertiary);
 }
+/* 字体文件 name 表自带版权信息：如实陈述，不做成「缺失」的样子 */
+.license-file-embedded {
+  color: var(--text-secondary);
+}
 .license-file-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -2041,6 +2045,8 @@ h2.detail-title.copy-name {
    注意：这套 token 里没有"红色"，--error / --warning 都是灰度（#d4d4d8 / #3f3f46），
    所以危险动作靠**文字说明 + 位置**表达，主按钮沿用 accent 渐变（同 .bulktag-apply），
    不要自造红色，否则跟整个界面不搭。 */
+/* 2026-11-05 用户口径：确认框要和设置面板同一观感 —— 浅色下轻轻压暗 + 模糊，
+   面板接近纯白，不再出现「整窗蒙一层重灰」（那层 55% 的黑纱就是发灰的元凶） */
 .trashconfirm-backdrop {
   position: fixed;
   inset: 0;
@@ -2049,6 +2055,11 @@ h2.detail-title.copy-name {
   display: grid;
   place-items: center;
   background: rgba(var(--scrim-rgb), 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+:root[data-theme="light"] .trashconfirm-backdrop {
+  background: rgba(18, 18, 26, 0.16);
 }
 .trashconfirm-panel {
   width: min(420px, 92%);
@@ -2064,6 +2075,14 @@ h2.detail-title.copy-name {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+/* 浅色主题：面板用纯白实底，警示只留在边框描色上（弱化到不抢字） */
+:root[data-theme="light"] .trashconfirm-panel {
+  background: #fff;
+  border-color: color-mix(in srgb, var(--warning) 45%, rgba(18, 18, 26, 0.24));
+  box-shadow:
+    var(--shadow-ground),
+    var(--shadow-mass);
 }
 .trashconfirm-head {
   display: flex;

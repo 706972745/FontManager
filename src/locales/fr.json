@@ -1046,5 +1046,6 @@
   "about.featOrganize": "Groupes, instantanés, favoris et notes avec détection de licence",
   "about.featAutomation": "Extensions hors processus, API locale et MCP — automatisation optionnelle",
   "about.featOnline": "Parcourez et téléchargez Google Fonts et Nerd Fonts",
-  "about.featPrivacy": "Confidentialité d'abord : les polices restent locales, tout marche hors ligne"
+  "about.featPrivacy": "Confidentialité d'abord : les polices restent locales, tout marche hors ligne",
+  "detail.licenseEmbedded": "Copyright intégré au fichier de police"
 }

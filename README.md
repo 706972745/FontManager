@@ -247,9 +247,11 @@ Files are recognized by **content**, not extension.
 - Every family gets an automatic **license verdict**: personal / paid /
   free-commercial / unknown, with an **evidence sentence** (which documents were read)
 - Badges show on cards and in the QuickBar; the full text lives in the detail panel
-- On import: folders that **already have** a license file are left alone; missing
-  ones get an auto-generated license note; two contradictory licenses in one
-  folder → verdict "unknown", for you to check
+- **No license file is ever generated.** Folders that already have a license file
+  are simply read; when there is none, your folder is left untouched and
+  FontManager falls back to the **copyright embedded in the font file itself**
+  (shown as such in the detail panel); two contradictory licenses in one folder →
+  verdict "unknown", for you to check
 - Wrong verdict? **Override it manually** in the detail panel; it's remembered
 - **Duplicates**: files claiming the same font identity are flagged and resolved
   from the detail panel

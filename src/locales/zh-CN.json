@@ -1020,5 +1020,6 @@
   "about.featOrganize": "分组、快照、收藏评分与备注，授权自动判定",
   "about.featAutomation": "进程外插件 + 本地 API + MCP，自动化开箱可选",
   "about.featOnline": "在线浏览并下载 Google Fonts 与 Nerd Fonts",
-  "about.featPrivacy": "隐私优先：字体留在本地，离线可用全部功能"
+  "about.featPrivacy": "隐私优先：字体留在本地，离线可用全部功能",
+  "detail.licenseEmbedded": "字体文件自带版权信息"
 }

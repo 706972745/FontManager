@@ -1012,5 +1012,6 @@
   "about.featOrganize": "分組、快照、收藏評分與備註，授權自動判定",
   "about.featAutomation": "程序外外掛 + 本機 API + MCP，自動化開箱可選",
   "about.featOnline": "線上瀏覽並下載 Google Fonts 與 Nerd Fonts",
-  "about.featPrivacy": "隱私優先：字體留在本機，離線可用全部功能"
+  "about.featPrivacy": "隱私優先：字體留在本機，離線可用全部功能",
+  "detail.licenseEmbedded": "字型檔案自帶版權資訊"
 }
