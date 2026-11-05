@@ -15,7 +15,7 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { LoaderCircle } from "lucide-react";
 import { ArtIcon } from "./ArtIcon";
@@ -245,6 +245,32 @@ export function SettingsOverlay() {
   const switchLibraryDir = (dir: string) => {
     if (settings.libraryDirEnabled && settings.libraryDir === dir) return;
     void updateSettings({ ...settings, libraryDir: dir, libraryDirEnabled: true });
+  };
+
+  /**
+   * 点库地址行 = 把这个库重新指到另一个文件夹（用户 2026-11-05 定：这一行是「地址」，
+   * 点它就该能改地址）。切换库改走行尾的「切换」按钮，两件事分开，
+   * 免得只想换目录的人一不留神把库切走。
+   *
+   * 选中的目录已经在列表里 → 不重复加，直接切过去；选回自己 → 什么都不做。
+   */
+  const changeLibraryDir = async (dir: string) => {
+    const picked = await open({
+      directory: true,
+      title: t("settings.libraryChangeTitle"),
+      defaultPath: dir,
+    });
+    if (!picked || picked === dir) return;
+    if (libraryDirs.includes(picked)) {
+      toast.info(t("settings.libraryAlreadyListed"));
+      switchLibraryDir(picked);
+      return;
+    }
+    void updateSettings({
+      ...settings,
+      libraryDirs: libraryDirs.map((d) => (d === dir ? picked : d)),
+      libraryDir: settings.libraryDir === dir ? picked : settings.libraryDir,
+    });
   };
 
   /** 添加库：最多 3 个；已经在列表里就直接切过去，不重复加 */
@@ -660,7 +686,11 @@ export function SettingsOverlay() {
                     <button
                       className="path-link detail-mono settings-folder-path"
                       data-hint-text={defaultLibDir}
-                      onClick={() => void revealItemInDir(defaultLibDir).catch(() => {})}
+                      onClick={() =>
+                        void ipc
+                          .revealPath(defaultLibDir)
+                          .catch(() => toast.error(t("toast.couldntOpenFileManager")))
+                      }
                     >
                       <ArtIcon name="folder" size={14} />
                       <span className="settings-folder-path">{defaultLibDir}</span>
@@ -701,26 +731,37 @@ export function SettingsOverlay() {
                               active ? "settings-library-active" : ""
                             } ${customDirActive ? "" : "settings-dim"}`}
                           >
-                            {/* 整行可点：切到这个库 */}
+                            {/* 整行可点：把这个库的地址改到别的文件夹 */}
                             <button
                               className="path-link detail-mono settings-folder-path"
-                              data-hint-text={t("settings.librarySwitchHint")}
-                              aria-pressed={active}
-                              onClick={() => switchLibraryDir(dir)}
+                              data-hint-text={t("settings.libraryChangeHint")}
+                              aria-label={t("settings.libraryChangeHint")}
+                              onClick={() => void changeLibraryDir(dir)}
                             >
                               <ArtIcon name="folder" size={14} />
                               <span className="settings-folder-path">{dir}</span>
-                              {active && (
-                                <span className="settings-library-current">
-                                  {t("settings.libraryCurrent")}
-                                </span>
-                              )}
                             </button>
+                            {active ? (
+                              <span className="settings-library-current">
+                                {t("settings.libraryCurrent")}
+                              </span>
+                            ) : (
+                              <button
+                                className="settings-library-switch"
+                                data-hint-text={t("settings.librarySwitchHint")}
+                                aria-label={t("settings.librarySwitchHint")}
+                                onClick={() => switchLibraryDir(dir)}
+                              >
+                                {t("settings.librarySwitch")}
+                              </button>
+                            )}
                             <button
                               className="settings-library-open"
                               data-hint-text={t("settings.libraryReveal")}
                               aria-label={t("settings.libraryReveal")}
-                              onClick={() => void revealItemInDir(dir).catch(() => {})}
+                              onClick={() =>
+                                void ipc.revealPath(dir).catch(() => toast.error(t("toast.couldntOpenFileManager")))
+                              }
                             >
                               <FolderOpen size={13} strokeWidth={1.5} />
                             </button>

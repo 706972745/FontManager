@@ -3759,6 +3759,23 @@ h2.detail-title.copy-name {
   color: var(--accent-a);
   border: 1px solid color-mix(in srgb, var(--accent-a) 35%, transparent);
 }
+/* 非当前库：行尾给一个明确的「切换」入口（点行本身是改地址，不再切库）。
+   选择器带 button 是为了盖过上面的 `.settings-folder button`（内边距 / 圆角 / 颜色）。 */
+.settings-library-row button.settings-library-switch {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  border: 1px solid rgba(var(--ink-rgb), 0.14);
+  cursor: pointer;
+  transition: color var(--t-quick) ease, border-color var(--t-quick) ease;
+}
+.settings-library-row button.settings-library-switch:hover {
+  color: var(--accent-a);
+  border-color: color-mix(in srgb, var(--accent-a) 45%, transparent);
+}
 .settings-library-open,
 .settings-library-remove {
   flex-shrink: 0;

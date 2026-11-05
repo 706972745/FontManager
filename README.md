@@ -14,7 +14,7 @@
 This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) with Chinese localization and new features. **[🇨🇳 完整中文文档请看这里 →](README.zh-CN.md)**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.2.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.2.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20·%20Linux%20·%20macOS-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 
@@ -125,7 +125,7 @@ from one clean, fast, native app. Your fonts never leave your machine.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-7c3aed?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.2.5-5b21b6?style=flat-square)](https://zsync.eu/fontmanager/)
+[![Version](https://img.shields.io/badge/Version-1.2.6-5b21b6?style=flat-square)](https://zsync.eu/fontmanager/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20·%20Windows%20·%20macOS-2d2a4a?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-4f46e5?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-24C8DB?style=flat-square)](https://tauri.app)

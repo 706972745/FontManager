@@ -13,6 +13,17 @@ pub struct ScanProgress {
     pub total: usize,
 }
 
+/// 默认字体库（没启用自定义文件夹时用它，也是导入字体 / 链接字体的落盘位置）。
+///
+/// 用户 2026-11-05 定：**默认库放在软件安装目录下**（`<安装目录>\字体库`），
+/// 别散落到 `AppData\Local\Microsoft\Windows\Fonts` 那个系统字体目录里。
+///
+/// - NSIS 版装在 `%LOCALAPPDATA%\FontManager`，可写，满足要求；
+///   而且 NSIS 卸载段只 `RMDir "$INSTDIR"`（非递归）+ 删已知文件，
+///   子目录里的用户字体不会被误删（已核对打包模板 installer.nsi）。
+/// - MSI 版装在 `Program Files`，普通权限写不进去 → 回退到
+///   `%LOCALAPPDATA%\FontManager\字体库`，功能不受影响。
+/// - 两者都不可写时兜底到旧位置 [`legacy_managed_font_dir`]。
 pub fn managed_font_dir() -> PathBuf {
     #[cfg(target_os = "linux")]
     {
@@ -29,11 +40,62 @@ pub fn managed_font_dir() -> PathBuf {
     }
     #[cfg(target_os = "windows")]
     {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("Microsoft\\Windows\\Fonts")
+        managed_dir_cached().clone()
     }
 }
+
+/// 1.2.5 及更早版本的默认库位置（Windows 的「当前用户字体」目录）。
+///
+/// 只在两处用：老用户的库地址迁移（见 `store::load`）与兜底。
+#[cfg(target_os = "windows")]
+pub fn legacy_managed_font_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("Microsoft\\Windows\\Fonts")
+}
+
+/// 解析结果只算一次：后面几十个调用点都在启动 / 扫描热路径上，别每次都打盘。
+#[cfg(target_os = "windows")]
+fn managed_dir_cached() -> &'static PathBuf {
+    static CELL: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    CELL.get_or_init(resolve_managed_dir)
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_managed_dir() -> PathBuf {
+    // 调试构建跑在 rust-target\debug 下，别把字体库丢进 target 目录里
+    if !cfg!(debug_assertions) {
+        if let Some(base) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        {
+            let dir = base.join("字体库");
+            if is_writable_dir(&dir) {
+                return dir;
+            }
+        }
+    }
+    if let Some(local) = dirs::data_local_dir() {
+        let dir = local.join("FontManager").join("字体库");
+        if is_writable_dir(&dir) {
+            return dir;
+        }
+    }
+    legacy_managed_font_dir()
+}
+
+/// 能不能在这个目录里建文件 —— 装到 Program Files 时这里会返回 false。
+#[cfg(target_os = "windows")]
+fn is_writable_dir(dir: &Path) -> bool {
+    if fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(".zfm-write-test");
+    let ok = fs::write(&probe, b"1").is_ok();
+    let _ = fs::remove_file(&probe);
+    ok
+}
+
 
 pub fn effective_managed_dir(library_dir: Option<&str>) -> PathBuf {
     match library_dir.map(str::trim).filter(|s| !s.is_empty()) {

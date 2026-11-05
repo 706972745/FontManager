@@ -300,7 +300,50 @@ pub fn load() -> AppState {
             crate::diag::log(&format!("store: failed to persist deactivated cleanup: {e}"));
         }
     }
+    // 1.2.6：默认库从「Windows 用户字体目录」搬到了安装目录。
+    // 老用户（没开自定义文件夹、但确实往旧默认库导入过字体）必须把地址**钉死在旧目录**上：
+    // 否则升级后库一下子变空，几千个字体全变成「用户字体」，停用也停不掉。
+    let pinned_before = state.library_dir.clone();
+    if pin_legacy_library(&mut state) {
+        crate::diag::log(&format!(
+            "store: pinned legacy library {} -> {}",
+            pinned_before.unwrap_or_else(|| "<default>".into()),
+            state.library_dir.clone().unwrap_or_default()
+        ));
+        if let Err(e) = save(&state) {
+            crate::diag::log(&format!("store: failed to persist legacy library pin: {e}"));
+        }
+    }
     state
+}
+
+/// 老默认库（`%LOCALAPPDATA%\Microsoft\Windows\Fonts`）里还有我们导入过的字体时，
+/// 把库地址显式钉在它上面。返回是否真的改了状态。
+#[cfg(target_os = "windows")]
+fn pin_legacy_library(state: &mut AppState) -> bool {
+    if state.library_dir.is_some() || !state.library_dirs.is_empty() {
+        return false;
+    }
+    let legacy = crate::scanner::legacy_managed_font_dir();
+    let legacy_str = legacy.to_string_lossy().to_lowercase();
+    let used = state
+        .added
+        .keys()
+        .chain(state.linked.iter())
+        .any(|p| p.to_lowercase().starts_with(&legacy_str));
+    if !used {
+        return false;
+    }
+    let dir = legacy.to_string_lossy().into_owned();
+    state.library_dir = Some(dir.clone());
+    state.library_dirs = vec![dir];
+    state.library_dir_enabled = true;
+    true
+}
+
+#[cfg(not(target_os = "windows"))]
+fn pin_legacy_library(_state: &mut AppState) -> bool {
+    false
 }
 
 pub fn save(state: &AppState) -> Result<(), String> {
@@ -367,5 +410,41 @@ mod tests {
             state.snapshots[0].entries[0].path.as_deref(),
             Some("C:\\Windows\\Fonts\\arial.ttf")
         );
+    }
+
+    /// 1.2.6：默认库搬到安装目录后，以前往旧默认库导入过字体的用户
+    /// 必须把库地址钉回旧目录，否则升级后库会「变空」。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn legacy_default_library_gets_pinned() {
+        let legacy = crate::scanner::legacy_managed_font_dir();
+        let inside = legacy.join("SomeFont-Regular.ttf").to_string_lossy().into_owned();
+
+        let mut used = AppState::default();
+        used.added.insert(inside.clone(), 0);
+        assert!(pin_legacy_library(&mut used), "用过旧默认库要钉住");
+        assert!(used.library_dir_enabled);
+        assert_eq!(used.library_dirs.len(), 1);
+        assert_eq!(
+            used.library_dir.as_deref().map(str::to_lowercase),
+            Some(legacy.to_string_lossy().to_lowercase()),
+            "库地址应指向旧默认目录"
+        );
+
+        // 没往旧库导过东西（只往自定义库导过）→ 不该钉，走新默认位置
+        let mut clean = AppState::default();
+        clean
+            .added
+            .insert(r"E:\Fonts\Inter-Regular.ttf".into(), 0);
+        assert!(!pin_legacy_library(&mut clean));
+        assert!(clean.library_dir.is_none());
+
+        // 已经有库地址的用户一律不动
+        let mut custom = AppState::default();
+        custom.library_dir = Some(r"E:\Fonts".into());
+        custom.library_dirs = vec![r"E:\Fonts".into()];
+        custom.added.insert(inside, 0);
+        assert!(!pin_legacy_library(&mut custom));
+        assert_eq!(custom.library_dir.as_deref(), Some(r"E:\Fonts"));
     }
 }

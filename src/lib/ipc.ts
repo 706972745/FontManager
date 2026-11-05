@@ -374,6 +374,11 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   setWindowTransitions: (disabled: boolean) =>
     invoke<void>("set_window_transitions", { disabled }),
   defaultLibraryDir: () => invoke<string>("default_library_dir"),
+  /**
+   * 在资源管理器里定位到某个路径（打开它所在的文件夹并选中它）。
+   * 目录不能用 plugin-opener 的 revealItemInDir —— 那个会直接钻进目录本身。
+   */
+  revealPath: (path: string) => invoke<void>("reveal_path", { path }),
   /** 给字体库文件夹挂上软件专属图标（灰底文件夹 + 抽出的纸 + 黑 F） */
   applyLibraryFolderIcon: (dir: string) =>
     invoke<void>("apply_library_folder_icon", { dir }),
