@@ -71,6 +71,21 @@ This release closes out two long-running threads — **library scale** and **men
 - **Warm resident COM host** — first round-trip with Photoshop and friends drops from ~5 s to ~0.2 s
 - **Single instance** — launching a second copy just raises the existing window
 
+### 🎨 Icon scheme: collage of torn paper (black / white / gray)
+
+Five icons for five things: the app itself, snapshot export, pack export (fonts included),
+data export (curation only) and the font-library folder. One visual language throughout —
+**torn edges, stacked sheets, halftone dots, translucent tape, misregistered letterforms** —
+each letter being the initial of its object (Z / S / P / L / F), still legible down to 48 / 32 / 24 px.
+
+<div align="center">
+
+<img src="icons-overview.png" alt="FontManager icon scheme: app Z, snapshot S, pack export P, data export L, library folder F" width="920" />
+
+<sub>App · Z ｜ Snapshot · S ｜ Pack export · P ｜ Data export · L ｜ Library folder · F</sub>
+
+</div>
+
 ### Build from source
 
 ```bash
