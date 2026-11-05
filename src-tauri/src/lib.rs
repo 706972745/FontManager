@@ -2188,9 +2188,13 @@ fn set_settings(
         settings.library_dirs.clone(),
         settings.library_dir_enabled,
     );
+    let before_change = {
+        let state = store.0.lock().map_err(|e| e.to_string())?;
+        state.active_library_dir().map(|s| s.to_owned())
+    };
+    let library_changed;
     {
         let mut state = store.0.lock().map_err(|e| e.to_string())?;
-        let old_library = state.active_library_dir().map(|s| s.to_owned());
         state.extra_dirs = settings.extra_dirs.clone();
         state.watch_enabled = settings.watch_enabled;
         state.auto_activate_imports = settings.auto_activate_imports;
@@ -2203,8 +2207,9 @@ fn set_settings(
         // 换库（含「关掉自定义文件夹」回到默认目录）→ 旧库里登记的链接/新增记录必须退场，
         // 否则 `scan_fonts` 还会顺着 linked 把旧库字体扫回来，用户看到「库没换干净」。
         let new_library = state.active_library_dir().map(|s| s.to_owned());
-        if old_library != new_library {
-            let old_managed = scanner::effective_managed_dir(old_library.as_deref());
+        library_changed = before_change != new_library;
+        if library_changed {
+            let old_managed = scanner::effective_managed_dir(before_change.as_deref());
             let new_managed = scanner::effective_managed_dir(new_library.as_deref());
             let retired = retire_old_library(&mut state, &old_managed, &new_managed);
             if retired > 0 {
@@ -2215,12 +2220,20 @@ fn set_settings(
                     retired
                 ));
             }
+            // 旧库目录上挂着我们加的图标和 desktop.ini，换走以后要摘掉，
+            // 否则那个文件夹看起来还是「库」。摘的是显示层，失败只记日志。
+            if let Err(e) = library_marker::retire(&old_managed.to_string_lossy()) {
+                crate::diag::log(&format!("[store] 旧库图标复原失败：{e}"));
+            }
         }
         store::save(&state)?;
     }
-    // 自定义库生效时，把「库文件夹图标」挂上去（换库后图标跟着走）。
+    // 换库时把「库文件夹图标」挂到新库上（图标跟着库走）。
+    // 只在库地址真的变了才动盘：每次保存设置（比如只是关个动效）都去重写用户目录里的
+    // desktop.ini、再给目录加只读，既没必要也容易让人以为文件被改了。
+    // 启动时另有一次补挂，覆盖「用户手动删了 desktop.ini」的情况。
     // 图标只是显示层的东西：失败只记日志，不影响换库。
-    if settings.library_dir_enabled {
+    if library_changed && settings.library_dir_enabled {
         if let Some(dir) = library_dir.as_deref() {
             if let Err(e) = library_marker::apply(dir) {
                 crate::diag::log(&format!("[store] 库文件夹图标应用失败：{e}"));
@@ -2251,35 +2264,46 @@ fn default_library_dir() -> String {
     scanner::managed_font_dir().to_string_lossy().into_owned()
 }
 
-/// 在资源管理器里「定位到」某个路径：打开**它所在的文件夹**并选中它。
+/// 在资源管理器里**打开这个文件夹本身**（进去，看到里面的内容）。
 ///
-/// 不能用 tauri-plugin-opener 的 `revealItemInDir`：它对**目录**走的是
-/// `SHOpenFolderAndSelectItems`，本机实测会直接钻进这个目录本身 —— 用户在设置页
-/// 点库地址旁的文件夹按钮，看到的是「打开了字体库」，而不是「打开字体库所在的位置」。
-/// `explorer /select,` 对目录和文件都是打开父目录并选中（Win11 实测），所以统一走它。
+/// 不要用 `explorer /select` 或 plugin-opener 的 `revealItemInDir`：那两个都是
+/// 「打开父目录并选中它」。也不要直接 `spawn("explorer.exe", path)`：explorer 的
+/// 命令行解析很怪，本机实测会被忽略、落到「文档」。走 ShellExecuteW 的 "open"
+/// 动词，才会真的进到目标目录里。
 #[tauri::command]
-fn reveal_path(path: String) -> Result<(), String> {
+fn open_folder(path: String) -> Result<(), String> {
     let p = std::path::PathBuf::from(&path);
-    if !p.exists() {
-        return Err(format!("no such path: {path}"));
+    if !p.is_dir() {
+        return Err(format!("not a folder: {path}"));
     }
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        // 结尾的反斜杠会把引号转义掉（"C:\a\"），先削掉
-        let mut shown = p.display().to_string();
-        while shown.len() > 3 && (shown.ends_with('\\') || shown.ends_with('/')) {
-            shown.pop();
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+
+        let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let op: Vec<u16> = "open\0".encode_utf16().collect();
+        // SW_SHOWNORMAL
+        let ret = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                wide.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+            )
+        };
+        // ShellExecute 的返回值 <= 32 都是错误码，> 32 才算成功
+        if ret as isize > 32 {
+            Ok(())
+        } else {
+            Err(format!("ShellExecuteW failed: {}", ret as isize))
         }
-        let mut cmd = std::process::Command::new("explorer.exe");
-        cmd.raw_arg(format!("/select,\"{shown}\""));
-        // explorer.exe 成功时也常返回 1，退出码不可信，起了就算成功
-        cmd.spawn().map_err(|e| e.to_string())?;
-        Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     {
-        tauri_plugin_opener::reveal_item_in_dir(p).map_err(|e| e.to_string())
+        tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())
     }
 }
 
@@ -2734,7 +2758,7 @@ pub fn run() {
             get_settings,
             set_settings,
             default_library_dir,
-            reveal_path,
+            open_folder,
             apply_library_folder_icon,
             open_url,
             adobe_available,

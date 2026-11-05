@@ -547,7 +547,7 @@
   "settings.libraryFolderTitle": "Choisir le dossier de la bibliothèque",
   "settings.libraryLimit": "{count} dossiers de bibliothèque au maximum",
   "settings.libraryRemove": "Retirer de la liste (les fichiers restent)",
-  "settings.libraryReveal": "Afficher dans l'Explorateur",
+  "settings.libraryReveal": "Ouvrir ce dossier",
   "settings.librarySwitch": "Changer",
   "settings.librarySwitchHint": "Cliquez pour utiliser cette bibliothèque",
   "settings.online": "Navigateur de polices en ligne",

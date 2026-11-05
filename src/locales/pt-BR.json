@@ -547,7 +547,7 @@
   "settings.libraryFolderTitle": "Escolher pasta da biblioteca",
   "settings.libraryLimit": "Até {count} pastas de biblioteca",
   "settings.libraryRemove": "Remover da lista (os arquivos permanecem)",
-  "settings.libraryReveal": "Mostrar no Explorador",
+  "settings.libraryReveal": "Abrir esta pasta",
   "settings.librarySwitch": "Alternar",
   "settings.librarySwitchHint": "Clique para usar esta biblioteca",
   "settings.online": "Navegador de fontes online",

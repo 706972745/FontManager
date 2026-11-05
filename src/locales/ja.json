@@ -527,7 +527,7 @@
   "settings.libraryFolderTitle": "ライブラリフォルダを選択",
   "settings.libraryLimit": "保存できるライブラリフォルダは最大 {count} 個です",
   "settings.libraryRemove": "リストから削除（ファイルは残ります）",
-  "settings.libraryReveal": "エクスプローラーで表示",
+  "settings.libraryReveal": "このフォルダーを開く",
   "settings.librarySwitch": "切り替え",
   "settings.librarySwitchHint": "クリックでこのライブラリに切り替え",
   "settings.online": "オンラインフォントブラウザー",

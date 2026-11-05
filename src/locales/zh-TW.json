@@ -529,7 +529,7 @@
   "settings.libraryFolderTitle": "選擇字型庫資料夾",
   "settings.libraryLimit": "最多儲存 {count} 個字型庫位址",
   "settings.libraryRemove": "從清單移除（不刪除檔案）",
-  "settings.libraryReveal": "在檔案總管中定位",
+  "settings.libraryReveal": "開啟這個資料夾",
   "settings.librarySwitch": "切換",
   "settings.librarySwitchHint": "點擊切換到該字型庫",
   "settings.online": "線上字型瀏覽器",

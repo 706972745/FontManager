@@ -547,7 +547,7 @@
   "settings.libraryFolderTitle": "Elegir carpeta de la biblioteca",
   "settings.libraryLimit": "Máximo {count} carpetas de biblioteca",
   "settings.libraryRemove": "Quitar de la lista (los archivos se conservan)",
-  "settings.libraryReveal": "Mostrar en el Explorador",
+  "settings.libraryReveal": "Abrir esta carpeta",
   "settings.librarySwitch": "Cambiar",
   "settings.librarySwitchHint": "Haz clic para usar esta biblioteca",
   "settings.online": "Explorador de fuentes en línea",
