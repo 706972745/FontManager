@@ -1013,5 +1013,7 @@
   "about.featAutomation": "アウトプロセス插件＋ローカル API＋MCP の自動化",
   "about.featOnline": "Google Fonts と Nerd Fonts の閲覧とダウンロード",
   "about.featPrivacy": "プライバシー優先：フォントはローカルに残り、全機能オフライン対応",
-  "detail.licenseEmbedded": "フォントファイルに著作権情報が組み込まれています"
+  "detail.licenseEmbedded": "フォントファイルに著作権情報が組み込まれています",
+  "menu.typeToSearch": "入力してフォントを検索…",
+  "menu.searchNoMatch": "一致するフォントがありません"
 }
