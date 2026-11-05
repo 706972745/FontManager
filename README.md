@@ -88,56 +88,116 @@ one-click activation, and the iron rule that **your font files stay on your mach
 ## 🎯 Feature tour
 
 ### Your whole library, rendered live
-Every family is previewed in its own letterforms the moment the library loads —
-search filters as you type, and virtualized lists keep ten thousand faces smooth.
+
+![Main window: the library, live previews and the detail panel](main.png)
+
+- **Three views** — cards / list / waterfall, one click in the toolbar; every card
+  is previewed in the font's **own letterforms**
+- **Toolbar** — search, custom preview text, an 8-step preview-size slider (8–96px),
+  filter and sorting
+- **Virtualized lists** — thousands of faces scroll smoothly; previews load on
+  demand behind an LRU cache
+- **Smart classification** — CJK families recognized by name, monospace / serif /
+  sans-serif auto-sorted, variable fonts (VAR) and OpenType features surfaced
+
+### The sidebar: everything starts on the left
+
+- **Browse** (library · favorites · recent imports) plus four state views:
+  **activated / activate-until-quit / deactivated / system fonts**
+- **Collections** for structure and **tags** you can bulk-apply to a selection
+- **Snapshots** capture the current activation set and can be applied,
+  merged into the current state, or switched to at any time
+- Bottom entries: **online fonts · trash · about · shortcuts** (press <kbd>?</kbd> any time)
 
 ### Activate & deactivate — the killer feature
-Toggle any family on or off with one click. Deactivated fonts vanish from every
-app's font menu but stay in the library, ready to come back instantly.
 
-### Try before committing
-Install from a ZIP or by double-clicking a font file. Mixed-family ZIP packages
-are rejected with a clear reason, so your library never fills with surprises.
+The toggle on each card writes to the system: **every app's font menu updates
+immediately.** Deactivated fonts disappear from other apps but stay in the
+library, ready to come back instantly.
 
-### Browse and download free fonts
-The built-in online browser pulls the Google Fonts catalogue and Nerd Fonts
-releases; a family's license text sits right next to its download button.
+- **Activate until quit** — temporary fonts restore themselves when you exit
+- **Bulk** — select many, right-click "Activate {count}"; an interrupted bulk
+  run resumes with a prompt on next start
+- **System fonts are protected** — they wear an OS lock badge instead of a toggle
 
-### Apply a font in Photoshop or Illustrator
-Send any family straight into Adobe apps, or let **Affinity auto-activation**
-hand fonts over as you select them.
+### The detail panel: everything about a family
 
-### Organize: groups, snapshots, favorites, notes & ratings
-Tags and groups for structure, snapshots that capture an activation state and
-restore it later, favorites and one-click ★ ratings, per-family notes with
-**automatic license detection** that reads the font's own documentation.
+![Detail panel: multi-size specimen and metadata](detail.png)
 
-### A trash can, not a shredder
-Removed fonts go to FontManager's own trash first — recoverable, never lost.
+Click any family for live multi-size specimens, **variable-font axis sliders**,
+style / format / script / glyph counts, the full copyright text and file paths —
+plus activate, favorite and export right in the header. Name conflicts
+(several files claiming one font identity) are called out here.
 
-### Find duplicates, read licenses
-Duplicate detection and a copyright classifier run locally, so "can I use this
-commercially?" is answered without opening a browser.
+### Compare & specimens
 
-### Compare, waterfall, inspect
-Side-by-side comparison, waterfall specimens at any size, and a detail panel
-that shows every face, its files and its metadata.
+- **Compare** up to 4 families side by side (toolbar or right-click)
+- **Specimen view** exports a full-page PNG — the last look before delivery
 
-### The QuickBar
-A system-wide quick view on <kbd>Alt</kbd>+<kbd>`</kbd>: search your whole
-library from anywhere, dock it to the screen edge as a hairline, and pop it
-back when needed.
+### Installing and importing
+
+- **Drop it on the window** — ZIP import; a ZIP mixing several families is
+  **rejected as a whole** with a clear reason, so the library never fills with surprises
+- **Double-click install** — the `.S-FontManager / .P-FontManager / .L-FontManager`
+  container formats land straight in the library
+- **Online fonts** — browse Google Fonts by category (serif / sans / handwriting /
+  icons…) and Nerd Fonts releases; the **license text sits next to the download
+  button** and license files come along automatically
+- **Trash** — removal goes to FontManager's own trash first; restore any time,
+  permanent deletion only after confirmation
+
+### Apply fonts in Photoshop, Illustrator, CorelDRAW & Affinity
+
+Right-click a family → "Apply in {app}…" sends it straight into your design app:
+
+- **Photoshop / Illustrator** — driven over COM scripting, no menu hunting
+- **CorelDRAW** — no scripting API? FontManager **drives CorelDRAW's COM object
+  model directly**, matching Chinese fonts by their localized names
+- **Affinity auto-activation** — connected to Affinity's MCP server, FontManager
+  sees which fonts your open documents are missing and activates the ones your
+  library has, so they're simply there when you select text
+
+### ⚡ The QuickBar
+
+![QuickBar: the docked panel of activated fonts](quickbar.png)
+
+<kbd>Alt</kbd>+<kbd>`</kbd> (hotkey is configurable) pops the main window into a
+**docked panel pinned to the top of the screen**:
+
+- Shows only **activated** fonts: real letterform previews, license badges
+  (free-commercial / unknown…), copyright lines, one-click ★, expandable family
+  members ("> 3")
+- Top bar: activation count, search across activated fonts, preview text & size,
+  a **pin** to keep it expanded, and "full window" to morph back
+- **Auto-hide at the top edge** — collapses to a hairline that expands as your
+  mouse approaches; drag it to other screen edges to dock
+- Right-click any row for the full context menu (activate, copy names, collect, plugins…)
+
+### Organizing and judgment, all local
+
+- **Favorites & ratings** — one click on ★ sets one star, up to five; notes per family
+- **Duplicate detection** flags redundant files claiming the same font identity
+- **Automatic license detection** reads the font's own license documents and
+  answers **personal-free / paid / free-commercial / unknown** with an evidence
+  sentence — badges show right on cards and in the QuickBar
 
 ### Backup and move
-Export your library as a `.ZFontManager` pack (split archives up to 2 GiB) and
-import it anywhere — fonts, curation and snapshots travel together.
 
-### Themes, sound & motion
-Light and dark themes, optional interface sounds, and a reduced-motion mode
-that calms every animation.
+Export the whole library as a `.ZFontManager` pack (**auto-split archives up to
+2 GiB**) — font files plus collections, tags, snapshots, notes and ratings travel
+together and import anywhere.
 
-### Your language
-Nine languages out of the box, with a translation guide for contributors.
+### Command palette & shortcuts
+
+<kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command palette: jump to views, toggle fonts,
+compare, apply in apps, snapshot operations — hands on the keyboard.
+<kbd>?</kbd> shows the full shortcut list.
+
+### Themes & languages
+
+Light and dark themes, optional interface sounds, and a **reduced-motion** mode
+that calms every animation; nine languages out of the box, with a translation
+guide for contributors.
 
 ---
 
