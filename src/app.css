@@ -6471,3 +6471,40 @@ body.ui-fade-out .app-frame {
 :root:not([data-theme="light"]) .art-icon {
   filter: brightness(0.94);
 }
+
+/* ── 1.3.0：本地 API 令牌行 / 插件版本号 ── */
+.settings-api-token {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(var(--ink-rgb), 0.06);
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  user-select: all;
+}
+/* 令牌行里的两个小按钮沿用库地址行的胶囊外观（那一套样式被 scoped 在 .settings-library-row 下） */
+.settings-api-token + button {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  border: 1px solid rgba(var(--ink-rgb), 0.14);
+  cursor: pointer;
+  transition: color var(--t-quick) ease, border-color var(--t-quick) ease;
+}
+.settings-api-token + button:hover {
+  color: var(--accent-a);
+  border-color: color-mix(in srgb, var(--accent-a) 45%, transparent);
+}
+.settings-plugin-version {
+  margin-left: 6px;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  opacity: 0.65;
+}

@@ -686,12 +686,17 @@ const BATCH_FACES: usize = 120;
 /// 而且一个进度事件都不发 —— 界面上就是一条永远停在 100% 的进度条（0.9.8-1 修）。
 ///
 /// 返回值第二个是这一阶段实际的文件总数，调用方接着用它算总进度。
+/// 扫描所有目录（系统字体目录 + 额外目录 + 字库）。
+///
+/// 进度和分批结果通过回调交出去，不再直接 `app.emit` —— 这样 service 层（以及本地 HTTP API、
+/// 将来的 CLI）能用同一份实现，由调用方决定事件发到哪儿。
 pub fn scan_all(
-    app: &tauri::AppHandle,
     extra: &[String],
     managed: &Path,
     cache: &mut crate::fontcache::FontCache,
     progress_offset: usize,
+    on_progress: &dyn Fn(usize, usize),
+    on_batch: &dyn Fn(&[FontFace]),
 ) -> (Vec<FontFace>, usize) {
     let all_files: Vec<(PathBuf, FontSource)> = all_dirs(extra)
         .into_iter()
@@ -757,13 +762,7 @@ pub fn scan_all(
     // 而不是等全部扫完（几千个字体时要好几秒）才一次性出现。
     let mut batch: Vec<FontFace> = Vec::with_capacity(BATCH_FACES);
     // 先把 0% 报出去：界面立刻能显示进度条，而不是空等第一帧解析完
-    let _ = app.emit(
-        "scan:progress",
-        ScanProgress {
-            done: progress_offset,
-            total,
-        },
-    );
+    on_progress(progress_offset, total);
     for (done, (path, base_source)) in files.into_iter().enumerate() {
         let source = classify(&path, base_source, managed);
         let key = path.to_string_lossy().to_string();
@@ -812,21 +811,15 @@ pub fn scan_all(
         faces.extend(parsed);
         // 攒够一批就发出去（最后一批在循环结束后补发）
         if batch.len() >= BATCH_FACES {
-            let _ = app.emit("scan:batch", &batch);
+            on_batch(&batch);
             batch.clear();
         }
         if done % 25 == 0 || done + 1 == files_len {
-            let _ = app.emit(
-                "scan:progress",
-                ScanProgress {
-                    done: progress_offset + done + 1,
-                    total,
-                },
-            );
+            on_progress(progress_offset + done + 1, total);
         }
     }
     if !batch.is_empty() {
-        let _ = app.emit("scan:batch", &batch);
+        on_batch(&batch);
     }
 
     faces.sort_by(|a, b| a.id.cmp(&b.id));
