@@ -357,9 +357,12 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   const familyNames = useMemo(() => {
     const seen = new Set<string>();
     if (scope === "enabled") {
-      // 与速览顶栏「已启用 N」同口径：任一面启用，或会话级临时启用
+      // 与速览「已启用」同口径：可启停的字体里任一面启用、或会话级临时启用。
+      // 系统字体必须排除 —— 它们的 active 恒为真，不排除的话「已启用」范围
+      // 结果和「全部」几乎一样，Tab 切了也看不出变化（真机自测发现）。
       for (const f of fonts) {
-        if (f.active || sessionActivated.includes(f.family)) seen.add(f.family);
+        if (f.source !== "system" && (f.active || sessionActivated.includes(f.family)))
+          seen.add(f.family);
       }
     } else {
       for (const f of fonts) seen.add(f.family);
@@ -390,7 +393,10 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   const pick = (family: string) => {
     const st = useFontStore.getState();
     const fam = st.fonts.find((f) => f.family === family);
-    const enabled = !!fam && (fam.active || st.sessionActivated.includes(family));
+    // 「已启用」分流口径与范围过滤一致：系统字体不算（速览列表里没有它们，
+    // 选中就该退回完整界面的「系统字体」视图去定位）
+    const enabled =
+      !!fam && fam.source !== "system" && (fam.active || st.sessionActivated.includes(family));
     if (!inQuickbar || !enabled) {
       // 完整界面（或速览里选中了未启用字体）：选对目标视图，再选中并滚动定位。
       // 系统字体不在「字体库」列表里（侧栏是独立视图），必须跳「系统字体」，
