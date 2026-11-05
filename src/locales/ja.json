@@ -1018,5 +1018,7 @@
   "menu.searchNoMatch": "一致するフォントがありません",
   "menu.typeToSearchEnabled": "有効なフォントを検索…（Tab：すべて）",
   "sc.ctxTypeSearch": "右クリックメニューで入力してフォントを検索・移動",
-  "sc.ctxScope": "メニュー検索中：有効 / すべてを切り替え"
+  "sc.ctxScope": "メニュー検索中：有効 / すべてを切り替え",
+  "menu.scopeAll": "すべてのフォント",
+  "menu.scopeEnabled": "有効"
 }

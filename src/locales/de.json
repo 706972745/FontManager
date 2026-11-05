@@ -1035,5 +1035,7 @@
   "menu.searchNoMatch": "Keine passenden Schriften",
   "menu.typeToSearchEnabled": "Aktivierte Schriften suchen … (Tab: Alle)",
   "sc.ctxTypeSearch": "Im Kontextmenü tippen, um Schriften zu suchen und dorthin zu springen",
-  "sc.ctxScope": "In der Menüsuche: Aktivierte / Alle umschalten"
+  "sc.ctxScope": "In der Menüsuche: Aktivierte / Alle umschalten",
+  "menu.scopeAll": "Alle Schriften",
+  "menu.scopeEnabled": "Aktiviert"
 }

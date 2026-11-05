@@ -1035,5 +1035,7 @@
   "menu.searchNoMatch": "No matching fonts",
   "menu.typeToSearchEnabled": "Search enabled fonts… (Tab: all)",
   "sc.ctxTypeSearch": "Type in a context menu to search and jump to a font",
-  "sc.ctxScope": "In menu search: toggle enabled / all fonts"
+  "sc.ctxScope": "In menu search: toggle enabled / all fonts",
+  "menu.scopeAll": "All fonts",
+  "menu.scopeEnabled": "Enabled"
 }

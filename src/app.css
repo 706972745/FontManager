@@ -2841,6 +2841,23 @@ h2.detail-title.copy-name {
 .ctx-search::placeholder {
   color: rgba(var(--ink-rgb), 0.4);
 }
+/* 范围徽章：显示当前搜索范围（全部 / 已启用），点击切换（Tab 同效） */
+.ctx-scope {
+  flex: none;
+  border: 1px solid rgba(var(--ink-rgb), 0.25);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+  line-height: 15px;
+  color: rgba(var(--ink-rgb), 0.6);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ctx-scope:hover {
+  color: var(--ink, inherit);
+  border-color: rgba(var(--ink-rgb), 0.5);
+}
 .ctx-nomatch {
   padding: 8px 9px 9px;
   font-size: 12px;

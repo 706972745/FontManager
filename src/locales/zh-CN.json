@@ -1026,5 +1026,7 @@
   "menu.searchNoMatch": "没有匹配的字体",
   "menu.typeToSearchEnabled": "搜索已启用的字体…（Tab：全部）",
   "sc.ctxTypeSearch": "右键菜单中打字，直接搜索字体并定位",
-  "sc.ctxScope": "菜单搜索中：切换 已启用 / 全部字体"
+  "sc.ctxScope": "菜单搜索中：切换 已启用 / 全部字体",
+  "menu.scopeAll": "全部字体",
+  "menu.scopeEnabled": "已启用"
 }

@@ -6,7 +6,7 @@ import type { ReactNode, MouseEvent as ReactMouseEvent } from "react";
 import { create } from "zustand";
 import { recordContextMenuSize } from "../../lib/menuMetrics";
 import { useT } from "../../lib/i18n";
-import { useFontStore } from "../../state/fontStore";
+import { useFontStore, type Nav } from "../../state/fontStore";
 import { springSnappy } from "../springs";
 
 export type MenuItem =
@@ -392,9 +392,12 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
     const fam = st.fonts.find((f) => f.family === family);
     const enabled = !!fam && (fam.active || st.sessionActivated.includes(family));
     if (!inQuickbar || !enabled) {
-      // 完整界面（或速览里选中了未启用字体）：切到字体库视图、选中并滚动到该族。
-      // 三个视图（卡片/列表/样张）都监听 selectedFamily 自动 scrollToIndex。
-      if (st.nav.kind !== "library") st.setNav({ kind: "library" });
+      // 完整界面（或速览里选中了未启用字体）：选对目标视图，再选中并滚动定位。
+      // 系统字体不在「字体库」列表里（侧栏是独立视图），必须跳「系统字体」，
+      // 否则 scrollToIndex 找不到目标、界面看起来像「点了没反应」（用户实测）。
+      // 三个列表视图都监听 selectedFamily 自动 scrollToIndex。
+      const target: Nav = fam?.source === "system" ? { kind: "system" } : { kind: "library" };
+      if (st.nav.kind !== target.kind) st.setNav(target);
       st.select(family);
       if (inQuickbar) void st.setQuickbar(false);
     } else {
@@ -462,6 +465,8 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
       e.preventDefault();
       e.stopImmediatePropagation();
       setScope((s) => (s === "enabled" ? "all" : "enabled"));
+      // 切换后结果列表重排，焦点可能落在被卸载的节点上 —— 收回输入框
+      requestAnimationFrame(() => searchRef.current?.focus());
     };
     /**
      * Tab 逃出菜单会跑到背后被遮住的界面上（视觉上「焦点消失了」）。
@@ -512,8 +517,7 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
             onKeyDown={(e) => {
               // Tab 不在这里处理：容器捕获层的 onTabScope 先于一切冒泡截走它
               //（切搜索范围）；完整界面/速览一致 —— 搜索模式下 Tab 永远不关菜单
-              if (e.key === "Enter") {
-                e.preventDefault();
+              if (e.key === "Enter") {                e.preventDefault();
                 const active =
                   document.activeElement instanceof HTMLButtonElement &&
                   document.activeElement.classList.contains("ctx-hit")
@@ -534,6 +538,21 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
               }
             }}
           />
+          {/* 范围徽章：显式显示当前搜的是「全部」还是「已启用」，点击即可切换
+              （Tab 同效）。只靠 placeholder 提示不行 —— 一打字 placeholder 就没了，
+              用户看不出 Tab 到底切没切（用户实测反馈） */}
+          <button
+            type="button"
+            className="ctx-scope"
+            title={t("sc.ctxScope")}
+            onClick={(e) => {
+              e.stopPropagation();
+              setScope((s) => (s === "enabled" ? "all" : "enabled"));
+              searchRef.current?.focus();
+            }}
+          >
+            {scope === "enabled" ? t("menu.scopeEnabled") : t("menu.scopeAll")}
+          </button>
         </div>
       )}
       {searching ? (
