@@ -540,7 +540,7 @@
   "settings.libraryFolderTitle": "选择字体库文件夹",
   "settings.libraryLimit": "最多保存 {count} 个字体库地址",
   "settings.libraryRemove": "从列表移除（不删除文件）",
-  "settings.libraryReveal": "在资源管理器中定位",
+  "settings.libraryReveal": "打开这个文件夹",
   "settings.librarySwitch": "切换",
   "settings.librarySwitchHint": "点击切换到该字体库",
   "settings.online": "在线字体浏览器",

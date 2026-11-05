@@ -375,10 +375,11 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
     invoke<void>("set_window_transitions", { disabled }),
   defaultLibraryDir: () => invoke<string>("default_library_dir"),
   /**
-   * 在资源管理器里定位到某个路径（打开它所在的文件夹并选中它）。
-   * 目录不能用 plugin-opener 的 revealItemInDir —— 那个会直接钻进目录本身。
+   * 在资源管理器里打开这个文件夹本身（进去看内容）。
+   * 目录不要用 plugin-opener 的 revealItemInDir —— 那个是「打开父目录并选中」，
+   * 点库地址旁的文件夹按钮会落到桌面上，而不是进到字体库里。
    */
-  revealPath: (path: string) => invoke<void>("reveal_path", { path }),
+  openFolder: (path: string) => invoke<void>("open_folder", { path }),
   /** 给字体库文件夹挂上软件专属图标（灰底文件夹 + 抽出的纸 + 黑 F） */
   applyLibraryFolderIcon: (dir: string) =>
     invoke<void>("apply_library_folder_icon", { dir }),

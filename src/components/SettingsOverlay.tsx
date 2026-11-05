@@ -688,7 +688,7 @@ export function SettingsOverlay() {
                       data-hint-text={defaultLibDir}
                       onClick={() =>
                         void ipc
-                          .revealPath(defaultLibDir)
+                          .openFolder(defaultLibDir)
                           .catch(() => toast.error(t("toast.couldntOpenFileManager")))
                       }
                     >
@@ -760,7 +760,7 @@ export function SettingsOverlay() {
                               data-hint-text={t("settings.libraryReveal")}
                               aria-label={t("settings.libraryReveal")}
                               onClick={() =>
-                                void ipc.revealPath(dir).catch(() => toast.error(t("toast.couldntOpenFileManager")))
+                                void ipc.openFolder(dir).catch(() => toast.error(t("toast.couldntOpenFileManager")))
                               }
                             >
                               <FolderOpen size={13} strokeWidth={1.5} />

@@ -537,7 +537,7 @@
   "settings.libraryFolderTitle": "Bibliotheksordner wählen",
   "settings.libraryLimit": "Maximal {count} Bibliotheksordner",
   "settings.libraryRemove": "Aus Liste entfernen (Dateien bleiben)",
-  "settings.libraryReveal": "Im Explorer anzeigen",
+  "settings.libraryReveal": "Diesen Ordner öffnen",
   "settings.librarySwitch": "Wechseln",
   "settings.librarySwitchHint": "Klicken, um zu dieser Bibliothek zu wechseln",
   "settings.online": "Online-Schriftenbrowser",

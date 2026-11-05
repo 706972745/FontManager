@@ -43,6 +43,71 @@ pub fn apply(dir: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 摘掉库文件夹图标，恢复成系统默认的黄色文件夹。
+///
+/// 换库时对**旧库目录**调用：以前换库只给新目录挂图标，旧目录上那份
+/// `desktop.ini` + `.zfm-folder.ico` 和目录只读属性会一直留着 —— 用户换走以后
+/// 那个文件夹还挂着 FontManager 的图标，像是「这里还是库」。
+///
+/// 只在自己挂过的地方动：`desktop.ini` 里没有 `.zfm-folder.ico` 就说明是别人
+/// （或用户自己）设的图标，一个字节都不碰。
+pub fn retire(dir: &str) -> Result<(), String> {
+    let root = Path::new(dir);
+    if !root.is_dir() {
+        return Ok(());
+    }
+    let icon_path = root.join(ICON_NAME);
+    let ini_path = root.join(INI_NAME);
+
+    let mut touched = false;
+    if let Ok(bytes) = std::fs::read(&ini_path) {
+        let text = decode_ini(&bytes);
+        if text.contains(ICON_NAME) {
+            remove_file(&ini_path)?;
+            touched = true;
+        }
+    }
+    if icon_path.exists() {
+        remove_file(&icon_path)?;
+        touched = true;
+    }
+
+    // 只有真摘掉了我们的东西才动目录属性 / 通知 Shell：
+    // 旧库有可能就是系统的 Windows 字体目录，那边的 ReadOnly 属性是有含义的，
+    // 不能因为「换库顺手清一下」给清掉。
+    if touched {
+        #[cfg(windows)]
+        {
+            clear_readonly(root);
+            notify_dir_changed(root);
+        }
+    }
+    Ok(())
+}
+
+/// UTF-16LE（带 BOM）或 ANSI/UTF-8 的 desktop.ini 都尽量解出文本，仅供内部判断。
+fn decode_ini(bytes: &[u8]) -> String {
+    if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+        let units: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
+fn remove_file(path: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    clear_readonly(path);
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
 /// desktop.ini 必须是 UTF-16LE 带 BOM，Shell 才稳定识别中文路径。
 fn desktop_ini(icon: &Path) -> Vec<u8> {
     let icon = icon.to_string_lossy();
@@ -176,6 +241,42 @@ mod tests {
             clear_readonly(&ini);
             clear_readonly(&root);
         }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 换库后旧目录要恢复原样：ico 与 desktop.ini 都不留，目录只读属性摘掉
+    #[test]
+    fn retire_removes_our_marker() {
+        let root = std::env::temp_dir().join(format!("zfm-retire-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = root.to_string_lossy().to_string();
+
+        apply(&dir).unwrap();
+        retire(&dir).unwrap();
+        assert!(!root.join(ICON_NAME).exists(), "ico 应被删掉");
+        assert!(!root.join(INI_NAME).exists(), "desktop.ini 应被删掉");
+
+        // 再摘一次不能报错（换库逻辑可能重复走到）
+        retire(&dir).unwrap();
+        // 目录不存在时静默跳过
+        retire(&root.join("nope").to_string_lossy()).unwrap();
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 不是我们设的 desktop.ini（比如用户自己的文件夹图标）不能删
+    #[test]
+    fn retire_keeps_foreign_desktop_ini() {
+        let root = std::env::temp_dir().join(format!("zfm-foreign-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let ini = root.join(INI_NAME);
+        std::fs::write(&ini, b"[.ShellClassInfo]\r\nIconResource=C:\\other.ico,0\r\n").unwrap();
+
+        retire(&root.to_string_lossy()).unwrap();
+        assert!(ini.exists(), "别人的 desktop.ini 不该被删");
+
         let _ = std::fs::remove_dir_all(&root);
     }
 }

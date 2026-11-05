@@ -559,7 +559,7 @@
   "settings.libraryFolderTitle": "Выберите папку библиотеки",
   "settings.libraryLimit": "Можно сохранить до {count} папок библиотеки",
   "settings.libraryRemove": "Убрать из списка (файлы остаются)",
-  "settings.libraryReveal": "Показать в Проводнике",
+  "settings.libraryReveal": "Открыть эту папку",
   "settings.librarySwitch": "Переключить",
   "settings.librarySwitchHint": "Нажмите, чтобы переключиться на эту библиотеку",
   "settings.online": "Онлайн-каталог шрифтов",

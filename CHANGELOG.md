@@ -16,14 +16,17 @@ All notable changes to FontManager are documented here. The format follows
 - **切换库改用行尾的「切换」按钮**（当前库显示「当前」徽章）。两件事分开，
   免得只想换目录的人一不留神把库切走。
 - 换的若是当前库：旧库登记照旧退场、新库自动重扫，库文件夹图标也跟着搬到新目录。
+- 换走以后**旧库目录上的图标和 `desktop.ini` 会被摘掉**（新增 `library_marker::retire`），
+  恢复成系统默认的黄色文件夹；只认自己写的那份 `desktop.ini`，别人的文件夹图标不碰。
 
-### 修：文件夹按钮打开的是「库所在的位置」
+### 修：文件夹按钮直接进入字体库本身
 
-- 设置页里「默认」地址和每条库地址右侧的文件夹按钮，以前会直接钻进字体库目录本身。
-  根因：`tauri-plugin-opener` 的 `revealItemInDir` 对**目录**走 `SHOpenFolderAndSelectItems`，
-  实测会进入该目录；对文件才是「定位」。
-- 新增 Rust 命令 `reveal_path`（`explorer /select,`），目录和文件都是打开父目录并选中。
-  Win11 实测（用新窗口标题核对：开出来的是「桌面」，不是「字体库」）。
+- 设置页里「默认」地址和每条库地址右侧的文件夹按钮，现在直接在资源管理器里**打开这个
+  文件夹**（面包屑停在「字体库」，看到库里那些字体文件夹）。
+- 之前两种写法都会落到父目录并把「字体库」选中：`tauri-plugin-opener` 的
+  `revealItemInDir` 走 `SHOpenFolderAndSelectItems`，`explorer /select,` 同理。
+  现在改成 `explorer "<目录>"`（新增 Rust 命令 `open_folder`）。
+- 按钮提示同步改为「打开这个文件夹」（9 种语言）。
 
 ### 改：默认字体库放到软件安装目录下
 

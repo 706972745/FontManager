@@ -547,7 +547,7 @@
   "settings.libraryFolderTitle": "Choose library folder",
   "settings.libraryLimit": "Up to {count} library folders",
   "settings.libraryRemove": "Remove from list (files are kept)",
-  "settings.libraryReveal": "Show in Explorer",
+  "settings.libraryReveal": "Open this folder",
   "settings.librarySwitch": "Switch",
   "settings.librarySwitchHint": "Click to switch to this library",
   "settings.online": "Online font browser",
