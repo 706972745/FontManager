@@ -399,6 +399,28 @@ restricted token gets a 403 the moment it steps outside its declared scope.
 Then just ask in conversation — "list my Noto fonts", "apply the work snapshot".
 All 10 tools are documented in **[mcp/README.md](mcp/README.md)**.
 
+#### What can an agent actually do with it?
+
+MCP hands the agent a small set of verbs — list, activate, deactivate, annotate —
+the imagination is the agent's own. A few things that genuinely work:
+
+- **Identify a font from an image**: drop a poster, logo or chat screenshot into the
+  chat and ask the agent to study the letterforms (serifs, weight, stroke endings…),
+  then compare them against the fonts in your library — "do I already have the font
+  in this image, and what is it called?" The agent can pull each candidate's file
+  path via `font_detail`, render real specimens from those files to verify, and
+  answer with evidence instead of a guess
+- **Heal missing fonts**: hand the agent the font list a document or design file
+  needs — it tells you which ones your library lacks and activates the ones it has,
+  no more digging through font menus one by one
+- **Curation at scale**: "tag everything imported last week as *pending review*",
+  "deactivate every family rated below 3 stars" — dozens of clicks become one sentence
+- **Scheduled checkups**: give the agent a recurring task to scan for new fonts,
+  apply a named snapshot, and report the state of your library
+
+> Image-based tricks need an MCP client that accepts pictures in chat
+> (WorkBuddy and Claude Desktop both do).
+
 Nothing here is enabled by default, and every layer dies the moment you switch
 the local API off.
 
