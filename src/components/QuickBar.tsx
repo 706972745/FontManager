@@ -355,14 +355,6 @@ export function QuickBar() {
   const morph = useFontStore((s) => s.morph);
   const [query, setQuery] = useState("");
 
-  // 右键菜单里「打字即搜」选中字体后（ContextMenu 派发），速览没有详情面板可跳，
-  // 就把族名填进速览自己的搜索框——列表立刻过滤出这一族，用户看得到结果。
-  useEffect(() => {
-    const onPick = (e: Event) => setQuery((e as CustomEvent<string>).detail);
-    window.addEventListener("zfm-quickbar-search", onPick);
-    return () => window.removeEventListener("zfm-quickbar-search", onPick);
-  }, []);
-
   // 拖到屏幕顶部时整个速览窗口收起成一条（contentHeight 用于动画期间钉住内容高度）
   const { docked, contentHeight, phase, bar } = useQuickbarDock(autoHide);
 
@@ -512,6 +504,18 @@ export function QuickBar() {
     overscan: QB_OVERSCAN,
     getItemKey: (i) => families[i].name,
   });
+
+  // 右键菜单「打字即搜」选中已启用字体后（ContextMenu 派发）：速览不跳界面，
+  // 列表滚动到该族（用户 2026-11-05 口径）。未启用字体不走这里——菜单直接退回完整界面。
+  useEffect(() => {
+    const onPick = (e: Event) => {
+      const family = (e as CustomEvent<{ family: string }>).detail.family;
+      const idx = families.findIndex((f) => f.name === family);
+      if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "center" });
+    };
+    window.addEventListener("zfm-quickbar-search", onPick);
+    return () => window.removeEventListener("zfm-quickbar-search", onPick);
+  }, [families, virtualizer]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -1015,5 +1015,8 @@
   "about.featPrivacy": "隱私優先：字體留在本機，離線可用全部功能",
   "detail.licenseEmbedded": "字型檔案自帶版權資訊",
   "menu.typeToSearch": "輸入以搜尋字型…",
-  "menu.searchNoMatch": "沒有符合的字型"
+  "menu.searchNoMatch": "沒有符合的字型",
+  "menu.typeToSearchEnabled": "搜尋已啟用的字型…（Tab：全部）",
+  "sc.ctxTypeSearch": "右鍵選單中打字，直接搜尋字型並定位",
+  "sc.ctxScope": "選單搜尋中：切換 已啟用 / 全部字型"
 }

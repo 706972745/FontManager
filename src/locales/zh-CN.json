@@ -1023,5 +1023,8 @@
   "about.featPrivacy": "隐私优先：字体留在本地，离线可用全部功能",
   "detail.licenseEmbedded": "字体文件自带版权信息",
   "menu.typeToSearch": "输入以搜索字体…",
-  "menu.searchNoMatch": "没有匹配的字体"
+  "menu.searchNoMatch": "没有匹配的字体",
+  "menu.typeToSearchEnabled": "搜索已启用的字体…（Tab：全部）",
+  "sc.ctxTypeSearch": "右键菜单中打字，直接搜索字体并定位",
+  "sc.ctxScope": "菜单搜索中：切换 已启用 / 全部字体"
 }
