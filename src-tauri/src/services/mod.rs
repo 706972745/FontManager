@@ -116,8 +116,3 @@ pub fn job_finish(id: &str, result: Option<String>, error: Option<String>) {
 pub fn job_get(id: &str) -> Option<Job> {
     job_table().lock().ok()?.get(id).cloned()
 }
-
-/// 统一的错误包装：外部入口（API / 插件 / Agent）拿到的是人话 + 下一步指引。
-pub fn err(msg: impl std::fmt::Display) -> String {
-    msg.to_string()
-}

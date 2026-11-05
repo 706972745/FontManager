@@ -59,22 +59,6 @@ pub fn list() -> Vec<String> {
     out
 }
 
-pub fn get(key: &str) -> Option<PathBuf> {
-    if !safe_key(key) {
-        return None;
-    }
-    let dir = root()?;
-    let path = dir.join(format!("{key}.png"));
-    if !path.is_file() {
-        return None;
-    }
-    // 用到就更新 mtime：淘汰按「最久没用」走
-    if let Ok(f) = fs::OpenOptions::new().write(true).open(&path) {
-        let _ = f.set_modified(std::time::SystemTime::now());
-    }
-    Some(path)
-}
-
 pub fn put(key: &str, png: &[u8]) -> Option<PathBuf> {
     if !safe_key(key) || png.is_empty() {
         return None;

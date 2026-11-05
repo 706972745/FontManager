@@ -9,7 +9,7 @@
 
 use crate::activation;
 use crate::font_types::FontFace;
-use crate::store::{self, AppState, Store};
+use crate::store::{self, Store};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
@@ -201,11 +201,6 @@ pub fn revert_session(store: &Store) -> usize {
     }
     let _ = store::save(&state);
     paths.len()
-}
-
-/// 某个字面现在是不是启用状态（注册表探针 + state.deactivated 同口径）
-pub fn is_active(state: &AppState, probe: &activation::Probe, face: &FontFace) -> bool {
-    activation::is_active(probe, state, face)
 }
 
 #[cfg(test)]

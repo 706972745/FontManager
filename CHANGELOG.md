@@ -4,6 +4,37 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.3] — 2026-11-05（正式版）
+
+> 1.3.2 的收尾修：一处数据丢失隐患 + 一处双路径并轨 + 死代码清理。
+
+### 新增
+
+- 详情面板「版权文件」行：目录里没有授权文件、但字体 name 表自带版权文字且结论明确时，
+  显示「字体文件自带版权信息」（悬停看原文）；结论为「未知」时维持「未找到」。
+
+### 修复
+
+- **「标记为不可预览」可能静默丢失**：`set_unpreviewable` 保存状态时吞掉了落盘错误 ——
+  磁盘写失败（如文件被占用）时界面毫无提示、重启后标记消失。现在如实上抛，失败会提示。
+- **快照重命名双路径并轨**：命令层与 service 层各有一份实现（service 版从未被调用）。
+  统一走 service 版，顺带获得「新名字先 trim」校验；错误文案与其他处一致的中文。
+- **确认框发灰**：浅色主题下「移到回收站」确认框遮罩过暗（55% 黑纱），
+  改为浅色 16% + 6px 模糊 + 纯白面板（对齐设置面板；深色主题保留警示光晕）。
+
+### 清理
+
+- 删除 6 处无引用代码与 2 个无效导入（`installer::uninstall/unlink` 单发广播遗留版、
+  `thumb::get`、`services::err`、`fonts::is_active` 转发壳等）；两个卸载回归测试改用
+  生产路径 `uninstall_quiet`。编译警告 18 → 10，余下均为预留接口或测试专用（有意保留）。
+
+### 文档与 CI
+
+- README 重写为手把手功能手册（18 节编号教程，双语）+ 10 张界面实拍；新增多字体库、
+  Agent 用例（以图搜字 / 缺字自愈 / 规模化整理）章节；版权口径修正为「绝不自动生成版权文件」。
+- CI 集成 SignPath Foundation 签名（可选）：未配置 Secrets 时自动跳过、
+  正文退回「未签名 + SHA-256」，向后兼容。
+
 ## [1.3.2] — 2026-11-05（正式版）
 
 > 1.3.x 线的收口版：把 1.3.0 开发版的插件 / API / MCP 补齐到可日常使用，并修掉三处真 bug。

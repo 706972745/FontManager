@@ -3,7 +3,6 @@ use crate::parser;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::Emitter;
 use walkdir::WalkDir;
 
 #[derive(Serialize, Clone)]

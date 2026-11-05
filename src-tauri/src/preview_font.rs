@@ -2003,7 +2003,8 @@ mod tests {
             return;
         }
         let chars = "Hello IIEOzoAa";
-        let (mut ok, mut skip, mut fail) = (0usize, 0usize, 0usize);
+        // fail 永远是 0：任何断言失败直接 panic，走不到这里的 fail += 1 —— 它只进汇总行
+        let (mut ok, mut skip, fail) = (0usize, 0usize, 0usize);
         for spec in &targets {
             // 支持 `路径#字面序号`，用来验 TTC 多面（默认第 0 面）。
             // Windows 文件名不会出现 `#数字` 结尾，按最后一段数字判断足够安全。

@@ -38,7 +38,7 @@ mod window_morph;
 #[cfg(target_os = "windows")]
 mod window_round;
 
-use font_types::{CharsetStats, FontFace, FontSource, TrashEntry};
+use font_types::{CharsetStats, FontFace, TrashEntry};
 use std::collections::HashMap;
 use store::Store;
 use tauri::{Emitter, Manager, State};
@@ -1272,8 +1272,9 @@ fn set_unpreviewable(app: tauri::AppHandle, ids: Vec<String>, on: bool) -> Resul
             state.unpreviewable.remove(id);
         }
     }
-    // 字体列表在前端，这里只持久化名单；前端拿到结果后自己刷新那一批字面
-    crate::store::save(&state);
+    // 字体列表在前端，这里只持久化名单；前端拿到结果后自己刷新那一批字面。
+    // 落盘失败要如实上报 —— 吞掉的话「不可预览」标记就静默丢了（2026-11-05 调试轮修复）。
+    crate::store::save(&state)?;
     Ok(())
 }
 
@@ -1399,23 +1400,11 @@ fn delete_snapshot(store: State<Store>, name: String) -> Result<(), String> {
     store::save(&state)
 }
 
+/// 薄壳：逻辑在 `services::snapshot::rename`（trim 校验 + 中文错误）。
+/// 以前这里自己抄了一遍实现，service 层那份一直没人调（双胞胎，2026-11-05 并轨）。
 #[tauri::command]
 fn rename_snapshot(store: State<Store>, from: String, to: String) -> Result<(), String> {
-    let mut state = store.0.lock().map_err(|e| e.to_string())?;
-    if state.snapshot(&to).is_some() {
-        return Err(format!("a snapshot named \"{to}\" already exists"));
-    }
-    let snap = state
-        .snapshot(&from)
-        .cloned()
-        .ok_or_else(|| format!("snapshot \"{from}\" not found"))?;
-    state.snapshots.retain(|s| s.name != from);
-    state.save_snapshot(store::Snapshot {
-        name: to,
-        created_at: snap.created_at,
-        entries: snap.entries,
-    })?;
-    store::save(&state)
+    services::snapshot::rename(&store, &from, &to).map(|_| ())
 }
 
 #[tauri::command]
