@@ -147,10 +147,18 @@ preview line · **license badge** (free-commercial / personal / unknown…) ·
 The three icons at the toolbar's right edge:
 
 - **Cards** (default): one card per family, live previews
+
+![List view: the whole library in one table](view-list.png)
+
 - **List**: a compact table — family / styles / format / size / toggle — best for
   sweeping a big library
-- **Specimen**: a waterfall of large samples for the whole library with its own
-  size control — best for judging a typeface's character
+
+![Specimen view: multi-column specimen wall with large sample text](view-specimen.png)
+
+- **Specimen**: a **multi-column specimen wall** — every cell keeps the full card
+  header (format / name / license / ★ / toggle) and spreads the sample text **large**
+  underneath; pick a face per cell (remembered); its own size control — best for
+  judging a typeface's character
 
 ### 5. The detail panel: everything about one family
 
@@ -198,7 +206,16 @@ Click any card and the right panel opens:
 |---|---|
 | Drag a ZIP | drop it on the window; it unpacks and imports |
 | Double-click | double-click a `.S-FontManager / .P-FontManager / .L-FontManager` file — the app opens and imports it (file associations registered at install) |
-| Online panel | sidebar "Online" → browse Google Fonts by category (serif / sans / handwriting / mono / icons…) and Nerd Fonts → preview → **add to library**; the license text sits next to the download button and license files come along |
+| Online panel | see below |
+
+![Online panel: categories, license filters, one-click add](online.png)
+
+How to use it: sidebar "Online" → filter by **category** (sans / serif / display /
+handwriting / mono / icons) and **license** (OFL / Apache / UFL), or just search;
+cards show style · styles count · license (VAR badge = variable font); click a card
+for details and **add to library** downloads it — the license text sits right next
+to the download button and license files come along. Data: the Google Fonts
+catalogue, 1,984 families.
 | Local API / MCP | automated imports (next section) |
 
 ### 10. Export: every way out
@@ -222,6 +239,8 @@ Files are recognized by **content**, not extension.
    system but the files are kept
 2. Sidebar "Trash" → **restore** (back exactly as it was) or **delete forever**
    (double confirmation)
+
+![Trash: removed fonts land here first — nothing disappears silently](trash.png)
 
 ### 12. Licenses & duplicates: no browser needed
 
@@ -249,8 +268,9 @@ Right-click a family → "Apply in {app}…":
 
 ![QuickBar: the docked panel of activated fonts](quickbar.png)
 
-1. Press <kbd>Alt</kbd>+<kbd>`</kbd> anywhere (hotkey configurable in settings) —
-   the main window collapses into the **docked QuickBar**
+1. Press <kbd>Alt</kbd>+<kbd>`</kbd> anywhere — the main window collapses into the
+   **docked QuickBar** (change the hotkey under Settings → System → "QuickBar
+   hotkey", see below)
 2. It lists only **activated** fonts: click a name to copy, ★ to favorite,
    the toggle to switch off, "> 3" to expand a family's faces, right-click for
    the full menu
@@ -269,9 +289,17 @@ Right-click a family → "Apply in {app}…":
 
 - <kbd>Ctrl</kbd>+<kbd>K</kbd>: the command palette — type to jump (views, toggles,
   compare, apply-in-app, snapshots…)
-- <kbd>?</kbd>: the full shortcut list (search, toggles, snapshots, panels)
+
+![Command palette](palette.png)
+
+- <kbd>?</kbd> (or the sidebar "Shortcuts" entry): the full shortcut list —
+  navigation / selection / actions on selection / snapshots
+
+![Shortcut list](shortcuts.png)
 
 ### 17. Look & language
+
+![Settings: language / system / library — every toggle in one column](settings.png)
 
 In settings: light / dark theme · interface sounds on/off · **reduced motion**
 (calmer animation, less transparency) · nine interface languages
