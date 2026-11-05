@@ -1,5 +1,9 @@
 # 插件开发指南（plugin.json 规范）
 
+> 只想**用**插件、不想开发？跳到 [官方插件库](https://github.com/706972745/FontManager-Plugin)：
+> 下载 ZIP → 解压 → 设置 → 插件 →「打开插件目录」放进去 → 打开开关 → 右键「插件 ›」。
+> 每个插件自带运行环境，机器上不用装 Python / Node.js。
+
 FontManager 的插件是**进程外程序**：主程序绝不把插件代码加载进自己，插件崩了不影响软件。
 通信只有两条：stdin/stdout 上的 JSON 行（握手 + 调用），以及本地 HTTP API（受限令牌）。
 
