@@ -1,10 +1,10 @@
 {
   "about.customBuild": "IIEOzo カスタムビルド（GitHub）",
-  "about.desc": "TheHolyOneZ のオープンソース FontManager 0.8.0 を基に、IIEOzo 向けにカスタマイズしたフォントマネージャー。プレビュー、タグ、グループとスナップショット、有効化とインストール——数千のフォントを 1 台で整理でき、ファイルは常にローカルに残ります。",
+  "about.desc": "TheHolyOneZ のオープンソース ZFontManager 0.8.0 を基に、IIEOzo 向けにカスタマイズしたフォントマネージャー。プレビュー、タグ、グループとスナップショット、有効化とインストール——数千のフォントを 1 台で整理でき、ファイルは常にローカルに残ります。",
   "about.githubUser": "GitHub の TheHolyOneZ",
   "about.landing": "紹介・ダウンロードページ",
   "about.moreProjects": "他のプロジェクト",
-  "about.source": "FontManager のソースコード",
+  "about.source": "ZFontManager のソースコード",
   "about.stackAria": "使用技術",
   "about.version": "バージョン {version} · {license}",
   "about.edition": "正式版",

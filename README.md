@@ -11,7 +11,7 @@
 
 **A cross-platform font manager: preview, organize, activate/deactivate fonts with one click — your font files never leave your machine.**
 
-This fork builds on [TheHolyOneZ/FontManager](https://github.com/TheHolyOneZ/FontManager) with Chinese localization and new features. **[🇨🇳 完整中文文档请看这里 →](README.zh-CN.md)**
+This fork builds on [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) with Chinese localization and new features. **[🇨🇳 完整中文文档请看这里 →](README.zh-CN.md)**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-1.2.5-gray?style=flat-square)](../../releases)
@@ -93,7 +93,7 @@ Licensed under the upstream GPL-3.0. Many thanks to the original author
 
 ## Demo Video
 
-[Watch FontManager Demo](https://github.com/TheHolyOneZ/FontManager/blob/main/fontmanager.mp4)
+[Watch FontManager Demo](https://github.com/TheHolyOneZ/ZFontManager/blob/main/fontmanager.mp4)
 
 
 <div align="center">
@@ -119,7 +119,7 @@ from one clean, fast, native app. Your fonts never leave your machine.
 
 **[⬇ Download](https://zsync.eu/fontmanager/)** ·
 **[🌐 Website](https://zsync.eu)** ·
-**[💻 Source Code](https://github.com/TheHolyOneZ/FontManager)** ·
+**[💻 Source Code](https://github.com/TheHolyOneZ/ZFontManager)** ·
 **[👤 The Developer](https://github.com/TheHolyOneZ)**
 
 <br>
@@ -195,7 +195,7 @@ FontManager is the answer to both:
 > FontManager is currently at **version 0.3.0** — see the
 > [changelog](CHANGELOG.md) for what's new. It's already very usable
 > day-to-day, but expect the occasional rough edge — and please
-> [report anything odd](https://github.com/TheHolyOneZ/FontManager/issues)!
+> [report anything odd](https://github.com/TheHolyOneZ/ZFontManager/issues)!
 
 ---
 
@@ -273,7 +273,7 @@ layer is added with the family name as its sample. A sleeping font is woken
 > Photoshop or Illustrator before release. It fails safely (every problem
 > shows up as a toast, nothing is changed in your document), but if it
 > misbehaves for you, please
-> [open an issue](https://github.com/TheHolyOneZ/FontManager/issues) with the
+> [open an issue](https://github.com/TheHolyOneZ/ZFontManager/issues) with the
 > app version and what the toast said.
 
 ### Auto-activate for Affinity by Canva
@@ -837,7 +837,7 @@ Anything added in future goes in that table, off by default, disclosed before
 you switch it on.
 
 Don't take our word for it — the entire source code is
-[public](https://github.com/TheHolyOneZ/FontManager).
+[public](https://github.com/TheHolyOneZ/ZFontManager).
 
 ---
 
@@ -917,7 +917,7 @@ read and modify under the GPL-3.0 license. There is no paid tier, no
 <summary><b>Something broke. Where do I complain?</b></summary>
 <br>
 Please do! Open an issue on
-<a href="https://github.com/TheHolyOneZ/FontManager/issues">the GitHub issue tracker</a>
+<a href="https://github.com/TheHolyOneZ/ZFontManager/issues">the GitHub issue tracker</a>
 with what you did and what happened. Screenshots help a lot, and for anything
 about activating fonts, so does <code>activation.log</code> (see above).
 </details>
@@ -932,7 +932,7 @@ the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
 platform installed. Then:
 
 ```sh
-git clone https://github.com/TheHolyOneZ/FontManager.git
+git clone https://github.com/TheHolyOneZ/ZFontManager.git
 cd FontManager
 pnpm install
 pnpm tauri build
@@ -995,7 +995,7 @@ and the good ones elsewhere cost money.
 | 👤 **Developer** | [github.com/TheHolyOneZ](https://github.com/TheHolyOneZ) |
 | 🌐 **More projects** | [zsync.eu](https://zsync.eu) |
 | ⬇️ **Download &amp; landing page** | [zsync.eu/fontmanager](https://zsync.eu/fontmanager/) |
-| 💻 **This project's source** | [github.com/TheHolyOneZ/FontManager](https://github.com/TheHolyOneZ/FontManager) |
+| 💻 **This project's source** | [github.com/TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) |
 
 </div>
 

@@ -10,7 +10,7 @@
 
 **跨平台字体管理器：预览、整理、一键启用/停用字体，字体文件永不离开你的电脑。**
 
-本分支在 [TheHolyOneZ/FontManager](https://github.com/TheHolyOneZ/FontManager) 的基础上进行了中文本地化与功能增强。
+本分支在 [TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) 的基础上进行了中文本地化与功能增强。
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-1.2.5-gray?style=flat-square)](../../releases)
@@ -614,7 +614,7 @@ FontManager 使用每个操作系统原生的字体机制——没有黑科技�
 
 未来新增的任何联网功能都会进这张表，默认关闭，并在你开启之前先行披露。
 
-不必只听我们说——全部源代码[公开](https://github.com/TheHolyOneZ/FontManager)可查。
+不必只听我们说——全部源代码[公开](https://github.com/TheHolyOneZ/ZFontManager)可查。
 
 ---
 
@@ -728,7 +728,7 @@ FontManager 由 **[TheHolyOneZ](https://github.com/TheHolyOneZ)** 构建——�
 | 👤 **开发者** | [github.com/TheHolyOneZ](https://github.com/TheHolyOneZ) |
 | 🌐 **更多项目** | [zsync.eu](https://zsync.eu) |
 | ⬇️ **下载与官网** | [zsync.eu/fontmanager](https://zsync.eu/fontmanager/) |
-| 💻 **本项目源码** | [github.com/TheHolyOneZ/FontManager](https://github.com/TheHolyOneZ/FontManager) |
+| 💻 **本项目源码** | [github.com/TheHolyOneZ/ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) |
 
 </div>
 

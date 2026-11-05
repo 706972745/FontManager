@@ -1,10 +1,10 @@
 {
   "about.customBuild": "IIEOzo Custom-Build auf GitHub",
-  "about.desc": "Ein Schriftmanager, der auf TheHolyOneZ’ Open-Source-FontManager 0.8.0 aufbaut und für IIEOzo angepasst wurde. Vorschau, Tags, Gruppen und Snapshots, Aktivieren und Installieren — Tausende Schriften bleiben auf einem Rechner organisiert, alle Dateien bleiben lokal.",
+  "about.desc": "Ein Schriftmanager, der auf TheHolyOneZ’ Open-Source-ZFontManager 0.8.0 aufbaut und für IIEOzo angepasst wurde. Vorschau, Tags, Gruppen und Snapshots, Aktivieren und Installieren — Tausende Schriften bleiben auf einem Rechner organisiert, alle Dateien bleiben lokal.",
   "about.githubUser": "TheHolyOneZ auf GitHub",
   "about.landing": "Projekt- und Downloadseite",
   "about.moreProjects": "Weitere Projekte",
-  "about.source": "FontManager-Quellcode",
+  "about.source": "ZFontManager-Quellcode",
   "about.stackAria": "Technik",
   "about.version": "Version {version} · {license}",
   "about.edition": "Stabil",

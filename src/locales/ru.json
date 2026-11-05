@@ -1,10 +1,10 @@
 {
   "about.customBuild": "Сборка IIEOzo на GitHub",
-  "about.desc": "Менеджер шрифтов, выросший из открытого FontManager 0.8.0 от TheHolyOneZ и собранный под IIEOzo. Предпросмотр, теги, группы и снимки, включение и установка — тысячи шрифтов удобно разложены на одном компьютере, а файлы никогда не покидают его.",
+  "about.desc": "Менеджер шрифтов, выросший из открытого ZFontManager 0.8.0 от TheHolyOneZ и собранный под IIEOzo. Предпросмотр, теги, группы и снимки, включение и установка — тысячи шрифтов удобно разложены на одном компьютере, а файлы никогда не покидают его.",
   "about.githubUser": "TheHolyOneZ на GitHub",
   "about.landing": "Страница проекта и загрузки",
   "about.moreProjects": "Другие проекты",
-  "about.source": "Исходный код FontManager",
+  "about.source": "Исходный код ZFontManager",
   "about.stackAria": "Технологии",
   "about.version": "Версия {version} · {license}",
   "about.edition": "Стабильная",

@@ -35,10 +35,10 @@ import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 const IS_LINUX = navigator.platform.toUpperCase().includes("LINUX");
 
 const TRANSLATE_GUIDE_URL =
-  "https://github.com/TheHolyOneZ/FontManager/blob/main/docs/TRANSLATING.md";
+  "https://github.com/TheHolyOneZ/ZFontManager/blob/main/docs/TRANSLATING.md";
 
 const REQUEST_LANGUAGE_URL =
-  "https://github.com/TheHolyOneZ/FontManager/issues/new?title=Language%20request%3A%20";
+  "https://github.com/TheHolyOneZ/ZFontManager/issues/new?title=Language%20request%3A%20";
 
 /** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
 const EXPORT_FONTS_KEY = "zfm.exportFonts";

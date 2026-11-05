@@ -39,8 +39,9 @@ const LINKS: { key: TKey; sub: string; url: string; icon: React.ReactNode }[] = 
   },
   {
     key: "about.source",
-    sub: "github.com/TheHolyOneZ/FontManager",
-    url: "https://github.com/TheHolyOneZ/FontManager",
+    // 上游原作者的仓库名是 ZFontManager，别跟着本项目的改名一起改
+    sub: "github.com/TheHolyOneZ/ZFontManager",
+    url: "https://github.com/TheHolyOneZ/ZFontManager",
     icon: <GithubGlyph />,
   },
 ];

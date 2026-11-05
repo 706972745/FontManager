@@ -30,6 +30,12 @@ All notable changes to FontManager are documented here. The format follows
   文件夹自定义图标机制，删掉这两个文件就恢复默认黄色文件夹）。
 - 只改显示，不动库里任何字体文件；已启用过的库即使以后切换走，图标仍保留。
 
+### 修复：关于页把原作者的仓库名改回来了
+
+- 1.2.4 统一改名时，顺手把「关于」里指向**原作者**的文字与链接也改成了 FontManager。
+  上游仓库本来就叫 `ZFontManager`，这版全部改回：`TheHolyOneZ 开源的 ZFontManager 0.8.0`、
+  「ZFontManager 源代码」卡片、设置页的翻译指南 / 请求语言链接、README 里的上游链接。
+
 ## [1.2.4] — 2026-11-05
 
 **正式版。改名 + 三种专属文件格式 + 双击导入 + 收藏评分。**
