@@ -34,6 +34,11 @@ pub struct PluginManifest {
     /// python / node / exe（留空按 entry 后缀猜）
     #[serde(default)]
     pub interpreter: Option<String>,
+    /// 插件**自带**的解释器：相对插件目录的路径（如 "runtime/python.exe"）。
+    /// 写了它就不做系统探测 —— 插件自己背环境，主程序只负责拉起和给权限，
+    /// 也就永远不用为某种插件单独做适配（2026-11-05 设计口径）。
+    #[serde(default)]
+    pub interpreter_path: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
     #[serde(default)]
@@ -125,6 +130,11 @@ pub fn list() -> Vec<PluginInfo> {
         .lock()
         .map(|r| r.keys().cloned().collect())
         .unwrap_or_default();
+    // 「上次开着、这次没起来」要能一眼看出来：否则界面上就是个关着的开关，
+    // 用户以为自己关过，其实是解释器没找到（1.3.0 的踩坑）。
+    let wanted = crate::api::hub()
+        .map(|a| remembered(&a.store))
+        .unwrap_or_default();
     let Ok(entries) = std::fs::read_dir(&root) else {
         return out;
     };
@@ -135,7 +145,7 @@ pub fn list() -> Vec<PluginInfo> {
         }
         match read_manifest(&dir) {
             Ok(m) => {
-                let err = if m.api_level > API_LEVEL {
+                let mut err = if m.api_level > API_LEVEL {
                     Some(format!(
                         "这个插件要求 API 级别 {}，当前软件只支持 {API_LEVEL}，请升级软件",
                         m.api_level
@@ -143,6 +153,9 @@ pub fn list() -> Vec<PluginInfo> {
                 } else {
                     None
                 };
+                if err.is_none() && wanted.contains(&m.id) && !running.contains(&m.id) {
+                    err = Some("上次是启用状态，这次没能启动（多半是缺解释器），重新打开一次试试".into());
+                }
                 out.push(PluginInfo {
                     enabled: running.contains(&m.id),
                     running: running.contains(&m.id),
@@ -199,7 +212,236 @@ fn find_dir(id: &str) -> Option<PathBuf> {
     None
 }
 
-fn command_for(dir: &Path, m: &PluginManifest) -> Result<Command, String> {
+// ───────────────────── 解释器发现（1.3.1） ─────────────────────
+//
+// 以前直接 `Command::new("python")`，两个坑一起踩：
+// 1. 从资源管理器/开始菜单启动时，软件拿到的是**系统 PATH**，
+//    Python 装没装、装在哪，跟用户在自己的终端里能不能跑 python 是两回事；
+// 2. Windows 的 `python.exe` 在 `...\WindowsApps\` 下只是个**商店下载引导**，
+//    能「启动成功」，然后立刻退出并打印 "Python was not found"——
+//    插件于是显示已启用、界面却什么都没有（1.3.0 就是这么坏的）。
+//
+// 所以：把候选逐个**探活**（真跑一句 `print` 看版本），跳过 WindowsApps 桩；
+// 都找不到就让用户在设置里手动指定。
+
+fn probe(program: &str, extra: &[String], kind: &str) -> Option<String> {
+    let mut cmd = Command::new(program);
+    for a in extra {
+        cmd.arg(a);
+    }
+    if kind == "python" {
+        cmd.arg("-c").arg("import sys;print(sys.version.split()[0])");
+    } else {
+        cmd.arg("--version");
+    }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn().ok()?;
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return None;
+                }
+                let mut out = String::new();
+                if let Some(mut s) = child.stdout.take() {
+                    use std::io::Read;
+                    let _ = s.read_to_string(&mut out);
+                }
+                let line = out.lines().next().unwrap_or("").trim();
+                let v = line.trim_start_matches('v').trim().to_string();
+                return if v.is_empty() { None } else { Some(v) };
+            }
+            Ok(None) => {
+                if start.elapsed() > std::time::Duration::from_millis(3000) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+fn env_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name).map(PathBuf::from)
+}
+
+/// 扫一层子目录里的可执行文件（Python3xx\python.exe、node\versions\*\node.exe…）
+fn scan_dir(base: &Path, exe: &str, out: &mut Vec<(String, Vec<String>)>) {
+    if base.join(exe).is_file() {
+        out.push((base.join(exe).to_string_lossy().into_owned(), vec![]));
+    }
+    let Ok(entries) = std::fs::read_dir(base) else { return };
+    let mut dirs: Vec<PathBuf> = entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    dirs.sort();
+    dirs.reverse(); // 新版本排前面
+    for d in dirs {
+        let exe_path = d.join(exe);
+        if exe_path.is_file() {
+            let s = exe_path.to_string_lossy().into_owned();
+            if !s.contains("WindowsApps") {
+                out.push((s, vec![]));
+            }
+        }
+    }
+}
+
+fn candidates(kind: &str, override_path: Option<&str>) -> Vec<(String, Vec<String>)> {
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    if let Some(p) = override_path {
+        if !p.trim().is_empty() {
+            out.push((p.trim().to_string(), vec![]));
+        }
+    }
+    match kind {
+        "python" => {
+            out.push(("python".into(), vec![]));
+            out.push(("python3".into(), vec![]));
+            out.push(("py".into(), vec!["-3".into()]));
+            if let Some(local) = env_path("LOCALAPPDATA") {
+                scan_dir(&local.join("Programs").join("Python"), "python.exe", &mut out);
+            }
+            if let Some(pf) = env_path("ProgramFiles") {
+                scan_dir(&pf, "python.exe", &mut out);
+            }
+            if let Some(home) = env_path("USERPROFILE") {
+                scan_dir(&home, "python.exe", &mut out);
+                // 便携/免费版常被丢在用户目录下（含 WorkBuddy 自带的那份）
+                scan_dir(
+                    &home.join(".workbuddy").join("binaries").join("python").join("versions"),
+                    "python.exe",
+                    &mut out,
+                );
+            }
+        }
+        "node" => {
+            out.push(("node".into(), vec![]));
+            if let Some(pf) = env_path("ProgramFiles") {
+                scan_dir(&pf.join("nodejs"), "node.exe", &mut out);
+            }
+            if let Some(local) = env_path("LOCALAPPDATA") {
+                scan_dir(&local.join("Programs").join("nodejs"), "node.exe", &mut out);
+                scan_dir(&local.join("nvm"), "node.exe", &mut out);
+            }
+            if let Some(home) = env_path("USERPROFILE") {
+                for sub in [".nvm/versions/node", ".volta/bin", ".workbuddy/binaries/node/versions"] {
+                    scan_dir(&home.join(sub), "node.exe", &mut out);
+                }
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+fn resolved_cache() -> &'static Mutex<HashMap<String, Option<(String, Vec<String>, String)>>> {
+    static C: OnceLock<Mutex<HashMap<String, Option<(String, Vec<String>, String)>>>> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 找到某个解释器的**真实**可执行文件：返回 (路径, 额外参数, 版本)。
+fn resolve(kind: &str, override_path: Option<&str>) -> Option<(String, Vec<String>, String)> {
+    let key = format!("{kind}|{}", override_path.unwrap_or(""));
+    if let Ok(c) = resolved_cache().lock() {
+        if let Some(hit) = c.get(&key) {
+            return hit.clone();
+        }
+    }
+    let mut found = None;
+    for (prog, extra) in candidates(kind, override_path) {
+        if let Some(version) = probe(&prog, &extra, kind) {
+            found = Some((prog, extra, version));
+            break;
+        }
+    }
+    if let Ok(mut c) = resolved_cache().lock() {
+        c.insert(key, found.clone());
+    }
+    if let Some((p, _, v)) = &found {
+        crate::diag::log(&format!("[plugin] {kind} 解释器 → {p}（{v}）"));
+    } else {
+        crate::diag::log(&format!("[plugin] 没找到 {kind} 解释器"));
+    }
+    found
+}
+
+/// 用户在设置里手动指定的解释器路径（prefs: pluginRuntime = {python: ..., node: ...}）
+fn override_for(kind: &str) -> Option<String> {
+    let api = crate::api::hub()?;
+    let st = api.store.0.lock().ok()?;
+    st.prefs
+        .get("pluginRuntime")
+        .and_then(|v| v.get(kind))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+/// 给界面用：两种解释器各自找到了什么（找不到就是 null）
+pub fn runtimes_json() -> Value {
+    let mut obj = serde_json::Map::new();
+    for kind in ["python", "node"] {
+        let ov = override_for(kind);
+        let hit = resolve(kind, ov.as_deref());
+        obj.insert(
+            kind.to_string(),
+            match hit {
+                Some((path, _, version)) => json!({
+                    "path": path,
+                    "version": version,
+                    "manual": ov.is_some(),
+                }),
+                None => Value::Null,
+            },
+        );
+    }
+    Value::Object(obj)
+}
+
+/// 记下手动指定的解释器；传空串 = 恢复自动探测
+pub fn set_runtime(store: &store::Store, kind: &str, path: &str) -> Result<(), String> {
+    if !path.is_empty() && !Path::new(path).is_file() {
+        return Err(format!("这个路径不是文件：{path}"));
+    }
+    if !path.is_empty() && !probe(path, &[], kind).is_some() {
+        return Err("这个文件跑不起来（不是可用的解释器？）".into());
+    }
+    let mut st = store.0.lock().map_err(|e| e.to_string())?;
+    let mut map = st
+        .prefs
+        .get("pluginRuntime")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    if !map.is_object() {
+        map = json!({});
+    }
+    if let Some(o) = map.as_object_mut() {
+        if path.is_empty() {
+            o.remove(kind);
+        } else {
+            o.insert(kind.to_string(), json!(path));
+        }
+    }
+    if let Some(p) = st.prefs.as_object_mut() {
+        p.insert("pluginRuntime".into(), map.clone());
+    }
+    if let Ok(mut c) = resolved_cache().lock() {
+        c.clear(); // 换了路径就不该再信上次的探测结果
+    }
+    store::save(&st)
+}
+
+fn command_for(dir: &Path, m: &PluginManifest) -> Result<(Command, String), String> {
     let entry = dir.join(&m.entry);
     if !entry.is_file() {
         return Err(format!("入口文件不存在：{}", entry.display()));
@@ -212,18 +454,55 @@ fn command_for(dir: &Path, m: &PluginManifest) -> Result<Command, String> {
             "js" | "mjs" | "cjs" => "node".into(),
             _ => "exe".into(),
         });
-    let mut cmd = match kind.as_str() {
-        "python" => {
-            let mut c = Command::new("python");
+    let (mut cmd, how) = match kind.as_str() {
+        "python" | "node" => {
+            // 插件自带解释器：路径相对插件目录，直接用，不做任何系统探测。
+            // 这是「插件按规则开发、主程序不做适配」的关键出口 —— 环境由插件自己背。
+            if let Some(rel) = m
+                .interpreter_path
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let bundled = dir.join(rel);
+                if !bundled.is_file() {
+                    return Err(format!(
+                        "plugin.json 的 interpreterPath 指向的文件不存在：{}",
+                        bundled.display()
+                    ));
+                }
+                let mut c = Command::new(&bundled);
+                // 让子进程也用 UTF-8：中文 Windows 下 python 默认按 cp936 写管道，
+                // 主程序这边按 UTF-8 解析，两边编码不一致就会把 JSON 读坏
+                if kind == "python" {
+                    c.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
+                }
+                c.arg(&entry);
+                return Ok((
+                    c,
+                    format!("{}（插件自带）", bundled.display()),
+                ));
+            }
+            let ov = override_for(&kind);
+            let (prog, extra, version) = resolve(&kind, ov.as_deref()).ok_or_else(|| {
+                format!(
+                    "没找到可用的 {} 解释器 —— 装上它，或在设置 → 插件 →「插件解释器」里点「选择」指过去",
+                    if kind == "python" { "Python" } else { "Node.js" }
+                )
+            })?;
+            let mut c = Command::new(&prog);
+            for a in &extra {
+                c.arg(a);
+            }
+            // 让子进程也用 UTF-8：中文 Windows 下 python 默认按 cp936 写管道，
+            // 主程序这边按 UTF-8 解析，两边编码不一致就会把 JSON 读坏
+            if kind == "python" {
+                c.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
+            }
             c.arg(&entry);
-            c
+            (c, format!("{} {}", prog, version))
         }
-        "node" => {
-            let mut c = Command::new("node");
-            c.arg(&entry);
-            c
-        }
-        _ => Command::new(&entry),
+        _ => (Command::new(&entry), entry.display().to_string()),
     };
     cmd.current_dir(dir)
         .stdin(Stdio::piped())
@@ -235,7 +514,7 @@ fn command_for(dir: &Path, m: &PluginManifest) -> Result<Command, String> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    Ok(cmd)
+    Ok((cmd, how))
 }
 
 /// 启用插件：签发受限令牌 → 拉起进程 → 握手（stdin 收到 init）。
@@ -271,10 +550,17 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
         );
     }
 
-    let mut cmd = command_for(&dir, &m)?;
+    let (mut cmd, how) = command_for(&dir, &m)?;
+    crate::diag::log(&format!(
+        "[plugin] {} 工作目录 {}，入口 {}",
+        m.id,
+        dir.display(),
+        dir.join(&m.entry).display()
+    ));
     let mut child = cmd
         .spawn()
-        .map_err(|e| format!("启动插件进程失败（解释器没装？）：{e}"))?;
+        .map_err(|e| format!("启动插件进程失败（{}）：{e}", how))?;
+    crate::diag::log(&format!("[plugin] {} 用解释器 {how}", m.id));
     let mut stdin = child.stdin.take().ok_or("插件进程没有 stdin")?;
     send_line(
         &mut stdin,
@@ -291,13 +577,22 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
     if let Some(out) = child.stdout.take() {
         let pid = m.id.clone();
         std::thread::spawn(move || {
-            let reader = BufReader::new(out);
-            for line in reader.lines().map_while(Result::ok) {
-                let text = line.trim();
+            let mut reader = BufReader::new(out);
+            let mut buf: Vec<u8> = Vec::new();
+            loop {
+                buf.clear();
+                match reader.read_until(b'\n', &mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+                // 插件可能按系统编码（中文 Windows 上是 cp936）写，一律宽松解码 ——
+                // 严格按 UTF-8 读会让迭代器在第一行就结束，看起来像插件自己退了
+                let text = String::from_utf8_lossy(&buf).trim().to_string();
                 if text.is_empty() {
                     continue;
                 }
-                match serde_json::from_str::<Value>(text) {
+                match serde_json::from_str::<Value>(&text) {
                     Ok(v) => {
                         let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
                         match kind {
@@ -322,9 +617,22 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
     if let Some(err) = child.stderr.take() {
         let pid = m.id.clone();
         std::thread::spawn(move || {
-            let reader = BufReader::new(err);
-            for line in reader.lines().map_while(Result::ok).take(200) {
+            let mut reader = BufReader::new(err);
+            let mut buf: Vec<u8> = Vec::new();
+            let mut count = 0;
+            while count < 200 {
+                buf.clear();
+                match reader.read_until(b'\n', &mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+                let line = String::from_utf8_lossy(&buf).trim().to_string();
+                if line.is_empty() {
+                    continue;
+                }
                 crate::diag::log(&format!("[plugin:{pid}] stderr: {line}"));
+                count += 1;
             }
         });
     }
@@ -340,6 +648,26 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
         );
     }
     crate::diag::log(&format!("[plugin] 已启用 {} v{}", m.id, m.version));
+    // 启动后 1 秒做一次体检：很多插件（尤其解释器不对时）会「起来了又立刻退出」，
+    // 界面上只看到开关弹回去。这里把退出码写进日志，省得靠猜。
+    {
+        let id = m.id.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            let state = runtimes().lock().ok().map(|mut rt| {
+                rt.get_mut(&id)
+                    .map(|r| r.child.try_wait().ok().flatten())
+            });
+            match state {
+                Some(Some(Some(st))) => crate::diag::log(&format!(
+                    "[plugin:{id}] 启动 1 秒内就退出了（exit={:?}）",
+                    st.code()
+                )),
+                Some(Some(None)) => crate::diag::log(&format!("[plugin:{id}] 启动 1 秒后仍在运行")),
+                _ => crate::diag::log(&format!("[plugin:{id}] 启动 1 秒后运行时表里已经没它了")),
+            }
+        });
+    }
     Ok(list().into_iter().find(|p| p.id == m.id).unwrap_or(PluginInfo {
         id: m.id,
         name: m.name,
@@ -425,7 +753,15 @@ pub fn start_enabled() {
 fn retire_dead(id: &str) {
     let dead = runtimes().lock().ok().and_then(|mut r| r.remove(id));
     let Some(mut rt) = dead else { return };
-    let _ = rt.child.kill();
+    match rt.child.try_wait() {
+        Ok(Some(st)) => crate::diag::log(&format!(
+            "[plugin:{id}] 进程自己退出了（exit={:?}）",
+            st.code()
+        )),
+        _ => {
+            let _ = rt.child.kill();
+        }
+    }
     if let Some(api) = crate::api::hub() {
         if let Ok(mut t) = api.tokens.lock() {
             t.remove(&rt.token);

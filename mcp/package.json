@@ -1,0 +1,10 @@
+{
+  "name": "fontmanager-mcp",
+  "version": "1.0.0",
+  "description": "FontManager 的 MCP server：把本地 API 包装成 Agent 可调用的工具（stdio）",
+  "type": "module",
+  "bin": { "fontmanager-mcp": "./index.mjs" },
+  "engines": { "node": ">=18" },
+  "license": "GPL-3.0",
+  "private": true
+}

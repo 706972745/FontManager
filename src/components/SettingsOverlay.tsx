@@ -156,6 +156,8 @@ export function SettingsOverlay() {
   // ── 1.3.0：本地 API 与插件 ──
   const [api, setApi] = useState<Awaited<ReturnType<typeof ipc.apiStatus>> | null>(null);
   const [plugins, setPlugins] = useState<Awaited<ReturnType<typeof ipc.pluginsList>>>([]);
+  /** 1.3.1：Python / Node.js 解释器探测结果 —— 插件跑不起来，九成是这里空着 */
+  const [runtimes, setRuntimes] = useState<Awaited<ReturnType<typeof ipc.pluginRuntimes>> | null>(null);
   const [apiBusy, setApiBusy] = useState(false);
   /** 令牌默认藏起来：设置页常开在边上，明文令牌容易被旁人 / 录屏带走 */
   const [showToken, setShowToken] = useState(false);
@@ -173,10 +175,31 @@ export function SettingsOverlay() {
       })
       .catch(() => {});
     void ipc.pluginsList().then((p) => alive && setPlugins(p)).catch(() => {});
+    void ipc.pluginRuntimes().then((r) => alive && setRuntimes(r)).catch(() => {});
     return () => {
       alive = false;
     };
   }, [openState]);
+
+  /** 手动指定解释器（Python / Node.js 各一条） */
+  const pickRuntime = async (kind: "python" | "node") => {
+    const picked = await open({ multiple: false, directory: false }).catch(() => null);
+    if (typeof picked !== "string" || !picked) return;
+    try {
+      setRuntimes(await ipc.setPluginRuntime(kind, picked));
+      toast.success(t("toast.pluginRuntimeSaved"));
+      await refreshPlugins();
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+  const clearRuntime = async (kind: "python" | "node") => {
+    try {
+      setRuntimes(await ipc.setPluginRuntime(kind, ""));
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
 
   /** 请求的端口被占用、实际换了端口 —— 这时候要明说，别让人以为设置没生效 */
   const portFellBack =
@@ -251,9 +274,23 @@ export function SettingsOverlay() {
 
   const refreshPlugins = async () => {
     try {
-      setPlugins(await ipc.pluginsList());
+      const next = await ipc.pluginsList();
+      setPlugins(next);
+      // 右键菜单里那份缓存也要一起刷，不然新装的插件在菜单里看不见
+      await refreshPluginMenus();
+      return next;
     } catch {
-      /* 目录还没建：保持空列表 */
+      return [];
+    }
+  };
+
+  /** 「重新扫描」按钮：一定要有反馈，否则列表没变化时看起来就像没反应 */
+  const rescanPlugins = async () => {
+    const next = await refreshPlugins();
+    if (next.length === 0) {
+      toast.error(t("toast.pluginsScanEmpty"));
+    } else {
+      toast.success(t("toast.pluginsScanned", { count: String(next.length) }));
     }
   };
 
@@ -606,6 +643,46 @@ export function SettingsOverlay() {
                   </button>
                 </div>
               </div>
+              {/* 解释器 = 插件的命门：以前只写死 "python"，机器上没装、或装的不是 PATH 里那份，
+                  插件就永远起不来，界面上只剩一个关着的开关。这里把「找到没、在哪」摊开给用户看。 */}
+              {/* 1.3.1：解释器 = 插件的命门。以前只写死 "python"，机器上没装/装的不是 PATH 里那个，
+                  插件就永远起不来，界面上只留一个关着的开关。这里把「找到没、在哪」摊开给用户看。 */}
+{(["python", "node"] as const).map((kind) => {
+                const info = runtimes?.[kind] ?? null;
+                return (
+                  <div className="settings-row settings-runtime-row" key={kind}>
+                    <div className="settings-runtime-info">
+                      <div className="settings-label">
+                        {t(kind === "python" ? "settings.pluginRuntimePython" : "settings.pluginRuntimeNode")}
+                        <SettingHint text={t("settings.pluginRuntimeSub")} />
+                      </div>
+                      <div className="settings-sub settings-runtime-path" title={info?.path ?? ""}>
+                        {info
+                          ? `${info.manual ? t("settings.pluginRuntimeManual") : t("settings.pluginRuntimeFound")} · ${info.version} · ${info.path}`
+                          : t("settings.pluginRuntimeMissing")}
+                      </div>
+                    </div>
+                    <div className="settings-row settings-row-tight settings-runtime-actions">
+                      <button
+                        className="settings-add-folder"
+                        title={t("settings.pluginRuntimePickHint")}
+                        onClick={() => void pickRuntime(kind)}
+                      >
+                        {t("settings.pluginRuntimePick")}
+                      </button>
+                      {info?.manual && (
+                        <button
+                          className="settings-add-folder"
+                          title={t("settings.pluginRuntimeAutoHint")}
+                          onClick={() => void clearRuntime(kind)}
+                        >
+                          {t("settings.pluginRuntimeAuto")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </section>
 
             <section className="settings-section">
@@ -912,18 +989,21 @@ export function SettingsOverlay() {
                     />
                     <span>{t("settings.apiOn")}</span>
                   </div>
-                  <div className="settings-sub">
-                    {/* 端口不在这里重复：它在下面输入框里（2026-11-05 用户口径） */}
-                    {apiBusy ? "…" : api?.running && api.port ? "127.0.0.1" : t("settings.apiOff")}
-                    {portFellBack && (
-                      <span className="settings-port-warn">
-                        {" · "}
-                        {t("settings.apiPortFallback", { port: String(api?.requestedPort ?? 0) })}
-                      </span>
-                    )}
-                  </div>
                 </div>
+                {/* 地址挪到右边这块：左边只留开关，地址在右（2026-11-05 用户口径）。
+                    端口不重复显示 —— 它在下面的输入框里。 */}
+                <span
+                  className={`settings-api-addr detail-mono ${api?.running ? "" : "settings-dim"}`}
+                  title={api?.running && api.port ? `http://127.0.0.1:${api.port}/api/v1` : ""}
+                >
+                  {apiBusy ? "…" : api?.running && api.port ? "127.0.0.1" : t("settings.apiOff")}
+                </span>
               </div>
+              {portFellBack && (
+                <div className="settings-sub settings-port-warn">
+                  {t("settings.apiPortFallback", { port: String(api?.requestedPort ?? 0) })}
+                </div>
+              )}
               {/* 端口：留空＝自动；填了就用这个（被占用会自动退回随机，并在上面提示） */}
               <div className="settings-row">
                 <div>
@@ -993,23 +1073,25 @@ export function SettingsOverlay() {
                 {t("settings.plugins")}
                 <SettingHint text={t("settings.pluginsSub")} />
               </div>
-              <div className="settings-row">
-                <div className="settings-sub">
-                  {plugins.length === 0 ? t("settings.pluginsEmpty") : t("settings.pluginsCount", { count: String(plugins.length) })}
+              {/* 清单头 + 每一行插件要贴在一起：间距一大，会被当成两个不同的分区 */}
+              <div className="settings-plugin-group">
+                <div className="settings-row settings-plugins-head">
+                  <div className="settings-sub">
+                    {plugins.length === 0 ? t("settings.pluginsEmpty") : t("settings.pluginsCount", { count: String(plugins.length) })}
+                  </div>
+                  <div className="settings-row settings-row-tight">
+                    <button className="settings-add-folder" onClick={() => void rescanPlugins()}>
+                      <RefreshCw size={13} strokeWidth={1.5} />
+                      {t("settings.pluginsRefresh")}
+                    </button>
+                    <button className="settings-add-folder" onClick={() => void ipc.pluginsOpenDir()}>
+                      <FolderOpen size={13} strokeWidth={1.5} />
+                      {t("settings.pluginsOpenDir")}
+                    </button>
+                  </div>
                 </div>
-                <div className="settings-row settings-row-tight">
-                  <button className="settings-add-folder" onClick={() => void refreshPlugins()}>
-                    <RefreshCw size={13} strokeWidth={1.5} />
-                    {t("settings.pluginsRefresh")}
-                  </button>
-                  <button className="settings-add-folder" onClick={() => void ipc.pluginsOpenDir()}>
-                    <FolderOpen size={13} strokeWidth={1.5} />
-                    {t("settings.pluginsOpenDir")}
-                  </button>
-                </div>
-              </div>
-              {plugins.map((p) => (
-                <div key={p.id} className="settings-row">
+                {plugins.map((p) => (
+                  <div key={p.id} className="settings-row">
                   <div>
                     <div className="settings-label">
                       <PillToggle
@@ -1026,16 +1108,17 @@ export function SettingsOverlay() {
                     </div>
                   </div>
                   {/* 每个插件单独给一个入口：装上几个之后，「打开插件目录」再自己找太麻烦 */}
-                  <button
-                    className="settings-library-open"
-                    aria-label={t("settings.pluginsOpenOne")}
-                    data-hint-text={t("settings.pluginsOpenOne")}
-                    onClick={() => void ipc.openFolder(p.dir).catch(() => {})}
-                  >
-                    <FolderOpen size={13} strokeWidth={1.5} />
-                  </button>
-                </div>
-              ))}
+                    <button
+                      className="settings-library-open"
+                      aria-label={t("settings.pluginsOpenOne")}
+                      data-hint-text={t("settings.pluginsOpenOne")}
+                      onClick={() => void ipc.openFolder(p.dir).catch(() => {})}
+                    >
+                      <FolderOpen size={13} strokeWidth={1.5} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </section>
 
             {!IS_LINUX && (

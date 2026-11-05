@@ -628,7 +628,26 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   pluginInvoke: (id: string, hook: string, payload: Record<string, unknown>) =>
     invoke<void>("plugin_invoke", { id, hook, payload }),
   pluginsOpenDir: () => invoke<void>("plugins_open_dir"),
+  /** Python / Node.js 解释器各自探测到了哪个（null = 没找到） */
+  pluginRuntimes: () => invoke<PluginRuntimes>("plugin_runtimes"),
+  /** 手动指定解释器；path 传空串 = 恢复自动探测。返回重新探测的结果 */
+  setPluginRuntime: (kind: PluginRuntimeKind, path: string) =>
+    invoke<PluginRuntimes>("set_plugin_runtime", { kind, path }),
 };
+
+export type PluginRuntimeKind = "python" | "node";
+
+export interface PluginRuntimeInfo {
+  path: string;
+  version: string;
+  /** 是用户手动指定的（不是自动探测到的） */
+  manual: boolean;
+}
+
+export interface PluginRuntimes {
+  python: PluginRuntimeInfo | null;
+  node: PluginRuntimeInfo | null;
+}
 
 /** 本地 API 状态（`api_status`） */
 export interface ApiStatus {

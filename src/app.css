@@ -1688,11 +1688,63 @@ h2.detail-title.copy-name {
   background: linear-gradient(180deg, rgba(var(--ink-rgb), 0.05), rgba(var(--ink-rgb), 0.02));
   box-shadow: inset 0 1px 0 var(--glass-top-highlight);
 }
+/* 功能一览（1.3.2）：两列小卡，紧跟简介段。About 要回答「这个软件现在是什么」 */
+.about-features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 22px;
+  width: min(560px, 100%);
+}
+@media (max-width: 640px) {
+  .about-features {
+    grid-template-columns: 1fr;
+  }
+}
+.about-feature {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--ink-rgb), 0.07);
+  background: rgba(var(--scrim-rgb), 0.16);
+  text-align: left;
+}
+.about-feature-icon {
+  display: inline-flex;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.about-feature-text {
+  font-size: var(--fs-11);
+  line-height: 1.4;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+/* 链接区标题：血缘说明（从 ZFontManager 迭代而来 + 链接指向原作者） */
+.about-links-head {
+  margin-top: 30px;
+  width: min(560px, 100%);
+  text-align: center;
+}
+.about-links-title {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.about-links-sub {
+  margin: 4px 0 0;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+}
 .about-links {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 28px;
+  margin-top: 12px;
   width: min(560px, 100%);
 }
 @media (max-width: 640px) {
@@ -3507,8 +3559,16 @@ h2.detail-title.copy-name {
 }
 
 :root[data-theme="light"] .settings-panel {
-  background: var(--settings-glass-grad), rgba(255, 255, 255, 0.55);
+  /* 2026-11-05 用户口径：浅色下所有面板底色统一。
+     原来的玻璃渐变叠在压暗的背景上发灰，和在线弹窗（纯白）不是一个色调 */
+  background: #ffffff;
   border-color: rgba(18, 18, 26, 0.1);
+}
+
+/* 浅色下右键菜单也统一成纯白，和设置面板 / 在线弹窗同一套 */
+:root[data-theme="light"] .ctx-menu,
+:root[data-theme="light"] .lang-menu {
+  background: #ffffff;
 }
 
 .settings-panel {
@@ -4845,9 +4905,11 @@ h2.detail-title.copy-name {
   flex-direction: column;
   gap: 14px;
   padding: 20px 22px;
-  border-radius: 10px;
-  background: var(--e2);
-  border: 1px solid rgba(var(--ink-rgb), 0.1);
+  /* 以前是 var(--e2)（深色下只有 7% 白），叠在模糊背景上整块发灰、字看不清；
+     改用实底（深色 #1b1b1b / 浅色 #fff），圆角也加大到 14px 让四角看得出来 */
+  border-radius: 14px;
+  background: var(--tooltip-bg);
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
   box-shadow: var(--shadow-mass), 0 30px 80px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
@@ -4875,11 +4937,11 @@ h2.detail-title.copy-name {
   flex-wrap: wrap;
   margin-top: 4px;
   font-size: var(--fs-11);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 .online-preview {
   padding: 18px 16px;
-  border-radius: 7px;
+  border-radius: 10px;
   background: rgba(var(--ink-rgb), 0.03);
   border: 1px solid rgba(var(--ink-rgb), 0.06);
   min-height: 74px;
@@ -4903,7 +4965,7 @@ h2.detail-title.copy-name {
   flex-direction: column;
   gap: 5px;
   padding: 12px 14px;
-  border-radius: 7px;
+  border-radius: 10px;
   background: rgba(var(--ink-rgb), 0.04);
   border: 1px solid rgba(var(--ink-rgb), 0.07);
 }
@@ -4932,7 +4994,7 @@ h2.detail-title.copy-name {
 }
 .online-licence-copy {
   font-size: var(--fs-10);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   line-height: 1.45;
   max-height: 3.6em;
   overflow: hidden;
@@ -4957,7 +5019,7 @@ h2.detail-title.copy-name {
   background: rgba(var(--ink-rgb), 0.03);
 }
 .online-file-name {
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-size: var(--fs-10);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5523,8 +5585,10 @@ body.is-dragging textarea {
   width: 46px;
   height: 1px;
   border-radius: 999px;
-  /* 线从 3px 减到 1px 后靠提高透明度补回存在感，收起态另有 0.32 的加强规则 */
-  background: rgba(var(--ink-rgb), 0.26);
+  /* 线从 3px 减到 1px 后靠提高透明度补回存在感，收起态另有加强规则。
+     用中性灰而不用主题 ink：收起后这条线浮在桌面上，浅色主题的深线在黑色
+     桌面/任务栏上会隐形，深色主题的浅线在白色背景上同样隐形（2026-11-05 用户反馈） */
+  background: rgba(138, 138, 143, 0.62);
   /* 收起时这条线要摊成整条细线，和提示行滑走同一拍 */
   transition:
     width 0.26s cubic-bezier(0.32, 0.72, 0, 1),
@@ -5548,7 +5612,7 @@ body.is-dragging textarea {
      vh 在这里不可用——收起后窗口视口只有 12px，vh 恒等于 0，会永远落到下限 4px */
   height: var(--dock-line-h, 5px);
   border-radius: 3px;
-  background: rgba(var(--ink-rgb), 0.38);
+  background: rgba(138, 138, 143, 0.85);
   /**
    * 细线阶段不做任何过渡：这条线的终值在上面（100% / dock-line-h / 0.38），
    * 和 retract 阶段末尾完全一致，所以这里关掉过渡不会少掉任何「摊开」动作
@@ -5617,7 +5681,7 @@ body.qb-minimizing .qb-content {
 
 /* 整体收起后，抓手条稍微亮一点，提示这里还能拖 / 靠近可展开 */
 .qb-grip[data-collapsed="true"] .qb-grip-bar {
-  background: rgba(var(--ink-rgb), 0.32);
+  background: rgba(138, 138, 143, 0.75);
 }
 
 /**
@@ -5775,7 +5839,7 @@ body.ui-fade-out .app-frame {
   width: 100%;
   height: var(--dock-line-h, 5px);
   border-radius: 3px;
-  background: rgba(var(--ink-rgb), 0.38);
+  background: rgba(138, 138, 143, 0.85);
 }
 .qb-dock-dot {
   flex-shrink: 0;
@@ -6513,13 +6577,15 @@ body.ui-fade-out .app-frame {
 .settings-port-input {
   flex: 0 0 auto;
   width: 96px;
-  text-align: right;
-  padding: 4px 8px;
+  /* 2026-11-05 用户口径：与上面 127.0.0.1 地址牌同款（居中、同色同框） */
+  text-align: center;
+  padding: 4px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(var(--ink-rgb), 0.14);
-  background: rgba(var(--ink-rgb), 0.04);
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  background: rgba(var(--ink-rgb), 0.05);
   font-size: var(--fs-12);
   color: var(--text-primary);
+  letter-spacing: 0.02em;
   outline: none;
   transition: border-color var(--t-quick) ease;
 }
@@ -6533,6 +6599,21 @@ body.ui-fade-out .app-frame {
 .settings-port-warn {
   color: var(--warn, #c98a2b);
 }
+/* 本地 API 的地址牌：只显示主机，端口在下面的输入框里 */
+.settings-api-addr {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  background: rgba(var(--ink-rgb), 0.05);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.settings-api-addr.settings-dim {
+  opacity: 0.55;
+}
 .settings-row-tight {
   gap: 6px;
 }
@@ -6543,4 +6624,31 @@ body.ui-fade-out .app-frame {
   background: var(--accent-a);
   margin-left: 2px;
   flex-shrink: 0;
+}
+/* 插件区：清单头和下面每一行插件当成一组，间距 6px（用分区的 10px 会被看成两个分区） */
+/* 插件解释器行：路径可能很长，左侧要能收缩（min-width:0），按钮组不许被挤出去 */
+.settings-runtime-row {
+  gap: 12px;
+}
+.settings-runtime-info {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.settings-runtime-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-runtime-actions {
+  flex: 0 0 auto;
+  align-self: center;
+}
+.settings-plugin-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-plugins-head {
+  padding-top: 9px;
+  padding-bottom: 9px;
 }
