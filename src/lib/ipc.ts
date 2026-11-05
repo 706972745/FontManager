@@ -611,4 +611,45 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   fontsWithChar: (paths: string[], codepoint: number) =>
     invoke<string[]>("fonts_with_char", { paths, codepoint }),
   setUiScale: (scale: number | null) => invoke<number>("set_ui_scale", { scale }),
+
+  // ── 1.3.0：本地 API 与插件 ──
+  /** 本地 API 状态：是否开启 / 实际端口 / 访问令牌 / 是否允许危险写 */
+  apiStatus: () => invoke<ApiStatus>("api_status"),
+  apiSetEnabled: (enabled: boolean) => invoke<void>("api_set_enabled", { enabled }),
+  apiSetDangerous: (on: boolean) => invoke<void>("api_set_dangerous", { on }),
+  /** 重置令牌（旧令牌立即失效），返回新令牌 */
+  apiResetToken: () => invoke<string>("api_reset_token"),
+  pluginsList: () => invoke<PluginInfo[]>("plugins_list"),
+  pluginSetEnabled: (id: string, enabled: boolean) =>
+    invoke<void>("plugin_set_enabled", { id, enabled }),
+  /** 调插件钩子（右键菜单项用 context-menu） */
+  pluginInvoke: (id: string, hook: string, payload: Record<string, unknown>) =>
+    invoke<void>("plugin_invoke", { id, hook, payload }),
+  pluginsOpenDir: () => invoke<void>("plugins_open_dir"),
 };
+
+/** 本地 API 状态（`api_status`） */
+export interface ApiStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  token: string;
+  dangerous: boolean;
+  base: string;
+  version?: string;
+}
+
+/** 插件清单里的一项（`plugins_list`） */
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  description: string | null;
+  permissions: string[];
+  hooks: string[];
+  menus: { title: string; on: string }[];
+  dir: string;
+  enabled: boolean;
+  running: boolean;
+  error: string | null;
+}

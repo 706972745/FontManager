@@ -22,6 +22,7 @@ import { ArtIcon } from "./ArtIcon";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { springSoft } from "../design/springs";
 import { ipc } from "../lib/ipc";
+import { refreshPluginMenus } from "../lib/pluginMenuBridge";
 import { toast } from "../design/primitives/Toast";
 import { useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
@@ -154,6 +155,85 @@ export function SettingsOverlay() {
     // 设置面板关掉时一并收掉子对话框：不然它会浮在一个已经消失的面板上方
     if (!openState) setResyncOpen(false);
   }, [openState]);
+
+  // ── 1.3.0：本地 API 与插件 ──
+  const [api, setApi] = useState<Awaited<ReturnType<typeof ipc.apiStatus>> | null>(null);
+  const [plugins, setPlugins] = useState<Awaited<ReturnType<typeof ipc.pluginsList>>>([]);
+  const [apiBusy, setApiBusy] = useState(false);
+
+  useEffect(() => {
+    if (!openState) return;
+    let alive = true;
+    void ipc.apiStatus().then((s) => alive && setApi(s)).catch(() => {});
+    void ipc.pluginsList().then((p) => alive && setPlugins(p)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [openState]);
+
+  const toggleApi = async (on: boolean) => {
+    setApiBusy(true);
+    try {
+      await ipc.apiSetEnabled(on);
+      const s = await ipc.apiStatus();
+      setApi(s);
+      toast.success(on ? t("toast.apiOn", { port: String(s.port) }) : t("toast.apiOff"));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setApiBusy(false);
+    }
+  };
+
+  const setDangerous = async (on: boolean) => {
+    try {
+      await ipc.apiSetDangerous(on);
+      setApi(await ipc.apiStatus());
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const copyToken = async () => {
+    if (!api?.token) return;
+    try {
+      await navigator.clipboard.writeText(api.token);
+      toast.success(t("toast.tokenCopied"));
+    } catch {
+      toast.error(t("toast.tokenCopied"));
+    }
+  };
+
+  const resetToken = async () => {
+    try {
+      await ipc.apiResetToken();
+      setApi(await ipc.apiStatus());
+      toast.success(t("toast.tokenReset"));
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const refreshPlugins = async () => {
+    try {
+      setPlugins(await ipc.pluginsList());
+    } catch {
+      /* 目录还没建：保持空列表 */
+    }
+  };
+
+  const togglePlugin = async (id: string, on: boolean) => {
+    try {
+      await ipc.pluginSetEnabled(id, on);
+      toast.success(on ? t("toast.pluginOn") : t("toast.pluginOff"));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      await refreshPlugins();
+      // 右键菜单里的插件项要跟着变
+      await refreshPluginMenus();
+    }
+  };
 
   useEffect(() => {
     if (!openState) return;
@@ -780,6 +860,95 @@ export function SettingsOverlay() {
                   )}
                 </div>
               </div>
+            </section>
+
+            <section className="settings-section">
+              <div className="detail-heading">
+                {t("settings.api")}
+                <SettingHint text={t("settings.apiSub")} />
+              </div>
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">
+                    <PillToggle
+                      on={!!api?.enabled}
+                      onChange={(on) => void toggleApi(on)}
+                      label={t("settings.apiOn")}
+                    />
+                    <span>{t("settings.apiOn")}</span>
+                  </div>
+                  <div className="settings-sub">
+                    {apiBusy
+                      ? "…"
+                      : api?.running && api.port
+                        ? `${t("settings.apiPort")} ${api.port}`
+                        : t("settings.apiOff")}
+                  </div>
+                </div>
+              </div>
+              {api?.enabled && api.token && (
+                <>
+                  <div className="settings-row settings-col">
+                    <div className="settings-label">{t("settings.apiToken")}</div>
+                    <div className="settings-row">
+                      <code className="detail-mono settings-api-token">{api.token}</code>
+                      <button className="settings-library-switch" onClick={() => void copyToken()}>
+                        {t("settings.apiCopy")}
+                      </button>
+                      <button className="settings-library-switch" onClick={() => void resetToken()}>
+                        {t("settings.apiResetToken")}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="settings-row">
+                    <div>
+                      <div className="settings-label">
+                        <PillToggle
+                          on={!!api.dangerous}
+                          onChange={(on) => void setDangerous(on)}
+                          label={t("settings.apiDangerous")}
+                        />
+                        <span>{t("settings.apiDangerous")}</span>
+                        <SettingHint text={t("settings.apiDangerousSub")} />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
+
+            <section className="settings-section">
+              <div className="detail-heading">
+                {t("settings.plugins")}
+                <SettingHint text={t("settings.pluginsSub")} />
+              </div>
+              <div className="settings-row">
+                <div className="settings-sub">
+                  {plugins.length === 0 ? t("settings.pluginsEmpty") : t("settings.pluginsCount", { count: String(plugins.length) })}
+                </div>
+                <button className="settings-add-folder" onClick={() => void ipc.pluginsOpenDir()}>
+                  <FolderOpen size={13} strokeWidth={1.5} />
+                  {t("settings.pluginsOpenDir")}
+                </button>
+              </div>
+              {plugins.map((p) => (
+                <div key={p.id} className="settings-row">
+                  <div>
+                    <div className="settings-label">
+                      <PillToggle
+                        on={p.enabled}
+                        onChange={(on) => void togglePlugin(p.id, on)}
+                        label={p.name}
+                      />
+                      <span>{p.name}</span>
+                      <span className="settings-plugin-version">v{p.version}</span>
+                    </div>
+                    <div className="settings-sub">
+                      {p.error ?? p.description ?? p.permissions.join(" · ")}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </section>
 
             {!IS_LINUX && (

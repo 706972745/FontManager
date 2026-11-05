@@ -46,6 +46,7 @@ import { useT } from "./lib/i18n";
 import { DiagHud } from "./components/DiagHud";
 import { experiment } from "./lib/experiment";
 import { ensureThumbIndex } from "./lib/thumb";
+import { refreshPluginMenus } from "./lib/pluginMenuBridge";
 
 /**
  * 诊断 HUD 开关。只在 `?diag=1` 时挂载：它每 500ms 刷一次文本、常驻一个 rAF 采样循环，
@@ -238,6 +239,14 @@ function MainContent() {
    */
   useEffect(() => {
     if (experiment.thumbnail()) void ensureThumbIndex();
+  }, []);
+
+  /**
+   * 插件的右键菜单项：启动后拉一次清单缓存起来（菜单是纯函数，拿不到 React 状态）。
+   * 没有插件时这一步什么都不改，菜单与之前完全一样。
+   */
+  useEffect(() => {
+    void refreshPluginMenus();
   }, []);
 
   if (nav.kind === "trash") return <TrashView />;

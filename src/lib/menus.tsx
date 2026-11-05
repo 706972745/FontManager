@@ -13,6 +13,7 @@ import {
   FolderPlus,
   Image as ImageIcon,
   Power,
+  Puzzle,
   Star,
   Timer,
   Trash2,
@@ -26,6 +27,7 @@ import { AVAILABLE_ADOBE_APPS, ipc, type FontFace } from "./ipc";
 import { exportSpecimen } from "./specimen";
 import { activeLocale, t } from "./i18n";
 import { extraFamilyNames, languageLabel, shortName } from "./fontNames";
+import { pluginMenuItems } from "./pluginMenuBridge";
 
 export async function exportFamily(family: Family) {
   const dir = await open({
@@ -651,6 +653,23 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
         action: () => void s.uninstallFamily(family.name),
       },
     );
+  }
+
+  // 1.3.0：插件追加的菜单项（只有启用的插件才在缓存里，没插件时这一段不执行）
+  const pluginEntries = pluginMenuItems().flatMap((p) =>
+    p.menus
+      .filter((m) => m.on === "family")
+      .map((m) => ({
+        label: `${m.title} · ${p.name}`,
+        icon: <Puzzle size={14} strokeWidth={1.5} />,
+        action: () =>
+          void ipc
+            .pluginInvoke(p.id, "context-menu", { family: family.name })
+            .catch((e) => toast.error(String(e))),
+      })),
+  );
+  if (pluginEntries.length > 0) {
+    items.push({ kind: "separator" }, ...pluginEntries);
   }
   return items;
 }

@@ -4,6 +4,64 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-11-05（开发版，未发布）
+
+**对外开放能力：service 层 + 本地 HTTP API + MCP + 进程外插件。界面体验零变化。**
+
+> 这一版是「路线图阶段 ①②③a③b」的落地版，**开发版**：本地 API 与插件系统刚跑通，
+> 先在本地验证，没打 tag、没发 Release。
+
+### 内部：抽出 service 层（`src-tauri/src/services/`）
+
+- 业务逻辑从 `#[tauri::command]` 里搬出来，变成「给参数就能调」的普通函数，
+  **这一层不出现任何 Tauri 类型**（AppHandle / State / Window），需要通知界面的地方用回调：
+  - `services::scan`：扫描全库（原 `scan_fonts` 的 260 行），进度用 `ScanSink` 回调；
+    顺带把 `scanner::scan_all` 的 3 处 `app.emit` 改成回调，命令层与 HTTP 侧共用同一份实现。
+  - `services::fonts`：最近一次扫描结果的内存快照 + 查询 + 按字族/路径启停 + 会话级启用。
+  - `services::snapshot`：快照列 / 建 / 删 / 改名 / **应用**（应用快照以前只在前端做，现在后端也能）。
+  - `services::curation`：标签 / 分组 / 收藏 / 评分 / 备注 / 按版权筛字族。
+  - `services::pack`：整包导出导入（进度回调）。
+  - `services::jobs`：长任务进度表（HTTP 的 job id 轮询用它）。
+- 命令函数退化成薄壳：`scan_fonts` 从 261 行变成 32 行，只负责「后台线程 + 把进度发成前端事件」。
+
+### 新增：本地 HTTP API（设置 → 本地 API）
+
+- **只监听 `127.0.0.1`**，端口由系统随机分配，启动时写 `%APPDATA%\FontManager\api.json`
+  （端口 + 令牌 + base），外部程序读它发现服务。
+- **默认关闭**：开关关着就完全不起监听（`netstat` 查不到）；打开后立刻生效，不用重启。
+- **Bearer 令牌**：主令牌可在设置里看 / 复制 / 重置；重置后旧令牌立即失效。
+- **危险写默认拒绝**：导入、覆盖这类会往字体库写文件的操作，要在设置里单独勾「允许危险操作」。
+- 端点（第一版）：
+  `GET /health` · `GET /fonts?q=&family=&license=` · `GET /fonts/families` ·
+  `POST /fonts/activate|deactivate`（`{families}` 或 `{paths}`）· `POST /fonts/scan` ·
+  `GET|POST /snapshots` · `DELETE /snapshots/:name` · `POST /snapshots/:name/apply` ·
+  `GET /curation` · `PUT /curation/rating|favorite|tags|note` ·
+  `POST /export/pack`（异步 job）· `GET /jobs/:id` · `POST /import`（需危险写授权）。
+- 错误一律 400 + 人话（带下一步指引），Agent 会把这句话直接转给用户看。
+
+### 新增：Agent 对接（MCP）
+
+- 独立小程序 `fontmanager-mcp/`（不放进主程序，主程序不背 MCP 依赖）：
+  纯 Node ESM，零依赖，stdio 模式实现 `initialize` / `tools/list` / `tools/call`。
+- 工具：`list_fonts` `list_families` `activate_fonts` `deactivate_fonts` `list_snapshots`
+  `take_snapshot` `apply_snapshot` `rate_font` `fonts_by_license` `api_health`。
+- 服务发现读 `api.json`；API 没开时返回「请去设置 → 本地 API 打开」的友好错误，不崩。
+
+### 新增：插件系统（设置 → 插件）
+
+- **进程外插件**：插件是独立程序（Python / Node / exe 都行），崩溃不连累主程序。
+- 目录 `%APPDATA%\FontManager\plugins\<插件>\plugin.json`，字段：
+  `id / name / version / apiLevel / entry / interpreter / permissions / hooks / menus`。
+- 启用时：主程序签发**受限令牌**（按 `permissions` 过滤路由）→ 拉起进程 →
+  stdin 收到 `{"type":"init", apiBase, apiToken}`；停用即杀进程 + 撤销令牌。
+- 第一版钩子：`context-menu`（右键字族时调插件）；`detail-tab` 协议预留。
+- 附带一个示例插件 `examples/plugin-font-stats/`：右键字族 → 统计字面数与版权分类 → 写进备注。
+
+### 其它
+
+- 设置页新增「本地 API」「插件」两节（含令牌复制 / 重置、危险操作授权、插件启停），9 种语言同步。
+- `version.ts` 的 `APP_EDITION` 置空：1.3.0 是开发版，「关于」只显示版本号。
+
 ## [1.2.6] — 2026-11-05
 
 **设置页四处修正：库地址可改、文件夹按钮打开所在位置、默认库搬进安装目录、库文件夹图标与软件内统一。**
