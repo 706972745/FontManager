@@ -744,6 +744,7 @@
   "toast.entriesMerged_other": "{count} entradas incorporadas",
   "toast.exportFailed": "Ha fallado la exportación",
   "toast.exportedFolder": "«{name}» exportado: {count} archivos, {size}",
+  "toast.exportedSingleFont": "Fuente del sistema: se comprimieron sus {count} archivo(s) ({size})",
   "toast.exportedFolderFamily": "La fuente está en la raíz de la biblioteca; solo se comprimieron sus {count} archivos de familia ({size})",
   "toast.exported": "{name} exportada",
   "toast.exportedFamilies": "{count} familias exportadas",

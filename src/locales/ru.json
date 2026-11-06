@@ -759,6 +759,7 @@
   "toast.entriesMerged_other": "Объединено {count} записей",
   "toast.exportFailed": "Не удалось экспортировать",
   "toast.exportedFolder": "«{name}» экспортировано: файлов {count}, {size}",
+  "toast.exportedSingleFont": "Системный шрифт — упаковано файлов: {count} ({size})",
   "toast.exportedFolderFamily": "Шрифт лежит в корне библиотеки — упакованы только {count} файлов этого семейства ({size})",
   "toast.exported": "{name} экспортирован",
   "toast.exportedFamilies": "Экспортировано семейств: {count}",

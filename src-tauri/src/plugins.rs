@@ -140,8 +140,75 @@ fn send_line(stdin: &mut ChildStdin, value: &Value) -> Result<(), String> {
         .map_err(|e| format!("写插件 stdin 失败：{e}"))
 }
 
+/// 插件目录（1.3.8 起默认在**软件安装目录**下）。
+///
+/// 用户原话：「这个插件的目录，如果可以，改为默认在软件安装目录下」——插件是软件的一部分，
+/// 跟着安装目录走更符合直觉（整个文件夹拷走就是一套完整的软件，卸载也一起走）。
+///
+/// 三条规则（与字体库 `scanner::managed_font_dir()` 同一套思路）：
+/// 1. 先试 `<exe 所在目录>\plugins`，写探针确认可写（MSI 装到 Program Files 时不可写）；
+/// 2. **老用户不搬家**：`%APPDATA%\FontManager\plugins` 里已经有插件、而安装目录下还是空的，
+///    就继续用老位置 —— 插件自带运行时，搬目录容易把它自己的相对路径搞坏；
+/// 3. 调试构建（跑在 rust-target\debug 下）不进安装目录，直接用老位置，免得污染构建产物。
 pub fn plugins_dir() -> PathBuf {
+    plugins_dir_cached().clone()
+}
+
+/// 1.3.7 及更早版本的插件目录。
+pub fn legacy_plugins_dir() -> PathBuf {
     store::app_data_dir().join("plugins")
+}
+
+fn plugins_dir_cached() -> &'static PathBuf {
+    static CELL: OnceLock<PathBuf> = OnceLock::new();
+    CELL.get_or_init(resolve_plugins_dir)
+}
+
+fn resolve_plugins_dir() -> PathBuf {
+    let legacy = legacy_plugins_dir();
+    if cfg!(debug_assertions) {
+        return legacy;
+    }
+    let Some(base) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+    else {
+        return legacy;
+    };
+    let dir = base.join("plugins");
+    // 老用户：原位置已经有插件，且安装目录下还没建过 → 原地不动
+    if has_plugins(&legacy) && !has_plugins(&dir) {
+        crate::diag::log(&format!(
+            "[plugin] 沿用旧插件目录 {}（安装目录下还没有插件）",
+            legacy.display()
+        ));
+        return legacy;
+    }
+    if is_writable_plugins_dir(&dir) {
+        return dir;
+    }
+    crate::diag::log(&format!(
+        "[plugin] 安装目录不可写，插件目录回退到 {}",
+        legacy.display()
+    ));
+    legacy
+}
+
+fn has_plugins(dir: &Path) -> bool {
+    std::fs::read_dir(dir)
+        .map(|it| it.flatten().any(|e| e.path().is_dir()))
+        .unwrap_or(false)
+}
+
+/// 能不能在这个目录里建文件 —— 装到 Program Files 时这里会返回 false。
+fn is_writable_plugins_dir(dir: &Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(".zfm-write-test");
+    let ok = std::fs::write(&probe, b"1").is_ok();
+    let _ = std::fs::remove_file(&probe);
+    ok
 }
 
 fn manifest_path(dir: &Path) -> PathBuf {

@@ -13,6 +13,7 @@
 //! 3. **字体直接放在字体库根目录时退化成「只打包本字族」**。那种情况下「所在文件夹」
 //!    是整个库（几千个目录、几个 GB），把用户整个库压进去绝不是他想要的结果。
 //!    判定依据就是库标记文件 `.zfm-folder.ico`（`library_marker` 写的）。
+//!    **系统字体同理**（`C:\Windows\Fonts` 上千个文件、还带系统锁）→ 只打包这一份。
 //! 4. 先写 `.writing` 再改名：中途关软件留下的是个一眼看得出没写完的临时文件，
 //!    而不是一个「看起来正常、其实缺一半」的 zip。
 
@@ -40,7 +41,8 @@ pub struct FolderExportReport {
     pub dest: String,
     /// zip 内顶层目录名（= 文件夹名）
     pub root: String,
-    /// `folder` = 整个文件夹；`family` = 只打包了本字族的字体文件（字体在库根目录时的兜底）
+    /// `folder` = 整个文件夹；`family` = 只打包了本字族的字体文件（字体在库根目录时的兜底）；
+    /// `single` = 系统字体，只打包这一份（不再套一层目录）
     pub scope: String,
     /// 打进 zip 的文件数
     pub files: u32,
@@ -117,6 +119,34 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<(PathBuf, String)>) -> Result<u32
     Ok(skipped)
 }
 
+/// 这个目录是不是**系统字体目录**（C:\Windows\Fonts 或当前用户的 Fonts）。
+///
+/// 系统字体点「全部导出」时，「所在文件夹」是整个系统字体目录 —— 上千个文件、大半
+/// 还带系统锁。这种情况只打包本字族的文件即可（用户想要的也就是那一份）。
+fn is_system_fonts_dir(dir: &Path) -> bool {
+    fn norm(p: &Path) -> String {
+        p.to_string_lossy()
+            .replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_lowercase()
+    }
+    let target = norm(dir);
+    let win = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into());
+    let mut candidates = vec![
+        PathBuf::from(&win).join("Fonts"),
+        PathBuf::from(r"C:\Windows\Fonts"),
+    ];
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        candidates.push(
+            PathBuf::from(local)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Fonts"),
+        );
+    }
+    candidates.iter().any(|c| norm(c) == target)
+}
+
 /// 兜底：字体直接躺在字体库根目录时，只打包本字族的字体文件（扁平存放）
 fn family_only(paths: &[String]) -> Vec<(PathBuf, String)> {
     let mut out: Vec<(PathBuf, String)> = Vec::new();
@@ -158,9 +188,16 @@ pub fn export_folder(
         }
     }
 
-    let library_root = looks_like_library(dir);
-    let (scope, files, skipped) = if library_root {
-        ("family", family_only(family_paths), 0u32)
+    // 三种情况：
+    // - 系统字体目录 → 只打包本字族（`single`，zip 里不再套一层文件夹）
+    // - 字体库根目录 → 同上（`family`），绝不把整个库压进去
+    // - 普通字族目录 → 整目录递归（`folder`，zip 内以文件夹名作顶层）
+    let system = is_system_fonts_dir(dir);
+    let library_root = !system && looks_like_library(dir);
+    let (scope, files, skipped) = if system || library_root {
+        let files = family_only(family_paths);
+        let scope = if system { "single" } else { "family" };
+        (scope, files, 0u32)
     } else {
         let mut files = Vec::new();
         let skipped = walk(dir, dir, &mut files)?;
@@ -170,10 +207,12 @@ pub fn export_folder(
         return Err("这个文件夹里没有可导出的文件".into());
     }
 
-    let root = dir
+    let root_name = dir
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "fonts".into());
+    // 只打包几个字体文件时不要再套一层目录：解压出来就是文件本身，更符合直觉
+    let prefix = if scope == "folder" { Some(root_name.clone()) } else { None };
     let total_bytes: u64 = files
         .iter()
         .filter_map(|(p, _)| fs::metadata(p).ok().map(|m| m.len()))
@@ -189,8 +228,7 @@ pub fn export_folder(
     let mut tmp_name = dest.as_os_str().to_owned();
     tmp_name.push(".writing");
     let tmp_path = PathBuf::from(tmp_name);
-    let result = write_zip(&tmp_path, &root, &files);
-    let zip_bytes = match result {
+    let (zip_bytes, unreadable) = match write_zip(&tmp_path, prefix.as_deref(), &files) {
         Ok(n) => n,
         Err(e) => {
             let _ = fs::remove_file(&tmp_path);
@@ -207,28 +245,48 @@ pub fn export_folder(
 
     Ok(FolderExportReport {
         dest: dest.to_string_lossy().into_owned(),
-        root,
+        root: root_name,
         scope: scope.into(),
-        files: files.len() as u32,
+        files: files.len() as u32 - unreadable,
         bytes: total_bytes,
         zip_bytes,
-        skipped,
+        skipped: skipped + unreadable,
     })
 }
 
-fn write_zip(tmp: &Path, root: &str, files: &[(PathBuf, String)]) -> Result<u64, String> {
+/// 写 zip，返回 (文件大小, 读不出来的文件数)。
+///
+/// 读单个文件失败（系统字体被锁、权限不够）时**跳过并在报告里计数**，不让整次导出
+/// 白干；调用方按 `files` 与 `skipped` 给用户一句实话。
+fn write_zip(
+    tmp: &Path,
+    prefix: Option<&str>,
+    files: &[(PathBuf, String)],
+) -> Result<(u64, u32), String> {
     let file = File::create(tmp).map_err(|e| format!("创建 {} 失败：{e}", tmp.display()))?;
     let mut zw = zip::ZipWriter::new(BufWriter::new(file));
     let mut buf = vec![0u8; 64 * 1024];
+    let mut unreadable = 0u32;
     for (abs, rel) in files {
+        // 先打开再建条目：打不开的文件不该在 zip 里留一个空壳
+        let mut src = match File::open(abs) {
+            Ok(f) => f,
+            Err(_) => {
+                unreadable += 1;
+                continue;
+            }
+        };
         let opts = zip::write::SimpleFileOptions::default().compression_method(if is_stored(abs) {
             zip::CompressionMethod::Stored
         } else {
             zip::CompressionMethod::Deflated
         });
-        zw.start_file(format!("{root}/{rel}"), opts)
+        let entry = match prefix {
+            Some(p) => format!("{p}/{rel}"),
+            None => rel.clone(),
+        };
+        zw.start_file(entry, opts)
             .map_err(|e| format!("写入 zip 条目失败：{e}"))?;
-        let mut src = File::open(abs).map_err(|e| format!("读取 {} 失败：{e}", abs.display()))?;
         loop {
             let n = src
                 .read(&mut buf)
@@ -246,7 +304,8 @@ fn write_zip(tmp: &Path, root: &str, files: &[(PathBuf, String)]) -> Result<u64,
         .map_err(|e| format!("刷新 zip 缓冲失败：{e}"))?;
     inner.flush().map_err(|e| e.to_string())?;
     drop(inner);
-    fs::metadata(tmp).map(|m| m.len()).map_err(|e| e.to_string())
+    let size = fs::metadata(tmp).map(|m| m.len()).map_err(|e| e.to_string())?;
+    Ok((size, unreadable))
 }
 
 #[cfg(test)]
@@ -315,11 +374,20 @@ mod tests {
         assert_eq!(report.files, 1);
 
         let names = zip_names(&dest);
-        assert!(names.contains(&"字体库/Loose.ttf".to_string()));
+        // 只打包几个字体文件时不再套一层文件夹（解压出来就是文件）
+        assert_eq!(names, vec!["Loose.ttf".to_string()]);
         assert!(!names.iter().any(|n| n.contains("别的字族")));
         let _ = fs::remove_dir_all(&base);
     }
 
+
+    /// 系统字体目录（C://Windows//Fonts）要被认出来，否则会把整个系统字体目录塞进 zip
+    #[test]
+    fn detects_system_fonts_dir() {
+        let win = std::env::var("WINDIR").unwrap_or_else(|_| r"C://Windows".into());
+        assert!(is_system_fonts_dir(&PathBuf::from(&win).join("Fonts")));
+        assert!(!is_system_fonts_dir(&std::env::temp_dir()));
+    }
 
     /// 目标已存在时覆盖（用户在保存对话框里选了个旧文件）
     #[test]

@@ -27,8 +27,7 @@ import { AVAILABLE_ADOBE_APPS, ipc, type FontFace } from "./ipc";
 import { exportSpecimen } from "./specimen";
 import { activeLocale, t } from "./i18n";
 import { extraFamilyNames, languageLabel, shortName } from "./fontNames";
-import { formatBytes, pathBasename } from "./fontLoader";
-import { parentDir } from "./onlineCoverage";
+import { formatBytes } from "./fontLoader";
 import { pluginMenuItems } from "./pluginMenuBridge";
 
 /**
@@ -39,14 +38,18 @@ import { pluginMenuItems } from "./pluginMenuBridge";
  * 和本机一模一样的字族目录。
  *
  * `leadPath` 是详情页当前选中的那个字面；没传就取字族的第一个。
- * 字体直接放在字体库根目录时后端会退化成「只打包本字族」，toast 会说明。
+ *
+ * **默认文件名用字族名**（用户 2026-11-06 晚）：之前取的是文件夹名，系统字体的
+ * 「所在文件夹」是 `C:\Windows\Fonts`，保存框里就变成 `Fonts.zip` —— 完全看不出
+ * 导出的是哪款字体。字族名才是用户认得出的那个名字。
+ *
+ * 字体直接放在字体库根目录 / 是系统字体时，后端会退化成「只打包本字族」，toast 会说明。
  */
 export async function exportFamily(family: Family, leadPath?: string) {
   const first = leadPath ?? family.faces[0]?.path;
   if (!first) return;
-  const folderName = pathBasename(parentDir(first)) || family.name;
   const picked = await save({
-    defaultPath: `${safeFileName(folderName)}.zip`,
+    defaultPath: `${safeFileName(family.name)}.zip`,
     filters: [{ name: "ZIP", extensions: ["zip"] }],
     title: t("menu.exportFamilyTitle", { name: family.name }),
   });
@@ -57,10 +60,13 @@ export async function exportFamily(family: Family, leadPath?: string) {
   try {
     const r = await ipc.exportFontFolder(first, dest, paths);
     const size = formatBytes(r.zipBytes);
-    if (r.scope === "family") {
-      // 字体就在库根目录：整库几千个目录，不能连锅端
+    if (r.scope === "single" || r.scope === "family") {
+      // 系统字体 / 字体就在库根目录：只打包了本字族的文件
       toast.success(
-        t("toast.exportedFolderFamily", { count: String(r.files), size }),
+        t(r.scope === "single" ? "toast.exportedSingleFont" : "toast.exportedFolderFamily", {
+          count: String(r.files),
+          size,
+        }),
         dest,
       );
     } else {

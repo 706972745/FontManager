@@ -732,6 +732,7 @@
   "toast.entriesMerged_other": "合并了 {count} 条记录",
   "toast.exportFailed": "导出失败",
   "toast.exportedFolder": "已导出「{name}」：{count} 个文件，{size}",
+  "toast.exportedSingleFont": "系统字体，已打包 {count} 个字体文件（{size}）",
   "toast.exportedFolderFamily": "字体就在库根目录，已打包本字族的 {count} 个文件（{size}）",
   "toast.exported": "已导出 {name}",
   "toast.exportedFamilies": "已导出 {count} 个字体家族",

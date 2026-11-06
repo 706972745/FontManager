@@ -718,6 +718,7 @@
   "toast.entriesMerged_other": "{count} 件を取り込みました",
   "toast.exportFailed": "書き出しに失敗しました",
   "toast.exportedFolder": "「{name}」を書き出しました：{count} ファイル、{size}",
+  "toast.exportedSingleFont": "システムフォントのため {count} ファイルのみをまとめました（{size}）",
   "toast.exportedFolderFamily": "フォントはライブラリ直下にあるため、このファミリーの {count} ファイルのみをまとめました（{size}）",
   "toast.exported": "{name} を書き出しました",
   "toast.exportedFamilies": "{count} ファミリーを書き出しました",

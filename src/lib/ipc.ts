@@ -678,7 +678,8 @@ export interface PluginSettings {
 export interface FolderExportReport {
   dest: string;
   root: string;
-  scope: "folder" | "family";
+  /** folder=整个文件夹 / family=字族文件（字体在库根）/ single=系统字体只打包这一份 */
+  scope: "folder" | "family" | "single";
   files: number;
   bytes: number;
   zipBytes: number;
