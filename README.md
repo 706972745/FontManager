@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.6-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.3.7-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -174,8 +174,10 @@ Click any card and the right panel opens:
   (N characters · M hanzi — "does it have Chinese?" becomes a fact, not a guess)
 - The **full copyright text** with its automatic verdict; name conflicts
   (several files claiming one identity) warn in red here
-- Header: toggle · ★ · **export all**; drag the panel's left edge to resize,
-  double-click to reset
+- Header: toggle · ★ · **export all** — zips the family's **whole folder**, license
+  files and readme included, so a colleague receives the terms along with the
+  fonts (a font sitting at the library root exports just its own files); drag the
+  panel's left edge to resize, double-click to reset
 
 ### 6. Favorites & ratings
 
@@ -370,7 +372,11 @@ so nothing needs to be installed on your machine:
 2. Unzip it (e.g. the `specimen-export` folder)
 3. FontManager → **Settings → Plugins → "Open plugins folder"**, drop the folder in
 4. Toggle the plugin on in **Settings → Plugins** (or hit "Rescan")
-5. Right-click any family → **Plugins ›** to use it
+5. Right-click any family → **Plugins ›** to use it. The plugin's own row in
+   **Settings → Plugins** is an entry point too: the **gear** at the end of the row
+   opens the plugin's settings panel (when the plugin declares one), and
+   **right-clicking the row** lists its no-family-needed actions (open export
+   folder, change save location…)
 
 ### 🖥️ Using the local API
 

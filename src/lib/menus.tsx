@@ -27,24 +27,56 @@ import { AVAILABLE_ADOBE_APPS, ipc, type FontFace } from "./ipc";
 import { exportSpecimen } from "./specimen";
 import { activeLocale, t } from "./i18n";
 import { extraFamilyNames, languageLabel, shortName } from "./fontNames";
+import { formatBytes, pathBasename } from "./fontLoader";
+import { parentDir } from "./onlineCoverage";
 import { pluginMenuItems } from "./pluginMenuBridge";
 
-export async function exportFamily(family: Family) {
-  const dir = await open({
-    directory: true,
+/**
+ * 「全部导出」= 把这个字体**所在的文件夹**打成 zip（1.3.7 起）。
+ *
+ * 以前只把字体文件复制到用户选的目录，同目录的授权书 / 版权说明全丢 —— 把字体发给
+ * 别人时对方根本不知道能不能商用（用户 2026-11-06 反馈）。现在整包打包，解压即得
+ * 和本机一模一样的字族目录。
+ *
+ * `leadPath` 是详情页当前选中的那个字面；没传就取字族的第一个。
+ * 字体直接放在字体库根目录时后端会退化成「只打包本字族」，toast 会说明。
+ */
+export async function exportFamily(family: Family, leadPath?: string) {
+  const first = leadPath ?? family.faces[0]?.path;
+  if (!first) return;
+  const folderName = pathBasename(parentDir(first)) || family.name;
+  const picked = await save({
+    defaultPath: `${safeFileName(folderName)}.zip`,
+    filters: [{ name: "ZIP", extensions: ["zip"] }],
     title: t("menu.exportFamilyTitle", { name: family.name }),
   });
-  if (!dir) return;
+  if (!picked) return;
+  // 有的系统保存框不会自动补后缀：自己补上，别落一个「看起来不像 zip」的文件
+  const dest = /\.zip$/i.test(picked) ? picked : `${picked}.zip`;
   const paths = [...new Set(family.faces.map((f) => f.path))];
   try {
-    const n = await ipc.exportFonts(paths, dir);
-    toast.success(
-      t("toast.exported", { name: family.name }),
-      t("toast.filesCopied", { count: n, dir }),
-    );
+    const r = await ipc.exportFontFolder(first, dest, paths);
+    const size = formatBytes(r.zipBytes);
+    if (r.scope === "family") {
+      // 字体就在库根目录：整库几千个目录，不能连锅端
+      toast.success(
+        t("toast.exportedFolderFamily", { count: String(r.files), size }),
+        dest,
+      );
+    } else {
+      toast.success(
+        t("toast.exportedFolder", { name: r.root, count: String(r.files), size }),
+        dest,
+      );
+    }
   } catch (e) {
     toast.error(t("toast.exportFailed"), String(e));
   }
+}
+
+/** Windows 文件名里不能出现的字符，一律换成下划线（授权书名字里常带 `:`） */
+function safeFileName(name: string): string {
+  return name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/, "") || "fonts";
 }
 
 export async function exportFace(path: string, suggestedName: string) {
@@ -578,7 +610,7 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
     {
       label: t("menu.exportFamily"),
       icon: <Download size={14} strokeWidth={1.5} />,
-      action: () => void exportFamily(family),
+      action: () => void exportFamily(family, lead.path),
     },
     {
       label: t("menu.exportSpecimen"),

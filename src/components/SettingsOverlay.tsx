@@ -1,13 +1,14 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, RefreshCw, Scaling, SunMoon, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, RefreshCw, Scaling, Settings, SunMoon, Volume2, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { LoaderCircle } from "lucide-react";
 import { ArtIcon } from "./ArtIcon";
 import { PillToggle } from "../design/primitives/PillToggle";
+import { openContextMenu, type MenuItem } from "../design/primitives/ContextMenu";
 import { springSoft } from "../design/springs";
-import { ipc } from "../lib/ipc";
+import { ipc, type PluginInfo } from "../lib/ipc";
 import { refreshPluginMenus } from "../lib/pluginMenuBridge";
 import { toast } from "../design/primitives/Toast";
 import { useFontStore } from "../state/fontStore";
@@ -282,6 +283,62 @@ export function SettingsOverlay() {
       // 右键菜单里的插件项要跟着变
       await refreshPluginMenus();
     }
+  };
+
+  /**
+   * 齿轮：让插件**自己**把设置面板弹出来（1.3.7）。
+   *
+   * 插件是独立进程，主程序从不替它画界面 —— 所以这里只能把 `settings.hook`
+   * （默认 `settings`）发过去，面板长什么样由插件决定。插件没声明 `settings`
+   * 就没有这个按钮，免得点了没反应。
+   */
+  const openPluginSettings = async (p: PluginInfo) => {
+    if (!p.running) {
+      toast.error(t("toast.pluginOfflineForSettings", { name: p.name }));
+      return;
+    }
+    try {
+      await ipc.pluginInvoke(p.id, p.settings?.hook ?? "settings", { source: "settings" });
+      toast.success(t("toast.pluginSettingsSent", { name: p.name }));
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  /**
+   * 插件行右键菜单（1.3.7）。
+   *
+   * 只有插件在 plugin.json 的 `menus` 里写了 `"on": "plugin"` 的项才出现在这里 ——
+   * 那是「不用选字体也能跑」的功能（打开报告目录、清缓存、重新扫描…），
+   * 以前只能凑到某个字族右键里点，很别扭。菜单项传 `hook: "context-menu"`、
+   * payload 带 `source: "plugin-row"`，插件按 menu 标题分派即可。
+   */
+  const openPluginRowMenu = (e: ReactMouseEvent, p: PluginInfo) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rowMenus = p.menus.filter((m) => m.on === "plugin");
+    const items: MenuItem[] = rowMenus.map((m) => ({
+      label: m.title,
+      action: () =>
+        void ipc
+          .pluginInvoke(p.id, "context-menu", { menu: m.title, source: "plugin-row" })
+          .catch((err) => toast.error(String(err))),
+    }));
+    if (rowMenus.length > 0) items.push({ kind: "separator" });
+    if (p.settings) {
+      items.push({
+        label: p.settings.title ?? t("settings.pluginsSettings"),
+        icon: <Settings size={14} strokeWidth={1.5} />,
+        disabled: !p.running,
+        action: () => void openPluginSettings(p),
+      });
+    }
+    items.push({
+      label: t("settings.pluginsOpenDir"),
+      icon: <FolderOpen size={14} strokeWidth={1.5} />,
+      action: () => void ipc.openFolder(p.dir).catch(() => {}),
+    });
+    openContextMenu(e, items);
   };
 
   useEffect(() => {
@@ -1015,7 +1072,7 @@ export function SettingsOverlay() {
               {/* 清单头 + 每一行插件要贴在一起：间距一大，会被当成两个不同的分区 */}
               <div className="settings-plugin-group">
                 <div className="settings-row settings-plugins-head">
-                  <div className="settings-sub">
+                  <div className="settings-sub" data-hint-text={plugins.length > 0 ? t("settings.pluginsRowHint") : undefined}>
                     {plugins.length === 0 ? t("settings.pluginsEmpty") : t("settings.pluginsCount", { count: String(plugins.length) })}
                   </div>
                   <div className="settings-row settings-row-tight">
@@ -1030,7 +1087,11 @@ export function SettingsOverlay() {
                   </div>
                 </div>
                 {plugins.map((p) => (
-                  <div key={p.id} className="settings-row">
+                  <div
+                    key={p.id}
+                    className="settings-row settings-plugin-row"
+                    onContextMenu={(e) => openPluginRowMenu(e, p)}
+                  >
                   <div>
                     <div className="settings-label">
                       <PillToggle
@@ -1046,7 +1107,24 @@ export function SettingsOverlay() {
                       {p.error ?? p.description ?? p.permissions.join(" · ")}
                     </div>
                   </div>
-                  {/* 每个插件单独给一个入口：装上几个之后，「打开插件目录」再自己找太麻烦 */}
+                  <div className="settings-plugin-actions">
+                    {/* 齿轮：插件声明了 settings 才有（点了是让插件自己弹面板） */}
+                    {p.settings && (
+                      <button
+                        className="settings-library-open"
+                        aria-label={t("settings.pluginsSettings")}
+                        data-hint-text={
+                          p.running
+                            ? (p.settings.title ?? t("settings.pluginsSettings"))
+                            : t("settings.pluginsSettingsOff")
+                        }
+                        disabled={!p.running}
+                        onClick={() => void openPluginSettings(p)}
+                      >
+                        <Settings size={13} strokeWidth={1.5} />
+                      </button>
+                    )}
+                    {/* 每个插件单独给一个入口：装上几个之后，「打开插件目录」再自己找太麻烦 */}
                     <button
                       className="settings-library-open"
                       aria-label={t("settings.pluginsOpenOne")}
@@ -1055,6 +1133,7 @@ export function SettingsOverlay() {
                     >
                       <FolderOpen size={13} strokeWidth={1.5} />
                     </button>
+                  </div>
                   </div>
                 ))}
               </div>

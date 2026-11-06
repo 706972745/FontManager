@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.6-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.3.7-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -152,7 +152,8 @@ TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还�
 - **多字号实时样张**（大字 Aa → 小字，全部用真字体渲染）；变量字体有**轴滑杆**（字重等）
 - 元数据：样式数 · 格式 · 分类 · 文字系统 · **字符集真实数字**（共 N 字符 · 汉字 M——「有没有中文」不再是猜）
 - **版权信息全文** + 自动判定状态；有名称冲突（多个文件声明同一字体）会在这里红字警告
-- 右上角：启停开关 · ★ · **全部导出**；面板左边缘可拖宽，双击恢复
+- 右上角：启停开关 · ★ · **全部导出**（把这个字族**整个文件夹**打成 zip，连同作者的
+  授权书 / 说明文档一起发走；字体直接放在库根目录时只打包本字族）；面板左边缘可拖宽，双击恢复
 
 ### 6. 收藏与评分
 
@@ -308,7 +309,9 @@ FontManager 把核心能力开放给自动化——**默认关闭、仅限本机
 2. 解压出插件文件夹（如 `specimen-export`）
 3. FontManager → **设置 → 插件 → 「打开插件目录」**，把文件夹放进去
 4. **设置 → 插件** 里打开插件开关（或点「重新扫描」）
-5. 在任意字族上**右键 → 插件 ›** 使用
+5. 在任意字族上**右键 → 插件 ›** 使用；**设置 → 插件** 里那一行本身也是入口：
+   行尾**齿轮**打开插件自己的设置面板（插件声明了才有），在**行上右键**能看到不需要
+   选中字体的那些功能（打开导出目录、改保存位置…）
 
 ### 🖥️ 使用本地 API
 

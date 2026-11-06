@@ -45,6 +45,11 @@ pub struct PluginManifest {
     pub hooks: Vec<String>,
     #[serde(default)]
     pub menus: Vec<PluginMenu>,
+    /// 插件**自己**声明「我有一块设置面板」（1.3.7 起）。
+    /// 写了它，设置 → 插件 的那一行会出现一个齿轮；点了主程序就把 `hook` 发过去，
+    /// 由插件自己弹面板 —— 插件是独立进程，主程序从不替它画界面。
+    #[serde(default)]
+    pub settings: Option<PluginSettings>,
     #[serde(default)]
     pub description: Option<String>,
 }
@@ -53,10 +58,36 @@ fn default_api_level() -> u32 {
     1
 }
 
+fn default_settings_hook() -> String {
+    "settings".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSettings {
+    /// 面板标题：齿轮按钮的 tooltip / 右键菜单里那一行的文字；留空用插件名
+    #[serde(default)]
+    pub title: Option<String>,
+    /// 主程序要调的钩子名，默认 `settings`
+    #[serde(default = "default_settings_hook")]
+    pub hook: String,
+}
+
+impl Default for PluginSettings {
+    fn default() -> Self {
+        Self {
+            title: None,
+            hook: default_settings_hook(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginMenu {
     pub title: String,
-    /// 挂在哪种对象上：family（字族，默认）
+    /// 挂在哪种对象上：`family`（字族右键，默认）/ `plugin`（设置页里那一行插件的右键）。
+    /// 1.3.7 新增 `plugin`：给「不用选字体也能跑」的功能一个入口（打开报告目录、
+    /// 重新扫描、清理缓存这类），不用再去凑一个字族右键。
     #[serde(default = "default_on")]
     pub on: String,
 }
@@ -77,6 +108,8 @@ pub struct PluginInfo {
     pub permissions: Vec<String>,
     pub hooks: Vec<String>,
     pub menus: Vec<PluginMenu>,
+    /// 插件声明的设置面板（没有就是 None → 界面上不显示齿轮）
+    pub settings: Option<PluginSettings>,
     pub dir: String,
     pub enabled: bool,
     pub running: bool,
@@ -166,6 +199,7 @@ pub fn list() -> Vec<PluginInfo> {
                     permissions: m.permissions,
                     hooks: m.hooks,
                     menus: m.menus,
+                    settings: m.settings,
                     dir: dir.to_string_lossy().into_owned(),
                     error: err,
                 });
@@ -184,6 +218,7 @@ pub fn list() -> Vec<PluginInfo> {
                 permissions: Vec::new(),
                 hooks: Vec::new(),
                 menus: Vec::new(),
+                settings: None,
                 dir: dir.to_string_lossy().into_owned(),
                 enabled: false,
                 running: false,
@@ -622,6 +657,7 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
         permissions: m.permissions,
         hooks: m.hooks,
         menus: m.menus,
+        settings: m.settings,
         dir: dir.to_string_lossy().into_owned(),
         enabled: true,
         running: true,

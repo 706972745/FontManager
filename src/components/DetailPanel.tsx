@@ -1264,7 +1264,7 @@ export function DetailPanel() {
                 <button
                   data-hint="hint.exportFace"
                   className="detail-heading-action"
-                  onClick={() => void exportFamily(family)}
+                  onClick={() => void exportFamily(family, lead?.path)}
                 >
                   <Download size={12} strokeWidth={1.5} />
                   {t("detail.exportAll")}
