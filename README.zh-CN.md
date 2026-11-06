@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.8-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.3.9-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -342,7 +342,28 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
 | `GET/POST /snapshots` `POST /snapshots/{name}/apply` | 快照：列表 / 创建 / 应用 |
 | `GET/PUT /curation*` | 备注、评分、收藏、标签 |
 
-> 每条路由都有权限检查；插件的受限令牌越权会被直接拒绝（403）。
+#### 权限：403 是怎么回事
+
+每条路由都有一道**权限闸门**。插件拿到的是**受限令牌**，只含它 `plugin.json` 里
+`permissions` 申报过的那几项，越权直接 **403**（正文会写明缺哪一项）。
+
+| 权限 | 能做什么 |
+|---|---|
+| `read:fonts` | 读字体 / 字族清单、启用状态 |
+| `write:fonts` | **启用 / 停用 / 重扫**——改的是系统级状态，最该盯紧的一项 |
+| `read:snapshot` / `write:snapshot` | 看 / 建 / 删 / 应用方案快照 |
+| `read:curation` / `write:curation` | 读 / 改你写的标签、备注、评分、收藏 |
+| `export` / `import` | 触发打包导出、查进度 / 导入字体包 |
+
+请求的判定顺序是 **401（没令牌）→ 403（没这项权限）→ 422（请求体格式错）**：
+权限检查在解析 body **之前**就跑完了，所以「缺权限」永远不会表现成 422。
+
+少了权限，改**插件自己**的 `plugin.json` 把权限加进 `permissions`，再「重新扫描」即可
+（令牌是启用时签发的，不重启不会变）——**不用改 FontManager**。想确认自己手里到底有什么，
+读 `GET /health` 的 `permissions` 字段（`allPermissions` 才是全部可用权限）。
+
+> 完整权限表、加新接口的规矩（`routes()` + `perm_for()` 必须同时改，否则**默认放行**）、
+> 以及 `perm_for` 里 `match` 顺序的坑，见 [docs/PLUGINS.md](docs/PLUGINS.md#权限403-到底是谁拦的)。
 
 ### 🤖 接入 MCP（让 Agent 驱动你的字体库）
 

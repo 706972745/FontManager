@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.8-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.3.9-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -397,8 +397,32 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
 Handy endpoints: `GET /health` · `GET /fonts` & `GET /fonts/families` ·
 `POST /fonts/activate` & `POST /fonts/deactivate` · `POST /fonts/scan` ·
 `GET/POST /snapshots` & `POST /snapshots/{name}/apply` · `GET/PUT /curation*`
-(notes, ratings, favorites, tags). Every route is permission-checked — a plugin's
-restricted token gets a 403 the moment it steps outside its declared scope.
+(notes, ratings, favorites, tags).
+
+#### Permissions — where 403 comes from
+
+Every route sits behind a **permission gate**. A plugin's token only carries the scopes
+listed in its own `plugin.json` → `permissions`; step outside them and you get **403**
+with the missing scope named in the body.
+
+| Scope | What it allows |
+|---|---|
+| `read:fonts` | Read font / family lists and enabled state |
+| `write:fonts` | **Enable / disable / rescan** — changes system-wide state; the one to scrutinise |
+| `read:snapshot` / `write:snapshot` | Read / create / delete / apply setting snapshots |
+| `read:curation` / `write:curation` | Read / modify your notes, ratings, favorites, tags |
+| `export` / `import` | Start a pack export + poll progress / import a font pack |
+
+The order is **401 (no token) → 403 (scope missing) → 422 (malformed body)**: the gate runs
+before the body is parsed, so a missing scope never shows up as 422.
+
+Missing a scope? Add it to **the plugin's own** `plugin.json` and hit *Rescan* — tokens are
+minted at enable time. **No FontManager change needed.** To see what you actually hold, read
+`permissions` from `GET /health` (`allPermissions` is the full catalogue).
+
+> Full scope table, plus the rule for adding a new route (`routes()` **and** `perm_for()`,
+> or the route is silently **open**), is in
+> [docs/PLUGINS.md § 权限](docs/PLUGINS.md#权限403-到底是谁拦的) (Chinese).
 
 ### 🤖 Hooking up MCP
 

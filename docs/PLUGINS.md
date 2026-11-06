@@ -164,6 +164,84 @@ PUT  /api/v1/curation/favorite    { "family": "...", "favorite": true }
 带 `Authorization: Bearer <apiToken>`。完整示例见 `examples/plugin-specimen-export/`
 （右键字族导出示例图 PNG，启动时自动跑一遍 API/权限自检）。
 
+## 权限：403 到底是谁拦的
+
+插件跑在独立进程里，**所有能力都通过本地 API 走 HTTP**，所以「权限」不是一句口号，
+而是每个请求都要过的一道闸。理解这三步，403 就不再是玄学：
+
+```
+请求 ──▶ auth 中间件 ──▶ require_perm 中间件 ──▶ handler
+         （认令牌）      （查这张表放不放行）    （真正干活）
+         401 在这拦       403 在这拦
+```
+
+1. **`auth`**：看 `Authorization: Bearer <apiToken>`。没有 / 令牌不存在 → **401**
+   （`缺少 Authorization: Bearer <token>`）。
+2. **`require_perm`**：拿 `方法 + 路径` 去权限表里查这一条要什么权限，
+   再看令牌有没有 → 没有就 **403**（正文会写明缺哪一项）。
+3. **handler**：这时候才解析 body、才可能因为字段不对返回 **422**。
+
+> 关键点：权限检查是**中间件**，跑在 body 解析之前。所以**同一件事缺权限一定是 403，不会先报 422**
+> —— 如果你看到 422，那说明权限是够的，问题在请求体格式。
+
+### 权限名单
+
+令牌的权限**就是** `plugin.json` 里 `permissions` 那一串，主程序原样照抄、不增不减
+（签发处：`plugins.rs` 的 `Scope { perms: m.permissions.clone() }`）。
+可用权限名单定义在 `src-tauri/src/api.rs` 的 `PERMS`：
+
+| 权限 | 能做什么 | 对应端点 |
+|---|---|---|
+| `read:fonts` | 读字体 / 字族清单、启用状态 | `GET /fonts`、`GET /fonts/families` |
+| `write:fonts` | **启用 / 停用 / 重扫**（改的是系统级状态） | `POST /fonts/activate`、`/deactivate`、`/scan` |
+| `read:snapshot` | 看方案快照列表 | `GET /snapshots` |
+| `write:snapshot` | 建 / 删 / 应用快照 | `POST /snapshots`、`DELETE /snapshots/{name}`、`POST /snapshots/{name}/apply` |
+| `read:curation` | 读你写的标签 / 备注 / 评分 / 收藏 | `GET /curation` |
+| `write:curation` | 改上面这些 | `PUT /curation/{note,rating,favorite,tags}` |
+| `export` | 触发打包导出、查导出进度 | `POST /export/pack`、`GET /jobs/{id}` |
+| `import` | 导入字体包 | `POST /import` |
+
+`*` 是通配全权。**插件千万别写**：主程序不会替你过滤，`"permissions": ["*"]`
+是真的能拿到全部权限（等于绕过上面这张表）。主程序自己也用 `*`，所以这条路没有额外限制
+——插件的权限边界，最终靠的就是 `plugin.json` 里那一行写得够窄。
+
+### 少了权限怎么办
+
+改**插件自己**的 `plugin.json`，把它加到 `permissions` 里，然后设置 → 插件 →
+「重新扫描」（或关掉开关再打开）——令牌是启用时签发的，改完不重启不会变：
+
+```json
+{
+  "permissions": ["read:fonts", "write:fonts"]
+}
+```
+
+**不需要改 FontManager**。权限表是主程序的固定白名单，只要表里有这一项、你申报了，就能用。
+
+### 怎么自查
+
+`GET /api/v1/health` 返回的 `permissions` 是**当前这枚令牌**的真实权限，
+`tokenName` 是令牌名，`allPermissions` 才是全部可用权限的清单。插件启动时打一行日志对比一下，
+比猜快得多：
+
+```python
+health = api_get("/health")
+log(f"我是「{health['tokenName']}」，权限：{health['permissions']}")
+```
+
+### 给主程序加新接口的规矩（改 FontManager 的人看）
+
+新增一个 API 要**成套**改这几处，漏了第 2 步那道口子就对所有已登录令牌**默认放行**：
+
+1. `api.rs::routes()` 里 `.route(...)` 注册路径；
+2. `api.rs::perm_for()` 里加一行 `方法 + 路径 → 权限名`；
+3. `PERMS` 里没有合适的权限名，就新增一个，并同步这张表；
+4. 本文件上面的权限表补一行。
+
+`perm_for` 是个 `match`，**从上往下取第一条命中的**，顺序很要紧：`GET /snapshots` 必须写在
+`_ if p.starts_with("/snapshots")` 之前，否则「查快照」会被「写快照」那条吃掉。
+默认分支 `_ => None` 是**不校验**，只在 `/health` 这种明确无害的端点上留口子。
+
 ## 调试
 
 - 插件 stdout / stderr 全部进 `%APPDATA%\FontManager\activation.log`（`[plugin:<id>]` 前缀）；

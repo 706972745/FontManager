@@ -4,6 +4,24 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.9] — 2026-11-06（正式版）
+
+> 只有文档：把「插件为什么会被拒绝（403）」这件事写清楚。代码零改动。
+
+### 文档
+
+- **`docs/PLUGINS.md` 新增「权限：403 到底是谁拦的」**：
+  - 三步闸门图（`auth` → `require_perm` → handler），并把 **401 / 403 / 422 的先后顺序**讲明白
+    ——权限检查在解析请求体**之前**，所以缺权限永远是 403，不会先报 422；
+  - 完整权限表：`read:fonts` / `write:fonts` / `read:snapshot` / `write:snapshot` /
+    `read:curation` / `write:curation` / `export` / `import`，逐项列出对应端点；
+  - 「少了权限怎么办」：改**插件自己**的 `plugin.json` 再重新扫描即可，**不需要改 FontManager**；
+    令牌在启用时签发，不重启不会变；
+  - 自查方法：`GET /health` 的 `permissions` 是当前令牌的真实权限，`allPermissions` 才是全量；
+  - 给主程序维护者的规矩：新路由必须 `routes()` + `perm_for()` 成套登记，否则**默认放行**；
+    `perm_for` 是 `match`，顺序敏感（`GET /snapshots` 要写在 `starts_with("/snapshots")` 之前）。
+- 中英 README 的 API 段落同步：加权限表、401→403→422 顺序、以及指向 `docs/PLUGINS.md` 的链接。
+
 ## [1.3.8] — 2026-11-06（正式版）
 
 > 1.3.7 当晚上线后的三处收尾：导出的默认文件名、系统字体的打包范围、插件目录位置。
