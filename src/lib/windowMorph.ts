@@ -54,3 +54,35 @@ export async function morphWindow(
     await new Promise<void>((resolve) => setTimeout(resolve, duration + 40));
   }
 }
+
+export type WindowTransitionPhase = "hide" | "show";
+
+/**
+ * 完整界面 ↔ 速览使用 Windows 原生窗口动画。
+ *
+ * 与上面的 morphWindow 有意分开：速览自己的悬停展开 / 收起仍沿用旧轨迹，
+ * 这次只替换界面切换。原生命令播完才 resolve，因此调用方可以立刻换装或恢复交互；
+ * 如果系统拒绝动画，则直接落位，功能与最终几何都不能受影响。
+ */
+export async function transitionWindow(
+  phase: WindowTransitionPhase,
+  from: WindowRect,
+  to: WindowRect,
+  ms: number = MORPH_MS,
+): Promise<void> {
+  const duration = Math.max(0, Math.round(ms));
+  try {
+    await invoke<void>("transition_window", { phase, from, to, ms: duration });
+    return;
+  } catch (e) {
+    console.warn("[transition] 系统窗口动画不可用，直接落位", e);
+  }
+
+  const win = getCurrentWindow();
+  if (phase === "hide") await win.hide().catch(() => {});
+  await win.setSize(new PhysicalSize(Math.round(to.width), Math.round(to.height))).catch(() => {});
+  await win
+    .setPosition(new PhysicalPosition(Math.round(to.x), Math.round(to.y)))
+    .catch(() => {});
+  if (phase === "show") await win.show().catch(() => {});
+}

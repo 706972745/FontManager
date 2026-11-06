@@ -172,3 +172,136 @@ pub fn morph_window(window: WebviewWindow, from: MorphRect, to: MorphRect, ms: u
         clear_if_current(&cancel);
     });
 }
+
+/// 系统窗口动画的方向。隐藏与显示必须显式指定，不能只靠坐标猜——
+/// 最大化还原、跨显示器等情况下，起止坐标不一定能代表当前要播哪一段。
+#[derive(serde::Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TransitionPhase {
+    Hide,
+    Show,
+}
+
+#[cfg(windows)]
+mod system_transition {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        AnimateWindow, AW_ACTIVATE, AW_HIDE, AW_SLIDE, AW_VER_NEGATIVE, AW_VER_POSITIVE,
+    };
+
+    pub const fn flags(hide: bool) -> u32 {
+        if hide {
+            // 从当前位置向上滑出，结束后由系统隐藏窗口。
+            AW_HIDE | AW_SLIDE | AW_VER_NEGATIVE
+        } else {
+            // 在最终位置从屏幕上沿落回；只激活显示段，隐藏段不能带 AW_ACTIVATE。
+            AW_ACTIVATE | AW_SLIDE | AW_VER_POSITIVE
+        }
+    }
+
+    /// 必须留在窗口所属的 UI 线程调用。Tauri 的同步命令默认就在主线程执行，
+    /// 不能像旧的手工插值那样再丢进 worker——AnimateWindow 会拒绝非所有者线程。
+    pub fn play(raw_hwnd: *mut std::ffi::c_void, ms: u64, hide: bool) -> Result<(), String> {
+        let ok = unsafe {
+            AnimateWindow(
+                raw_hwnd as HWND,
+                ms.min(u32::MAX as u64) as u32,
+                flags(hide),
+            )
+        };
+        if ok == 0 {
+            // 文档明确说明：线程不拥有窗口时也可能返回 FALSE，但 GetLastError=ERROR_SUCCESS，
+            // 所以这里只报告方向，不拼一个可能误导人的系统错误码。
+            return Err(format!(
+                "AnimateWindow 拒绝了{}动画",
+                if hide { "隐藏" } else { "显示" }
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn hide_and_show_use_the_matching_system_slide() {
+            let hide = flags(true);
+            assert_ne!(hide & AW_HIDE, 0);
+            assert_ne!(hide & AW_SLIDE, 0);
+            assert_ne!(hide & AW_VER_NEGATIVE, 0);
+            assert_eq!(hide & AW_ACTIVATE, 0);
+
+            let show = flags(false);
+            assert_eq!(show & AW_HIDE, 0);
+            assert_ne!(show & AW_SLIDE, 0);
+            assert_ne!(show & AW_VER_POSITIVE, 0);
+            assert_ne!(show & AW_ACTIVATE, 0);
+        }
+    }
+}
+
+/// 用 Windows 原生 `AnimateWindow` 播放「滑出 → 隐藏换装 → 落回」的一段。
+///
+/// 与上面的手工形变是两条独立通道：速览自身的悬停展开 / 收起仍走旧实现；
+/// 完整界面 ↔ 速览改走这里。命令返回时系统动画已经播完，前端不需要再按计时器猜终点。
+/// 系统拒绝时退化成直接隐藏 / 显示并落到最终几何，让每一次调用都停在确定的阶段状态。
+#[tauri::command]
+pub fn transition_window(
+    window: WebviewWindow,
+    from: MorphRect,
+    to: MorphRect,
+    ms: u64,
+    phase: TransitionPhase,
+) -> Result<(), String> {
+    let hide = phase == TransitionPhase::Hide;
+    let apply = |r: MorphRect| {
+        let _ = window.set_size(PhysicalSize::new(r.width.max(1), r.height.max(1)));
+        let _ = window.set_position(PhysicalPosition::new(r.x, r.y));
+    };
+
+    #[cfg(windows)]
+    {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        if hide {
+            if ms > 0 {
+                // 隐藏段从当前完整尺寸开始，动画结束后才允许换装。
+                apply(from);
+                if let Err(e) = system_transition::play(hwnd.0 as *mut std::ffi::c_void, ms, true) {
+                    eprintln!("[transition] {e}，退化为直接隐藏");
+                }
+            }
+            let _ = window.hide();
+            // 隐藏后再落到屏幕外，下一段显示动画不会把旧界面重新带出来。
+            apply(to);
+        } else {
+            // AnimateWindow 的显示段要求窗口先处于隐藏状态；最终几何要在播放前落好，
+            // 系统负责把最终这块窗口从顶部滑入，而不是我们再逐帧搬它。
+            let _ = window.hide();
+            apply(to);
+            if ms > 0 {
+                if let Err(e) = system_transition::play(hwnd.0 as *mut std::ffi::c_void, ms, false)
+                {
+                    eprintln!("[transition] {e}，退化为直接显示");
+                }
+            }
+            apply(to);
+            let _ = window.show();
+        }
+        return Ok(());
+    }
+
+    #[cfg(not(windows))]
+    {
+        // 项目目前只发 Windows 包；保留可移植兜底，避免其它目标编译后没有切换能力。
+        let _ = from;
+        if hide {
+            let _ = window.hide();
+            apply(to);
+        } else {
+            apply(to);
+            let _ = window.show();
+        }
+        Ok(())
+    }
+}
