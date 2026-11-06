@@ -4,6 +4,21 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.5] — 2026-11-06（正式版）
+
+> 完整界面 ↔ 速览的切换动画改由 Windows 系统原生播放，观感与时长保持不变。
+
+### 变更
+
+- **切换动画改走系统通道**：完整界面进速览（以及速览返回完整界面）的「整块滑出 →
+  隐藏换装 → 从顶部落回」不再由 Rust 线程逐帧改写窗口位置，改用 Win32 `AnimateWindow`
+  原生播放。出入两段时长不变（180ms 出 / 160ms 回），隐藏 / 显示 / 落位交给系统，
+  主线程不再被逐帧 `SetWindowPos` 占用。
+- 系统拒绝动画（个别窗口状态）时自动退化为直接隐藏 / 显示并落到最终几何；
+  换装中途出错时兜底把窗口拉回可见区域并重新显示，不出现「点了速览，软件消失了」。
+- 「减少动态效果」设置依旧生效：关闭时跳过动画直接落位。
+- 速览自身的悬停展开 / 收起仍走原通道，未改动。
+
 ## [1.3.4] — 2026-11-06（正式版）
 
 > 右键菜单「打字即搜」：菜单出现后直接打字，全库字体实时过滤、回车直达定位。

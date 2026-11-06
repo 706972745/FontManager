@@ -23,7 +23,7 @@ import {
   PhysicalPosition,
   PhysicalSize,
 } from "@tauri-apps/api/window";
-import { MORPH_MS, morphWindow } from "../lib/windowMorph";
+import { MORPH_MS, transitionWindow } from "../lib/windowMorph";
 import {
   ipc,
   type AdobeApp,
@@ -680,8 +680,6 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  */
 const LEGACY_SAMPLE_TEXTS = new Set(["The quick brown fox jumps over the lazy dog"]);
 
-/** 退出速览时「窗口收走 → 换界面」之间留的一小段时间：让消失这一下先完成 */
-const HIDE_SETTLE_MS = 140;
 /** 换好界面后到「展开显示」之间留的一小段时间：给主界面渲染一帧 */
 const SHOW_SETTLE_MS = 150;
 async function enterQuickbar() {
@@ -742,13 +740,9 @@ async function enterQuickbar() {
     await win.setMinSize(null);
 
     /*
-     * 切换动画 = 速览收起时那一套「整块滑出屏幕 → 屏幕外换装 → 从外面落回」。
-     *
-     * 原来是「窗口原地缩小到顶部一条」：完整界面的顶栏、搜索框会被越缩越小的窗口
-     * 现场重排，用户看到的是内容被挤扁再跳变。换成滑出之后，窗口全程保持主界面尺寸，
-     * 内容只是「移出视口」，不重排也不裁剪；换装发生在屏幕外，任何跳变都看不见。
-     *
-     * 两段的时长与曲线和「收起成细线」完全一致（180ms 出 / 160ms 回），观感统一。
+     * 切换动画 = Windows 原生「整块滑出并隐藏 → 隐藏换装 → 从顶部落回」。
+     * 窗口全程保持当前界面的尺寸，完整界面不会被现场挤扁；换装只在隐藏后发生。
+     * 时长沿用原来的 180ms 出 / 160ms 回，曲线与绘帧交给系统，不再由 Rust 逐帧搬窗口。
      */
     const ms = morphDuration();
     // 屏幕外的停留位置：整块挪到**显示器**上沿之外（用 monitor.position.y，
@@ -756,12 +750,15 @@ async function enterQuickbar() {
     const offY = (monitor ? monitor.position.y : 0) - size.height - OFFSCREEN_PAD;
 
     if (ms > 0) {
-      // 1) 主界面整块向上滑出（尺寸不变）
-      await morphWindow(
+      // 1) Windows 原生动画：主界面整块向上滑出并隐藏（尺寸不变）
+      await transitionWindow(
+        "hide",
         { x: pos.x, y: pos.y, width: size.width, height: size.height },
         { x: pos.x, y: offY, width: size.width, height: size.height },
         RETRACT_OUT_MS,
       );
+    } else {
+      await win.hide().catch(() => {});
     }
 
     // 2) 屏幕外换装：切界面 + 换成速览尺寸 + 挪到目标位置的正上方
@@ -773,17 +770,19 @@ async function enterQuickbar() {
     await win.setPosition(new PhysicalPosition(dockX, offY)).catch(() => {});
 
     if (ms > 0) {
-      // 3) 从屏幕外落回显示器顶部
-      await morphWindow(
+      // 3) Windows 原生动画：最终速览窗口从屏幕上沿落回
+      await transitionWindow(
+        "show",
         { x: dockX, y: offY, width, height: dockHeight },
         { x: dockX, y: dockY, width, height: dockHeight },
         RETRACT_IN_MS,
       );
+    } else {
+      await win.show().catch(() => {});
     }
 
-    // 形变是逐帧动画，窗口被别的程序挡住 / 刚被隐藏过时，个别帧的 setSize/setPosition
-    // 会被系统吞掉，最后停在「半路」的几何上：宽度已经是速览的、位置还留在主界面。
-    // 所以动画结束后显式落一次终态，保证 dock 状态机接管时的窗口真的贴着左上角。
+    // 系统动画结束后再显式落一次终态：隐藏期间的几何请求偶尔会被系统吞掉，
+    // 必须保证 dock 状态机接管时窗口真的处于速览尺寸并贴着目标顶边。
     await win.setSize(new PhysicalSize(width, dockHeight)).catch(() => {});
     await win.setPosition(new PhysicalPosition(dockX, dockY)).catch(() => {});
     // 窗口已经是顶部一条：把收起态交给 dock，展开时还原成完整的速览尺寸
@@ -801,10 +800,9 @@ async function enterQuickbar() {
     console.warn("[quickbar] 调整窗口几何失败，仅切换界面", e);
     useFontStore.setState({ quickbar: true });
     /*
-     * 兜底落位：新动画的第一段会把**整个主窗口**推到工作区上沿之外，
-     * 万一第二段落回失败（系统吞掉 setPosition / monitor 信息拿不到），
-     * 窗口就停在屏幕外 —— 用户看到的是「点了速览，软件消失了」。
-     * 这里必须把它拽回可见区域，宁可位置不完美也不能让窗口没了。
+     * 兜底落位：系统动画第一段会隐藏整个主窗口，随后还要在隐藏态换装。
+     * 任一中途步骤失败都必须把窗口拉回可见区域并 show，宁可位置不完美，
+     * 也不能出现「点了速览，软件消失了」。原生命令自身的动画失败则已在内部直接落位。
      */
     try {
       const m = await currentMonitor();
@@ -819,6 +817,8 @@ async function enterQuickbar() {
           Math.round(a?.position?.y ?? 80),
         ),
       );
+      // 系统动画的第一段会隐藏窗口；后续换装若失败，兜底必须把窗口重新显示出来。
+      await win.show().catch(() => {});
     } catch {
       /* 连兜底都失败就只能靠用户重新点热键 */
     }
@@ -861,11 +861,26 @@ async function exitQuickbar() {
   const geometry = quickbarGeometry;
   quickbarGeometry = null;
   try {
-    // 先把窗口收走（用 hide 而不是 minimize：最小化状态下改窗口几何会被系统记在
-    // 「还原位置」之外，一显示又变回速览的大小），藏起来之后换界面、还原几何，
-    // 最后再显示出来——来回切换的大跨度变化用户全程看不到。
-    await win.hide().catch(() => {});
-    await sleep(HIDE_SETTLE_MS);
+    // 与进入速览同一条 Windows 原生通道：先滑出并 hide（不是 minimize），
+    // 再换界面、还原几何，最后从顶部落回。最小化状态下改几何会被系统记在
+    // 「还原位置」之外，所以这里仍然只用隐藏 / 显示。
+    const ms = morphDuration();
+    const [pos, size, monitor] = await Promise.all([
+      win.outerPosition(),
+      win.innerSize(),
+      currentMonitor(),
+    ]);
+    const offY = (monitor ? monitor.position.y : 0) - size.height - OFFSCREEN_PAD;
+    if (ms > 0) {
+      await transitionWindow(
+        "hide",
+        { x: pos.x, y: pos.y, width: size.width, height: size.height },
+        { x: pos.x, y: offY, width: size.width, height: size.height },
+        RETRACT_OUT_MS,
+      );
+    } else {
+      await win.hide().catch(() => {});
+    }
 
     // 收起着就先还原展开尺寸，否则 dock 状态残留
     await restoreQuickbarDock();
@@ -887,12 +902,28 @@ async function exitQuickbar() {
         : null,
     });
     if (geometry?.maximized) await win.maximize().catch(() => {});
-    // 给主界面渲染一帧的时间，再把它展开显示出来
+    // 给主界面渲染一帧的时间，再用 Windows 原生动画从顶部落回。
     await sleep(SHOW_SETTLE_MS);
-    await win.show().catch(() => {});
+    if (ms > 0) {
+      // 最大化 / 还原之后以系统实际几何为准，别拿进入速览前的旧坐标猜动画落点。
+      const [shownPos, shownSize] = await Promise.all([win.outerPosition(), win.innerSize()]);
+      await transitionWindow(
+        "show",
+        { x: shownPos.x, y: offY, width: shownSize.width, height: shownSize.height },
+        {
+          x: shownPos.x,
+          y: shownPos.y,
+          width: shownSize.width,
+          height: shownSize.height,
+        },
+        RETRACT_IN_MS,
+      );
+    } else {
+      await win.show().catch(() => {});
+    }
     await win.setFocus().catch(() => {});
-    // 淡入走完再解除内容钉住
-    await sleep(MORPH_MS);
+    // CSS 内容淡入与系统动画并行，只补尚未走完的剩余时间再解除内容钉住。
+    await sleep(ms > 0 ? Math.max(0, MORPH_MS - RETRACT_IN_MS) : MORPH_MS);
     useFontStore.setState({ morph: null });
     // 显示之后读回一次几何：窗口隐藏期间的 setSize/setPosition 有可能被系统吞掉，
     // 结果就是「人已经回到完整界面了，窗口还留着速览的尺寸」——快速来回切换时最容易撞上。
