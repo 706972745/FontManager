@@ -4,6 +4,18 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.6] — 2026-11-06（正式版）
+
+> 应用户要求回退：完整界面 ↔ 速览切换动画恢复 1.3.4 的原实现。
+
+### 变更
+
+- **切换动画回退**：完整界面进速览（以及速览返回完整界面）恢复 1.3.4 的手工逐帧
+  动画（Rust 线程按节奏改写窗口位置），不再使用 1.3.5 引入的 Win32 `AnimateWindow`
+  系统通道。两段时长与观感与 1.3.4 完全一致（180ms 出 / 160ms 回）。
+- 其余一切保持 1.3.5 现状：版本号、其它功能与修复均不受影响。
+- 速览自身的悬停展开 / 收起动画始终未改动。
+
 ## [1.3.5] — 2026-11-06（正式版）
 
 > 完整界面 ↔ 速览的切换动画改由 Windows 系统原生播放，观感与时长保持不变。

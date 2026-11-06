@@ -2671,8 +2671,7 @@ pub fn run() {
             window_dock::set_quickbar_hotkey,
             window_dock::focus_quickbar,
             window_dock::set_window_transitions,
-            window_morph::morph_window,
-            window_morph::transition_window
+            window_morph::morph_window
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
