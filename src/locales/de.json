@@ -731,6 +731,7 @@
   "toast.entriesMerged_other": "{count} Einträge übernommen",
   "toast.exportFailed": "Export fehlgeschlagen",
   "toast.exportedFolder": "„{name}“ exportiert: {count} Dateien, {size}",
+  "toast.exportedSingleFont": "Systemschrift – {count} Datei(en) gepackt ({size})",
   "toast.exportedFolderFamily": "Die Schrift liegt direkt im Bibliotheksordner – nur die {count} Dateien dieser Familie wurden gepackt ({size})",
   "toast.exported": "{name} exportiert",
   "toast.exportedFamilies": "{count} Familien exportiert",

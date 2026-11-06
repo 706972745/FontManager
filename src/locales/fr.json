@@ -744,6 +744,7 @@
   "toast.entriesMerged_other": "{count} entrées fusionnées",
   "toast.exportFailed": "Échec de l’export",
   "toast.exportedFolder": "« {name} » exporté : {count} fichiers, {size}",
+  "toast.exportedSingleFont": "Police système : {count} fichier(s) compressé(s) ({size})",
   "toast.exportedFolderFamily": "La police est à la racine de la bibliothèque : seuls ses {count} fichiers de famille ont été compressés ({size})",
   "toast.exported": "{name} exportée",
   "toast.exportedFamilies": "{count} familles exportées",

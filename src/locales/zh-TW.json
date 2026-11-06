@@ -720,6 +720,7 @@
   "toast.entriesMerged_other": "合併了 {count} 筆記錄",
   "toast.exportFailed": "匯出失敗",
   "toast.exportedFolder": "已匯出「{name}」：{count} 個檔案，{size}",
+  "toast.exportedSingleFont": "系統字型，已打包 {count} 個字型檔案（{size}）",
   "toast.exportedFolderFamily": "字型就在庫根目錄，已打包本字族的 {count} 個檔案（{size}）",
   "toast.exported": "已匯出 {name}",
   "toast.exportedFamilies": "已匯出 {count} 個字型家族",

@@ -11,7 +11,10 @@
 FontManager 的插件是**进程外程序**：主程序绝不把插件代码加载进自己，插件崩了不影响软件。
 通信只有两条：stdin/stdout 上的 JSON 行（握手 + 调用），以及本地 HTTP API（受限令牌）。
 
-插件目录：`%APPDATA%\FontManager\plugins\<插件目录>\plugin.json`（设置 → 插件 →「打开插件目录」可直接打开）。
+插件目录（1.3.8 起）：**`<软件安装目录>\plugins\<插件目录>\plugin.json`** —— 跟着安装目录走，
+整个文件夹拷走就是一套完整的软件。安装目录不可写（MSI 装到 `C:\Program Files`）或调试构建时，
+回退到 `%APPDATA%\FontManager\plugins`；**老用户原位置有插件就继续用原位置**，不搬家。
+不确定在哪？设置 → 插件 →「打开插件目录」会直接打开当前生效的那个目录。
 
 ## plugin.json 完整示例
 

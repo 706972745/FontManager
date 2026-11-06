@@ -741,6 +741,7 @@
   "toast.entriesMerged_other": "{count} entries merged in",
   "toast.exportFailed": "Export failed",
   "toast.exportedFolder": "Exported “{name}”: {count} files, {size}",
+  "toast.exportedSingleFont": "System font — zipped its {count} font file(s) ({size})",
   "toast.exportedFolderFamily": "This font sits at the library root, so only its {count} family files were zipped ({size})",
   "toast.exported": "Exported {name}",
   "toast.exportedFamilies": "Exported {count} families",
