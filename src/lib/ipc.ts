@@ -566,6 +566,12 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   exportFonts: (paths: string[], destDir: string) =>
     invoke<number>("export_fonts", { paths, destDir }),
   /**
+   * 「全部导出」：把字体所在文件夹整体压成 zip（含同目录的授权书 / 版权说明）。
+   * `scope === "family"` 表示字体就在字体库根目录、只打包了本字族。
+   */
+  exportFontFolder: (fontPath: string, dest: string, familyPaths: string[]) =>
+    invoke<FolderExportReport>("export_font_folder", { fontPath, dest, familyPaths }),
+  /**
    * 打包「整理数据 + 字体文件」成 `.FontManager`（超 2GB 自动分卷）。
    * `curation` 是整理数据的 json 原文，原样塞进包里，导入时再原样交回来合并。
    */
@@ -652,8 +658,29 @@ export interface PluginInfo {
   permissions: string[];
   hooks: string[];
   menus: { title: string; on: string }[];
+  /** 插件自己声明了设置面板（`plugin.json` 的 `settings`）；没有就是 null */
+  settings: PluginSettings | null;
   dir: string;
   enabled: boolean;
   running: boolean;
   error: string | null;
+}
+
+/** 插件的设置面板声明：主程序点齿轮时会把 `settings.hook` 钩子发给插件，由插件自己弹面板 */
+export interface PluginSettings {
+  /** 面板标题（齿轮按钮的 tooltip；留空用插件名） */
+  title: string | null;
+  /** 主程序要调的钩子名，默认 "settings" */
+  hook: string;
+}
+
+/** `export_font_folder` 的结果 */
+export interface FolderExportReport {
+  dest: string;
+  root: string;
+  scope: "folder" | "family";
+  files: number;
+  bytes: number;
+  zipBytes: number;
+  skipped: number;
 }

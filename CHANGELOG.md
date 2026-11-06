@@ -4,6 +4,39 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.7] — 2026-11-06（正式版）
+
+> 「全部导出」改成打包整个字族文件夹；插件行也有了入口。
+
+### 新增
+
+- **插件设置面板入口**：`plugin.json` 里写了 `"settings": { "title": …, "hook": "settings" }`
+  的插件，在 设置 → 插件 那一行右侧会出现一个**齿轮**。点它，主程序把 `settings` 钩子发给
+  插件，由插件自己弹出设置面板（插件是独立进程，主程序不替它画界面）。没声明就没有齿轮，
+  插件没在运行时齿轮是灰的并提示先开开关。
+- **插件行右键菜单**：`menus` 新增 `"on": "plugin"`，这类项不再挂字族右键，而是挂在插件
+  自己那一行的右键里 —— 打开导出目录、改保存位置、清缓存这类「不需要选中字体」的功能
+  终于有了合适的位置。点击仍走 `context-menu` 钩子，payload 带 `source: "plugin-row"`。
+- 示例插件 `examples/plugin-specimen-export` 升级为参考实现：自带一个 Tk 设置面板
+  （`open_settings_panel()`，跑在 daemon 线程里，不堵 stdin），并把「设置导出位置…」
+  「打开导出文件夹」挪到 `on: "plugin"`。
+
+### 修复
+
+- **「全部导出」丢授权书**：以前只把字体文件复制到用户选的目录，同目录的 `License.txt`、
+  授权说明 PDF/JPG、说明文档全部丢失 —— 字体发给同事后对方不知道能不能商用。现在点
+  「全部导出」= 把这个字体**所在的整个文件夹**打成 zip（保留目录结构，字体按 Stored 写入，
+  文本/图片走 deflate，产物先写 `.writing` 再改名），选保存位置的方式不变。
+- 字体直接放在**字体库根目录**时不会把整个库压进去（库里几千个目录、几个 GB）：
+  这种情况只打包本字族的字体文件，toast 会说明；判定依据是库标记 `.zfm-folder.ico`，
+  外加「目录下有 300 个以上子目录」的兜底。
+
+### 文档
+
+- `docs/PLUGINS.md`：补 `settings` 字段、`settings` 钩子、「插件行右键（`on: "plugin"`）」
+  的完整约定与两个坑（不要在插件主线程 `mainloop()`；没有 tkinter 要有降级路径）。
+- README（中/英）与插件库 README 说明齿轮与插件行右键两个新入口。
+
 ## [1.3.6] — 2026-11-06（正式版）
 
 > 应用户要求回退：完整界面 ↔ 速览切换动画恢复 1.3.4 的原实现。

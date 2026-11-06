@@ -3939,6 +3939,24 @@ h2.detail-title.copy-name {
   filter: saturate(0.5);
   opacity: 0.45;
 }
+/* 插件行右侧的动作区（齿轮 + 打开目录）：两个按钮并排，间距比行内其它按钮紧一点 */
+.settings-plugin-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.settings-plugin-row button.settings-library-open:hover:not(:disabled) {
+  color: var(--accent-a);
+}
+.settings-plugin-row button:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+/* 右键有菜单：告诉鼠标用户这一行是可交互的（悬停提示由 .settings-sub 上的 data-hint-text 给） */
+.settings-plugin-row {
+  cursor: default;
+}
 .affinity-dot {
   width: 9px;
   height: 9px;

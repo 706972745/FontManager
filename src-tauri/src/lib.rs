@@ -11,6 +11,8 @@ mod diag;
 #[cfg(target_os = "windows")]
 mod file_assoc;
 mod file_kind;
+// 1.3.7：详情页「全部导出」= 把字体所在文件夹整体压成 zip（含授权/版权说明）
+mod folder_export;
 mod font_types;
 mod fontcache;
 mod installer;
@@ -1771,6 +1773,29 @@ fn export_fonts(paths: Vec<String>, dest_dir: String) -> Result<u32, String> {
     Ok(n)
 }
 
+/// 「全部导出」：把这个字体所在的文件夹整体压成 zip（1.3.7）。
+///
+/// 文件夹里除了各字重的字体文件，还常躺着作者的授权书 / 说明文档 —— 只复制字体文件
+/// 发给别人，对方就不知道能不能商用。打包在本机做（`zip` crate），不依赖 7-Zip 之类。
+/// 字体在字体库根目录时只打包本字族（见 `folder_export` 的约束 3）。
+/// 走阻塞线程池：几百 MB 的目录不至于把界面顶住。
+#[tauri::command]
+async fn export_font_folder(
+    font_path: String,
+    dest: String,
+    family_paths: Vec<String>,
+) -> Result<folder_export::FolderExportReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        folder_export::export_folder(
+            std::path::Path::new(&font_path),
+            std::path::Path::new(&dest),
+            &family_paths,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 打包「整理数据 + 字体文件」。`dest` 是用户选的文件名（单卷直接用，多卷自动加 `-partN`）。
 /// 全在阻塞线程池里跑，界面只靠 `pack:progress` 事件更新底部进度条。
 #[tauri::command]
@@ -2622,6 +2647,7 @@ pub fn run() {
             rename_snapshot,
             export_font,
             export_fonts,
+            export_font_folder,
             export_library_pack,
             import_library_pack,
             write_text_file,
