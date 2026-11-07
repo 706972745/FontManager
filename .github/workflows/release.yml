@@ -163,9 +163,16 @@ jobs:
         run: |
           $tag = if ($env:TAG_INPUT) { $env:TAG_INPUT } else { "${{ github.ref_name }}" }
           $ver = $tag.Substring(1)
-          $args = @('-Version', $ver, '-ReleaseDir', 'release', '-OutFile', 'release-notes.md')
-          if ($env:SIGNED -eq 'true') { $args += '-Signed' }
-          & .\.github\scripts\make-release-notes.ps1 @args
+          # 必须用哈希表 splat：数组 splat 不绑定命名参数，
+          # 会报 "A positional parameter cannot be found that accepts argument '-OutFile'"
+          # （1.4.1 的 tag 构建就死在这一步，本地 5.1 与 runner 上的 7.x 都一样）。
+          $noteArgs = @{
+            Version    = $ver
+            ReleaseDir = 'release'
+            OutFile    = 'release-notes.md'
+          }
+          if ($env:SIGNED -eq 'true') { $noteArgs.Signed = $true }
+          & .\.github\scripts\make-release-notes.ps1 @noteArgs
           Write-Host "---------- 正文预览 ----------"
           Get-Content release-notes.md -Encoding UTF8 | Select-Object -First 20
 
