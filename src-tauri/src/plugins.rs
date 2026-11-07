@@ -362,6 +362,22 @@ fn locate_manifest<R: std::io::Read + std::io::Seek>(
     Err("zip 里没找到 plugin.json —— 这不是插件包（字体 zip 包请直接拖进字体库安装）".into())
 }
 
+/// 在插件根目录里找「manifest id 相同」的已装目录（目录名可能与 id 不同）。
+fn existing_dir_with_id(base: &Path, id: &str) -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(base)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|d| d.is_dir() && manifest_path(d).is_file())
+        .collect();
+    dirs.sort();
+    dirs.into_iter().find(|d| {
+        read_manifest(d)
+            .map(|m| m.id == id)
+            .unwrap_or(false)
+    })
+}
+
 /// plugin.json 的 id 只允许安全字符：它要当目录名用。
 fn sanitize_plugin_id(id: &str) -> Result<String, String> {
     let id = id.trim();
@@ -394,7 +410,10 @@ pub fn install_zip_into(zip_path: &Path, base: &Path) -> Result<(String, String,
         ));
     }
     let id = sanitize_plugin_id(&m.id)?;
-    let target = base.join(&id);
+    // 直接迭代而不是并存：目录名（可能叫 font-sync）和 id（com.fontmanager.font-sync）
+    // 经常不一致 —— 按 id 新建目录会让清单里出现两行同一个插件。已装目录里如果有
+    // manifest id 相同的，就装进那个目录（数据文件也原地保留）。
+    let target = existing_dir_with_id(base, &id).unwrap_or_else(|| base.join(&id));
     std::fs::create_dir_all(&target).map_err(|e| format!("建目录失败：{e}"))?;
     for i in 0..z.len() {
         let mut entry = z.by_index(i).map_err(|e| e.to_string())?;
@@ -1344,7 +1363,30 @@ mod tests {
         // javascript: 伪协议尤其不能放
         assert_eq!(super::classify_open_url("javascript:alert(1)"), super::UrlTarget::Reject);
     }
+    #[test]
+    fn install_zip_updates_existing_dir_with_same_id() {
+        // 目录名 font-sync != id com.fontmanager.font-sync：更新必须落进旧目录，
+        // 不能再新建一个 id 名目录（清单里出现两行同一个插件）
+        let tmp = tempfile_dir("zfm-zip-iter");
+        let zip_path = tmp.join("p.zip");
+        write_test_zip(&zip_path, &[
+            ("plugin.json", br#"{"id":"com.fontmanager.font-sync","name":"FS","version":"0.8.2","apiLevel":1,"entry":"main.py","permissions":[]}"#),
+            ("main.py", b"print('new')"),
+        ]);
+        let base = tmp.join("plugins");
+        let old_dir = base.join("font-sync");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::write(old_dir.join("plugin.json"),
+            br#"{"id":"com.fontmanager.font-sync","name":"FS","version":"0.8.1","apiLevel":1,"entry":"main.py","permissions":[]}"#).unwrap();
+        std::fs::write(old_dir.join("state.json"), br#"{"keep":1}"#).unwrap();
+        super::install_zip_into(&zip_path, &base).unwrap();
+        assert_eq!(std::fs::read_to_string(old_dir.join("main.py")).unwrap(), "print('new')");
+        assert!(old_dir.join("state.json").exists(), "数据文件保留");
+        assert!(!base.join("com.fontmanager.font-sync").exists(), "不得新建并存目录");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }
+
 
 
 

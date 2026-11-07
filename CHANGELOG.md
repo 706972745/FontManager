@@ -4,6 +4,15 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.7] — 2026-11-07（正式版）
+
+### 修复
+
+- **ZIP 更新插件时直接迭代、不再并存**：插件目录名（如 `font-sync`）与
+  `plugin.json` 的 `id`（如 `com.fontmanager.font-sync`）不一致时，按 id 新建目录
+  会让插件清单里出现两行同一个插件。现在安装前先找「manifest id 相同」的已装
+  目录，直接装进那个目录（数据文件原地保留）；找不到才新建 id 名目录。单测覆盖。
+
 ## [1.4.6] — 2026-11-07（正式版）
 
 > 拖 ZIP 更新插件后的一个致命错位：**文件换新了，正在运行的插件进程还抱着旧代码**。
