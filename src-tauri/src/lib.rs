@@ -2322,6 +2322,24 @@ fn plugins_open_dir() -> Result<(), String> {    let dir = crate::plugins::plugi
     open_folder(dir.to_string_lossy().into_owned())
 }
 
+/// 拖入的 zip 是不是插件包（1.4.4）：是 → 前端走安装；不是 → 走字体安装原流程
+#[tauri::command]
+fn plugin_probe_zip(path: String) -> Result<serde_json::Value, String> {
+    let (root, id, name, version) = crate::plugins::probe_zip(std::path::Path::new(&path))?;
+    Ok(serde_json::json!({ "isPlugin": true, "root": root, "id": id, "name": name, "version": version }))
+}
+
+/// 从 zip 安装/更新插件（1.4.4）。更新时只覆盖代码，config/secret/state 原样保留。
+#[tauri::command]
+fn plugin_install_zip(path: String) -> Result<serde_json::Value, String> {
+    // 插件数据不可信：任何 panic 都换成错误返回，主界面不受影响
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let (id, name, version) = crate::plugins::install_zip(std::path::Path::new(&path))?;
+        Ok(serde_json::json!({ "id": id, "name": name, "version": version }))
+    }))
+    .unwrap_or_else(|_| Err("安装插件包时出错了（已拦下，软件继续运行）；详情见日志".into()))
+}
+
 /// 界面不再展示解释器（插件自带 runtime/ 或软件静默探测），但 set_runtime /
 /// runtimes_json 保留：prefs `pluginRuntime` 手工指定仍是隐藏的兜底出口。
 
@@ -2684,6 +2702,8 @@ pub fn run() {
             plugin_set_enabled,
             plugin_invoke,
             plugins_open_dir,
+            plugin_probe_zip,
+            plugin_install_zip,
             get_settings,
             set_settings,
             default_library_dir,

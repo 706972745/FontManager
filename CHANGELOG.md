@@ -4,6 +4,30 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.4] — 2026-11-07（正式版）
+
+> 插件的安装方式从「手工拷文件夹」升级为「拖进来就装」；同时安装包内置一份
+> 共享 Python 运行时，**没装 Python 的电脑也能直接跑插件**——这是永久解法，
+> 标准库插件从此零依赖，重依赖插件仍可自带专用环境。
+
+### 新增
+
+- **拖拽安装插件**：把插件 ZIP 拖进窗口即自动安装（自动探测：有 `plugin.json`
+  的包按插件装，其余 ZIP 仍按字体包走原流程，互不误伤）；设置 → 插件页新增
+  「从 ZIP 安装」按钮（文件对话框）。安装完成后清单与右键菜单自动刷新。
+  安全设计：zip-slip 路径越界拒绝、`plugin.json` 的 `id` 白名单校验、API 级别
+  兼容性检查；**更新插件只覆盖代码**，`config.json` / `secret.bin` / `state.json`
+  等用户数据原样保留。
+- **内置共享 Python 运行时**：安装包附带 Python 3.13 + Pillow + fontTools
+  （约 58 MB，装在软件目录 `python-runtime/`）。解释器解析顺序变为：
+  插件自带（`interpreterPath`）→ **主程序内置** → 系统解释器 → 报错。
+  从未安装过 Python 的电脑跑标准库插件（如字体库同步）不再有任何提示或障碍；
+  未来需要 Pillow/fontTools 的新插件也不用各自背运行时。
+
+### 变更
+
+- 插件启用失败时的解释器报错文案保持不变（仅在内置运行时与系统解释器都找不到时才会出现）。
+
 ## [1.4.3] — 2026-11-07（正式版）
 
 > 插件的设置面板不再弹浏览器：主程序收到插件发来的 `open-url` 消息后，

@@ -1,6 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, RefreshCw, Scaling, Settings, SunMoon, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, RefreshCw, Scaling, Settings, SunMoon, Volume2, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -259,6 +259,22 @@ export function SettingsOverlay() {
       return next;
     } catch {
       return [];
+    }
+  };
+
+  /** 从 zip 安装插件（1.4.4）：文件对话框选包 → 安装 → 刷清单 */
+  const installPluginZip = async () => {
+    const picked = await open({
+      multiple: false,
+      filters: [{ name: "FontManager 插件包", extensions: ["zip"] }],
+    });
+    if (typeof picked !== "string") return;
+    try {
+      const r = await ipc.pluginInstallZip(picked);
+      await refreshPlugins();
+      toast.success(t("toast.pluginZipInstalled", { name: r.name, version: r.version }));
+    } catch (err) {
+      toast.error(t("toast.pluginZipFailed"), String(err));
     }
   };
 
@@ -1076,6 +1092,10 @@ export function SettingsOverlay() {
                     {plugins.length === 0 ? t("settings.pluginsEmpty") : t("settings.pluginsCount", { count: String(plugins.length) })}
                   </div>
                   <div className="settings-row settings-row-tight">
+                    <button className="settings-add-folder" onClick={() => void installPluginZip()}>
+                      <PackageOpen size={13} strokeWidth={1.5} />
+                      {t("settings.pluginsInstallZip")}
+                    </button>
                     <button className="settings-add-folder" onClick={() => void rescanPlugins()}>
                       <RefreshCw size={13} strokeWidth={1.5} />
                       {t("settings.pluginsRefresh")}
