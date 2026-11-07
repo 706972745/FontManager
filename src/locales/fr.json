@@ -829,6 +829,8 @@
   "toast.zipMultiFamilySub": "Les {count} fichiers du paquet appartiennent à des familles différentes : {families}. Décompressez l’archive et importez une famille à la fois.",
   "toast.sourcesRecycled": "{count} fichier(s) source déplacé(s) dans la Corbeille",
   "toast.sourcesRecycledSub": "Le « déplacement » entre disques ne peut pas transférer directement : les fichiers ont été copiés dans la bibliothèque. Restaurez les originaux depuis la Corbeille.",
+  "toast.unrecognizedFonts": "{count} fichier(s) sans nom de famille lisible ont été classés dans « Non identifié »",
+  "toast.unrecognizedFontsSub": "{names}. Les fichiers sont intacts : seule l'encodage de la table name est illisible. Vous pouvez les reclasser à la main.",
   "toast.onlineDetailFailed": "Impossible de charger les détails de la police",
   "toast.onlineDownloadFailed": "Échec du téléchargement",
   "toast.quickbarFailed": "Impossible de basculer l'aperçu rapide",

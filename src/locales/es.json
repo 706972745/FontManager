@@ -829,6 +829,8 @@
   "toast.zipMultiFamilySub": "Los {count} archivos del paquete pertenecen a familias distintas: {families}. Descomprime el paquete e importa una familia cada vez.",
   "toast.sourcesRecycled": "Se movieron {count} archivo(s) de origen a la Papelera",
   "toast.sourcesRecycledSub": "«Mover» entre unidades no puede trasladar archivos, así que se copiaron a la biblioteca. Restaura los originales desde la Papelera.",
+  "toast.unrecognizedFonts": "{count} archivo(s) sin nombre de familia legible se guardaron en «Sin identificar»",
+  "toast.unrecognizedFontsSub": "{names}. Los archivos están bien: lo que no se puede leer es la codificación de la tabla name. Puede reorganizarlos a mano.",
   "toast.onlineDetailFailed": "No se pudieron cargar los detalles de la fuente",
   "toast.onlineDownloadFailed": "Error al descargar",
   "toast.quickbarFailed": "No se pudo cambiar la vista rápida",

@@ -35,17 +35,368 @@ fn detect_format(data: &[u8], path: &Path) -> FontFormat {
     }
 }
 
-fn name_string(face: &ttf_parser::Face, id: u16) -> Option<String> {
-    face.names()
-        .into_iter()
+/// name 表里的一条记录。
+///
+/// **为什么不用 `ttf_parser::Names`**：它的迭代器遇到 platform 未知或字符串越界的记录会
+/// 直接终止整个迭代，而老字体恰恰是前面几条记录坏的、后面才是标准 UCS-2 族名
+/// （Barmeno / ATNadianne / AutographScriptEF 这批就是这样，族名明明写着 `Barmeno-Bold`，
+/// 却被一路回退成文件名，全被收进「未识别字体」桶）。自己解析就能坏一条跳一条、继续读。
+struct RawName {
+    platform: u16,
+    encoding: u16,
+    language: u16,
+    name_id: u16,
+    value: String,
+}
+
+/// 编码组合的可靠性，越小越优先。
+fn name_rank(n: &RawName) -> u8 {
+    match (n.platform, n.encoding) {
+        (3, 1) | (3, 10) => 0, // Windows UCS-2 / UCS-4，标准
+        (0, _) => 1,           // Unicode
+        (3, 3) | (3, 4) | (3, 2) | (3, 5) => 2, // PRC(GBK) / Big5 / ShiftJIS / Wansung：老中文字体常用
+        (3, 0) => 3,           // Windows Symbol（中文名也可能塞这儿）
+        (1, 0) => 4,           // Mac Roman
+        _ => 9,
+    }
+}
+
+/// 解码一条 name 字符串。返回 (文本, 是否干净)。
+///
+/// 「干净」= 整段没有非法字节。不干净的一律当可疑：老字体把 UCS-2 内容标成
+/// Shift-JIS 时，非法字节会被吞掉，剩下的半角片假名看着像字，其实是垃圾。
+fn decode_with(enc: &'static encoding_rs::Encoding, bytes: &[u8]) -> Option<(String, bool)> {
+    let (decoded, _, had_errors) = enc.decode(bytes);
+    let total = decoded.chars().count();
+    let text: String = decoded
+        .chars()
+        .filter(|c| *c != '\u{FFFD}' && !c.is_control())
+        .collect();
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    // 一半以上是替换符 = 编码不对，宁可不给也不要把垃圾串当名字
+    if had_errors && text.chars().count() * 2 < total {
+        return None;
+    }
+    Some((text, !had_errors))
+}
+
+fn decode_one(platform: u16, encoding: u16, bytes: &[u8]) -> Option<(String, bool)> {
+    use encoding_rs::{BIG5, EUC_KR, GBK, MACINTOSH, SHIFT_JIS, UTF_16BE};
+    let enc = match (platform, encoding) {
+        (0, _) => UTF_16BE,
+        (3, 0) | (3, 1) | (3, 10) => UTF_16BE,
+        (3, 2) => SHIFT_JIS,
+        (3, 3) => GBK,
+        (3, 4) => BIG5,
+        (3, 5) => EUC_KR,
+        (1, 0) => MACINTOSH,
+        _ => return None,
+    };
+    decode_with(enc, bytes)
+}
+
+/// 「这串看起来像乱码」：出现成片的 Latin-1 高位字符（`¤¤°êÀs»¨Áõ®Ñ` 这种），
+/// 且不比汉字更多。正常西文名偶尔带一两个重音字母，不会成群。
+fn looks_suspicious(s: &str) -> bool {
+    let mut high = 0;
+    let mut cjk = 0;
+    for c in s.chars() {
+        let cp = c as u32;
+        if (0x80..=0xFF).contains(&cp) {
+            high += 1;
+        } else if is_cjk_cp(cp) {
+            cjk += 1;
+        }
+    }
+    high >= 2 && high >= cjk
+}
+
+fn is_cjk_cp(cp: u32) -> bool {
+    (0x2E80..=0x9FFF).contains(&cp)      // 汉字 / 假名 / 部首
+        || (0xAC00..=0xD7AF).contains(&cp) // 谚文
+        || (0xF900..=0xFAFF).contains(&cp) // 兼容汉字
+        || (0xFF01..=0xFF60).contains(&cp) // 全角 ASCII / 全角标点
+        || (0xFFE0..=0xFFE6).contains(&cp) // 全角货币等
+}
+
+/// 可读性打分：汉字/假名最值钱，ASCII 中性，Latin-1 高位和私用区扣分。
+///
+/// **半角片假名要扣分**：`0xB4 0xB4 0xD2 0xD5 …` 这种 GBK 字节用 Shift-JIS 解出来
+/// 就是一串 `ｴｴﾒﾕｼﾐﾔｲ`，每个都长得像字，实际是垃圾，还会靠「字符多」把正确的中文名挤掉
+/// （创艺简中圆 就是这么被解错的）。老字体的族名不会用半角片假名。
+fn text_score(s: &str) -> i32 {
+    let mut score = 0;
+    for c in s.chars() {
+        let cp = c as u32;
+        if cp < 0x80 {
+            score += 1;
+        } else if (0xFF61..=0xFF9F).contains(&cp) {
+            score -= 2;
+        } else if is_cjk_cp(cp) {
+            score += 6;
+        } else if (0x80..=0xFF).contains(&cp) {
+            score -= 3;
+        } else if (0xE000..=0xF8FF).contains(&cp) {
+            score -= 6;
+        } else {
+            score += 1;
+        }
+    }
+    score
+}
+
+/// 双重编码：有些老字体把 Big5 / GBK 的**码值直接当 Unicode 存**
+/// （`中國龍豪隸書` 存成 `¤¤°êÀs»¨Áõ®Ñ`）。把字符压回字节再按中文编码解一次。
+fn double_decode(s: &str) -> Option<Vec<u8>> {
+    if s.chars().count() < 3 {
+        return None;
+    }
+    let mut out: Vec<u8> = Vec::with_capacity(s.len());
+    let mut high = 0;
+    for c in s.chars() {
+        let cp = c as u32;
+        if cp > 0xFF {
+            return None;
+        }
+        if cp >= 0xA0 {
+            high += 1;
+        }
+        out.push(cp as u8);
+    }
+    // 高位不够多就不是「码值当字符」那类
+    if high * 2 < out.len() {
+        return None;
+    }
+    Some(out)
+}
+
+/// 剥掉零字节。老字体把单字节中文（GBK / Big5）按 16 位存成 `00 b4 00 b4 …`，
+/// 直接交给 UTF-16BE 会解成 `´´ÒÕ…`，交给 GBK 又因 0x00 非法而失败。
+/// 把 0x00 去掉再按中文编码解，就能拿到 `创艺简中圆`。
+fn strip_nuls(bytes: &[u8]) -> Option<Vec<u8>> {
+    if !bytes.contains(&0) {
+        return None;
+    }
+    let out: Vec<u8> = bytes.iter().copied().filter(|b| *b != 0).collect();
+    if out.len() < 4 {
+        return None;
+    }
+    Some(out)
+}
+
+/// 解一条 name 字符串。
+///
+/// **不迷信 platform / encoding 标注** —— 老字体的标注经常是错的：
+/// 把 Big5 字节标成 Mac Roman（中国龙豪隶书）、把 UCS-2 标成 Shift-JIS（日本雅艺体）、
+/// 把 Big5 码值当 Unicode 存。所以先按标注解，结果可疑就把几种常见编码都试一遍，
+/// 取「读起来最像人话」的那个。
+fn decode_name(platform: u16, encoding: u16, bytes: &[u8]) -> Option<String> {
+    use encoding_rs::{BIG5, EUC_KR, GBK, MACINTOSH, SHIFT_JIS, UTF_16BE};
+    let (primary, primary_clean) = match decode_one(platform, encoding, bytes) {
+        Some((text, clean)) => (Some(text), clean),
+        None => (None, false),
+    };
+    // 不干净（有非法字节）也当可疑：UCS-2 内容被标成 Shift-JIS 时，
+    // 非法字节会被吞掉，剩下半角片假名看着像字，其实是垃圾。
+    let suspicious = !primary_clean || primary.as_ref().map_or(true, |s| looks_suspicious(s));
+    if !suspicious {
+        return primary;
+    }
+    // 平手时信标注：`创艺简中圆` 的 GBK 码值当 Unicode 存，剥零后 GBK 和 Big5 都能解出
+    // 5 个汉字（`创艺简中圆` vs `斐眙潠笢埴`），分数一样；标注写的是 GBK，就该信它。
+    let hint: Option<&'static encoding_rs::Encoding> = match (platform, encoding) {
+        (3, 3) => Some(GBK),
+        (3, 4) => Some(BIG5),
+        (3, 2) => Some(SHIFT_JIS),
+        (3, 5) => Some(EUC_KR),
+        (1, 0) => Some(MACINTOSH),
+        _ => None,
+    };
+    let mut cands: Vec<&'static encoding_rs::Encoding> = Vec::with_capacity(5);
+    if let Some(h) = hint {
+        cands.push(h);
+    }
+    for e in [UTF_16BE, GBK, BIG5, SHIFT_JIS, EUC_KR] {
+        if hint.map_or(true, |h| h != e) {
+            cands.push(e);
+        }
+    }
+
+    let mut best = primary;
+    let mut best_score = best.as_ref().map_or(i32::MIN, |s| text_score(s));
+    for enc in &cands {
+        // rescue 只接受干净的候选，否则垃圾串会靠「长度」混进来
+        if let Some((t, true)) = decode_with(enc, bytes) {
+            let score = text_score(&t);
+            if best.is_none() || score > best_score {
+                best = Some(t);
+                best_score = score;
+            }
+        }
+    }
+    if let Some(raw) = best.as_deref().and_then(double_decode) {
+        for enc in cands.iter().filter(|e| **e != UTF_16BE) {
+            if let Some((t, true)) = decode_with(enc, &raw) {
+                let score = text_score(&t);
+                if score > best_score {
+                    best = Some(t);
+                    best_score = score;
+                }
+            }
+        }
+    }
+    // 剥零再解：`00 b4 00 b4 …` 是 GBK 单字节按 16 位存，比上面那步更常见。
+    // **不能再试 UTF-16BE**：剥零正是为了绕开 UTF-16 的解读，
+    // 否则 `43 52 ff 23 …` 会被解成 `䍒Ｃ＆Ｇブーケ`（扩展 A 汉字比 CR 得分还高）。
+    if let Some(stripped) = strip_nuls(bytes) {
+        for enc in cands.iter().filter(|e| **e != UTF_16BE) {
+            if let Some((t, true)) = decode_with(enc, &stripped) {
+                let score = text_score(&t);
+                if score > best_score {
+                    best = Some(t);
+                    best_score = score;
+                }
+            }
+        }
+    }
+    best
+}
+
+/// 自己解析 name 表（format 0/1 的记录区布局相同：6 字节头 + count × 12 字节记录）。
+fn read_name_table(data: &[u8], index: u32) -> Vec<RawName> {
+    let mut out: Vec<RawName> = Vec::new();
+    let Ok(raw) = ttf_parser::RawFace::parse(data, index) else {
+        return out;
+    };
+    let Some(t) = raw.table(ttf_parser::Tag::from_bytes(b"name")) else {
+        return out;
+    };
+    if t.len() < 6 {
+        return out;
+    }
+    let count = u16::from_be_bytes([t[2], t[3]]) as usize;
+    let storage = u16::from_be_bytes([t[4], t[5]]) as usize;
+    out.reserve(count.min(256));
+    for i in 0..count {
+        let p = 6 + i * 12;
+        let Some(rec) = t.get(p..p + 12) else { break };
+        let platform = u16::from_be_bytes([rec[0], rec[1]]);
+        let encoding = u16::from_be_bytes([rec[2], rec[3]]);
+        let language = u16::from_be_bytes([rec[4], rec[5]]);
+        let name_id = u16::from_be_bytes([rec[6], rec[7]]);
+        let len = u16::from_be_bytes([rec[8], rec[9]]) as usize;
+        let off = u16::from_be_bytes([rec[10], rec[11]]) as usize;
+        // 越界只跳过这一条，**不 break** —— 后面的记录很可能还是好的
+        let Some(bytes) = t.get(storage + off..storage + off + len) else {
+            continue;
+        };
+        if let Some(value) = decode_name(platform, encoding, bytes) {
+            out.push(RawName {
+                platform,
+                encoding,
+                language,
+                name_id,
+                value,
+            });
+        }
+    }
+    out
+}
+
+/// 取某个 nameID 的最优值：按编码可靠性挑，同档取先出现的（通常英文记录在前）。
+fn name_string(names: &[RawName], id: u16) -> Option<String> {
+    names
+        .iter()
         .filter(|n| n.name_id == id)
-        .filter_map(|n| n.to_string())
         // 空串 / 全空白不算「有名字」：有字体把 name 记录写成空串（如 ALLMYHAN、Wartorn、
         // 苏新诗古印宋简），直接采信会让字族名变成 ""，前端按名归组时把若干互不相干的
         // 字体并成一个字族（卡片显示「6 种样式」、详情打不开、中文判定取错字面）。
-        .map(|s| s.trim().to_string())
-        .find(|s| !s.is_empty())
+        .filter(|n| !n.value.is_empty())
+        .min_by_key(|n| name_rank(n))
+        .map(|n| n.value.clone())
 }
+
+/// 把连字符后面的纯风格词从族名里去掉。
+///
+/// 老英文字体常把字重写进族名（`Barmeno-Bold`、`ATNadianne-BoldCondensed`、
+/// `AutographScriptEF-LightExtra`），照字面归档会把一个系列拆成十几个单文件目录。
+/// 只处理「连字符 + 纯风格词」：`Arial Black`（空格）这类通常是独立字族，不动。
+fn collapse_style_suffix(family: &str) -> Option<&str> {
+    let (head, tail) = family.rsplit_once('-')?;
+    let head = head.trim_end();
+    if head.len() < 2 || tail.is_empty() {
+        return None;
+    }
+    let mut saw = false;
+    for word in split_camel_case(tail) {
+        let w = word.trim_end_matches(|c: char| c.is_ascii_digit());
+        if !is_style_word(w) {
+            return None;
+        }
+        saw = true;
+    }
+    if saw {
+        Some(head)
+    } else {
+        None
+    }
+}
+
+/// `BoldCondensed` → [bold, condensed]；`LightExtra` → [light, extra]。
+fn split_camel_case(s: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for ch in s.chars() {
+        if ch.is_uppercase() && !cur.is_empty() {
+            out.push(cur.to_ascii_lowercase());
+            cur.clear();
+        }
+        cur.push(ch);
+    }
+    if !cur.is_empty() {
+        out.push(cur.to_ascii_lowercase());
+    }
+    out
+}
+
+fn is_style_word(w: &str) -> bool {
+    matches!(
+        w,
+        "thin"
+            | "extralight"
+            | "ultralight"
+            | "light"
+            | "book"
+            | "regular"
+            | "medium"
+            | "semibold"
+            | "demibold"
+            | "bold"
+            | "extrabold"
+            | "ultrabold"
+            | "black"
+            | "heavy"
+            | "extra"
+            | "semi"
+            | "ultra"
+            | "condensed"
+            | "compressed"
+            | "narrow"
+            | "wide"
+            | "expanded"
+            | "extended"
+            | "italic"
+            | "oblique"
+            | "slanted"
+            | "alt"
+            | "alts"
+            | "extras"
+    )
+}
+
 
 /// 常见的 name 表主语言 → BCP-47 语言标签。
 fn iso_language(primary: &str) -> Option<&'static str> {
@@ -518,21 +869,31 @@ fn parse_face(
         }
     };
 
-    let name_family = name_string(&face, ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
-        .or_else(|| name_string(&face, ttf_parser::name_id::FAMILY));
+    let names = read_name_table(data, index);
+    let name_family = name_string(&names, ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
+        .or_else(|| name_string(&names, ttf_parser::name_id::FAMILY));
     // 真族名读不出来 → 下面会用文件名顶上。导入归档时不能拿这种「假族名」建目录，
     // 否则一个文件一个目录，搬走内容后就是库根上的一片空壳（2.4）。
     let name_fallback = name_family.is_none();
-    let family = name_family.unwrap_or_else(|| fallback_family(path));
-    let style = name_string(&face, ttf_parser::name_id::TYPOGRAPHIC_SUBFAMILY)
-        .or_else(|| name_string(&face, ttf_parser::name_id::SUBFAMILY))
+    let raw_family = name_family.unwrap_or_else(|| fallback_family(path));
+    // 真名才做「字重后缀归并」：`Barmeno-Bold` → `Barmeno`。文件名顶上的假族名不参与，
+    // 否则 `Barmeno-Bold-Regular` 会被削成 `Barmeno-Bold`，反而更难认。
+    let family = if name_fallback {
+        raw_family
+    } else {
+        collapse_style_suffix(&raw_family)
+            .map(|s| s.to_string())
+            .unwrap_or(raw_family)
+    };
+    let style = name_string(&names, ttf_parser::name_id::TYPOGRAPHIC_SUBFAMILY)
+        .or_else(|| name_string(&names, ttf_parser::name_id::SUBFAMILY))
         .unwrap_or_else(|| "Regular".to_string());
-    let postscript_name = name_string(&face, ttf_parser::name_id::POST_SCRIPT_NAME);
-    let foundry = name_string(&face, ttf_parser::name_id::MANUFACTURER)
-        .or_else(|| name_string(&face, ttf_parser::name_id::DESIGNER));
-    let license = name_string(&face, ttf_parser::name_id::LICENSE);
-    let license_url = name_string(&face, ttf_parser::name_id::LICENSE_URL);
-    let copyright = name_string(&face, ttf_parser::name_id::COPYRIGHT_NOTICE);
+    let postscript_name = name_string(&names, ttf_parser::name_id::POST_SCRIPT_NAME);
+    let foundry = name_string(&names, ttf_parser::name_id::MANUFACTURER)
+        .or_else(|| name_string(&names, ttf_parser::name_id::DESIGNER));
+    let license = name_string(&names, ttf_parser::name_id::LICENSE);
+    let license_url = name_string(&names, ttf_parser::name_id::LICENSE_URL);
+    let copyright = name_string(&names, ttf_parser::name_id::COPYRIGHT_NOTICE);
 
     // 能解析但明显残缺的：挑最严重的那个原因说清楚（越靠前越致命）。
     // 系统字体不标记 —— 用户说了「系统字体无需理会」。
@@ -1319,5 +1680,55 @@ mod tests {
             println!("已导出字族清单 -> {}", dump);
         }
         assert!(files > 0, "目录里没找到字体文件");
+    }
+
+    /// 老字体的 name 表编码五花八门，标注还经常是错的（2026-11-07 实测 105 个字体
+    /// 全被收进「未识别字体」桶，字体本身都是好的）。这四个用例就是那批里的代表。
+
+    #[test]
+    fn gbk_name_record_is_decoded() {
+        // 长城美黑体：唯一的中文名记录标成 (3,3) PRC/GBK
+        let bytes = [0xb3, 0xa4, 0xb3, 0xc7, 0xc3, 0xc0, 0xba, 0xda, 0xcc, 0xe5];
+        assert_eq!(decode_name(3, 3, &bytes).as_deref(), Some("长城美黑体"));
+    }
+
+    #[test]
+    fn mislabeled_shift_jis_record_recovers_as_utf16() {
+        // 日本雅艺体：标注 Shift-JIS，内容其实是 UCS-2。按标注解会得到半角片假名垃圾串。
+        let bytes = [
+            0x00, 0x43, 0x00, 0x52, 0xff, 0x23, 0xff, 0x06, 0xff, 0x27, 0x30, 0xd6, 0x30, 0xfc,
+            0x30, 0xb1,
+        ];
+        assert_eq!(decode_name(3, 2, &bytes).as_deref(), Some("CRＣ＆Ｇブーケ"));
+    }
+
+    #[test]
+    fn big5_codepoints_stored_as_unicode_are_recovered() {
+        // 中国龙豪隶书：把 Big5 码值当 Unicode 码位存（¤¤°êÀs»¨Áõ®Ñ），要压回字节再解。
+        let bytes = [
+            0x00, 0xa4, 0x00, 0xa4, 0x00, 0xb0, 0x00, 0xea, 0x00, 0xc0, 0x00, 0x73, 0x00, 0xbb,
+            0x00, 0xa8, 0x00, 0xc1, 0x00, 0xf5, 0x00, 0xae, 0x00, 0xd1,
+        ];
+        assert_eq!(decode_name(3, 4, &bytes).as_deref(), Some("中國龍豪隸書"));
+    }
+
+    #[test]
+    fn style_suffix_collapses_only_on_hyphen() {
+        // 老英文体把字重写进族名 → 归并回本族，否则一个系列拆成十几个目录
+        assert_eq!(collapse_style_suffix("Barmeno-Bold"), Some("Barmeno"));
+        assert_eq!(
+            collapse_style_suffix("ATNadianne-BoldCondensed"),
+            Some("ATNadianne")
+        );
+        assert_eq!(
+            collapse_style_suffix("AutographScriptEF-LightExtra"),
+            Some("AutographScriptEF")
+        );
+        // 空格形式通常是独立字族，不能动
+        assert_eq!(collapse_style_suffix("Arial Black"), None);
+        // 语言/字重后缀是真族名的一部分，不能吃掉
+        assert_eq!(collapse_style_suffix("Source Han Serif SC"), None);
+        assert_eq!(collapse_style_suffix("Source-Han-Serif"), None);
+        assert_eq!(collapse_style_suffix("Noto-Sans-CJK"), None);
     }
 }

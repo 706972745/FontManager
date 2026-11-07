@@ -128,6 +128,11 @@ export interface InstallResult {
   recycledSources?: string[];
   /** 因「一个压缩包里混了多个字族」被整包拒绝的包 */
   rejectedZips?: RejectedZip[];
+  /**
+   * 族名读不出来、被收进「未识别字体（…）」兜底目录的文件名。
+   * name 表编码太偏（GBK / Big5 / Mac Roman）或记录损坏时会发生，字体本身没坏。
+   */
+  unrecognized?: string[];
 }
 
 /** 混装多个字族、被整包拒绝导入的压缩包 */

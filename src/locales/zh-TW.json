@@ -799,6 +799,8 @@
   "toast.zipMultiFamilySub": "包內 {count} 個字型檔案分屬不同字族：{families}。請解壓後依字族分別匯入。",
   "toast.sourcesRecycled": "來源檔案已移入資源回收筒（{count} 個）",
   "toast.sourcesRecycledSub": "跨磁碟「移動」無法直接搬運，已改為複製入庫；需要原檔可從回收筒還原",
+  "toast.unrecognizedFonts": "{count} 個字型讀不出字族名稱，已歸入「未識別字型」目錄",
+  "toast.unrecognizedFontsSub": "{names}。字型本身沒壞，是 name 表編碼讀不出族名；可以手動整理，或等後續版本自動修正",
   "toast.onlineDetailFailed": "無法載入字型詳細資訊",
   "toast.onlineDownloadFailed": "下載失敗",
   "toast.quickbarFailed": "無法切換速覽介面",

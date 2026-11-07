@@ -823,6 +823,8 @@
   "toast.zipMultiFamilySub": "Its {count} font files belong to different families: {families}. Unzip the package and import one family at a time.",
   "toast.sourcesRecycled": "Moved {count} source file(s) to the Recycle Bin",
   "toast.sourcesRecycledSub": "Cross-drive \"Move\" can't relocate files directly, so they were copied into the library. Restore the originals from the Recycle Bin if needed.",
+  "toast.unrecognizedFonts": "{count} font file(s) had no readable family name and were filed under \"Unidentified\"",
+  "toast.unrecognizedFontsSub": "{names}. The files themselves are fine — their name table encoding just isn't readable. You can reorganize them by hand.",
   "toast.onlineDetailFailed": "Couldn’t load font details",
   "toast.onlineDownloadFailed": "Download failed",
   "toast.quickbarFailed": "Couldn't switch the quick view",

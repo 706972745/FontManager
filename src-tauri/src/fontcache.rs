@@ -23,7 +23,10 @@ use std::path::PathBuf;
 // v5：目录判定加了「文件名与后缀矛盾」守卫 + 「企业授权」系关键词，旧缓存结论要重算
 // v6：分类判定重写（中文字体名字优先、PANOSE 与 OS/2 分歧用名字破平）——
 // 分类是烤进缓存字面的，旧缓存里 SimHei=mono、Century Gothic=serif 这类错值要重算
-const CACHE_VERSION: u32 = 7;
+// v8：name 表改成自己解析，支持 GBK / Big5 / ShiftJIS / Wansung / Mac Roman 编码，
+// 并跳过畸形记录继续读；族名还做了字重后缀归并（Barmeno-Bold → Barmeno）。
+// 旧缓存里那批「长城美黑体」「文鼎胡子体」的族名是文件名顶上的假名，必须重算。
+const CACHE_VERSION: u32 = 8;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
