@@ -639,6 +639,15 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   pluginInvoke: (id: string, hook: string, payload: Record<string, unknown>) =>
     invoke<void>("plugin_invoke", { id, hook, payload }),
   pluginsOpenDir: () => invoke<void>("plugins_open_dir"),
+  /** 拖入的 zip 是不是插件包（1.4.4）：有 plugin.json 就是 */
+  pluginProbeZip: (path: string) =>
+    invoke<{ isPlugin: boolean; root: string; id: string; name: string; version: string }>(
+      "plugin_probe_zip",
+      { path },
+    ),
+  /** 从 zip 安装/更新插件：更新只覆盖代码，config/secret/state 原样保留 */
+  pluginInstallZip: (path: string) =>
+    invoke<{ id: string; name: string; version: string }>("plugin_install_zip", { path }),
 };
 
 /** 本地 API 状态（`api_status`） */

@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read as _, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -286,6 +286,137 @@ fn read_manifest(dir: &Path) -> Result<PluginManifest, String> {
     serde_json::from_str(&text).map_err(|e| format!("plugin.json 格式不对：{e}"))
 }
 
+// ── 从 ZIP 安装插件（1.4.4）────────────────────────────────────────────
+// UX：用户把插件 zip 拖进窗口或用「从 ZIP 安装」按钮选一个包。
+// 兼容两种布局：文件在 zip 根级（plugin.json 在根），或只有一个顶层目录
+// （font-sync/plugin.json）。数据文件（config/secret/state）永远不进包、
+// 也不被包覆盖 —— 更新插件只覆盖代码。
+
+const PLUGIN_DATA_FILES: [&str; 3] = ["config.json", "secret.bin", "state.json"];
+
+/// zip 内容探测：是不是插件包。返回 (root 前缀, id, name, version)。
+pub fn probe_zip(zip_path: &Path) -> Result<(String, String, String, String), String> {
+    let f = std::fs::File::open(zip_path)
+        .map_err(|e| format!("打不开 {}：{e}", zip_path.display()))?;
+    let mut z = zip::ZipArchive::new(f).map_err(|e| format!("不是有效的 zip：{e}"))?;
+    let (root, text) = locate_manifest(&mut z)?;
+    let m: PluginManifest = serde_json::from_str(&text)
+        .map_err(|e| format!("plugin.json 格式不对：{e}"))?;
+    Ok((root, m.id, m.name, m.version))
+}
+
+/// 在 zip 里找 plugin.json。返回 (根前缀, manifest 文本)。
+fn locate_manifest<R: std::io::Read + std::io::Seek>(
+    z: &mut zip::ZipArchive<R>,
+) -> Result<(String, String), String> {
+    let names: Vec<String> = (0..z.len())
+        .filter_map(|i| z.by_index(i).ok().map(|e| e.name().to_string()))
+        .collect();
+    // 根级
+    if names.iter().any(|n| n == "plugin.json") {
+        let mut f = z.by_name("plugin.json").map_err(|e| e.to_string())?;
+        let mut s = String::new();
+        f.read_to_string(&mut s).map_err(|e| e.to_string())?;
+        return Ok((String::new(), s));
+    }
+    // 唯一顶层目录下的 plugin.json
+    let mut tops: Vec<String> = names
+        .iter()
+        .filter_map(|n| n.split('/').next().map(str::to_string))
+        .filter(|t| !t.is_empty())
+        .collect();
+    tops.sort();
+    tops.dedup();
+    if tops.len() == 1 {
+        let candidate = format!("{}/plugin.json", tops[0]);
+        if names.iter().any(|n| *n == candidate) {
+            let mut f = z.by_name(&candidate).map_err(|e| e.to_string())?;
+            let mut s = String::new();
+            f.read_to_string(&mut s).map_err(|e| e.to_string())?;
+            return Ok((format!("{}/", tops[0]), s));
+        }
+    }
+    Err("zip 里没找到 plugin.json —— 这不是插件包（字体 zip 包请直接拖进字体库安装）".into())
+}
+
+/// plugin.json 的 id 只允许安全字符：它要当目录名用。
+fn sanitize_plugin_id(id: &str) -> Result<String, String> {
+    let id = id.trim();
+    let ok = !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && !id.starts_with('.');
+    if ok {
+        Ok(id.to_string())
+    } else {
+        Err(format!("plugin.json 的 id 不合法（只允许字母数字 .-_）：{id:?}"))
+    }
+}
+
+/// 安装/更新插件 zip 到指定插件根目录（测试可注入 base）。
+/// 返回 (id, name, version)。
+pub fn install_zip_into(zip_path: &Path, base: &Path) -> Result<(String, String, String), String> {
+    let f = std::fs::File::open(zip_path)
+        .map_err(|e| format!("打不开 {}：{e}", zip_path.display()))?;
+    let mut z = zip::ZipArchive::new(f).map_err(|e| format!("不是有效的 zip：{e}"))?;
+    let (root, text) = locate_manifest(&mut z)?;
+    let m: PluginManifest = serde_json::from_str(&text)
+        .map_err(|e| format!("plugin.json 格式不对：{e}"))?;
+    if m.api_level > API_LEVEL {
+        return Err(format!(
+            "插件需要主程序 API 级别 {}，当前软件只支持到 {} —— 请先把 FontManager 升到更新的版本",
+            m.api_level, API_LEVEL
+        ));
+    }
+    let id = sanitize_plugin_id(&m.id)?;
+    let target = base.join(&id);
+    std::fs::create_dir_all(&target).map_err(|e| format!("建目录失败：{e}"))?;
+    for i in 0..z.len() {
+        let mut entry = z.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        let Some(rel) = name.strip_prefix(&root) else {
+            continue; // 只装 manifest 所在的那一层（多目录 zip 只认插件目录）
+        };
+        if rel.is_empty() {
+            continue;
+        }
+        // zip-slip 防护：路径必须安全地落在插件目录内
+        let rel_path = std::path::Path::new(rel);
+        let safe = !rel_path.components().any(|c| {
+            matches!(c, std::path::Component::ParentDir | std::path::Component::RootDir)
+        })
+            && !rel.contains('\\')
+            && !rel.contains(':');
+        if !safe {
+            return Err(format!("zip 里有越界路径，已拒绝安装：{name}"));
+        }
+        if entry.is_dir() {
+            std::fs::create_dir_all(target.join(rel_path))
+                .map_err(|e| format!("建目录失败：{e}"))?;
+            continue;
+        }
+        // 数据文件永远不进包，也永远不被包覆盖（更新插件不动用户的配置/令牌/状态）
+        if root.is_empty() && PLUGIN_DATA_FILES.contains(&rel) {
+            continue;
+        }
+        let out = target.join(rel_path);
+        if let Some(p) = out.parent() {
+            std::fs::create_dir_all(p).map_err(|e| format!("建目录失败：{e}"))?;
+        }
+        let mut buf = Vec::with_capacity(entry.size() as usize);
+        std::io::Read::read_to_end(&mut entry, &mut buf).map_err(|e| format!("读 zip 条目失败：{e}"))?;
+        std::fs::write(&out, &buf).map_err(|e| format!("写 {} 失败：{e}", out.display()))?;
+    }
+    Ok((m.id, m.name, m.version))
+}
+
+/// 安装到真实插件目录（装完**不**自动重扫 —— 前端装完自己刷清单）。
+pub fn install_zip(zip_path: &Path) -> Result<(String, String, String), String> {
+    install_zip_into(zip_path, &plugins_dir())
+}
+
 /// 扫描插件目录（不启动任何东西）
 pub fn list() -> Vec<PluginInfo> {
     let root = plugins_dir();
@@ -542,9 +673,28 @@ fn resolve(kind: &str, override_path: Option<&str>) -> Option<(String, Vec<Strin
     found
 }
 
+/// 主程序内置的共享 Python 运行时（1.4.4，随安装包分发，Python 3.13 + Pillow + fontTools）。
+/// 安装后位于 exe 旁（NSIS 装到 %LOCALAPPDATA%，MSI 装到 Program Files 的资源目录）；
+/// 开发期 cargo run 直接用源码树里那份。找不到返回 None（回退系统解释器）。
+fn shared_python_runtime() -> Option<PathBuf> {
+    let mut cands: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(base) = exe.parent() {
+            cands.push(base.join("python-runtime").join("python.exe"));
+            cands.push(base.join("resources").join("python-runtime").join("python.exe"));
+        }
+    }
+    cands.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("python-runtime")
+            .join("python.exe"),
+    );
+    cands.into_iter().find(|p| p.is_file())
+}
+
 /// 用户在设置里手动指定的解释器路径（prefs: pluginRuntime = {python: ..., node: ...}）
-fn override_for(kind: &str) -> Option<String> {
-    let api = crate::api::hub()?;
+fn override_for(kind: &str) -> Option<String> {    let api = crate::api::hub()?;
     let st = api.store.0.lock().ok()?;
     st.prefs
         .get("pluginRuntime")
@@ -598,12 +748,26 @@ fn command_for(dir: &Path, m: &PluginManifest) -> Result<(Command, String), Stri
                 (c, format!("{}（插件自带）", bundled.display()))
             } else {
                 let ov = override_for(&kind);
-                let (prog, extra, version) = resolve(&kind, ov.as_deref()).ok_or_else(|| {
-                    format!(
-                        "没找到可用的 {} 解释器 —— 装上它，或在设置 → 插件 →「插件解释器」里点「选择」指过去",
-                        if kind == "python" { "Python" } else { "Node.js" }
-                    )
-                })?;
+                // 主程序内置共享运行时（1.4.4）：没装 Python 的电脑也能跑标准库插件。
+                // 只兜 python；node 插件继续走系统探测。插件自带（interpreterPath）优先级最高。
+                let shared = if kind == "python" && !cfg!(test) {
+                    shared_python_runtime().map(|p| {
+                        (
+                            p.to_string_lossy().into_owned(),
+                            Vec::<String>::new(),
+                            "主程序内置".to_string(),
+                        )
+                    })
+                } else {
+                    None
+                };
+                let (prog, extra, version) =
+                    shared.or_else(|| resolve(&kind, ov.as_deref())).ok_or_else(|| {
+                        format!(
+                            "没找到可用的 {} 解释器 —— 装上它，或在设置 → 插件 →「插件解释器」里点「选择」指过去",
+                            if kind == "python" { "Python" } else { "Node.js" }
+                        )
+                    })?;
                 let mut c = Command::new(&prog);
                 for a in &extra {
                     c.arg(a);
@@ -1016,5 +1180,85 @@ mod tests {
         assert!(super::validate_panel_url("not a url").is_err());
         assert!(super::validate_panel_url("").is_err());
     }
+    #[test]
+    fn install_zip_flat_layout() {
+        let tmp = tempfile_dir("zfm-zip-flat");
+        let zip_path = tmp.join("p.zip");
+        write_test_zip(&zip_path, &[
+            ("plugin.json", br#"{"id":"demo","name":"Demo","version":"1.2","apiLevel":1,"entry":"main.py","permissions":[]}"#),
+            ("main.py", b"print('hi')"),
+            ("state.json", br#"{"evil": true}"#),
+        ]);
+        let base = tmp.join("plugins");
+        let (id, name, ver) = super::install_zip_into(&zip_path, &base).unwrap();
+        assert_eq!((id.as_str(), name.as_str(), ver.as_str()), ("demo", "Demo", "1.2"));
+        assert!(base.join("demo").join("main.py").is_file());
+        // 数据文件不进包：即使 zip 里带了，也不落盘
+        assert!(!base.join("demo").join("state.json").exists());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn install_zip_nested_layout_and_update_keeps_data() {
+        let tmp = tempfile_dir("zfm-zip-nested");
+        let zip_path = tmp.join("p.zip");
+        write_test_zip(&zip_path, &[
+            ("font-sync/plugin.json", br#"{"id":"font-sync","name":"FS","version":"0.8.0","apiLevel":1,"entry":"main.py","permissions":[]}"#),
+            ("font-sync/main.py", b"print('v2')"),
+        ]);
+        let base = tmp.join("plugins");
+        let dir = base.join("font-sync");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("state.json"), br#"{"keep": 1}"#).unwrap();
+        super::install_zip_into(&zip_path, &base).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("main.py")).unwrap(), "print('v2')");
+        // 更新：代码覆盖，用户数据原样保留
+        assert_eq!(std::fs::read(dir.join("state.json")).unwrap(), br#"{"keep": 1}"#);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn install_zip_rejects_slip_and_bad_id() {
+        let tmp = tempfile_dir("zfm-zip-slip");
+        // 越界路径
+        let z1 = tmp.join("slip.zip");
+        write_test_zip(&z1, &[
+            ("plugin.json", br#"{"id":"ok","name":"O","version":"1","apiLevel":1,"entry":"main.py","permissions":[]}"#),
+            ("../evil.txt", b"x"),
+        ]);
+        assert!(super::install_zip_into(&z1, &tmp.join("p1")).is_err(), "zip-slip 必须被拒");
+        // id 带路径字符
+        let z2 = tmp.join("badid.zip");
+        write_test_zip(&z2, &[
+            ("plugin.json", br#"{"id":"../evil","name":"O","version":"1","apiLevel":1,"entry":"main.py","permissions":[]}"#),
+            ("main.py", b"x"),
+        ]);
+        assert!(super::install_zip_into(&z2, &tmp.join("p2")).is_err(), "非法 id 必须被拒");
+        // 不是插件包（没有 plugin.json）
+        let z3 = tmp.join("notplugin.zip");
+        write_test_zip(&z3, &[("a.ttf", b"x")]);
+        assert!(super::install_zip_into(&z3, &tmp.join("p3")).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// 测试辅助：往 zip 里写若干 (名字, 内容) 条目
+    fn write_test_zip(path: &std::path::Path, entries: &[(&str, &[u8])]) {
+        use std::io::Write;
+        let f = std::fs::File::create(path).unwrap();
+        let mut w = zip::ZipWriter::new(f);
+        for (name, data) in entries {
+            w.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+            w.write_all(data).unwrap();
+        }
+        w.finish().unwrap();
+    }
+
+    fn tempfile_dir(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
 }
+
 

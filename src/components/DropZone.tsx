@@ -7,6 +7,7 @@ import { springSnappy } from "../design/springs";
 import { ipc, type InstallMode, type InstallProgress } from "../lib/ipc";
 import { useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
+import { toast } from "../design/primitives/Toast";
 
 export function DropZone() {
   const t = useT();
@@ -73,9 +74,31 @@ export function DropZone() {
         const mode = sideAt(event.payload.position);
         setDragging(false);
         setSide("link");
-        void installPaths(event.payload.paths, mode).finally(() => {
-          scheduleHideProgress();
-        });
+        const paths = event.payload.paths;
+        // zip 先探测（1.4.4）：有 plugin.json 的是插件包 → 装插件；
+        // 不是 → 回退字体安装原流程（单字族字体 zip 包仍然照旧装成字体）
+        const fontPaths: string[] = paths.filter((p) => !p.toLowerCase().endsWith(".zip"));
+        void (async () => {
+          for (const zp of paths.filter((p) => p.toLowerCase().endsWith(".zip"))) {
+            try {
+              await ipc.pluginProbeZip(zp);
+            } catch {
+              fontPaths.push(zp); // 不是插件包
+              continue;
+            }
+            try {
+              const r = await ipc.pluginInstallZip(zp);
+              toast.success(t("toast.pluginZipInstalled", { name: r.name, version: r.version }));
+            } catch (err) {
+              toast.error(t("toast.pluginZipFailed"), String(err));
+            }
+          }
+          if (fontPaths.length > 0) {
+            await installPaths(fontPaths, mode).finally(() => {
+              scheduleHideProgress();
+            });
+          }
+        })();
       } else {
         setDragging(false);
         setSide("link");
