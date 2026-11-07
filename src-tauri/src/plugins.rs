@@ -526,29 +526,32 @@ fn command_for(dir: &Path, m: &PluginManifest) -> Result<(Command, String), Stri
                     c.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
                 }
                 c.arg(&entry);
-                return Ok((
-                    c,
-                    format!("{}（插件自带）", bundled.display()),
-                ));
+                // 这里**绝对不能**提前 return：下面那段（stdin/stdout/stderr 全部 piped +
+                // CREATE_NO_WINDOW）是「自带解释器」和「系统解释器」两条路共用的。
+                // 1.4.1 及以前在这里 return，后果是自带运行时的插件：
+                // stdio 继承控制台（弹一个黑窗，插件的 JSON 日志哗哗打到窗口里）、
+                // 主程序 take() 不到 stdin → 启用失败，只报一句「插件进程没有 stdin」。
+                (c, format!("{}（插件自带）", bundled.display()))
+            } else {
+                let ov = override_for(&kind);
+                let (prog, extra, version) = resolve(&kind, ov.as_deref()).ok_or_else(|| {
+                    format!(
+                        "没找到可用的 {} 解释器 —— 装上它，或在设置 → 插件 →「插件解释器」里点「选择」指过去",
+                        if kind == "python" { "Python" } else { "Node.js" }
+                    )
+                })?;
+                let mut c = Command::new(&prog);
+                for a in &extra {
+                    c.arg(a);
+                }
+                // 让子进程也用 UTF-8：中文 Windows 下 python 默认按 cp936 写管道，
+                // 主程序这边按 UTF-8 解析，两边编码不一致就会把 JSON 读坏
+                if kind == "python" {
+                    c.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
+                }
+                c.arg(&entry);
+                (c, format!("{} {}", prog, version))
             }
-            let ov = override_for(&kind);
-            let (prog, extra, version) = resolve(&kind, ov.as_deref()).ok_or_else(|| {
-                format!(
-                    "没找到可用的 {} 解释器 —— 装上它，或在设置 → 插件 →「插件解释器」里点「选择」指过去",
-                    if kind == "python" { "Python" } else { "Node.js" }
-                )
-            })?;
-            let mut c = Command::new(&prog);
-            for a in &extra {
-                c.arg(a);
-            }
-            // 让子进程也用 UTF-8：中文 Windows 下 python 默认按 cp936 写管道，
-            // 主程序这边按 UTF-8 解析，两边编码不一致就会把 JSON 读坏
-            if kind == "python" {
-                c.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
-            }
-            c.arg(&entry);
-            (c, format!("{} {}", prog, version))
         }
         _ => (Command::new(&entry), entry.display().to_string()),
     };
@@ -853,5 +856,59 @@ pub fn stop_all() {
         .unwrap_or_default();
     for id in ids {
         let _ = disable(&id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest(entry: &str, interpreter_path: Option<&str>) -> PluginManifest {
+        PluginManifest {
+            id: "t".into(),
+            name: "t".into(),
+            version: "0.0.0".into(),
+            api_level: 1,
+            entry: entry.into(),
+            interpreter: Some("python".into()),
+            interpreter_path: interpreter_path.map(str::to_string),
+            permissions: vec!["read:fonts".into()],
+            hooks: vec![],
+            menus: vec![],
+            settings: None,
+            description: None,
+        }
+    }
+
+    /// 自带解释器的分支必须走「公共收尾」：program 是插件内的解释器、参数是入口。
+    ///
+    /// 1.4.1 及以前这一支是 `return Ok((c, …))`，把后面的
+    /// `stdin/stdout/stderr = piped` + `CREATE_NO_WINDOW` 一起跳过了：
+    /// 插件进程继承控制台（弹黑窗、JSON 日志全打到窗口里），主程序
+    /// `child.stdin.take()` 拿到 None，启用直接失败并只报「插件进程没有 stdin」。
+    /// 自带运行时的插件（现在所有插件都是）全都装不上。
+    ///
+    /// 单测只能验到「分支选择 + 命令行拼装」，stdio 是否 piped 由 `command_for`
+    /// 的尾部统一设置，改结构时别再把 return 插回去（见上一段注释）。
+    #[test]
+    fn bundled_interpreter_is_used_as_program() {
+        let dir = std::env::temp_dir().join(format!("zfm-plugin-cmd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("runtime")).unwrap();
+        std::fs::write(dir.join("main.py"), b"print(1)").unwrap();
+        std::fs::write(dir.join("runtime").join("python.exe"), b"").unwrap();
+
+        let (cmd, how) =
+            command_for(&dir, &manifest("main.py", Some("runtime/python.exe"))).unwrap();
+        assert!(how.contains("插件自带"), "应该走自带解释器分支：{how}");
+        let prog = cmd.get_program().to_string_lossy().into_owned();
+        assert!(prog.ends_with("python.exe"), "程序应该是插件自带的解释器：{prog}");
+        assert!(prog.contains("runtime"), "不能退回系统解释器：{prog}");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.iter().any(|a| a.ends_with("main.py")), "入口没传进去：{args:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
