@@ -814,6 +814,8 @@
   "toast.zipMultiFamilySub": "包内 {count} 个字体文件分属不同字族：{families}。请解压后按字族分别导入。",
   "toast.sourcesRecycled": "源文件已移入回收站（{count} 个）",
   "toast.sourcesRecycledSub": "跨盘「移动」无法直接搬运，已改为复制入库；需要原文件可从回收站还原",
+  "toast.unrecognizedFonts": "{count} 个字体读不出字族名，已归入「未识别字体」目录",
+  "toast.unrecognizedFontsSub": "{names}。字体本身没坏，是 name 表编码读不出族名；可以手工整理，或等后续版本自动修正",
   "toast.onlineDetailFailed": "无法加载字体详情",
   "toast.onlineDownloadFailed": "下载失败",
   "toast.quickbarFailed": "无法切换速览界面",

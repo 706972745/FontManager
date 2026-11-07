@@ -797,6 +797,8 @@
   "toast.zipMultiFamilySub": "パッケージ内の {count} 個のフォントファイルが別々のファミリーに分かれています：{families}。展開してからファミリーごとにインポートしてください。",
   "toast.sourcesRecycled": "元のファイル {count} 件をゴミ箱へ移動しました",
   "toast.sourcesRecycledSub": "ドライブをまたぐ「移動」は直接転送できないため、ライブラリへコピーしました。元ファイルはゴミ箱から復元できます。",
+  "toast.unrecognizedFonts": "{count} 個のフォントはファミリー名を読み取れず、「未識別フォント」フォルダーにまとめました",
+  "toast.unrecognizedFontsSub": "{names}。フォント自体は壊れていません。name テーブルの文字コードが読み取れないだけです。手動で整理するか、今後のバージョンでの自動修正をお待ちください。",
   "toast.onlineDetailFailed": "フォントの詳細を読み込めませんでした",
   "toast.onlineDownloadFailed": "ダウンロードに失敗しました",
   "toast.quickbarFailed": "クイック表示を切り替えられませんでした",

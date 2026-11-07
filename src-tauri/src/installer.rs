@@ -54,6 +54,13 @@ pub struct InstallResult {
     /// 非空时前端要明确说清是哪个包、里面有哪些字族，而不是只说「没导进来」。
     #[serde(default)]
     pub rejected_zips: Vec<RejectedZip>,
+    /// 族名读不出来、只能收进「未识别字体（…）」兜底目录的文件名。
+    ///
+    /// 以前这种情况悄无声息，用户事后才发现一堆字体被塞进同一个目录（2026-11-07 反馈）。
+    /// 字体本身没坏，只是 name 表编码太偏或记录畸形；非空时前端必须提示，
+    /// 并说明可以等后续版本自动整理，或手工改名后重新导入。
+    #[serde(default)]
+    pub unrecognized: Vec<String>,
 }
 
 /// 被拒绝导入的压缩包：一个包里混了多个字族。
@@ -973,6 +980,19 @@ pub fn install(
                     }
                     _ => base,
                 };
+                // 族名读不出来 → 只能归到「未识别字体（…）」兜底桶。
+                // 以前这一步悄无声息，用户事后才发现一堆字体挤在同一个目录里（2026-11-07）。
+                // 字体本身没坏，只是 name 表编码偏门或记录畸形，所以这里只记录、不报错。
+                if real_family.is_none()
+                    && target_dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.starts_with(copyright::UNIDENTIFIED_FAMILY))
+                {
+                    result
+                        .unrecognized
+                        .push(file_name.to_string_lossy().into_owned());
+                }
                 let created = fs::create_dir_all(&target_dir).map_err(|e| e.to_string());
                 if let Err(e) = created {
                     let _ = app.emit(
@@ -2140,6 +2160,8 @@ mod tests {
             doc_conflicts: vec![],
             // 1.1.7 之后新增：多字族压缩包拒绝清单，本测试不涉及
             rejected_zips: vec![],
+            // 1.4.0 新增：族名读不出、被收进兜底目录的文件名，本测试不涉及
+            unrecognized: vec![],
         };
         let _ = process_webfonts(vec![staged], &staging, &mut result);
 

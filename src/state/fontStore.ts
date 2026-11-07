@@ -2254,6 +2254,16 @@ export const useFontStore = create<FontStore>((set, get) => ({
       if (result.webfontsSkipped) {
         toast.info(t("toast.webfontsSkipped", { count: result.webfontsSkipped }));
       }
+      // 族名读不出来 → 进了「未识别字体」兜底目录。以前悄无声息，用户事后才发现
+      // 一堆字体挤在同一个目录里（2026-11-07 反馈），这里必须说清楚（1.4.0）
+      if (result.unrecognized?.length) {
+        toast.info(
+          t("toast.unrecognizedFonts", { count: result.unrecognized.length }),
+          t("toast.unrecognizedFontsSub", {
+            names: result.unrecognized.slice(0, 5).join("、"),
+          }),
+        );
+      }
       if (
         result.installed.length === 0 &&
         result.errors.length === 0 &&

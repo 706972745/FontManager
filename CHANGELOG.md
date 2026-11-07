@@ -4,6 +4,43 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-11-07（正式版）
+
+> 老字体终于能读出真名了。之前 105 个字体（长城美黑体、文鼎胡子体、创艺简系列……）
+> 因为 name 表编码偏门，族名一路回退成文件名，全被塞进「未识别字体」一个目录。
+> 现在按编码正确解码，并在导入时把这类情况说清楚。
+
+### 修复
+
+- **name 表解码重写（`parser.rs`）**：不再依赖 `ttf_parser::Names`，改为自己解析 name 表。
+  两件事同时解决：
+  - **支持 GBK / Big5 / Shift-JIS / Wansung / Mac Roman**：老中文字体的中文名多存在
+    `(3,3)` PRC 记录里（「长城美黑体」的字节是 GBK），以前只认 UCS-2 所以读不出；
+  - **跳过畸形记录继续读**：`ttf_parser` 的迭代器遇到越界记录会整体终止，
+    Barmeno / ATNadianne / AutographScriptEF 这批前面两条记录是坏的、后面有标准 UCS-2 名，
+    却一路被当成无名。
+- **不迷信 platform/encoding 标注**：实测有把 Big5 字节标成 Mac Roman（中国龙豪隶书）、
+  把 UCS-2 标成 Shift-JIS（日本雅艺体）、把 Big5 码值当 Unicode 存的三类畸形。
+  现在先按标注解，结果可疑（成片 Latin-1 高位 / 出现非法字节）就把几种常见编码都试一遍，
+  取可读性最高的那个，并额外支持「码值当字符」的双重解码。
+- **族名末尾的字重后缀归并**：`Barmeno-Bold` / `ATNadianne-BoldCondensed` /
+  `AutographScriptEF-LightExtra` 归并回本族，否则一个系列会被拆成十几个单文件目录。
+  只认「连字符 + 纯风格词」；`Arial Black`（空格）和 `Source Han Serif SC`（语言子族）不动。
+- `CACHE_VERSION` 7 → 8：升级后首次启动会重算字体缓存（旧缓存里那批族名是假名）。
+
+### 新增
+
+- **导入时提示未识别字体**：族名读不出、只能收进「未识别字体（…）」兜底目录的文件，
+  导入完成后弹提示说明数量与文件名，并讲清「字体本身没坏，是 name 表编码读不出」。
+  以前这一步悄无声息，用户事后才发现一堆字体挤在同一个目录里。
+  九种语言文案同步。
+- 新增 4 个单元测试：GBK 记录、错标 Shift-JIS 的 UCS-2 记录、Big5 码值当 Unicode、
+  字重后缀归并的边界（空格形式与语言子族不归并）。
+
+### 其他
+
+- 依赖新增 `encoding_rs`（唯一用途就是 name 表解码）。
+
 ## [1.3.9] — 2026-11-06（正式版）
 
 > 只有文档：把「插件为什么会被拒绝（403）」这件事写清楚。代码零改动。

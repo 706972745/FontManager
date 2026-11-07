@@ -1,6 +1,6 @@
 [package]
 name = "fontmanager"
-version = "1.3.9"
+version = "1.4.0"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
 authors = ["TheHolyOneZ", "IIEOzo"]
 license = "GPL-3.0-only"
@@ -24,6 +24,9 @@ tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ttf-parser = "0.25"
+# name 表解码：老中文字体（长城/文鼎/创艺那批）的中文名存在 GBK / Big5 / ShiftJIS
+# 记录里，ttf_parser 只认 UCS-2，读不出来就只能回退文件名。这里自己按编码解。
+encoding_rs = "0.8"
 # WOFF1 表是 zlib 流；已在依赖树里（zip/reqwest 传递引入），这里显式声明复用同一版本
 flate2 = "1"
 walkdir = "2"
