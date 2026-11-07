@@ -15,8 +15,72 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
+use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 use crate::store;
+
+// ───────────────────────── 应用内插件面板窗口 ─────────────────────────
+// 插件发 {"type":"open-url","url":…,"title":…} → 主程序开一个窗口加载它。
+// 安全边界：**只允许本机回环地址**（http://127.0.0.1 或 http://localhost）——
+// 插件拿不到任何主程序 UI 能力，最多能请主程序展示它自己 127.0.0.1 上的页面。
+static APP: OnceLock<AppHandle> = OnceLock::new();
+
+/// setup 阶段调用一次；拿到句柄之前插件发的 open-url 一律忽略（插件自己有降级开窗）。
+pub fn set_app(handle: AppHandle) {
+    let _ = APP.set(handle);
+}
+
+/// 安全校验：只放行本机回环地址。返回解析好的 URL，供开窗用 —— 单测覆盖。
+fn validate_panel_url(url: &str) -> Result<tauri::Url, String> {
+    let parsed = tauri::Url::parse(url).map_err(|e| format!("URL 解析失败：{e}"))?;
+    let host_ok = parsed.host_str() == Some("127.0.0.1")
+        || parsed.host_str() == Some("localhost");
+    if parsed.scheme() != "http" || !host_ok {
+        return Err(format!("只允许本机回环地址（http://127.0.0.1/…），已拒绝：{url}"));
+    }
+    Ok(parsed)
+}
+
+fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), String> {
+    // URL 先严格解析并校验，这个分支里**绝不 unwrap** —— 插件的数据不可信
+    let url = validate_panel_url(url)?;
+    let title = title.to_string();
+    let app = app.clone();
+    // 接收者用临时克隆：闭包要把 app 移进去，而方法调用本身又借用了接收者。
+    // run_on_main_thread 的 Result 只在「事件循环已退出」时才有意义，那时主程序
+    // 都在退出了，记一条日志即可 —— 不能因为开面板失败把同步/退出流程打断。
+    let scheduled = app.clone().run_on_main_thread(move || {
+        // build 本身返回 Result；再包一层 catch_unwind —— 任何意外都只记日志，
+        // 绝不能带崩主进程（与 api_server 的 catch_unwind 同一模式）
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            WebviewWindowBuilder::new(&app, "plugin-panel", WebviewUrl::External(url.clone()))
+                .title(&title)
+                .inner_size(1040.0, 900.0)
+                .min_inner_size(760.0, 560.0)
+                .build()
+        }));
+        match result {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                let msg = e.to_string();
+                if msg.contains("exists") || msg.contains("已存在") || msg.contains("label") {
+                    crate::diag::log("[plugin] 面板窗口已经开着（关掉旧窗口可再开）");
+                } else {
+                    crate::diag::log(&format!(
+                        "[plugin] 面板窗口创建失败（不影响主程序）：{msg}"
+                    ));
+                }
+            }
+            Err(_) => crate::diag::log(
+                "[plugin] 面板窗口创建发生 panic，已被 catch_unwind 拦住，主程序不受影响",
+            ),
+        }
+    });
+    if let Err(e) = scheduled {
+        return Err(format!("run_on_main_thread 失败：{e}"));
+    }
+    Ok(())
+}
 
 // ───────────────────────────── manifest ─────────────────────────────
 
@@ -655,6 +719,34 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
                                 "[plugin:{pid}] toast: {}",
                                 v.get("message").and_then(|x| x.as_str()).unwrap_or("")
                             )),
+                            "open-url" => {
+                                // 0.8.0 插件：请主程序开应用内设置窗口。防御式处理，
+                                // 解析/校验/开窗任何一步失败都只记日志
+                                let url = v
+                                    .get("url")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .trim()
+                                    .to_string();
+                                let title = v
+                                    .get("title")
+                                    .and_then(|x| x.as_str())
+                                    .map(|s| s.chars().take(60).collect::<String>())
+                                    .unwrap_or_else(|| "插件面板".to_string());
+                                match APP.get() {
+                                    None => crate::diag::log(&format!(
+                                        "[plugin:{pid}] open-url 被忽略（应用句柄未就绪，插件应自行降级开窗）"
+                                    )),
+                                    Some(app) => match open_panel_window(app, &url, &title) {
+                                        Ok(()) => crate::diag::log(&format!(
+                                            "[plugin:{pid}] 已请求主程序打开面板窗口"
+                                        )),
+                                        Err(e) => crate::diag::log(&format!(
+                                            "[plugin:{pid}] open-url 被拒绝：{e}"
+                                        )),
+                                    },
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -911,4 +1003,18 @@ mod tests {
         assert!(args.iter().any(|a| a.ends_with("main.py")), "入口没传进去：{args:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
+    #[test]
+    fn panel_url_gate_only_loopback_http() {
+        // 放行：本机回环 http
+        assert!(super::validate_panel_url("http://127.0.0.1:52100/?k=abc&tab=account").is_ok());
+        assert!(super::validate_panel_url("http://localhost:1234/").is_ok());
+        // 拒绝：外网、https、垃圾输入
+        assert!(super::validate_panel_url("https://127.0.0.1:52100/").is_err(), "https 也不放");
+        assert!(super::validate_panel_url("http://evil.example.com/x").is_err());
+        assert!(super::validate_panel_url("http://192.168.1.5:80/").is_err(), "局域网也不放");
+        assert!(super::validate_panel_url("file:///C:/Windows/System32").is_err());
+        assert!(super::validate_panel_url("not a url").is_err());
+        assert!(super::validate_panel_url("").is_err());
+    }
 }
+
