@@ -40,6 +40,12 @@ jobs:
     name: Build → Publish
     runs-on: windows-2025
 
+    # secrets 上下文在 steps[*].if 里不可用（GitHub 会判定整个工作流无效，
+    # 表现为每次 push 都出现一条 0 job 的 failure）。这里先落到 job 级 env，
+    # 步骤条件改用 env.SIGNPATH_TOKEN 判断。
+    env:
+      SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,13 +125,12 @@ jobs:
       # 与现有行为完全一致；在 GitHub Secrets 配齐后自动切换为签名发布。
       # 申请入口：https://signpath.org  →  Apply for Free Code Signing
       - name: 代码签名（SignPath Foundation）
-        if: ${{ secrets.SIGNPATH_TOKEN != '' }}
+        if: env.SIGNPATH_TOKEN != ''
         shell: pwsh
         env:
           SIGNPATH_ORG: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
           SIGNPATH_PROJECT: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
           SIGNPATH_POLICY: ${{ secrets.SIGNPATH_SIGNING_POLICY }}
-          SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_TOKEN }}
         run: |
           Install-Module -Name SignPath -Scope CurrentUser -Force -SkipPublisherCheck
           Import-Module SignPath
@@ -154,7 +159,7 @@ jobs:
         shell: pwsh
         env:
           TAG_INPUT: ${{ inputs.tag }}
-          SIGNED: ${{ secrets.SIGNPATH_TOKEN != '' }}
+          SIGNED: ${{ env.SIGNPATH_TOKEN != '' }}
         run: |
           $tag = if ($env:TAG_INPUT) { $env:TAG_INPUT } else { "${{ github.ref_name }}" }
           $ver = $tag.Substring(1)
