@@ -4,6 +4,18 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.6] — 2026-11-07（正式版）
+
+> 拖 ZIP 更新插件后的一个致命错位：**文件换新了，正在运行的插件进程还抱着旧代码**。
+> 新面板页（HTML 每次从磁盘读）调用 0.8.1 新增的端点，被旧进程的面板服务回一句
+> `unknown endpoint`；同步/恢复的进度快照也读自旧进程，表现为**上传下载都没有进度**。
+
+### 修复
+
+- **ZIP 安装/更新后热重启**：`plugin_install_zip` 在写完文件后，若该插件正在运行，
+  自动 `disable → enable` 重启进程（`restart_if_running`）；重启失败只记日志，不阻断
+  安装结果（开关保持关闭，用户手动打开即可）。拖拽安装与「从 ZIP 安装」按钮共用此路径。
+
 ## [1.4.5] — 2026-11-07（正式版）
 
 > 面板开进应用内窗口后暴露的一个盲区：插件面板里的**外部链接**（GitHub 建令牌页、

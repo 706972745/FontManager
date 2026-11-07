@@ -1119,6 +1119,35 @@ fn retire_dead(id: &str) {
 }
 
 /// 停用插件：杀进程 + 撤销令牌
+/// 插件是否正在运行（面板/CLI 想知道，装完 zip 也用它决定要不要热重启）
+pub fn is_running(id: &str) -> bool {
+    runtimes().lock().map(|r| r.contains_key(id)).unwrap_or(false)
+}
+
+/// 安装/更新 zip 后调用：这个插件若正在运行，旧进程跑的还是旧代码
+/// （panel.html 每次从磁盘读、是新的 → 新页面调新端点，旧服务回 unknown endpoint）。
+/// 返回 true 表示执行了重启。重启失败只记日志，不阻断安装结果。
+pub fn restart_if_running(id: &str) -> bool {
+    if !is_running(id) {
+        return false;
+    }
+    crate::diag::log(&format!("[plugin:{id}] 代码已更新，重启运行中的插件进程"));
+    let _ = disable(id);
+    match enable(id) {
+        Ok(info) => {
+            crate::diag::log(&format!(
+                "[plugin:{id}] 已用新代码重新启动（版本 {}）",
+                info.version
+            ));
+            true
+        }
+        Err(e) => {
+            crate::diag::log(&format!("[plugin:{id}] 重启失败（开关仍是关的，手动打开即可）：{e}"));
+            false
+        }
+    }
+}
+
 pub fn disable(id: &str) -> Result<(), String> {
     let Some(mut rt) = runtimes().lock().ok().and_then(|mut r| r.remove(id)) else {
         return Err("这个插件没在运行".into());
