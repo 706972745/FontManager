@@ -2462,6 +2462,7 @@ pub fn run() {
             }
             // 上次开着的插件：等 API 监听就绪再拉起来（插件要拿 apiBase 和受限令牌）。
             // 放线程里跑，manifest 多、解释器慢都不挡首屏。
+            crate::plugins::set_app(app.handle().clone());
             std::thread::spawn(|| {
                 std::thread::sleep(std::time::Duration::from_millis(300));
                 crate::plugins::start_enabled();

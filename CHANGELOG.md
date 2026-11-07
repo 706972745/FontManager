@@ -4,6 +4,28 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.3] — 2026-11-07（正式版）
+
+> 插件的设置面板不再弹浏览器：主程序收到插件发来的 `open-url` 消息后，
+> 在**应用内窗口**里加载它（Tauri 原生子窗口）。纯增量改动，现有功能不受影响。
+
+### 新增
+
+- **插件面板窗口（`open-url` 消息）**：插件进程可以在 stdout 上发
+  `{"type":"open-url","url":…,"title":…}`，主程序会弹出一个原生 WebView 窗口加载该地址
+  （固定 1040×900、可缩放）。字体库同步插件 0.8.0 的设置面板（账号 / 选库 / 补缺 / 教程）
+  已改走这条路，观感与主程序一致。
+- **安全闸**：`open-url` 只接受 `http://127.0.0.1` / `http://localhost` 回环地址，
+  其它（外网、https、局域网、file://、垃圾输入）一律拒绝并记日志 —— 插件最多能请主程序
+  展示它自己本机服务上的页面，开不了任意网页。校验逻辑抽成纯函数 `validate_panel_url` 并有单测。
+
+### 可靠性
+
+- 窗口创建包在 `catch_unwind` 里、全部参数先解析校验再使用（无 unwrap）：
+  创建失败只记一行日志，**主进程没有任何 panic 路径**；老插件（不发 open-url）行为完全不变。
+- 插件侧按主程序版本自动降级：主程序 < 1.4.3 时，插件改用 Edge `--app` 独立窗口打开面板
+  （再不行退回默认浏览器），不会出现「点了没反应」。
+
 ## [1.4.2] — 2026-11-07（正式版）
 
 > 1.4.1 有个会让**所有插件都装不上**的启动 bug，这一版修掉它。
