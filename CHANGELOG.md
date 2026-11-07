@@ -4,6 +4,26 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] — 2026-11-07（正式版）
+
+> 1.4.1 有个会让**所有插件都装不上**的启动 bug，这一版修掉它。
+> 插件作者改用自带 Python 运行时之后（插件不再要求机器上装 Python），这个坑才开始暴露。
+
+### 修复
+
+- **自带运行时的插件启不来，只报「插件进程没有 stdin」**：主程序拉起插件进程时，
+  「插件自带解释器（`interpreterPath`）」这一支**提前 return** 了，把后面的
+  `stdin/stdout/stderr = piped` 和 `CREATE_NO_WINDOW` 一起跳过。后果有三个，
+  连起来看很像「插件写错了」，其实是主程序的锅：
+  1. 插件进程继承控制台窗口 —— 屏幕上凭空多一个黑窗，插件的 JSON 日志全打在窗口里；
+  2. 主程序拿不到 stdin，握手发不出去，`禁用/启用` 反复失败，插件一行的齿轮一直是灰的；
+  3. 因为进程还在跑，界面上又显示「插件没在运行」，状态自相矛盾。
+
+  现在两条解释器分支共用同一段收尾（管道 + 无窗口），并补了回归单测
+  `bundled_interpreter_is_used_as_program` 钉住分支选择。
+  受影响范围：所有 `plugin.json` 里写了 `interpreterPath` 的插件（示例插件、字体统计、
+  字体库同步都是），1.4.1 及以前全部中招；系统里装了 Python 且插件没带运行时的反而正常。
+
 ## [1.4.1] — 2026-11-07（正式版）
 
 > 1.4.0 之后的两处收尾：字体解析缓存终于会真的忘掉「已经不在的文件」，
