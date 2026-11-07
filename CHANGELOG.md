@@ -4,6 +4,21 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.5] — 2026-11-07（正式版）
+
+> 面板开进应用内窗口后暴露的一个盲区：插件面板里的**外部链接**（GitHub 建令牌页、
+> 教程里的"这里"）在 webview 里点不动——Tauri 默认禁止跳转外部网址。
+
+### 修复
+
+- **`open-url` 消息分类**（`classify_open_url`，单测覆盖）：本机回环地址 → 应用内
+  面板窗口（原行为）；其他 http/https → **系统默认浏览器**打开（插件面板里的
+  GitHub 令牌页、教程链接从此可用）；其余协议（`file:` / `ftp:` / `javascript:` 等）
+  一律拒绝并记日志。
+- 文档：README（中/英）插件安装节更新（拖拽 / 从 ZIP 安装 / 解释器说明）；
+  PLUGINS.md 增加「运行环境的解析顺序（1.4.4 起）」、插件作者运行时选型对照表、
+  用户侧「没找到解释器」排障步骤。
+
 ## [1.4.4] — 2026-11-07（正式版）
 
 > 插件的安装方式从「手工拷文件夹」升级为「拖进来就装」；同时安装包内置一份
