@@ -2335,7 +2335,10 @@ fn plugin_install_zip(path: String) -> Result<serde_json::Value, String> {
     // 插件数据不可信：任何 panic 都换成错误返回，主界面不受影响
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (id, name, version) = crate::plugins::install_zip(std::path::Path::new(&path))?;
-        Ok(serde_json::json!({ "id": id, "name": name, "version": version }))
+        // 关键：更新不能只换文件 —— 正在运行的插件进程还抱着旧代码，
+        // 新面板页调新端点会被旧服务回 unknown endpoint。装完立即热重启。
+        let restarted = crate::plugins::restart_if_running(&id);
+        Ok(serde_json::json!({ "id": id, "name": name, "version": version, "restarted": restarted }))
     }))
     .unwrap_or_else(|_| Err("安装插件包时出错了（已拦下，软件继续运行）；详情见日志".into()))
 }
