@@ -28,7 +28,7 @@ use std::path::PathBuf;
 // 旧缓存里那批「长城美黑体」「文鼎胡子体」的族名是文件名顶上的假名，必须重算。
 const CACHE_VERSION: u32 = 8;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Entry {
     /// 文件修改时间（Unix 毫秒）
@@ -133,13 +133,26 @@ impl FontCache {
         if misses == 0 && hits > 0 {
             return;
         }
+        // 这一轮没见到的路径（删掉的字体 / 换掉的目录）先记下来，再从缓存里清掉。
+        let pruned: HashSet<String> = self
+            .entries
+            .keys()
+            .filter(|k| !self.seen.contains(*k))
+            .cloned()
+            .collect();
         self.entries.retain(|k, _| self.seen.contains(k));
         // 合并写：扫描目录和链接字体是两次独立的扫描，各自只知道自己见过的路径，
         // 直接覆盖会把对方那一半条目抹掉（下次又要全部重新解析）。先读盘上现有的再合并。
+        //
+        // 但刚刚 prune 掉的路径不能从盘上捡回来——否则 retain 等于白做，删掉的字体
+        // 每次扫描都会复活，缓存里永远留着指向已不存在文件的条目（1.4.0 实测 104 条）。
         if let Ok(text) = std::fs::read_to_string(&self.path) {
             if let Ok(existing) = serde_json::from_str::<CacheFile>(&text) {
                 if existing.version == CACHE_VERSION {
                     for (k, v) in existing.entries {
+                        if pruned.contains(&k) {
+                            continue;
+                        }
                         self.entries.entry(k).or_insert(v);
                     }
                 }
@@ -162,5 +175,128 @@ impl FontCache {
                 Err(e) => eprintln!("[cache] 序列化字体缓存失败: {e}"),
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blank_path(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("zfm-cache-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("font-cache.json")
+    }
+
+    fn entry() -> Entry {
+        Entry {
+            mtime: 1,
+            size: 2,
+            source: FontSource::Managed,
+            faces: Vec::new(),
+        }
+    }
+
+    fn cache_at(path: PathBuf) -> FontCache {
+        FontCache {
+            path,
+            entries: HashMap::new(),
+            seen: HashSet::new(),
+            hits: 0,
+            misses: 0,
+        }
+    }
+
+    /// 删掉的字体不能在合并写里复活：prune 掉的路径必须真的从盘上消失。
+    ///
+    /// 反例（1.4.0 之前的行为）：retain 先清掉，合并写又从盘上把同一条读回来，
+    /// 于是扫一次复活一次，缓存里永久留着 104 条指向已不存在文件的条目。
+    #[test]
+    fn pruned_entries_do_not_come_back_from_disk() {
+        let path = blank_path("prune");
+        let mut old = HashMap::new();
+        old.insert("kept.ttf".to_string(), entry());
+        old.insert("gone.ttf".to_string(), entry());
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&CacheFile {
+                version: CACHE_VERSION,
+                entries: old,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mut cache = cache_at(path.clone());
+        cache.entries = match serde_json::from_str::<CacheFile>(
+            &std::fs::read_to_string(&path).unwrap(),
+        ) {
+            Ok(f) => f.entries,
+            Err(_) => HashMap::new(),
+        };
+        // 这一轮只看见 kept.ttf（命中），并新解析了一个 new.ttf
+        assert!(cache.get("kept.ttf", 1, 2, FontSource::Managed).is_some());
+        cache.put("new.ttf", 3, 4, FontSource::Managed, &[]);
+        cache.finish();
+
+        // 落盘在后台线程，轮询等它写出来
+        let mut saved: Option<CacheFile> = None;
+        for _ in 0..100 {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                if let Ok(f) = serde_json::from_str::<CacheFile>(&text) {
+                    if f.entries.contains_key("new.ttf") {
+                        saved = Some(f);
+                        break;
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let saved = saved.expect("缓存没写出来");
+        let mut keys: Vec<&str> = saved.entries.keys().map(|k| k.as_str()).collect();
+        keys.sort();
+        assert_eq!(keys, vec!["kept.ttf", "new.ttf"], "gone.ttf 被复活了");
+    }
+
+    /// 合并写仍要保住「另一条扫描链」的条目：不在这轮 seen 里、但盘上有的要留下。
+    #[test]
+    fn merge_keeps_entries_this_session_never_saw() {
+        let path = blank_path("merge");
+        let mut old = HashMap::new();
+        old.insert("other-chain.ttf".to_string(), entry());
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&CacheFile {
+                version: CACHE_VERSION,
+                entries: old,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        // 这一轮只加载到「已经没有任何条目」，等同于另一条链的条目不在 entries 里
+        let mut cache = cache_at(path.clone());
+        cache.put("mine.ttf", 5, 6, FontSource::Managed, &[]);
+        cache.finish();
+
+        let mut saved: Option<CacheFile> = None;
+        for _ in 0..100 {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                if let Ok(f) = serde_json::from_str::<CacheFile>(&text) {
+                    if f.entries.contains_key("mine.ttf") {
+                        saved = Some(f);
+                        break;
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let saved = saved.expect("缓存没写出来");
+        assert!(
+            saved.entries.contains_key("other-chain.ttf"),
+            "合并写把另一条链的条目抹掉了"
+        );
+        assert!(saved.entries.contains_key("mine.ttf"));
     }
 }
