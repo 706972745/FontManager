@@ -41,6 +41,29 @@ fn validate_panel_url(url: &str) -> Result<tauri::Url, String> {
     Ok(parsed)
 }
 
+/// open-url 的三种去向（1.4.5）：面板窗口 / 系统默认浏览器 / 拒绝。
+/// 面板开在应用内窗口后，插件的「打开 GitHub 建令牌页」这类**外链**在 webview 里
+/// 是点不动的（Tauri 默认禁外部跳转）——放行到默认浏览器，跟用户自己点链接等价。
+#[derive(Debug, PartialEq)]
+enum UrlTarget {
+    Panel,
+    Browser,
+    Reject,
+}
+
+fn classify_open_url(url: &str) -> UrlTarget {
+    let Ok(parsed) = tauri::Url::parse(url) else {
+        return UrlTarget::Reject;
+    };
+    let loopback = parsed.host_str() == Some("127.0.0.1")
+        || parsed.host_str() == Some("localhost");
+    match (parsed.scheme(), loopback) {
+        ("http", true) => UrlTarget::Panel,
+        ("http", false) | ("https", _) => UrlTarget::Browser,
+        _ => UrlTarget::Reject,
+    }
+}
+
 fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), String> {
     // URL 先严格解析并校验，这个分支里**绝不 unwrap** —— 插件的数据不可信
     let url = validate_panel_url(url)?;
@@ -901,12 +924,29 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
                                     None => crate::diag::log(&format!(
                                         "[plugin:{pid}] open-url 被忽略（应用句柄未就绪，插件应自行降级开窗）"
                                     )),
-                                    Some(app) => match open_panel_window(app, &url, &title) {
-                                        Ok(()) => crate::diag::log(&format!(
-                                            "[plugin:{pid}] 已请求主程序打开面板窗口"
-                                        )),
-                                        Err(e) => crate::diag::log(&format!(
-                                            "[plugin:{pid}] open-url 被拒绝：{e}"
+                                    Some(app) => match classify_open_url(&url) {
+                                        UrlTarget::Panel => match open_panel_window(app, &url, &title) {
+                                            Ok(()) => crate::diag::log(&format!(
+                                                "[plugin:{pid}] 已请求主程序打开面板窗口"
+                                            )),
+                                            Err(e) => crate::diag::log(&format!(
+                                                "[plugin:{pid}] open-url 被拒绝：{e}"
+                                            )),
+                                        },
+                                        UrlTarget::Browser => {
+                                            // 插件页里的外链（GitHub 令牌页、教程链接等）：
+                                            // webview 里点不动，交给系统默认浏览器
+                                            match tauri_plugin_opener::open_url(&url, None::<&str>) {
+                                                Ok(()) => crate::diag::log(&format!(
+                                                    "[plugin:{pid}] 已在系统默认浏览器打开 {url}"
+                                                )),
+                                                Err(e) => crate::diag::log(&format!(
+                                                    "[plugin:{pid}] 用默认浏览器打开 {url} 失败：{e}"
+                                                )),
+                                            }
+                                        }
+                                        UrlTarget::Reject => crate::diag::log(&format!(
+                                            "[plugin:{pid}] open-url 被拒绝（既不是回环地址也不是 http/https）：{url}"
                                         )),
                                     },
                                 }
@@ -1259,6 +1299,23 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         d
     }
+    #[test]
+    fn open_url_classification_panel_browser_reject() {
+        // 回环 → 应用内面板窗口
+        assert_eq!(super::classify_open_url("http://127.0.0.1:52100/?k=abc"), super::UrlTarget::Panel);
+        assert_eq!(super::classify_open_url("http://localhost:80/"), super::UrlTarget::Panel);
+        // 外链（面板里的 GitHub 令牌页等）→ 系统默认浏览器
+        assert_eq!(super::classify_open_url("https://github.com/settings/tokens"), super::UrlTarget::Browser);
+        assert_eq!(super::classify_open_url("http://example.com/x"), super::UrlTarget::Browser);
+        // 其余一律拒绝
+        assert_eq!(super::classify_open_url("file:///C:/Windows"), super::UrlTarget::Reject);
+        assert_eq!(super::classify_open_url("ftp://127.0.0.1/x"), super::UrlTarget::Reject);
+        assert_eq!(super::classify_open_url("not a url"), super::UrlTarget::Reject);
+        assert_eq!(super::classify_open_url(""), super::UrlTarget::Reject);
+        // javascript: 伪协议尤其不能放
+        assert_eq!(super::classify_open_url("javascript:alert(1)"), super::UrlTarget::Reject);
+    }
 }
+
 
 

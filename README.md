@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.4-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.4.5-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -365,8 +365,24 @@ FontManager opens its core to automation — **opt-in, local-only, permission-sc
 ### 📥 Installing ready-made plugins
 
 The official plugin collection lives in the **[FontManager-Plugin](https://github.com/706972745/FontManager-Plugin)**
-repository — every plugin is a standalone folder that **ships its own runtime**,
-so nothing needs to be installed on your machine:
+repository. Two ways to install (1.4.4+):
+
+- **Drag & drop**: drag a plugin ZIP anywhere onto the window — FontManager
+  detects it by its `plugin.json` and installs it (regular font ZIPs keep
+  importing as fonts; the two never get mixed up);
+- **Button**: **Settings → Plugins → "Install from ZIP"**.
+
+Or the manual way: unzip and drop the folder into the plugins folder
+(**Settings → Plugins → "Open plugins folder"**), then toggle it on.
+
+**Interpreters**: the installer ships a **shared Python runtime** (Python 3.13 +
+Pillow + fontTools) under the app folder, so a machine with **no Python
+installed** runs stdlib plugins out of the box. Resolution order:
+plugin-bundled interpreter (`interpreterPath`) → host shared runtime → system
+Python. Plugins with heavy dependencies may still ship their own `runtime/` —
+see [docs/PLUGINS.md](docs/PLUGINS.md) for the full story and troubleshooting.
+
+Manual steps (any version):
 
 1. Grab a plugin ZIP from the [plugin releases](https://github.com/706972745/FontManager-Plugin/releases/latest)
 2. Unzip it (e.g. the `specimen-export` folder)

@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.4-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.4.5-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -302,8 +302,23 @@ FontManager 把核心能力开放给自动化——**默认关闭、仅限本机
 
 ### 📥 安装现成插件
 
-官方插件集中在 **[FontManager-Plugin](https://github.com/706972745/FontManager-Plugin)** 仓库，
-每个插件独立目录、**自带运行环境**，下载解压即用（机器上不用装 Python）：
+官方插件集中在 **[FontManager-Plugin](https://github.com/706972745/FontManager-Plugin)** 仓库。
+1.4.4 起两种装法：
+
+- **拖拽安装**：把插件 ZIP 拖进软件窗口任意位置——主程序按 `plugin.json` 自动识别
+  并安装（普通字体 ZIP 包仍然按字体导入，两者不会混淆）；
+- **按钮安装**：**设置 → 插件 → 「从 ZIP 安装」**。
+
+手工装法（任何版本都行）：解压出插件文件夹，放进插件目录
+（**设置 → 插件 → 「打开插件目录」**），回软件里打开开关即可。
+
+**关于解释器**：安装包自带一份**共享 Python 运行时**（Python 3.13 + Pillow +
+fontTools，位于软件目录 `python-runtime/`）——**机器上没装 Python 也能直接跑
+标准库插件**，什么都不用装。解释器解析顺序：插件自带（`interpreterPath`）→
+主程序内置运行时 → 系统 Python。重依赖插件仍可自带 `runtime/`；
+完整说明与排障见 [docs/PLUGINS.md](docs/PLUGINS.md)。
+
+手工安装步骤（任何版本都行）：
 
 1. 到 [插件库 Releases](https://github.com/706972745/FontManager-Plugin/releases/latest) 下载想要的插件 ZIP
 2. 解压出插件文件夹（如 `specimen-export`）

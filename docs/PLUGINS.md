@@ -46,13 +46,33 @@ FontManager 的插件是**进程外程序**：主程序绝不把插件代码加�
 | `menus` | 右键菜单项：`title` 显示文本，`on` 挂载对象 —— `family`（字族右键，默认）/ `plugin`（**插件自己那一行**的右键，1.3.7 起） |
 | `settings` | **有设置面板就写这一项**（1.3.7 起）：`title` 是齿轮的悬停文字，`hook` 是要调的钩子名（默认 `settings`）。不写 = 没有设置，界面上不显示齿轮 |
 
-## 运行环境的解析顺序
+## 运行环境的解析顺序（1.4.4 起）
 
-1. `interpreterPath` —— 插件**自带**的解释器（推荐随插件分发便携版运行时）；
-2. 用户在 设置 → 插件 里手动指定的路径；
-3. 系统自动探测（PATH 与常见安装目录，逐个探活，跳过 Windows 商店的下载引导桩）。
+1. `interpreterPath` —— 插件**自带**的解释器（重依赖插件推荐随插件分发便携版运行时）；
+2. **主程序内置的共享运行时** —— 安装包自带 `python-runtime/`（Python 3.13 + Pillow +
+   fontTools），位于软件安装目录。**机器上没装 Python 也能跑标准库插件**，什么都不用装；
+3. 用户在 设置 → 插件 里手动指定的路径（隐藏兜底，prefs `pluginRuntime`）；
+4. 系统自动探测（PATH 与常见安装目录，逐个探活，跳过 Windows 商店的下载引导桩）。
 
 `entry` 直接写 `.exe`（`interpreter` 留空）的插件天然自包含，什么都不依赖。
+
+### 插件作者怎么选运行时
+
+| 插件形态 | 建议 |
+|---|---|
+| 只用标准库（如 font-sync） | 什么都不带 —— FontManager 1.4.4+ 的共享运行时直接兜底，zip 也最小 |
+| 需要 Pillow / fontTools 等第三方库 | 自带 `runtime/` + `interpreterPath`（参考 font-stats/specimen-export），环境自己背，主程序不做适配 |
+| 自包含程序 | `entry` 直接指向 `.exe` / `.mjs`，配合 `interpreter: "exe"/"node"` |
+
+### 用户侧排障：提示「没找到可用的 Python 解释器」
+
+按顺序试（主程序 ≥1.4.4 时基本不会出现——安装包已内置运行时）：
+
+1. **把 FontManager 升级到 1.4.4+**（安装包自带共享运行时，装完即用）；
+2. 或安装 [Python 3.10+](https://www.python.org/downloads/)（安装时勾选 **Add python.exe to PATH**）；
+3. 或改用自带运行时的插件版本（插件 Releases 里的 full 包，解压出的 `runtime/` 与插件目录放一起）；
+4. 仍不行：日志（设置 → 诊断）里搜 `解释器` 能看到每级探测的结论，可在插件目录放
+   `runtime/python.exe` 并在 `plugin.json` 写 `"interpreterPath": "runtime/python.exe"` 兜底。
 
 ## 通信协议
 
