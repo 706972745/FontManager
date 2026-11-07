@@ -186,3 +186,28 @@ jobs:
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
+
+      # 这一步是补丁，不是多余动作：
+      # action-gh-release 在「release 已经存在」时只替换 asset，**不会**把 body/name 覆盖上去
+      # （日志里的 'Using release … instead of duplicate draft …' 就是这个分支）。
+      # 结果是：手工建过 release 的版本，正文里的 SHA-256 会和实际安装包对不上 —— 1.4.1 就踩了。
+      # 所以发布后无条件对齐一次正文；失败只告警（安装包已经发出去了，不该因此判整个发版失败）。
+      - name: 正文与安装包对齐
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          $tag = if ($env:TAG_INPUT) { $env:TAG_INPUT } else { "${{ github.ref_name }}" }
+          $repo = "${{ github.repository }}"
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json" }
+          try {
+            $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/tags/$tag" -Headers $headers
+            $payload = @{ name = "FontManager $tag"; body = (Get-Content release-notes.md -Raw -Encoding UTF8) } | ConvertTo-Json -Compress
+            Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/$($rel.id)" -Headers $headers `
+              -Method Patch -ContentType "application/json; charset=utf-8" `
+              -Body ([System.Text.Encoding]::UTF8.GetBytes($payload)) | Out-Null
+            Write-Host "正文已对齐（release $($rel.id)，$($payload.Length) 字节）"
+          } catch {
+            Write-Warning "正文对齐失败：$($_.Exception.Message)——安装包已发布，正文可能仍是旧的"
+          }
