@@ -137,6 +137,10 @@ pub struct PluginManifest {
     /// 由插件自己弹面板 —— 插件是独立进程，主程序从不替它画界面。
     #[serde(default)]
     pub settings: Option<PluginSettings>,
+    /// 一句话短介绍（卡片小字用）；没有就回落到 description。
+    /// description 往往是一大段完整介绍，塞在卡片里会把设置页撑长。
+    #[serde(default)]
+    pub summary: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
 }
@@ -191,6 +195,8 @@ pub struct PluginInfo {
     pub id: String,
     pub name: String,
     pub version: String,
+    /// 一句话短介绍（卡片小字）；None 时界面回落到 description
+    pub summary: Option<String>,
     pub description: Option<String>,
     pub permissions: Vec<String>,
     pub hooks: Vec<String>,
@@ -499,6 +505,7 @@ pub fn list() -> Vec<PluginInfo> {
                     id: m.id,
                     name: m.name,
                     version: m.version,
+                    summary: m.summary,
                     description: m.description,
                     permissions: m.permissions,
                     hooks: m.hooks,
@@ -518,6 +525,7 @@ pub fn list() -> Vec<PluginInfo> {
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default(),
                 version: String::new(),
+                summary: None,
                 description: None,
                 permissions: Vec::new(),
                 hooks: Vec::new(),
@@ -1071,6 +1079,7 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
         id: m.id,
         name: m.name,
         version: m.version,
+        summary: m.summary,
         description: m.description,
         permissions: m.permissions,
         hooks: m.hooks,
@@ -1253,6 +1262,7 @@ mod tests {
             hooks: vec![],
             menus: vec![],
             settings: None,
+            summary: None,
             description: None,
         }
     }
