@@ -73,7 +73,7 @@
   "hint.sample": "Vorschautext — eigenen Text eingeben; jede Karte zeigt ihn als Muster",
   "hint.search": "Schriften nach Name, Tag, Format, Foundry, Notiz oder Lizenz suchen (/ fokussiert das Feld)",
   "hint.settings": "Einstellungen öffnen: Aussehen, Bibliotheksordner, Online-Schriften, Tastenkürzel, externe Apps",
-  "hint.size": "Vorschaugröße — ziehen, um die Mustergröße auf allen Karten zu ändern",
+  "hint.size": "Vorschaugröße — ziehen oder Ctrl gedrückt halten und scrollen",
   "hint.snapAddActive": "Aktuell aktivierte Schriften zu diesem Snapshot hinzufügen (Duplikate werden übersprungen)",
   "hint.snapMerge": "Die Schriften des Snapshots zu den bereits aktivierten hinzufügen, ohne andere zu verändern",
   "hint.snapSwitch": "Aktivierte Schriften durch diesen Snapshot ersetzen: alles andere deaktivieren, nur die im Snapshot aufgezeichneten aktivieren (Systemschriften bleiben unberührt)",
@@ -1067,5 +1067,6 @@
   "settings.rtDownloadHint": "Lädt von GitHub und installiert in den Programmordner (Python ~19 MB, Node ~32 MB)",
   "settings.rtDelete": "Laufzeit löschen",
   "settings.rtDeleteHint": "Gibt Speicherplatz frei; jederzeit per Klick wieder herunterladbar",
-  "settings.rtConfirmDelete": "{label} löschen?\nPlugins, die sie nutzen ({plugins}), fallen auf den System-Interpreter zurück – ohne einen können sie nicht aktiviert werden.\nJederzeit hier per Klick wieder herunterladbar."
+  "settings.rtConfirmDelete": "{label} löschen?\nPlugins, die sie nutzen ({plugins}), fallen auf den System-Interpreter zurück – ohne einen können sie nicht aktiviert werden.\nJederzeit hier per Klick wieder herunterladbar.",
+  "sc.zoom": "Vorschautext zoomen"
 }

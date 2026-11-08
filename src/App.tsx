@@ -38,6 +38,7 @@ import { ContextMenuHost, isContextMenuOpen, openContextMenuAt } from "./design/
 import { HoverHintHost } from "./design/primitives/HoverHint";
 import { buildFamilyMenu } from "./lib/menus";
 import { overlayOpen } from "./lib/overlayRegistry";
+import { useCtrlWheelZoom } from "./lib/useCtrlWheelZoom";
 import { Toaster, toast } from "./design/primitives/Toast";
 import { easeTop, spring } from "./design/springs";
 import { INTRO_OFF, useIntro } from "./lib/useIntro";
@@ -179,6 +180,12 @@ function familyNav(nav: Nav): boolean {
   return nav.kind !== "trash" && nav.kind !== "about" && nav.kind !== "online";
 }
 
+/**
+ * Ctrl+滚轮调字号在弹层打开时让路：设置面板 / 对比 / 帮助里滚动的是弹层自己的内容，
+ * 顺手把背后的字族放大没有意义。模块级常量是为了让 hook 的依赖保持稳定。
+ */
+const wheelZoomBlocked = () => topLayerOpen();
+
 function MainContent() {
   const phase = useFontStore((s) => s.phase);
   const nav = useFontStore((s) => s.nav);
@@ -304,6 +311,10 @@ export default function App() {
   const morph = useFontStore((s) => s.morph);
   // 窗口形变期间不要再播放入场动画，否则内容跳动和窗口缩放两套运动会互相打架
   const intro = useIntro();
+
+  // Ctrl + 滚轮调预览字号：完整界面（卡片 / 列表 / 样张）与速览界面同一个手势、
+  // 同一个偏好。挂在 App 上而不是各个视图里 —— 光标停在哪都能调，且切视图不用重挂。
+  useCtrlWheelZoom(wheelZoomBlocked);
 
   useEffect(() => {
     // 断点查询已收进 fontStore.init()（rescan 之后）：有未完成的批量时

@@ -23,11 +23,15 @@ import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 
 const IS_LINUX = navigator.platform.toUpperCase().includes("LINUX");
 
+/**
+ * 语言相关的两个入口都指向**本项目自己的**仓库（2026-11-08 用户要求）：
+ * 「申请添加语言」直接落到 FontManager 的 issue 新建页 —— 就是「给我的 GitHub 留言」，
+ * 用户不用再自己找仓库。旧地址写的是上游 TheHolyOneZ/ZFontManager，留言会跑到别人那儿去。
+ */
 const TRANSLATE_GUIDE_URL =
-  "https://github.com/TheHolyOneZ/ZFontManager/blob/main/docs/TRANSLATING.md";
+  "https://github.com/706972745/FontManager/blob/main/docs/TRANSLATING.md";
 
-const REQUEST_LANGUAGE_URL =
-  "https://github.com/TheHolyOneZ/ZFontManager/issues/new?title=Language%20request%3A%20";
+const REQUEST_LANGUAGE_URL = "https://github.com/706972745/FontManager/issues/new";
 
 /** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
 const EXPORT_FONTS_KEY = "zfm.exportFonts";

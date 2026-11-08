@@ -73,7 +73,7 @@
   "hint.sample": "Texto de amostra — digite o seu; todos os cartões usam esse texto",
   "hint.search": "Buscar fontes por nome, etiqueta, formato, fundidora, nota ou licença (/ foca o campo)",
   "hint.settings": "Abrir ajustes: aparência, pastas da biblioteca, fontes online, atalhos, apps externos",
-  "hint.size": "Tamanho da amostra — arraste para mudar o tamanho em todos os cartões",
+  "hint.size": "Tamanho da amostra — arraste, ou segure Ctrl e use a roda",
   "hint.snapAddActive": "Adicionar as fontes atualmente ativadas a este instantâneo (duplicatas são ignoradas)",
   "hint.snapMerge": "Adicionar as fontes do instantâneo às já ativadas, sem alterar as demais",
   "hint.snapSwitch": "Substituir as fontes ativadas por este instantâneo: desativar todo o resto, ativar apenas o registrado (fontes do sistema não são afetadas)",
@@ -1084,5 +1084,6 @@
   "settings.rtDownloadHint": "Baixa do GitHub e instala na pasta do app (Python ~19 MB, Node ~32 MB)",
   "settings.rtDelete": "Excluir runtime",
   "settings.rtDeleteHint": "Libera espaço; pode baixar de volta com um clique quando quiser",
-  "settings.rtConfirmDelete": "Excluir {label}?\nOs plugins que o usam ({plugins}) usarão o interpretador do sistema — sem um, não poderão ser ativados.\nSempre pode baixar de volta aqui com um clique."
+  "settings.rtConfirmDelete": "Excluir {label}?\nOs plugins que o usam ({plugins}) usarão o interpretador do sistema — sem um, não poderão ser ativados.\nSempre pode baixar de volta aqui com um clique.",
+  "sc.zoom": "Ampliar o texto da prévia"
 }

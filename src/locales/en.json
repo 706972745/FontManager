@@ -73,7 +73,7 @@
   "hint.sample": "Sample text — type your own; every card uses it as the preview",
   "hint.search": "Search fonts by name, tag, format, foundry, note or licence (press / to focus)",
   "hint.settings": "Open settings: appearance, library folders, online fonts, shortcuts, external apps",
-  "hint.size": "Preview size — drag to resize the sample (8px in specimen view, 24px minimum elsewhere)",
+  "hint.size": "Preview size — drag, or hold Ctrl and scroll the wheel (8px minimum in specimen view, 24px elsewhere)",
   "hint.snapAddActive": "Append currently enabled fonts to this snapshot (duplicates are skipped)",
   "hint.snapMerge": "Add the snapshot's fonts on top of what's already enabled, without changing other enabled fonts",
   "hint.snapSwitch": "Replace enabled fonts with this snapshot: deactivate everything else, enable only what the snapshot recorded (system fonts are not affected)",
@@ -1067,5 +1067,6 @@
   "settings.rtDownloadHint": "Downloads from GitHub and installs into the app folder (Python ~19 MB, Node ~32 MB)",
   "settings.rtDelete": "Delete runtime",
   "settings.rtDeleteHint": "Frees up space; you can always download it back with one click",
-  "settings.rtConfirmDelete": "Delete {label}?\nPlugins using it ({plugins}) will fall back to the system interpreter — without one they cannot be enabled.\nYou can always download it back here with one click."
+  "settings.rtConfirmDelete": "Delete {label}?\nPlugins using it ({plugins}) will fall back to the system interpreter — without one they cannot be enabled.\nYou can always download it back here with one click.",
+  "sc.zoom": "Zoom preview text"
 }
