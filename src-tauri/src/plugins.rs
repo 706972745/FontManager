@@ -1111,7 +1111,7 @@ fn runtime_download_task(app: &AppHandle, kind: &str) -> Result<(), String> {
     for i in 0..z.len() {
         let mut e = z.by_index(i).map_err(|e| e.to_string())?;
         let name = e.name().to_string();
-        if name.starts_with(top) && !name.ends_with('/') {
+        if name.starts_with(&top) && !name.ends_with('/') {
             let rel = &name[top.len()..];
             if rel.split(['/', '\\']).any(|c| c == "..") {
                 return Err(format!("运行时包里有可疑路径：{name}"));

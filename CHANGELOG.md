@@ -4,7 +4,7 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [1.4.11] — 2026-11-08（正式版）
+## [0.5.0] — 2026-11-08（正式版）
 
 > 解释器占不占用户的磁盘，应该由用户决定 —— 不是安装包替所有人决定。
 
