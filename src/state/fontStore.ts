@@ -339,11 +339,6 @@ interface FontStore {
    * 在样张里调到 8px 也不会把卡片视图的字号一起带小。
    */
   specimenSizeIndex: number;
-  /**
-   * Ctrl+滚轮刚调到的字号（px），用来在窗口底部闪一下提示；null = 不显示。
-   * 纯 UI 反馈，不进偏好、不落盘。
-   */
-  zoomHint: number | null;
   viewMode: ViewMode;
   sort: SortMode;
   search: string;
@@ -553,8 +548,6 @@ interface FontStore {
   setSampleText: (t: string) => void;
   setSizeIndex: (i: number) => void;
   setSpecimenSizeIndex: (i: number) => void;
-  /** 显示/隐藏「刚调到的字号」气泡（Ctrl+滚轮用） */
-  setZoomHint: (px: number | null) => void;
   setViewMode: (m: ViewMode) => void;
   /** 切换速览界面（会压缩/还原窗口大小与位置） */
   setQuickbar: (on: boolean) => Promise<void>;
@@ -1546,7 +1539,6 @@ export const useFontStore = create<FontStore>((set, get) => ({
   sampleText: t("preview.defaultSample"),
   sizeIndex: 3,
   specimenSizeIndex: 4,
-  zoomHint: null,
   viewMode: "grid",
   sort: "name",
   quickbar: false,
@@ -3775,7 +3767,6 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({ specimenSizeIndex: Math.max(0, Math.min(SIZES.length - 1, specimenSizeIndex)) });
     persistPrefs(get);
   },
-  setZoomHint: (zoomHint) => set({ zoomHint }),
   setViewMode: (viewMode) => {
     // 卡片 / 列表与样张的字号各记各的：切到样张从 32px 起（首次）或上次的档位，
     // 切回来卡片视图的字号原样保留 —— 不再互相踩。
