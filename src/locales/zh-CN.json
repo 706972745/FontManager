@@ -1042,5 +1042,21 @@
   "sc.ctxScope": "菜单搜索中：切换 已启用 / 全部字体",
   "menu.scopeAll": "全部字体",
   "menu.scopeEnabled": "已启用",
-  "menu.searchMore": "还有 {n} 个匹配 —— 继续输入可缩小范围"
+  "menu.searchMore": "还有 {n} 个匹配 —— 继续输入可缩小范围",
+  "settings.runtimesSub": "插件运行时（Python / Node.js）。1.4.11 起安装包不再自带 —— 插件需要时一键下载，不用了删掉省空间。",
+  "settings.rtBundled": "已安装 · {size} MB",
+  "settings.rtMissing": "未安装",
+  "settings.rtMissingHint": "未安装 —— 依赖它的插件将回退到系统解释器",
+  "settings.rtSystemFound": "系统检测到 {version}",
+  "settings.rtUsing": "使用中：{plugins}",
+  "settings.rtUsingNone": "暂无插件使用",
+  "settings.rtRunning": "{count} 个正在运行",
+  "settings.rtDownloading": "下载中 {percent}%",
+  "settings.rtExtracting": "解压安装中…",
+  "settings.rtDlFailed": "下载失败：{error}",
+  "settings.rtDownload": "下载补全",
+  "settings.rtDownloadHint": "从 GitHub 下载并装进软件目录（Python 约 19 MB，Node 约 32 MB）",
+  "settings.rtDelete": "删除运行时",
+  "settings.rtDeleteHint": "释放磁盘空间；之后随时可以一键重新下载",
+  "settings.rtConfirmDelete": "删除 {label}？\n使用它的插件（{plugins}）之后将回退到系统解释器，没装的话无法启用。\n随时可以在这里一键重新下载。"
 }

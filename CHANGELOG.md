@@ -4,6 +4,31 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.11] — 2026-11-08（正式版）
+
+> 解释器占不占用户的磁盘，应该由用户决定 —— 不是安装包替所有人决定。
+
+### 变更（分发模式）
+
+- **安装包不再内置解释器**：撤掉 python-runtime / node-runtime 资源，
+  安装包从 39.4 MB 回落到 ~19 MB。仓库资源保留（CI 打包用）。
+
+### 新增
+
+- **运行时管理面板**（设置 → 插件）：两行清晰列出 Python / Node.js 的
+  安装状态（真实版本探活、占用 MB、系统里另外检测到的解释器、被哪些插件
+  使用、几个在运行）；一键**下载补全**（从官方 release 拉 zip 装进软件目录，
+  实时进度条）、一键**删除**省空间（运行中的插件会被拦下并说明原因）；
+  删了随时可一键补回。
+- **CI**：每个 release 自动附带 `python-runtime.zip` / `node-runtime.zip`，
+  补全下载的 `releases/latest/download/…` 链接永远有效。
+
+### 文档
+
+- `docs/PLUGINS.md` 重写运行时章节（看得见 / 按需下载 / 可删除），补上
+  此前缺失的 `progress`（1.4.8）/`open-url`（1.4.5）stdout 消息文档；
+  插件仓新增 `template-hello/` 最小插件模板。
+
 ## [1.4.10] — 2026-11-08（正式版）
 
 > 写 Node.js 插件的用户此前必须自己装 Node —— 和 1.4.4 之前写 Python 插件的处境一样。

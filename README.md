@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.10-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.4.11-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -375,13 +375,17 @@ repository. Two ways to install (1.4.4+):
 Or the manual way: unzip and drop the folder into the plugins folder
 (**Settings → Plugins → "Open plugins folder"**), then toggle it on.
 
-**Interpreters**: the installer ships **two shared runtimes** under the app
-folder, so a machine with **no Python or Node.js installed** runs stdlib
-plugins out of the box: **Python 3.13 + Pillow + fontTools** (1.4.4+) and
-**Node.js 22 LTS** (1.4.10+). Resolution order: plugin-bundled interpreter
-(`interpreterPath`) → host shared runtime → system interpreter. Plugins with
-heavy dependencies may still ship their own `runtime/` — see
-[docs/PLUGINS.md](docs/PLUGINS.md) for the full story, the plugin template
+**Interpreters**: the installer ships **no interpreters** (since 1.4.11) —
+what to download is entirely the user's call. In **Settings → Plugins** each
+runtime shows what's on the machine (version, disk usage, which plugins use
+it), a one-click **download** (Python 3.13 + Pillow + fontTools, ~19 MB; or
+Node.js 22 LTS, ~32 MB — pulled from the official GitHub release with a live
+progress bar), and a **delete** button to reclaim space when no plugin needs
+it. Deleted runtimes can be re-downloaded anytime. Resolution order:
+plugin-bundled interpreter (`interpreterPath`) → app-folder runtime → user
+override → system interpreter. Plugins with heavy dependencies may still ship
+their own `runtime/` — see [docs/PLUGINS.md](docs/PLUGINS.md) for the full
+story, the plugin template
 ([template-hello](https://github.com/706972745/FontManager-Plugin/tree/main/template-hello))
 for a 5-minute start, and troubleshooting.
 

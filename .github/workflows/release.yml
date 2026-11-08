@@ -120,6 +120,22 @@ jobs:
           Copy-Item $msi.FullName release/
           Get-ChildItem release | Format-Table Name, Length
 
+      # 运行时不在安装包里（1.4.11 起按需下载），但「设置 → 插件 → 运行时管理」
+      # 的补全下载用的是 releases/latest/download/{python,node}-runtime.zip 这条
+      # **最新版链接** —— 每个 release 都必须带上一份，链接才不会断。从仓库资源直接打包。
+      - name: 打包运行时（供运行时管理下载补全）
+        shell: pwsh
+        run: |
+          if (Test-Path src-tauri/resources/python-runtime) {
+            Compress-Archive -Path src-tauri/resources/python-runtime -DestinationPath release/python-runtime.zip -Force
+          }
+          if (Test-Path src-tauri/resources/node-runtime) {
+            Compress-Archive -Path src-tauri/resources/node-runtime -DestinationPath release/node-runtime.zip -Force
+          }
+          $zips = Get-ChildItem release/*-runtime.zip -ErrorAction SilentlyContinue
+          if (-not $zips) { Write-Host '（仓库里没有运行时资源 —— 跳过，运行时管理会提示手动下载）' }
+          else { $zips | Format-Table Name, Length }
+
       # ── 代码签名（SignPath Foundation，免费 OV）──────────────────────
       # 未配置 SIGNPATH_TOKEN 时本步骤自动跳过，发布仍为「未签名 + SHA-256」，
       # 与现有行为完全一致；在 GitHub Secrets 配齐后自动切换为签名发布。

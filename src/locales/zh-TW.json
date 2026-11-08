@@ -1034,5 +1034,21 @@
   "sc.ctxScope": "選單搜尋中：切換 已啟用 / 全部字型",
   "menu.scopeAll": "全部字型",
   "menu.scopeEnabled": "已啟用",
-  "menu.searchMore": "還有 {n} 個符合 —— 繼續輸入可縮小範圍"
+  "menu.searchMore": "還有 {n} 個符合 —— 繼續輸入可縮小範圍",
+  "settings.runtimesSub": "外掛執行環境（Python / Node.js）。1.4.11 起安裝包不再內建 —— 外掛需要時一鍵下載，不用了刪掉省空間。",
+  "settings.rtBundled": "已安裝 · {size} MB",
+  "settings.rtMissing": "未安裝",
+  "settings.rtMissingHint": "未安裝 —— 依賴它的外掛將退回系統直譯器",
+  "settings.rtSystemFound": "系統偵測到 {version}",
+  "settings.rtUsing": "使用中：{plugins}",
+  "settings.rtUsingNone": "暫無外掛使用",
+  "settings.rtRunning": "{count} 個執行中",
+  "settings.rtDownloading": "下載中 {percent}%",
+  "settings.rtExtracting": "解壓安裝中…",
+  "settings.rtDlFailed": "下載失敗：{error}",
+  "settings.rtDownload": "下載補全",
+  "settings.rtDownloadHint": "從 GitHub 下載並裝進軟體目錄（Python 約 19 MB，Node 約 32 MB）",
+  "settings.rtDelete": "刪除執行環境",
+  "settings.rtDeleteHint": "釋放磁碟空間；之後隨時可以一鍵重新下載",
+  "settings.rtConfirmDelete": "刪除 {label}？\n使用它的外掛（{plugins}）之後將退回系統直譯器，沒裝的話無法啟用。\n隨時可以在這裡一鍵重新下載。"
 }
