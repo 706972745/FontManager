@@ -727,18 +727,28 @@ fn resolve(kind: &str, override_path: Option<&str>) -> Option<(String, Vec<Strin
 /// 安装后位于 exe 旁（NSIS 装到 %LOCALAPPDATA%，MSI 装到 Program Files 的资源目录）；
 /// 开发期 cargo run 直接用源码树里那份。找不到返回 None（回退系统解释器）。
 fn shared_python_runtime() -> Option<PathBuf> {
+    shared_runtime("python-runtime", "python.exe")
+}
+
+/// 主程序内置的共享 Node.js 运行时（1.4.10，随安装包分发，Node.js 22 LTS 单文件 node.exe）。
+/// 写 node 插件的用户和写 python 插件的一样：机器上什么都不用装。
+fn shared_node_runtime() -> Option<PathBuf> {
+    shared_runtime("node-runtime", "node.exe")
+}
+
+fn shared_runtime(dir: &str, exe: &str) -> Option<PathBuf> {
     let mut cands: Vec<PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(base) = exe.parent() {
-            cands.push(base.join("python-runtime").join("python.exe"));
-            cands.push(base.join("resources").join("python-runtime").join("python.exe"));
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(base) = exe_path.parent() {
+            cands.push(base.join(dir).join(exe));
+            cands.push(base.join("resources").join(dir).join(exe));
         }
     }
     cands.push(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resources")
-            .join("python-runtime")
-            .join("python.exe"),
+            .join(dir)
+            .join(exe),
     );
     cands.into_iter().find(|p| p.is_file())
 }
@@ -798,16 +808,26 @@ fn command_for(dir: &Path, m: &PluginManifest) -> Result<(Command, String), Stri
                 (c, format!("{}（插件自带）", bundled.display()))
             } else {
                 let ov = override_for(&kind);
-                // 主程序内置共享运行时（1.4.4）：没装 Python 的电脑也能跑标准库插件。
-                // 只兜 python；node 插件继续走系统探测。插件自带（interpreterPath）优先级最高。
-                let shared = if kind == "python" && !cfg!(test) {
-                    shared_python_runtime().map(|p| {
-                        (
-                            p.to_string_lossy().into_owned(),
-                            Vec::<String>::new(),
-                            "主程序内置".to_string(),
-                        )
-                    })
+                // 主程序内置共享运行时（python 自 1.4.4、node 自 1.4.10）：
+                // 没装 Python/Node 的电脑也能跑标准库插件。插件自带（interpreterPath）优先级最高。
+                let shared = if !cfg!(test) {
+                    match kind.as_str() {
+                        "python" => shared_python_runtime().map(|p| {
+                            (
+                                p.to_string_lossy().into_owned(),
+                                Vec::<String>::new(),
+                                "主程序内置".to_string(),
+                            )
+                        }),
+                        "node" => shared_node_runtime().map(|p| {
+                            (
+                                p.to_string_lossy().into_owned(),
+                                Vec::<String>::new(),
+                                "主程序内置".to_string(),
+                            )
+                        }),
+                        _ => None,
+                    }
                 } else {
                     None
                 };

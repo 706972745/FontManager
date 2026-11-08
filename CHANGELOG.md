@@ -4,6 +4,21 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.10] — 2026-11-08（正式版）
+
+> 写 Node.js 插件的用户此前必须自己装 Node —— 和 1.4.4 之前写 Python 插件的处境一样。
+
+### 新增
+
+- **内置 Node.js 22 LTS 运行时**（`node-runtime/node.exe`，随安装包分发）：
+  `interpreter: "node"` 的插件开箱即跑，机器上什么都不用装。解析顺序不变：
+  插件自带（`interpreterPath`）→ 主程序内置 → 用户指定 → 系统探测。
+  安装包约增大 30 MB（LZMA 压缩后）。
+- 文档：`docs/PLUGINS.md` 更新两套内置运行时的说明，并补上此前缺失的
+  `progress`（1.4.8）/`open-url`（1.4.5）stdout 消息文档；
+  插件仓新增 [`template-hello/`](https://github.com/706972745/FontManager-Plugin/tree/main/template-hello)
+  最小插件模板（真机验证过握手与 API 调用）。
+
 ## [1.4.9] — 2026-11-08（正式版）
 
 > 插件卡片把一大段完整介绍直接印在设置页里，既挡内容又难扫读。

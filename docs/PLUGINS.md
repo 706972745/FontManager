@@ -49,8 +49,9 @@ FontManager 的插件是**进程外程序**：主程序绝不把插件代码加�
 ## 运行环境的解析顺序（1.4.4 起）
 
 1. `interpreterPath` —— 插件**自带**的解释器（重依赖插件推荐随插件分发便携版运行时）；
-2. **主程序内置的共享运行时** —— 安装包自带 `python-runtime/`（Python 3.13 + Pillow +
-   fontTools），位于软件安装目录。**机器上没装 Python 也能跑标准库插件**，什么都不用装；
+2. **主程序内置的共享运行时** —— 安装包自带两套，位于软件安装目录，**机器上什么都不用装**：
+   - `python-runtime/`：Python 3.13 + Pillow + fontTools（1.4.4 起）
+   - `node-runtime/`：Node.js 22 LTS，单文件 node.exe（1.4.10 起）
 3. 用户在 设置 → 插件 里手动指定的路径（隐藏兜底，prefs `pluginRuntime`）；
 4. 系统自动探测（PATH 与常见安装目录，逐个探活，跳过 Windows 商店的下载引导桩）。
 
@@ -60,16 +61,19 @@ FontManager 的插件是**进程外程序**：主程序绝不把插件代码加�
 
 | 插件形态 | 建议 |
 |---|---|
-| 只用标准库（如 font-sync） | 什么都不带 —— FontManager 1.4.4+ 的共享运行时直接兜底，zip 也最小 |
+| 只用标准库（如 font-sync） | 什么都不带 —— 共享运行时直接兜底，zip 也最小 |
 | 需要 Pillow / fontTools 等第三方库 | 自带 `runtime/` + `interpreterPath`（参考 font-stats/specimen-export），环境自己背，主程序不做适配 |
-| 自包含程序 | `entry` 直接指向 `.exe` / `.mjs`，配合 `interpreter: "exe"/"node"` |
+| Node 插件，只用 Node 标准库 | `interpreter: "node"`，什么都不带 —— 1.4.10+ 的共享 node-runtime 直接兜底 |
+| Node 插件，要 npm 依赖 | 把 `node_modules/` 一起打进插件 zip（node.exe 从共享运行时找），或自带便携 Node |
+| 自包含程序 | `entry` 直接指向 `.exe`，`interpreter` 留空 |
 
-### 用户侧排障：提示「没找到可用的 Python 解释器」
+### 用户侧排障：提示「没找到可用的 Python / Node.js 解释器」
 
-按顺序试（主程序 ≥1.4.4 时基本不会出现——安装包已内置运行时）：
+按顺序试（主程序 ≥1.4.10 时基本不会出现——安装包已内置两套运行时）：
 
-1. **把 FontManager 升级到 1.4.4+**（安装包自带共享运行时，装完即用）；
-2. 或安装 [Python 3.10+](https://www.python.org/downloads/)（安装时勾选 **Add python.exe to PATH**）；
+1. **把 FontManager 升级到 1.4.10+**（安装包自带共享运行时，装完即用）；
+2. Python：装 [Python 3.10+](https://www.python.org/downloads/)（勾选 **Add python.exe to PATH**）；
+   Node.js：装 [Node.js LTS](https://nodejs.org/)；
 3. 或改用自带运行时的插件版本（插件 Releases 里的 full 包，解压出的 `runtime/` 与插件目录放一起）；
 4. 仍不行：日志（设置 → 诊断）里搜 `解释器` 能看到每级探测的结论，可在插件目录放
    `runtime/python.exe` 并在 `plugin.json` 写 `"interpreterPath": "runtime/python.exe"` 兜底。
@@ -92,7 +96,16 @@ FontManager 的插件是**进程外程序**：主程序绝不把插件代码加�
 ```json
 { "type": "log", "message": "进日志" }
 { "type": "toast", "message": "弹提示" }
+{ "type": "open-url", "url": "https://…", "title": "窗口标题（可选）" }
+{ "type": "progress", "text": "正在同步 3/10…", "percent": 30, "running": true }
 ```
+
+- `open-url`（1.4.5+）：主程序按安全规则处理——指向插件自己面板的本地回环地址开**应用内窗口**，
+  外部 https 链接开**系统浏览器**，其余拒绝。插件别自己 `os.startfile`，走这条才不会被安全策略拦。
+- `progress`（1.4.8+）：长任务的实时进度。主程序把它投到**主窗口底部进度条**（和扫描/打包进度同一位置）：
+  `percent` 给 0–100；没给就画流动的不确定条；`running: false` 表示结束，`text` 写结果
+  （「完成：…」或「失败：…」），结束文字停留 5 秒后收起。主程序 <1.4.8 会忽略这条，
+  所以**配合 `toast` 一起发**，老版本至少还有开始/结束的弹窗提示。
 
 注意：中文 Windows 上 Python 默认按 GBK 写管道，主程序按 UTF-8 解析——插件侧请用 UTF-8 输出
 （Python 可设 `PYTHONUTF8=1`，主程序拉起 python 插件时已自动带上）。
