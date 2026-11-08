@@ -103,15 +103,10 @@ jobs:
           }
           Write-Host "版本号六处一致，CHANGELOG 有对应段落 ✅"
 
-      # NSIS / WiX 打包工具链是 tauri 首次打包时从 GitHub CDN 现下的，
-      # CDN 偶发 502/504（2026-11-08 的 v0.5.0 两次发版就死在 nsis-3.11.zip 的 504 上，
-      # 编译本身早就成功了）。缓存 + 重试，双重保险。
-      - name: 缓存打包工具链（NSIS / WiX）
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\tauri
-          key: tauri-bundler-tools-${{ runner.os }}
-
+      # NSIS / WiX 打包工具链由 tauri 首次打包时从 GitHub CDN 现下（NSIS 2.3 MB、
+      # WiX 10 MB），偶发 502/504。**不要缓存它**：一次 504 会在缓存目录留下半残包，
+      # 之后恢复缓存就永远跳过下载、打包一直失败（2026-11-08 踩过）。
+      # 只加重试：最多三次，每次都是干净的重下。
       - name: Build — NSIS + MSI
         shell: pwsh
         run: |
@@ -120,8 +115,8 @@ jobs:
             Write-Host "== 打包尝试 $i / 3 =="
             pnpm tauri build --bundles nsis,msi --target x86_64-pc-windows-msvc
             if ($LASTEXITCODE -eq 0) { $ok = $true; break }
-            Write-Host "第 $i 次打包失败（多半是 NSIS/WiX 工具链下载 504），15 秒后重试"
-            Start-Sleep -Seconds 15
+            Write-Host "第 $i 次打包失败（多半是 NSIS/WiX 工具链下载 502/504），20 秒后重试"
+            Start-Sleep -Seconds 20
           }
           if (-not $ok) { throw "打包三次都失败 —— 若都是工具链下载 502/504，稍后重跑本工作流" }
 
