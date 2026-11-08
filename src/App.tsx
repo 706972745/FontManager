@@ -25,6 +25,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { QuickBar } from "./components/QuickBar";
 import { WarmFooter } from "./components/WarmFooter";
 import { LoadProgress } from "./components/LoadProgress";
+import { PluginProgress } from "./components/PluginProgress";
 import { PackProgress } from "./components/PackProgress";
 import { ApplyProgress } from "./components/ApplyProgress";
 import { BulkTagPrompt } from "./components/BulkTagPrompt";
@@ -646,6 +647,7 @@ export default function App() {
             <PackProgress />
             <LoadProgress />
             <ApplyProgress />
+            <PluginProgress />
             <WarmFooter />
           </div>
           {/* 样张视图是「挑字」界面：详情面板要收起来，否则中间只剩两列，
