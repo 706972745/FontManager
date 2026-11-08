@@ -4,6 +4,18 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.8] — 2026-11-08（正式版）
+
+> 右键菜单触发的插件任务（GitHub 同步/恢复）此前只有日志，界面上毫无反馈 ——
+> 用户点了菜单不知道跑没跑、跑成没成。
+
+### 新增
+
+- **插件任务进度上主页面**：插件通过 stdout 发 `{"type":"progress",...}`，
+  主程序解析后转发 `plugin:progress` 事件，主窗口底部用与扫描/打包一致的
+  贴底进度条显示实时进度与结果（percent 缺省画流动条，结束文字停留 5 秒）。
+  老插件不受影响；未知消息类型的解析失败只进诊断日志。
+
 ## [1.4.7] — 2026-11-07（正式版）
 
 ### 修复
