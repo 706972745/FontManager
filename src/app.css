@@ -588,6 +588,42 @@ body,
   font-size: var(--fs-10);
 }
 
+/* Ctrl+滚轮调字号时的小气泡（useCtrlWheelZoom 动态插到 body 上）。
+   滑条在顶栏，滚轮操作时光标可能在窗口另一头 —— 没有这行反馈就只剩「好像变了一下」。 */
+.zoom-hud {
+  position: fixed;
+  top: 54px;
+  left: 50%;
+  z-index: 90;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-mass);
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  pointer-events: none;
+}
+.zoom-hud::after {
+  content: "px";
+  margin-left: 2px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-10);
+}
+.zoom-hud.is-on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+/* 速览界面窗口矮，贴在顶上会压到第一条内容，往下挪一点 */
+body.qb-mode .zoom-hud {
+  top: 40px;
+}
+
 .sort-wrap {
   position: relative;
 }

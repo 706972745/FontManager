@@ -73,7 +73,7 @@
   "hint.sample": "预览文字：改成你自己的文字，所有卡片都用它做样张",
   "hint.search": "搜索字体：名称、标签、格式、厂商、备注、版权都能搜到（按 / 可聚焦）",
   "hint.settings": "打开设置：外观、字库目录、在线字体、快捷键、外部程序",
-  "hint.size": "预览字号：拖动调整示例文字的大小（样张视图最低 8px，其他视图最低 24px）",
+  "hint.size": "预览字号：拖动调整，或按住 Ctrl 滚动鼠标滚轮（样张视图最低 8px，其他视图最低 24px）",
   "hint.snapAddActive": "把当前已启用的字体追加到这个快照里（不去重，已有的会跳过）",
   "hint.snapMerge": "把快照里的字体叠加到当前已启用的字体上，不动其他已启用的字体",
   "hint.snapSwitch": "把当前启用的字体替换为这个快照：停用其他字体，只启用快照里记录的（系统字体不受影响）",
@@ -1058,5 +1058,6 @@
   "settings.rtDownloadHint": "从 GitHub 下载并装进软件目录（Python 约 19 MB，Node 约 32 MB）",
   "settings.rtDelete": "删除运行时",
   "settings.rtDeleteHint": "释放磁盘空间；之后随时可以一键重新下载",
-  "settings.rtConfirmDelete": "删除 {label}？\n使用它的插件（{plugins}）之后将回退到系统解释器，没装的话无法启用。\n随时可以在这里一键重新下载。"
+  "settings.rtConfirmDelete": "删除 {label}？\n使用它的插件（{plugins}）之后将回退到系统解释器，没装的话无法启用。\n随时可以在这里一键重新下载。",
+  "sc.zoom": "缩放预览文字"
 }

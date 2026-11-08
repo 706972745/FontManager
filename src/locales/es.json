@@ -73,7 +73,7 @@
   "hint.sample": "Texto de muestra — escribe el tuyo; todas las tarjetas lo usan como muestra",
   "hint.search": "Buscar fuentes por nombre, etiqueta, formato, fundición, nota o licencia (/ enfoca el campo)",
   "hint.settings": "Abrir ajustes: apariencia, carpetas de la biblioteca, fuentes en línea, atajos, apps externas",
-  "hint.size": "Tamaño de muestra — arrastra para cambiar el tamaño en todas las tarjetas",
+  "hint.size": "Tamaño de muestra — arrastra, o mantén Ctrl y usa la rueda",
   "hint.snapAddActive": "Añadir las fuentes actualmente activas a esta instantánea (los duplicados se omiten)",
   "hint.snapMerge": "Añadir las fuentes de la instantánea a las ya activas, sin cambiar las demás",
   "hint.snapSwitch": "Reemplazar las fuentes activas con esta instantánea: desactivar todo lo demás, activar solo lo registrado (las fuentes del sistema no se ven afectadas)",
@@ -1084,5 +1084,6 @@
   "settings.rtDownloadHint": "Descarga desde GitHub e instala en la carpeta del programa (Python ~19 MB, Node ~32 MB)",
   "settings.rtDelete": "Eliminar runtime",
   "settings.rtDeleteHint": "Libera espacio; siempre puedes volver a descargarlo con un clic",
-  "settings.rtConfirmDelete": "¿Eliminar {label}?\nLos plugins que lo usan ({plugins}) usarán el intérprete del sistema; sin uno no podrán activarse.\nSiempre puedes volver a descargarlo aquí con un clic."
+  "settings.rtConfirmDelete": "¿Eliminar {label}?\nLos plugins que lo usan ({plugins}) usarán el intérprete del sistema; sin uno no podrán activarse.\nSiempre puedes volver a descargarlo aquí con un clic.",
+  "sc.zoom": "Ampliar el texto de vista previa"
 }

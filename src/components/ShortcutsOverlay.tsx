@@ -35,6 +35,8 @@ const SECTIONS: [TKey, [string[], TKey][]][] = [
       [["Space"], "sc.toggleActive"],
       [["C"], "sc.compare"],
       [["F"], "sc.favorite"],
+      // 鼠标手势也收进来：快捷键面板是用户唯一会去翻的地方，不写在这里等于没这个功能
+      [["Ctrl", "Wheel"], "sc.zoom"],
       // Del 的语义按上下文走（0.9.9-1）：分组/快照里是「移出成员」，侧栏停在
       // 分组/快照行上是「删掉这个容器」，其他视图仍是「移到回收站」。
       // 真要删字体时按 Shift+Del，所以两条分开写。

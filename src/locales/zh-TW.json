@@ -73,7 +73,7 @@
   "hint.sample": "預覽文字：改成你自己的文字，所有卡片都用它做樣張",
   "hint.search": "搜尋字体：名稱、標籤、格式、廠商、備註、版權都能搜到（按 / 可聚焦）",
   "hint.settings": "開啟設定：外觀、字庫目錄、線上字体、快速鍵、外部程式",
-  "hint.size": "預覽字級：拖曳調整示例文字的大小（樣張檢視最低 8px，其他檢視最低 24px）",
+  "hint.size": "預覽字級：拖曳調整，或按住 Ctrl 捲動滑鼠滾輪（樣張檢視最低 8px，其他檢視最低 24px）",
   "hint.snapAddActive": "把目前已啟用的字体追加到這個快照裡（不去重，已有的會跳過）",
   "hint.snapMerge": "把快照裡的字体疊加到目前已啟用的字体上，不動其他已啟用的字体",
   "hint.snapSwitch": "把目前啟用的字体替換為這個快照：停用其他字体，只啟用快照裡記錄的（系統字体不受影響）",
@@ -1050,5 +1050,6 @@
   "settings.rtDownloadHint": "從 GitHub 下載並裝進軟體目錄（Python 約 19 MB，Node 約 32 MB）",
   "settings.rtDelete": "刪除執行環境",
   "settings.rtDeleteHint": "釋放磁碟空間；之後隨時可以一鍵重新下載",
-  "settings.rtConfirmDelete": "刪除 {label}？\n使用它的外掛（{plugins}）之後將退回系統直譯器，沒裝的話無法啟用。\n隨時可以在這裡一鍵重新下載。"
+  "settings.rtConfirmDelete": "刪除 {label}？\n使用它的外掛（{plugins}）之後將退回系統直譯器，沒裝的話無法啟用。\n隨時可以在這裡一鍵重新下載。",
+  "sc.zoom": "縮放預覽文字"
 }

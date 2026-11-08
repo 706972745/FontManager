@@ -4,6 +4,27 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] — 2026-11-08
+
+> 挑字的时候手在滚轮上，眼在预览上 —— 不该为了改字号再跑回顶栏拖滑条。
+
+### 新增
+
+- **Ctrl + 滚轮调预览字号**：鼠标停在哪都生效，完整界面（卡片 / 列表）与
+  速览界面用同一档字号；样张视图调的是它自己那一档（可以一路降到 8px）。
+  滚完在窗口顶部弹一个 `32px` 的小气泡，700ms 后自己淡出。
+  触控板的小增量会累计（攒够一格才走一档），按住 Ctrl 猛甩也不会一档跳到头；
+  弹层（设置 / 对比 / 帮助 / 菜单）打开时让路，滚的是弹层自己的内容。
+  顺带把 WebView2 的「Ctrl+滚轮整页缩放」接管掉 —— 那种缩放会把侧栏、
+  工具栏一起放大，不是用户要的。
+- 快捷键面板新增 `Ctrl + Wheel` 一行；字号滑条的说明补上这个手势。
+
+### 修复
+
+- 设置 → 语言：「申请添加语言」与「翻译指南」指向了上游仓库
+  （`TheHolyOneZ/ZFontManager`），留言会跑到别人那儿；现在都指到本项目
+  （`706972745/FontManager`），按钮直接打开 issue 新建页 —— 就是「给作者留言」。
+
 ## [0.5.0] — 2026-11-08（正式版）
 
 > 解释器占不占用户的磁盘，应该由用户决定 —— 不是安装包替所有人决定。
