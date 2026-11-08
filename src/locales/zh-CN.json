@@ -1059,5 +1059,6 @@
   "settings.rtDelete": "删除运行时",
   "settings.rtDeleteHint": "释放磁盘空间；之后随时可以一键重新下载",
   "settings.rtConfirmDelete": "删除 {label}？\n使用它的插件（{plugins}）之后将回退到系统解释器，没装的话无法启用。\n随时可以在这里一键重新下载。",
-  "sc.zoom": "缩放预览文字"
+  "sc.zoom": "缩放预览文字",
+  "key.wheel": "滚轮"
 }

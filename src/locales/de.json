@@ -1068,5 +1068,6 @@
   "settings.rtDelete": "Laufzeit löschen",
   "settings.rtDeleteHint": "Gibt Speicherplatz frei; jederzeit per Klick wieder herunterladbar",
   "settings.rtConfirmDelete": "{label} löschen?\nPlugins, die sie nutzen ({plugins}), fallen auf den System-Interpreter zurück – ohne einen können sie nicht aktiviert werden.\nJederzeit hier per Klick wieder herunterladbar.",
-  "sc.zoom": "Vorschautext zoomen"
+  "sc.zoom": "Vorschautext zoomen",
+  "key.wheel": "Mausrad"
 }

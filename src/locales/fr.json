@@ -1085,5 +1085,6 @@
   "settings.rtDelete": "Supprimer le runtime",
   "settings.rtDeleteHint": "Libère de l'espace ; retéléchargeable en un clic à tout moment",
   "settings.rtConfirmDelete": "Supprimer {label} ?\nLes plugins qui l'utilisent ({plugins}) utiliseront l'interpréteur système — sans, ils ne pourront pas être activés.\nRetéléchargeable ici en un clic à tout moment.",
-  "sc.zoom": "Zoomer le texte d’aperçu"
+  "sc.zoom": "Zoomer le texte d’aperçu",
+  "key.wheel": "Molette"
 }

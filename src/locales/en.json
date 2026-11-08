@@ -1068,5 +1068,6 @@
   "settings.rtDelete": "Delete runtime",
   "settings.rtDeleteHint": "Frees up space; you can always download it back with one click",
   "settings.rtConfirmDelete": "Delete {label}?\nPlugins using it ({plugins}) will fall back to the system interpreter — without one they cannot be enabled.\nYou can always download it back here with one click.",
-  "sc.zoom": "Zoom preview text"
+  "sc.zoom": "Zoom preview text",
+  "key.wheel": "Wheel"
 }
