@@ -589,10 +589,12 @@ body,
 }
 
 /* Ctrl+滚轮调字号时的小气泡（useCtrlWheelZoom 动态插到 body 上）。
-   滑条在顶栏，滚轮操作时光标可能在窗口另一头 —— 没有这行反馈就只剩「好像变了一下」。 */
+   滑条在顶栏，滚轮操作时光标可能在窗口另一头 —— 没有这行反馈就只剩「好像变了一下」。
+   放**底部居中**：顶栏那行本来就挤着示例文字和滑条，气泡压上去会挡住输入框；
+   底部一瞬即逝的一条，不挡任何要读的东西。 */
 .zoom-hud {
   position: fixed;
-  top: 54px;
+  bottom: 72px;
   left: 50%;
   z-index: 90;
   padding: 5px 11px;
@@ -605,13 +607,13 @@ body,
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   opacity: 0;
-  transform: translate(-50%, -4px);
+  transform: translate(-50%, 6px);
   transition: opacity 0.16s ease, transform 0.16s ease;
   pointer-events: none;
 }
 .zoom-hud::after {
   content: "px";
-  margin-left: 2px;
+  margin-left: 1px;
   color: var(--text-tertiary);
   font-size: var(--fs-10);
 }
@@ -619,9 +621,9 @@ body,
   opacity: 1;
   transform: translate(-50%, 0);
 }
-/* 速览界面窗口矮，贴在顶上会压到第一条内容，往下挪一点 */
+/* 速览是竖长条，底部还有工具行，抬高一点免得贴着窗口边 */
 body.qb-mode .zoom-hud {
-  top: 40px;
+  bottom: 96px;
 }
 
 .sort-wrap {
