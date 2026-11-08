@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read as _, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -221,6 +221,15 @@ struct Runtime {
 fn runtimes() -> &'static Mutex<HashMap<String, Runtime>> {
     static RT: OnceLock<Mutex<HashMap<String, Runtime>>> = OnceLock::new();
     RT.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 本次会话里「起来过、后来自己没了」的插件（崩溃 / 被任务管理器结束）。
+///
+/// 只用来把界面那句话写准：这种情况跟「解释器找不到」是两回事，
+/// 一律提示「多半是缺解释器」会把用户带偏（0.5.1 实测踩到）。
+fn crashed() -> &'static Mutex<HashSet<String>> {
+    static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    SET.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 /// 主程序 → 插件的调用（写一行 JSON 到 stdin）
@@ -497,7 +506,14 @@ pub fn list() -> Vec<PluginInfo> {
                     None
                 };
                 if err.is_none() && wanted.contains(&m.id) && !running.contains(&m.id) {
-                    err = Some("上次是启用状态，这次没能启动（多半是缺解释器），重新打开一次试试".into());
+                    // 「起来过又没了」和「一次都没起来」不是一回事：前者是崩溃/被结束，
+                    // 后者才多半是解释器。0.5.1 里统一写成「多半是缺解释器」，会误导排障。
+                    let died = crashed().lock().map(|c| c.contains(&m.id)).unwrap_or(false);
+                    err = Some(if died {
+                        "上次运行中退出了（崩溃或被结束），重新打开一次试试".into()
+                    } else {
+                        "上次是启用状态，这次没能启动（多半是缺解释器），重新打开一次试试".into()
+                    });
                 }
                 out.push(PluginInfo {
                     enabled: running.contains(&m.id),
@@ -1333,10 +1349,31 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
                                 "[plugin:{pid}] {}",
                                 v.get("message").and_then(|x| x.as_str()).unwrap_or("")
                             )),
-                            "toast" => crate::diag::log(&format!(
-                                "[plugin:{pid}] toast: {}",
-                                v.get("message").and_then(|x| x.as_str()).unwrap_or("")
-                            )),
+                            "toast" => {
+                                // 插件以为「弹了提示」，但这里以前只写日志 —— 用户端一片安静
+                                // （0.5.1 实测：导出 PNG、字库统计都只看到日志行）。
+                                // 现在转发成 plugin:toast 事件，由前端走应用内提示。
+                                let msg = v
+                                    .get("message")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .chars()
+                                    .take(200)
+                                    .collect::<String>();
+                                crate::diag::log(&format!("[plugin:{pid}] toast: {msg}"));
+                                match APP.get() {
+                                    None => crate::diag::log(&format!(
+                                        "[plugin:{pid}] toast 被忽略（应用句柄未就绪）"
+                                    )),
+                                    Some(app) => {
+                                        let _ = tauri::Emitter::emit(
+                                            app,
+                                            "plugin:toast",
+                                            json!({ "plugin": pid.clone(), "message": msg }),
+                                        );
+                                    }
+                                }
+                            }
                             "progress" => {
                                 // 插件后台任务进度（插件 0.8.9+）：转发到主页面，
                                 // 走底部的贴底进度条（与扫描/打包进度同一个 UI 槽位）。
@@ -1458,6 +1495,10 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
             },
         );
     }
+    // 重新起来了：把「上次崩过」的记号清掉，界面不该再提那件事
+    if let Ok(mut c) = crashed().lock() {
+        c.remove(&m.id);
+    }
     crate::diag::log(&format!("[plugin] 已启用 {} v{}", m.id, m.version));
     // 启动后 1 秒做一次体检：很多插件（尤其解释器不对时）会「起来了又立刻退出」，
     // 界面上只看到开关弹回去。这里把退出码写进日志，省得靠猜。
@@ -1566,6 +1607,11 @@ pub fn start_enabled() {
 fn retire_dead(id: &str) {
     let dead = runtimes().lock().ok().and_then(|mut r| r.remove(id));
     let Some(mut rt) = dead else { return };
+    // 走到这里说明进程不是被 disable() 收掉的：崩溃、被任务管理器结束、自己退出。
+    // 记一笔，list() 才能给出「上次运行中退出」而不是「缺解释器」。
+    if let Ok(mut c) = crashed().lock() {
+        c.insert(id.to_string());
+    }
     match rt.child.try_wait() {
         Ok(Some(st)) => crate::diag::log(&format!(
             "[plugin:{id}] 进程自己退出了（exit={:?}）",
@@ -1619,6 +1665,10 @@ pub fn disable(id: &str) -> Result<(), String> {
     };
     let _ = rt.child.kill();
     let _ = rt.child.wait();
+    // 用户自己关的，不算「崩溃」：别在界面上留那句「上次运行中退出」
+    if let Ok(mut c) = crashed().lock() {
+        c.remove(id);
+    }
     if let Some(api) = crate::api::hub() {
         if let Ok(mut tokens) = api.tokens.lock() {
             tokens.remove(&rt.token);

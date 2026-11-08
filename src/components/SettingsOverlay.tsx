@@ -1,6 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, RefreshCw, Scaling, Settings, SunMoon, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, SunMoon, Volume2, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -32,6 +32,13 @@ const TRANSLATE_GUIDE_URL =
   "https://github.com/706972745/FontManager/blob/main/docs/TRANSLATING.md";
 
 const REQUEST_LANGUAGE_URL = "https://github.com/706972745/FontManager/issues/new";
+
+/**
+ * 插件从哪来（2026-11-08 用户要求）：设置 → 插件 里给一个直达插件仓库的入口。
+ * 之前用户得先知道仓库地址、自己去 GitHub 找 —— 软件里能装 ZIP，却不说去哪拿 ZIP。
+ * 用系统浏览器打开（openUrl），不在应用内加载网页。
+ */
+const PLUGIN_REPO_URL = "https://github.com/706972745/FontManager-Plugin";
 
 /** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
 const EXPORT_FONTS_KEY = "zfm.exportFonts";
@@ -1172,6 +1179,29 @@ export function SettingsOverlay() {
                 ))}
                 {/* 运行时管理（1.4.11）：安装包不再自带 Python/Node —— 在这看得见、可下载补全、可删除 */}
                 <RuntimeManager />
+              </div>
+              {/* 「能装 ZIP」不等于「知道去哪拿 ZIP」：插件仓库入口直接放在插件区末尾 */}
+              <div className="settings-translate settings-plugins-more">
+                <div className="settings-translate-text">
+                  <div className="settings-translate-title">
+                    <Puzzle size={13} strokeWidth={1.5} />
+                    {t("settings.pluginsGetMore")}
+                    <SettingHint text={t("settings.pluginsGetMoreSub")} />
+                  </div>
+                  <div className="settings-plugins-url">
+                    {PLUGIN_REPO_URL.replace(/^https:\/\//, "")}
+                  </div>
+                </div>
+                <div className="settings-data-actions">
+                  <button
+                    className="settings-data-btn"
+                    onClick={() => void openUrl(PLUGIN_REPO_URL).catch(() => {})}
+                  >
+                    <PackageOpen size={13} strokeWidth={1.5} />
+                    {t("settings.pluginsGetMoreOpen")}
+                    <ArrowUpRight size={12} strokeWidth={1.5} className="settings-btn-arrow" />
+                  </button>
+                </div>
               </div>
             </section>
 
