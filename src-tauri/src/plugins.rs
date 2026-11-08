@@ -925,6 +925,39 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
                                 "[plugin:{pid}] toast: {}",
                                 v.get("message").and_then(|x| x.as_str()).unwrap_or("")
                             )),
+                            "progress" => {
+                                // 插件后台任务进度（插件 0.8.9+）：转发到主页面，
+                                // 走底部的贴底进度条（与扫描/打包进度同一个 UI 槽位）。
+                                // 解析失败/字段缺失都只记日志，绝不影响插件进程本身。
+                                let text = v
+                                    .get("text")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .chars()
+                                    .take(120)
+                                    .collect::<String>();
+                                let percent = v.get("percent").and_then(|x| x.as_f64());
+                                let running = v
+                                    .get("running")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false);
+                                match APP.get() {
+                                    None => crate::diag::log(&format!(
+                                        "[plugin:{pid}] progress 被忽略（应用句柄未就绪）: {text}"
+                                    )),
+                                    Some(app) => {
+                                        let _ = tauri::Emitter::emit(
+                                            app,
+                                            "plugin:progress",
+                                            json!({
+                                                "text": text,
+                                                "percent": percent,
+                                                "running": running,
+                                            }),
+                                        );
+                                    }
+                                }
+                            }
                             "open-url" => {
                                 // 0.8.0 插件：请主程序开应用内设置窗口。防御式处理，
                                 // 解析/校验/开窗任何一步失败都只记日志
