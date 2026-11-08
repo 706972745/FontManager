@@ -15,7 +15,7 @@ use std::io::{BufRead, BufReader, Read as _, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, WebviewUrl, WebviewWindowBuilder};
 
 use crate::store;
 
@@ -753,6 +753,388 @@ fn shared_runtime(dir: &str, exe: &str) -> Option<PathBuf> {
     cands.into_iter().find(|p| p.is_file())
 }
 
+// ───────────────────────── 运行时管理（1.4.11） ─────────────────────────
+// 用户诉求：插件运行时占地方（两套 ~140MB），不用插件的人想删；删了之后想要回来
+// 要**很方便**；本机有哪些解释器（内置/系统）要看得见，缺什么由用户自己决定补不补。
+// 安装包依旧全量自带两套运行时（离线开箱即用）；这里只做「看得见 / 删得掉 / 补得回」。
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeStatus {
+    /// "python" | "node"
+    pub kind: String,
+    /// 给界面看的名字，如 "Python 3.13（含 Pillow、fontTools）"
+    pub label: String,
+    /// 内置运行时的目录；None = 本机没有（被删过或精简安装）
+    pub bundled_dir: Option<String>,
+    /// 内置运行时的真实版本（跑一次 --version 探活），如 "Python 3.13.14"
+    pub bundled_version: Option<String>,
+    /// 内置运行时占用（MB，一位小数）
+    pub bundled_size_mb: Option<f64>,
+    /// 系统里另外探测到的解释器版本（复用系统探测链），None = 没有
+    pub system_version: Option<String>,
+    /// 会用到这个解释器的插件名（没带自带运行时的）
+    pub plugins_using: Vec<String>,
+    /// 其中正在运行的数量 —— 删除/下载补全前要拦
+    pub plugins_running: usize,
+}
+
+/// 运行时目录的全部候选位置（不要求存在）。
+fn runtime_homes(kind: &str) -> Vec<PathBuf> {
+    let dir = format!("{kind}-runtime");
+    let mut cands = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(base) = exe.parent() {
+            cands.push(base.join(&dir));
+            cands.push(base.join("resources").join(&dir));
+        }
+    }
+    cands.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join(&dir),
+    );
+    cands
+}
+
+/// 跑一次 `--version` 探活（3 秒超时、无窗口）。输出取第一行。
+fn probe_runtime_version(exe: &Path) -> Option<String> {
+    let mut c = Command::new(exe);
+    c.arg("--version");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        c.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = wait_with_timeout(c).ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    let first = s.lines().next().unwrap_or("").trim().to_string();
+    if first.is_empty() {
+        None
+    } else {
+        Some(first)
+    }
+}
+
+/// Command::output() 没有超时 —— 卡死的探活会把状态查询拖死，这里手动等 3 秒。
+fn wait_with_timeout(mut c: Command) -> Result<std::process::Output, String> {
+    use std::time::Duration;
+    c.stdin(Stdio::null());
+    let mut child = c
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|e| e.to_string())?
+        {
+            let mut stdout = Vec::new();
+            if let Some(mut o) = child.stdout.take() {
+                let _ = o.read_to_end(&mut stdout);
+            }
+            return Ok(std::process::Output {
+                status,
+                stdout,
+                stderr: Vec::new(),
+            });
+        }
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("探活超时".into());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn dir_size_mb(dir: &Path) -> f64 {
+    fn walk(dir: &Path, total: &mut u64) {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, total);
+                } else if let Ok(md) = e.metadata() {
+                    *total += md.len();
+                }
+            }
+        }
+    }
+    let mut total = 0;
+    walk(dir, &mut total);
+    (total as f64) / (1024.0 * 1024.0)
+}
+
+/// 装好的插件里，哪些会用到这个解释器（没带 `interpreterPath` 的才算 ——
+/// 自带运行时的插件删共享运行时不受影响）。返回 (插件名列表, 正在运行的数量)。
+fn plugins_using_kind(kind: &str) -> (Vec<String>, usize) {
+    let mut using = Vec::new();
+    let mut running = 0;
+    let base = plugins_dir();
+    let Ok(rd) = std::fs::read_dir(&base) else {
+        return (using, running);
+    };
+    let mut dirs: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|d| d.is_dir() && manifest_path(d).is_file())
+        .collect();
+    dirs.sort();
+    let running_ids = runtimes().lock().map(|r| r.keys().cloned().collect::<Vec<_>>()).unwrap_or_default();
+    for d in dirs {
+        let Ok(m) = read_manifest(&d) else { continue };
+        let k = m
+            .interpreter
+            .clone()
+            .unwrap_or_else(|| {
+                match Path::new(&m.entry)
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                {
+                    "py" => "python".into(),
+                    "js" | "mjs" | "cjs" => "node".into(),
+                    _ => "exe".into(),
+                }
+            });
+        let has_own = m
+            .interpreter_path
+            .as_deref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        if k != kind || has_own {
+            continue;
+        }
+        if running_ids.iter().any(|id| *id == m.id) {
+            running += 1;
+        }
+        using.push(m.name);
+    }
+    (using, running)
+}
+
+pub fn runtime_status(kind: &str) -> RuntimeStatus {
+    let (label, sys_kind) = match kind {
+        "python" => ("Python 3.13（含 Pillow、fontTools）", "python"),
+        _ => ("Node.js 22 LTS", "node"),
+    };
+    let home = runtime_homes(kind)
+        .into_iter()
+        .find(|p| p.is_dir());
+    let (bundled_dir, bundled_version, bundled_size_mb) = match &home {
+        Some(dir) => {
+            let exe = dir.join(if kind == "python" { "python.exe" } else { "node.exe" });
+            (
+                Some(dir.to_string_lossy().into_owned()),
+                exe.is_file().then(|| probe_runtime_version(&exe)).flatten(),
+                Some(dir_size_mb(dir)),
+            )
+        }
+        None => (None, None, None),
+    };
+    // 系统解释器：复用系统探测链（跳过共享运行时 —— resolve 只管系统层）。
+    // resolve 有缓存；删了运行时后这里能立刻看到系统兜底是什么。
+    let system_version = resolve(sys_kind, None).map(|(_, _, v)| v);
+    let (plugins_using, plugins_running) = plugins_using_kind(kind);
+    RuntimeStatus {
+        kind: kind.into(),
+        label: label.into(),
+        bundled_dir,
+        bundled_version,
+        bundled_size_mb,
+        system_version,
+        plugins_using,
+        plugins_running,
+    }
+}
+
+pub fn runtimes_status() -> Vec<RuntimeStatus> {
+    vec![runtime_status("python"), runtime_status("node")]
+}
+
+/// 删除内置运行时。运行中的插件占用 exe 文件（Windows 锁住打开的可执行文件），
+/// 先拦；装到 Program Files 的 MSI 版没有管理员权限也删不动，错误里说清楚。
+pub fn runtime_delete(kind: &str) -> Result<(), String> {
+    if kind != "python" && kind != "node" {
+        return Err(format!("未知运行时：{kind}"));
+    }
+    let (using, running) = plugins_using_kind(kind);
+    if running > 0 {
+        return Err(format!(
+            "有 {} 个用到这个运行时的插件正在运行（{}），先关掉它们的开关再删",
+            running,
+            using.join("、")
+        ));
+    }
+    let homes: Vec<PathBuf> = runtime_homes(kind).into_iter().filter(|p| p.is_dir()).collect();
+    if homes.is_empty() {
+        return Err("本机没有内置运行时可删（可能已经删过了）".into());
+    }
+    for home in homes {
+        // 开发构建：current_exe 在 target/ 下，exe 旁通常没有运行时，
+        // 命中的多半是源码树里 git 跟踪的那份 —— 绝不能删。
+        if cfg!(debug_assertions) && home.starts_with(env!("CARGO_MANIFEST_DIR")) {
+            return Err("开发构建不删源码树里的运行时".into());
+        }
+        std::fs::remove_dir_all(&home).map_err(|e| {
+            format!(
+                "删除失败：{e}。装在 Program Files 的版本需要管理员权限；\
+                 或有插件正在运行占着文件 —— 关掉插件开关后重试"
+            )
+        })?;
+    }
+    crate::diag::log(&format!(
+        "[runtime] 已删除 {kind} 运行时（{} 个插件依赖它，启用时会回退系统解释器或提示下载）",
+        using.len()
+    ));
+    Ok(())
+}
+
+/// 下载任务单飞：同一运行时同时只允许一个下载。
+static DOWNLOADING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// 从 GitHub latest release 下载运行时 zip 并解到软件安装目录。
+/// 进度通过 `runtime:progress` 事件推给前端：
+/// `{kind, phase: download|extract|done|error, received, total, percent, error}`。
+pub fn runtime_download(app: AppHandle, kind: &str) -> Result<(), String> {
+    if kind != "python" && kind != "node" {
+        return Err(format!("未知运行时：{kind}"));
+    }
+    {
+        let mut slots = DOWNLOADING.lock().map_err(|_| "锁不可用")?;
+        if slots.iter().any(|k| k == kind) {
+            return Err("这个运行时已经在下载了".into());
+        }
+        slots.push(kind.to_string());
+    }
+    let kind = kind.to_string();
+    let kind2 = kind.clone();
+    std::thread::spawn(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime_download_task(&app, &kind2)
+        }));
+        let msg = match result {
+            Ok(Ok(())) => None,
+            Ok(Err(e)) => Some(e),
+            Err(_) => Some("下载线程异常退出".into()),
+        };
+        {
+            let mut slots = DOWNLOADING.lock().ok();
+            if let Some(s) = slots.as_mut() {
+                s.retain(|k| *k != kind);
+            }
+        }
+        if let Some(e) = msg {
+            let _ = app.emit(
+                "runtime:progress",
+                json!({"kind": kind, "phase": "error", "error": e}),
+            );
+        }
+    });
+    Ok(())
+}
+
+/// 打包时间上传到 release 的运行时 zip（release.yml 里 Compress-Archive 生成）。
+fn runtime_zip_url(kind: &str) -> String {
+    format!("https://github.com/706972745/FontManager/releases/latest/download/{kind}-runtime.zip")
+}
+
+fn runtime_download_task(app: &AppHandle, kind: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    let exe_base = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .ok_or("找不到软件安装目录")?;
+    let url = runtime_zip_url(kind);
+
+    let emit = |phase: &str, received: u64, total: u64, error: Option<&str>| {
+        let _ = app.emit(
+            "runtime:progress",
+            json!({
+                "kind": kind,
+                "phase": phase,
+                "received": received,
+                "total": total,
+                "percent": if total > 0 { (received * 100 / total) as u32 } else { 0 },
+                "error": error,
+            }),
+        );
+    };
+    emit("download", 0, 0, None);
+
+    // 专用客户端：不走 net.rs 的在线字体开关，重定向跟随（GitHub latest/download 会 302）。
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(concat!("FontManager/", env!("CARGO_PKG_VERSION")))
+        .timeout(std::time::Duration::from_secs(600))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut resp = client
+        .get(&url)
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("下载失败：{e}（检查网络，或到 release 页手动下载 {url}）"))?;
+    let total = resp.content_length().unwrap_or(0);
+    let tmp = std::env::temp_dir().join(format!("fontmanager-{kind}-runtime.zip"));
+    {
+        let mut f = std::fs::File::create(&tmp).map_err(|e| format!("写临时文件失败：{e}"))?;
+        let mut received: u64 = 0;
+        let mut last_emit = std::time::Instant::now();
+        let mut buf = [0u8; 65536];
+        loop {
+            let n = resp.read(&mut buf).map_err(|e| format!("下载中断：{e}"))?;
+            if n == 0 {
+                break;
+            }
+            f.write_all(&buf[..n]).map_err(|e| format!("写临时文件失败：{e}"))?;
+            received += n as u64;
+            if last_emit.elapsed() >= std::time::Duration::from_millis(250) {
+                emit("download", received, total, None);
+                last_emit = std::time::Instant::now();
+            }
+        }
+        f.flush().ok();
+    }
+    emit("download", total.max(1), total.max(1), None);
+    emit("extract", 0, 0, None);
+
+    // 解到安装目录。zip 里顶层就是 {kind}-runtime/…；zip-slip 防护同插件 zip。
+    let f = std::fs::File::open(&tmp).map_err(|e| e.to_string())?;
+    let mut z = zip::ZipArchive::new(f).map_err(|e| format!("运行时包损坏：{e}"))?;
+    let top = format!("{kind}-runtime/");
+    for i in 0..z.len() {
+        let mut e = z.by_index(i).map_err(|e| e.to_string())?;
+        let name = e.name().to_string();
+        if name.starts_with(top) && !name.ends_with('/') {
+            let rel = &name[top.len()..];
+            if rel.split(['/', '\\']).any(|c| c == "..") {
+                return Err(format!("运行时包里有可疑路径：{name}"));
+            }
+            let out = exe_base.join(&top).join(rel);
+            if let Some(p) = out.parent() {
+                std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+            }
+            let mut w = std::fs::File::create(&out).map_err(|e| {
+                format!(
+                    "写入 {} 失败：{e}。装在 Program Files 时需要管理员权限运行软件",
+                    out.display()
+                )
+            })?;
+            std::io::copy(&mut e, &mut w).map_err(|e| e.to_string())?;
+        }
+    }
+    let _ = std::fs::remove_file(&tmp);
+    crate::diag::log(&format!("[runtime] {kind} 运行时补全完成（{}）", exe_base.display()));
+    emit("done", 1, 1, None);
+    Ok(())
+}
+
 /// 用户在设置里手动指定的解释器路径（prefs: pluginRuntime = {python: ..., node: ...}）
 fn override_for(kind: &str) -> Option<String> {    let api = crate::api::hub()?;
     let st = api.store.0.lock().ok()?;
@@ -834,7 +1216,9 @@ fn command_for(dir: &Path, m: &PluginManifest) -> Result<(Command, String), Stri
                 let (prog, extra, version) =
                     shared.or_else(|| resolve(&kind, ov.as_deref())).ok_or_else(|| {
                         format!(
-                            "没找到可用的 {} 解释器 —— 装上它，或在设置 → 插件 →「插件解释器」里点「选择」指过去",
+                            "没找到可用的 {} 解释器 —— 到 设置 → 插件 →「运行时管理」下载（很快），\
+                             或装官方 {} 后重试",
+                            if kind == "python" { "Python" } else { "Node.js" },
                             if kind == "python" { "Python" } else { "Node.js" }
                         )
                     })?;

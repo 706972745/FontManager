@@ -1034,5 +1034,21 @@
   "sc.ctxScope": "メニュー検索中：有効 / すべてを切り替え",
   "menu.scopeAll": "すべてのフォント",
   "menu.scopeEnabled": "有効",
-  "menu.searchMore": "他 {n} 件 — さらに入力すると絞り込めます"
+  "menu.searchMore": "他 {n} 件 — さらに入力すると絞り込めます",
+  "settings.runtimesSub": "プラグインランタイム（Python / Node.js）。1.4.11 からインストーラーに同梱されません。必要なときにダウンロードし、使わないときは削除して容量を節約できます。",
+  "settings.rtBundled": "インストール済み · {size} MB",
+  "settings.rtMissing": "未インストール",
+  "settings.rtMissingHint": "未インストール — 依存するプラグインはシステムのインタプリタにフォールバックします",
+  "settings.rtSystemFound": "システム: {version}",
+  "settings.rtUsing": "使用中: {plugins}",
+  "settings.rtUsingNone": "使用中のプラグインなし",
+  "settings.rtRunning": "{count} 個が実行中",
+  "settings.rtDownloading": "ダウンロード中… {percent}%",
+  "settings.rtExtracting": "展開とインストール中…",
+  "settings.rtDlFailed": "ダウンロード失敗: {error}",
+  "settings.rtDownload": "ランタイムをダウンロード",
+  "settings.rtDownloadHint": "GitHub からダウンロードしてアプリフォルダーにインストールします（Python 約 19 MB、Node 約 32 MB）",
+  "settings.rtDelete": "ランタイムを削除",
+  "settings.rtDeleteHint": "容量を解放します。いつでもワンクリックで再ダウンロードできます",
+  "settings.rtConfirmDelete": "{label} を削除しますか？\n使用中のプラグイン（{plugins}）はシステムのインタプリタにフォールバックし、なければ有効化できません。\nいつでもここからワンクリックで再ダウンロードできます。"
 }

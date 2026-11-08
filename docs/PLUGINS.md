@@ -2,7 +2,7 @@
 
 > 只想**用**插件、不想开发？跳到 [官方插件库](https://github.com/706972745/FontManager-Plugin)：
 > 下载 ZIP → 解压 → 设置 → 插件 →「打开插件目录」放进去 → 打开开关 → 右键「插件 ›」。
-> 每个插件自带运行环境，机器上不用装 Python / Node.js。
+> 插件需要的解释器不用自己装：设置 → 插件 → 运行时管理 里一键下载（见下文）。
 >
 > **插件行本身也是入口**（1.3.7 起）：设置 → 插件 里每个插件那一行，右侧的**齿轮**打开
 > 插件自己的设置面板（插件声明了才有），在**行内任意位置右键**能看到该插件不需要选中字体
@@ -46,14 +46,30 @@ FontManager 的插件是**进程外程序**：主程序绝不把插件代码加�
 | `menus` | 右键菜单项：`title` 显示文本，`on` 挂载对象 —— `family`（字族右键，默认）/ `plugin`（**插件自己那一行**的右键，1.3.7 起） |
 | `settings` | **有设置面板就写这一项**（1.3.7 起）：`title` 是齿轮的悬停文字，`hook` 是要调的钩子名（默认 `settings`）。不写 = 没有设置，界面上不显示齿轮 |
 
-## 运行环境的解析顺序（1.4.4 起）
+## 运行环境：看得见、按需下载、可删除（1.4.11 起）
+
+**安装包不再内置解释器**（1.4.11 之前内置过 Python；1.4.10 短暂内置过 Node）——
+安装包瘦回 ~19 MB，需要什么解释器由**用户自己决定**下载。找它们的地方：
+**设置 → 插件 → 「插件运行时」** 两行（Python / Node.js）：
+
+- **看得见**：每行显示安装状态（版本号、占用 MB）、系统里另外探测到的解释器版本、
+  哪些插件在用。没装的一目了然，装没装、缺不缺用户说了算；
+- **一键下载**：没装的行有下载按钮 —— 从 GitHub 官方 release 拉 zip 装进软件目录
+  （Python ~19 MB，Node ~32 MB），有实时进度条；下载的运行时在离线机器上也能用；
+- **可删除**：不写插件也不用插件了，删掉运行时立刻省下几十 MB。有插件正在运行时
+  会先被拦（Windows 锁着运行中的 exe），关掉插件开关就能删；
+- **随时补回**：删了之后随时一键重新下载，不用重装软件。
+
+解析顺序（哪层找到用哪层）：
 
 1. `interpreterPath` —— 插件**自带**的解释器（重依赖插件推荐随插件分发便携版运行时）；
-2. **主程序内置的共享运行时** —— 安装包自带两套，位于软件安装目录，**机器上什么都不用装**：
-   - `python-runtime/`：Python 3.13 + Pillow + fontTools（1.4.4 起）
-   - `node-runtime/`：Node.js 22 LTS，单文件 node.exe（1.4.10 起）
+2. **软件目录里的运行时**（上一步下载的）—— `python-runtime/`（Python 3.13 + Pillow +
+   fontTools）、`node-runtime/`（Node.js 22 LTS）；
 3. 用户在 设置 → 插件 里手动指定的路径（隐藏兜底，prefs `pluginRuntime`）；
 4. 系统自动探测（PATH 与常见安装目录，逐个探活，跳过 Windows 商店的下载引导桩）。
+
+离线环境：到 [release 页](https://github.com/706972745/FontManager/releases/latest)
+手动下载 `python-runtime.zip` / `node-runtime.zip`，解压到软件安装目录即可。
 
 `entry` 直接写 `.exe`（`interpreter` 留空）的插件天然自包含，什么都不依赖。
 
@@ -61,22 +77,19 @@ FontManager 的插件是**进程外程序**：主程序绝不把插件代码加�
 
 | 插件形态 | 建议 |
 |---|---|
-| 只用标准库（如 font-sync） | 什么都不带 —— 共享运行时直接兜底，zip 也最小 |
+| 只用标准库（如 font-sync） | 什么都不带 —— 用户下载一次运行时即可，插件 zip 最小 |
 | 需要 Pillow / fontTools 等第三方库 | 自带 `runtime/` + `interpreterPath`（参考 font-stats/specimen-export），环境自己背，主程序不做适配 |
-| Node 插件，只用 Node 标准库 | `interpreter: "node"`，什么都不带 —— 1.4.10+ 的共享 node-runtime 直接兜底 |
-| Node 插件，要 npm 依赖 | 把 `node_modules/` 一起打进插件 zip（node.exe 从共享运行时找），或自带便携 Node |
+| Node 插件，只用 Node 标准库 | `interpreter: "node"`，什么都不带 |
+| Node 插件，要 npm 依赖 | 把 `node_modules/` 一起打进插件 zip，或自带便携 Node |
 | 自包含程序 | `entry` 直接指向 `.exe`，`interpreter` 留空 |
 
 ### 用户侧排障：提示「没找到可用的 Python / Node.js 解释器」
 
-按顺序试（主程序 ≥1.4.10 时基本不会出现——安装包已内置两套运行时）：
-
-1. **把 FontManager 升级到 1.4.10+**（安装包自带共享运行时，装完即用）；
-2. Python：装 [Python 3.10+](https://www.python.org/downloads/)（勾选 **Add python.exe to PATH**）；
-   Node.js：装 [Node.js LTS](https://nodejs.org/)；
-3. 或改用自带运行时的插件版本（插件 Releases 里的 full 包，解压出的 `runtime/` 与插件目录放一起）；
-4. 仍不行：日志（设置 → 诊断）里搜 `解释器` 能看到每级探测的结论，可在插件目录放
-   `runtime/python.exe` 并在 `plugin.json` 写 `"interpreterPath": "runtime/python.exe"` 兜底。
+1. **设置 → 插件 → 运行时管理 → 点下载**（十几 MB，几秒钟的事）；
+2. 或安装 [Python 3.10+](https://www.python.org/downloads/) /
+   [Node.js LTS](https://nodejs.org/)（Python 勾选 **Add python.exe to PATH**）；
+3. 或改用自带运行时的插件版本（插件 Releases 里的 full 包）；
+4. 仍不行：日志（设置 → 诊断）里搜 `解释器` 能看到每级探测的结论。
 
 ## 通信协议
 

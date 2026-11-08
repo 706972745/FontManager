@@ -1068,5 +1068,21 @@
   "sc.ctxScope": "Na busca do menu: alternar ativadas / todas",
   "menu.scopeAll": "Todas as fontes",
   "menu.scopeEnabled": "Ativadas",
-  "menu.searchMore": "mais {n} correspondências — continue digitando para filtrar"
+  "menu.searchMore": "mais {n} correspondências — continue digitando para filtrar",
+  "settings.runtimesSub": "Runtimes de plugins (Python / Node.js). Não vem mais no instalador desde a 1.4.11 — baixe quando um plugin precisar, exclua para economizar espaço.",
+  "settings.rtBundled": "Instalado · {size} MB",
+  "settings.rtMissing": "não instalado",
+  "settings.rtMissingHint": "Não instalado — os plugins usarão o interpretador do sistema",
+  "settings.rtSystemFound": "sistema: {version}",
+  "settings.rtUsing": "em uso por: {plugins}",
+  "settings.rtUsingNone": "nenhum plugin usa",
+  "settings.rtRunning": "{count} em execução",
+  "settings.rtDownloading": "baixando… {percent} %",
+  "settings.rtExtracting": "extraindo e instalando…",
+  "settings.rtDlFailed": "falha no download: {error}",
+  "settings.rtDownload": "Baixar runtime",
+  "settings.rtDownloadHint": "Baixa do GitHub e instala na pasta do app (Python ~19 MB, Node ~32 MB)",
+  "settings.rtDelete": "Excluir runtime",
+  "settings.rtDeleteHint": "Libera espaço; pode baixar de volta com um clique quando quiser",
+  "settings.rtConfirmDelete": "Excluir {label}?\nOs plugins que o usam ({plugins}) usarão o interpretador do sistema — sem um, não poderão ser ativados.\nSempre pode baixar de volta aqui com um clique."
 }

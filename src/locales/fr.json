@@ -1068,5 +1068,21 @@
   "sc.ctxScope": "Dans la recherche du menu : basculer activées / toutes",
   "menu.scopeAll": "Toutes les polices",
   "menu.scopeEnabled": "Activées",
-  "menu.searchMore": "{n} autres correspondances — continuez à taper pour affiner"
+  "menu.searchMore": "{n} autres correspondances — continuez à taper pour affiner",
+  "settings.runtimesSub": "Runtimes de plugins (Python / Node.js). Plus inclus dans l'installateur depuis la 1.4.11 — téléchargez-les au besoin, supprimez-les pour libérer de l'espace.",
+  "settings.rtBundled": "Installé · {size} MB",
+  "settings.rtMissing": "non installé",
+  "settings.rtMissingHint": "Non installé — les plugins utiliseront l'interpréteur système",
+  "settings.rtSystemFound": "système : {version}",
+  "settings.rtUsing": "utilisé par : {plugins}",
+  "settings.rtUsingNone": "aucun plugin ne l'utilise",
+  "settings.rtRunning": "{count} en cours",
+  "settings.rtDownloading": "téléchargement… {percent} %",
+  "settings.rtExtracting": "extraction et installation…",
+  "settings.rtDlFailed": "échec du téléchargement : {error}",
+  "settings.rtDownload": "Télécharger le runtime",
+  "settings.rtDownloadHint": "Télécharge depuis GitHub et installe dans le dossier de l'application (Python ~19 Mo, Node ~32 Mo)",
+  "settings.rtDelete": "Supprimer le runtime",
+  "settings.rtDeleteHint": "Libère de l'espace ; retéléchargeable en un clic à tout moment",
+  "settings.rtConfirmDelete": "Supprimer {label} ?\nLes plugins qui l'utilisent ({plugins}) utiliseront l'interpréteur système — sans, ils ne pourront pas être activés.\nRetéléchargeable ici en un clic à tout moment."
 }

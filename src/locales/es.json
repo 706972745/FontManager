@@ -1068,5 +1068,21 @@
   "sc.ctxScope": "En la búsqueda del menú: alternar activadas / todas",
   "menu.scopeAll": "Todas las fuentes",
   "menu.scopeEnabled": "Activadas",
-  "menu.searchMore": "{n} coincidencias más — sigue escribiendo para filtrar"
+  "menu.searchMore": "{n} coincidencias más — sigue escribiendo para filtrar",
+  "settings.runtimesSub": "Runtimes de plugins (Python / Node.js). Desde 1.4.11 no vienen con el instalador: descárgalos cuando un plugin los necesite y bórralos para ahorrar espacio.",
+  "settings.rtBundled": "Instalado · {size} MB",
+  "settings.rtMissing": "no instalado",
+  "settings.rtMissingHint": "No instalado: los plugins usarán el intérprete del sistema",
+  "settings.rtSystemFound": "sistema: {version}",
+  "settings.rtUsing": "en uso por: {plugins}",
+  "settings.rtUsingNone": "ningún plugin lo usa",
+  "settings.rtRunning": "{count} en ejecución",
+  "settings.rtDownloading": "descargando… {percent} %",
+  "settings.rtExtracting": "extrayendo e instalando…",
+  "settings.rtDlFailed": "descarga fallida: {error}",
+  "settings.rtDownload": "Descargar runtime",
+  "settings.rtDownloadHint": "Descarga desde GitHub e instala en la carpeta del programa (Python ~19 MB, Node ~32 MB)",
+  "settings.rtDelete": "Eliminar runtime",
+  "settings.rtDeleteHint": "Libera espacio; siempre puedes volver a descargarlo con un clic",
+  "settings.rtConfirmDelete": "¿Eliminar {label}?\nLos plugins que lo usan ({plugins}) usarán el intérprete del sistema; sin uno no podrán activarse.\nSiempre puedes volver a descargarlo aquí con un clic."
 }

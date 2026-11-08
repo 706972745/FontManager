@@ -2343,6 +2343,27 @@ fn plugin_install_zip(path: String) -> Result<serde_json::Value, String> {
     .unwrap_or_else(|_| Err("安装插件包时出错了（已拦下，软件继续运行）；详情见日志".into()))
 }
 
+/// 插件运行时状态清单（1.4.11）：内置/系统版本、占用、被哪些插件使用
+#[tauri::command]
+fn runtimes_status() -> Result<serde_json::Value, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        serde_json::to_value(crate::plugins::runtimes_status()).map_err(|e| e.to_string())
+    }))
+    .unwrap_or_else(|_| Err("运行时状态查询出错了（已拦下，软件继续运行）".into()))
+}
+
+/// 删除内置插件运行时（1.4.11）。正在运行的插件占用 exe 会先被拦。
+#[tauri::command]
+fn runtime_delete(kind: String) -> Result<(), String> {
+    crate::plugins::runtime_delete(&kind)
+}
+
+/// 从 GitHub release 下载运行时补全（1.4.11）。进度走 `runtime:progress` 事件。
+#[tauri::command]
+fn runtime_download(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+    crate::plugins::runtime_download(app, &kind)
+}
+
 /// 界面不再展示解释器（插件自带 runtime/ 或软件静默探测），但 set_runtime /
 /// runtimes_json 保留：prefs `pluginRuntime` 手工指定仍是隐藏的兜底出口。
 
@@ -2707,6 +2728,9 @@ pub fn run() {
             plugins_open_dir,
             plugin_probe_zip,
             plugin_install_zip,
+            runtimes_status,
+            runtime_delete,
+            runtime_download,
             get_settings,
             set_settings,
             default_library_dir,

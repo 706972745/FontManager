@@ -648,7 +648,43 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   /** 从 zip 安装/更新插件：更新只覆盖代码，config/secret/state 原样保留 */
   pluginInstallZip: (path: string) =>
     invoke<{ id: string; name: string; version: string }>("plugin_install_zip", { path }),
+
+  /** 插件运行时状态（1.4.11）：内置/系统版本、占用、被哪些插件使用 */
+  runtimesStatus: () =>
+    invoke<RuntimeStatus[]>("runtimes_status"),
+  /** 删除内置运行时：正在运行的插件占用 exe 会被后端拦下 */
+  runtimeDelete: (kind: string) => invoke<void>("runtime_delete", { kind }),
+  /** 从 GitHub release 下载运行时补全；进度监听 `runtime:progress` 事件 */
+  runtimeDownload: (kind: string) => invoke<void>("runtime_download", { kind }),
 };
+
+/** 一个插件运行时（Python / Node）的状态（`runtimes_status`） */
+export interface RuntimeStatus {
+  kind: "python" | "node";
+  label: string;
+  /** 内置运行时目录；null = 本机没装（可下载补全） */
+  bundledDir: string | null;
+  /** 内置运行时真实版本（探活），如 "Python 3.13.14" */
+  bundledVersion: string | null;
+  /** 占用 MB */
+  bundledSizeMb: number | null;
+  /** 系统里另外探测到的解释器版本，null = 没有 */
+  systemVersion: string | null;
+  /** 会用到这个运行时的插件名 */
+  pluginsUsing: string[];
+  /** 其中正在运行的数量（删除前会被后端拦） */
+  pluginsRunning: number;
+}
+
+/** `runtime:progress` 事件载荷 */
+export interface RuntimeProgress {
+  kind: string;
+  phase: "download" | "extract" | "done" | "error";
+  received?: number;
+  total?: number;
+  percent?: number;
+  error?: string;
+}
 
 /** 本地 API 状态（`api_status`） */
 export interface ApiStatus {

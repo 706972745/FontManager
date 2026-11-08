@@ -1051,5 +1051,21 @@
   "sc.ctxScope": "In menu search: toggle enabled / all fonts",
   "menu.scopeAll": "All fonts",
   "menu.scopeEnabled": "Enabled",
-  "menu.searchMore": "{n} more matches — keep typing to narrow down"
+  "menu.searchMore": "{n} more matches — keep typing to narrow down",
+  "settings.runtimesSub": "Plugin runtimes (Python / Node.js). Not shipped with the installer since 1.4.11 — download when a plugin needs it, delete when you don't. Your call.",
+  "settings.rtBundled": "Installed · {size} MB",
+  "settings.rtMissing": "not installed",
+  "settings.rtMissingHint": "Not installed — plugins that need it fall back to a system interpreter",
+  "settings.rtSystemFound": "system: {version}",
+  "settings.rtUsing": "in use by: {plugins}",
+  "settings.rtUsingNone": "no plugin uses it",
+  "settings.rtRunning": "{count} running",
+  "settings.rtDownloading": "downloading… {percent}%",
+  "settings.rtExtracting": "extracting & installing…",
+  "settings.rtDlFailed": "download failed: {error}",
+  "settings.rtDownload": "Download runtime",
+  "settings.rtDownloadHint": "Downloads from GitHub and installs into the app folder (Python ~19 MB, Node ~32 MB)",
+  "settings.rtDelete": "Delete runtime",
+  "settings.rtDeleteHint": "Frees up space; you can always download it back with one click",
+  "settings.rtConfirmDelete": "Delete {label}?\nPlugins using it ({plugins}) will fall back to the system interpreter — without one they cannot be enabled.\nYou can always download it back here with one click."
 }

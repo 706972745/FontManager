@@ -17,6 +17,7 @@ import { useModalLayer } from "../lib/modalLayer";
 import { useT } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { LabelResyncDialog } from "./LabelResyncDialog";
+import { RuntimeManager } from "./RuntimeManager";
 import { APP_LICENSE, displayVersion } from "../lib/version";
 import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 
@@ -1165,6 +1166,8 @@ export function SettingsOverlay() {
                   </div>
                   </div>
                 ))}
+                {/* 运行时管理（1.4.11）：安装包不再自带 Python/Node —— 在这看得见、可下载补全、可删除 */}
+                <RuntimeManager />
               </div>
             </section>
 

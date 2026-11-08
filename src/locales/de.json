@@ -1051,5 +1051,21 @@
   "sc.ctxScope": "In der Menüsuche: Aktivierte / Alle umschalten",
   "menu.scopeAll": "Alle Schriften",
   "menu.scopeEnabled": "Aktiviert",
-  "menu.searchMore": "{n} weitere Treffer — weiter tippen zum Eingrenzen"
+  "menu.searchMore": "{n} weitere Treffer — weiter tippen zum Eingrenzen",
+  "settings.runtimesSub": "Plugin-Laufzeiten (Python / Node.js). Seit 1.4.11 nicht im Installer enthalten – bei Bedarf herunterladen, sonst löschen und Platz sparen.",
+  "settings.rtBundled": "Installiert · {size} MB",
+  "settings.rtMissing": "nicht installiert",
+  "settings.rtMissingHint": "Nicht installiert – Plugins fallen auf den System-Interpreter zurück",
+  "settings.rtSystemFound": "System: {version}",
+  "settings.rtUsing": "genutzt von: {plugins}",
+  "settings.rtUsingNone": "von keinem Plugin genutzt",
+  "settings.rtRunning": "{count} laufen",
+  "settings.rtDownloading": "Download… {percent} %",
+  "settings.rtExtracting": "Entpacken & Installieren…",
+  "settings.rtDlFailed": "Download fehlgeschlagen: {error}",
+  "settings.rtDownload": "Laufzeit herunterladen",
+  "settings.rtDownloadHint": "Lädt von GitHub und installiert in den Programmordner (Python ~19 MB, Node ~32 MB)",
+  "settings.rtDelete": "Laufzeit löschen",
+  "settings.rtDeleteHint": "Gibt Speicherplatz frei; jederzeit per Klick wieder herunterladbar",
+  "settings.rtConfirmDelete": "{label} löschen?\nPlugins, die sie nutzen ({plugins}), fallen auf den System-Interpreter zurück – ohne einen können sie nicht aktiviert werden.\nJederzeit hier per Klick wieder herunterladbar."
 }

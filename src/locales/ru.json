@@ -1085,5 +1085,21 @@
   "sc.ctxScope": "В поиске меню: включённые / все шрифты",
   "menu.scopeAll": "Все шрифты",
   "menu.scopeEnabled": "Включённые",
-  "menu.searchMore": "Ещё {n} совпадений — продолжайте ввод, чтобы уточнить"
+  "menu.searchMore": "Ещё {n} совпадений — продолжайте ввод, чтобы уточнить",
+  "settings.runtimesSub": "Среды выполнения плагинов (Python / Node.js). С версии 1.4.11 не входят в установщик — скачайте при необходимости, удалите, чтобы сэкономить место.",
+  "settings.rtBundled": "Установлено · {size} МБ",
+  "settings.rtMissing": "не установлено",
+  "settings.rtMissingHint": "Не установлено — плагины будут использовать системный интерпретатор",
+  "settings.rtSystemFound": "система: {version}",
+  "settings.rtUsing": "используют: {plugins}",
+  "settings.rtUsingNone": "плагины не используют",
+  "settings.rtRunning": "{count} запущено",
+  "settings.rtDownloading": "загрузка… {percent} %",
+  "settings.rtExtracting": "распаковка и установка…",
+  "settings.rtDlFailed": "ошибка загрузки: {error}",
+  "settings.rtDownload": "Скачать среду",
+  "settings.rtDownloadHint": "Скачивает с GitHub и устанавливает в папку программы (Python ~19 МБ, Node ~32 МБ)",
+  "settings.rtDelete": "Удалить среду",
+  "settings.rtDeleteHint": "Освобождает место; можно снова скачать одним кликом",
+  "settings.rtConfirmDelete": "Удалить {label}?\nПлагины, которые её используют ({plugins}), перейдут на системный интерпретатор — без него их нельзя будет включить.\nВсегда можно снова скачать здесь одним кликом."
 }
