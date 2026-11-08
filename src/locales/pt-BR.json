@@ -1085,5 +1085,6 @@
   "settings.rtDelete": "Excluir runtime",
   "settings.rtDeleteHint": "Libera espaço; pode baixar de volta com um clique quando quiser",
   "settings.rtConfirmDelete": "Excluir {label}?\nOs plugins que o usam ({plugins}) usarão o interpretador do sistema — sem um, não poderão ser ativados.\nSempre pode baixar de volta aqui com um clique.",
-  "sc.zoom": "Ampliar o texto da prévia"
+  "sc.zoom": "Ampliar o texto da prévia",
+  "key.wheel": "Roda"
 }

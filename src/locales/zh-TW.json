@@ -1051,5 +1051,6 @@
   "settings.rtDelete": "刪除執行環境",
   "settings.rtDeleteHint": "釋放磁碟空間；之後隨時可以一鍵重新下載",
   "settings.rtConfirmDelete": "刪除 {label}？\n使用它的外掛（{plugins}）之後將退回系統直譯器，沒裝的話無法啟用。\n隨時可以在這裡一鍵重新下載。",
-  "sc.zoom": "縮放預覽文字"
+  "sc.zoom": "縮放預覽文字",
+  "key.wheel": "滾輪"
 }

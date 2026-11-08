@@ -131,7 +131,9 @@ export function ShortcutsOverlay() {
                                 ? t("key.click")
                                 : k === "DragTop"
                                   ? t("key.dragTop")
-                                  : k}
+                                  : k === "Wheel"
+                                    ? t("key.wheel")
+                                    : k}
                             </kbd>
                           ))}
                         </span>

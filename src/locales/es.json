@@ -1085,5 +1085,6 @@
   "settings.rtDelete": "Eliminar runtime",
   "settings.rtDeleteHint": "Libera espacio; siempre puedes volver a descargarlo con un clic",
   "settings.rtConfirmDelete": "¿Eliminar {label}?\nLos plugins que lo usan ({plugins}) usarán el intérprete del sistema; sin uno no podrán activarse.\nSiempre puedes volver a descargarlo aquí con un clic.",
-  "sc.zoom": "Ampliar el texto de vista previa"
+  "sc.zoom": "Ampliar el texto de vista previa",
+  "key.wheel": "Rueda"
 }
