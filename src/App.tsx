@@ -24,6 +24,7 @@ import { ShortcutsOverlay } from "./components/ShortcutsOverlay";
 import { CommandPalette } from "./components/CommandPalette";
 import { QuickBar } from "./components/QuickBar";
 import { WarmFooter } from "./components/WarmFooter";
+import { ZoomHud } from "./components/ZoomHud";
 import { LoadProgress } from "./components/LoadProgress";
 import { PluginProgress } from "./components/PluginProgress";
 import { PackProgress } from "./components/PackProgress";
@@ -660,6 +661,8 @@ export default function App() {
             <ApplyProgress />
             <PluginProgress />
             <WarmFooter />
+            {/* Ctrl+滚轮的字号气泡：挂在外框里（不是 body），透明窗口下才定位得准 */}
+            <ZoomHud />
           </div>
           {/* 样张视图是「挑字」界面：详情面板要收起来，否则中间只剩两列，
               四千多款字体翻起来太窄（用户 2026-11-05 明确要求不显示） */}
