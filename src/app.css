@@ -4819,6 +4819,17 @@ h2.detail-title.copy-name {
 .settings-translate .settings-data-btn {
   white-space: nowrap;
 }
+/* 插件仓库入口（0.5.2）：与语言区的「翻译」块同一套外观 —— 用户一眼知道这是"去外面拿东西" */
+.settings-plugins-more .settings-translate-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.settings-plugins-url {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  word-break: break-all;
+}
 .settings-btn-arrow {
   opacity: 0.5;
 }

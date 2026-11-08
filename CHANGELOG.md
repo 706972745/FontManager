@@ -4,6 +4,25 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.2] — 2026-11-08
+
+> 插件能装 ZIP，却没说去哪拿 ZIP —— 补一个直达插件仓库的入口。
+
+### 新增
+
+- **设置 → 插件：「获取更多插件」**（插件区末尾）—— 一键用系统浏览器打开
+  插件仓库 [FontManager-Plugin](https://github.com/706972745/FontManager-Plugin)，
+  里面有每个插件的 ZIP 下载与插件开发文档。用系统默认浏览器打开，不在应用内加载网页；
+  九种语言文案齐全。
+
+### 修复
+
+- **插件发的提示现在真的会显示**：以前 `{"type":"toast"}` 只写日志，界面上什么都没有
+  （插件作者以为用户看到了，用户以为「点了没反应」）。现在转发成 `plugin:toast`，
+  走应用内统一的提示条。
+- **崩溃/被结束的插件不再被说成「缺解释器」**：设置 → 插件 的那句提示改成
+  「上次运行中退出了（崩溃或被结束）」，只有**从来没起来过**的才提示缺解释器。
+
 ## [0.5.1] — 2026-11-08
 
 > 挑字的时候手在滚轮上，眼在预览上 —— 不该为了改字号再跑回顶栏拖滑条。
