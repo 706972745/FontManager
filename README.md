@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.9-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.4.10-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -375,12 +375,15 @@ repository. Two ways to install (1.4.4+):
 Or the manual way: unzip and drop the folder into the plugins folder
 (**Settings → Plugins → "Open plugins folder"**), then toggle it on.
 
-**Interpreters**: the installer ships a **shared Python runtime** (Python 3.13 +
-Pillow + fontTools) under the app folder, so a machine with **no Python
-installed** runs stdlib plugins out of the box. Resolution order:
-plugin-bundled interpreter (`interpreterPath`) → host shared runtime → system
-Python. Plugins with heavy dependencies may still ship their own `runtime/` —
-see [docs/PLUGINS.md](docs/PLUGINS.md) for the full story and troubleshooting.
+**Interpreters**: the installer ships **two shared runtimes** under the app
+folder, so a machine with **no Python or Node.js installed** runs stdlib
+plugins out of the box: **Python 3.13 + Pillow + fontTools** (1.4.4+) and
+**Node.js 22 LTS** (1.4.10+). Resolution order: plugin-bundled interpreter
+(`interpreterPath`) → host shared runtime → system interpreter. Plugins with
+heavy dependencies may still ship their own `runtime/` — see
+[docs/PLUGINS.md](docs/PLUGINS.md) for the full story, the plugin template
+([template-hello](https://github.com/706972745/FontManager-Plugin/tree/main/template-hello))
+for a 5-minute start, and troubleshooting.
 
 Manual steps (any version):
 
