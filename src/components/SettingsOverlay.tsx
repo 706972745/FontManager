@@ -1123,8 +1123,17 @@ export function SettingsOverlay() {
                       <span className="settings-plugin-version">v{p.version}</span>
                       {p.running && <span className="settings-plugin-running" aria-hidden />}
                     </div>
-                    <div className="settings-sub">
-                      {p.error ?? p.description ?? p.permissions.join(" · ")}
+                    <div
+                      className="settings-sub"
+                      /* 卡片只放一句话短介绍；完整介绍悬停时用项目统一的气泡展开。
+                         老插件没写 summary 时卡片显示的就是全文，再悬停弹一遍是噪音 —— 不挂。 */
+                      data-hint-text={
+                        p.error || !p.description || p.description === (p.summary ?? p.description)
+                          ? undefined
+                          : p.description
+                      }
+                    >
+                      {p.error ?? p.summary ?? p.description ?? p.permissions.join(" · ")}
                     </div>
                   </div>
                   <div className="settings-plugin-actions">

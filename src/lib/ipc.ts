@@ -668,6 +668,9 @@ export interface PluginInfo {
   id: string;
   name: string;
   version: string;
+  /** 一句话短介绍（卡片小字用）；没有就回落到 description */
+  summary: string | null;
+  /** 完整介绍（悬停气泡用） */
   description: string | null;
   permissions: string[];
   hooks: string[];

@@ -4,6 +4,17 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.9] — 2026-11-08（正式版）
+
+> 插件卡片把一大段完整介绍直接印在设置页里，既挡内容又难扫读。
+
+### 改进
+
+- **插件卡片小字精简**：插件可在 `plugin.json` 里声明一句话 `summary`，
+  卡片只显示它；完整介绍移到**鼠标悬停气泡**（项目统一的 HoverHint，
+  悬停约半秒展开）。没写 `summary` 的老插件行为不变（仍显示 description）。
+- 顺手把 font-sync 描述里裸露的 `**` 星号和过时的"浏览器里打开"措辞清掉。
+
 ## [1.4.8] — 2026-11-08（正式版）
 
 > 右键菜单触发的插件任务（GitHub 同步/恢复）此前只有日志，界面上毫无反馈 ——
