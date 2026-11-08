@@ -24,17 +24,22 @@ export function useCtrlWheelZoom(skip?: () => boolean) {
     let hideTimer = 0;
 
     const showHud = (px: number) => {
-      if (!hud) {
+      // 挂在 .app-frame / .qb-frame 里而不是 body 上：这个窗口是透明窗口，
+      // body 的 fixed 基准实测会落到窗口外面（气泡跑到窗口左下方、被裁掉一半）。
+      // 外框本身就是「可见界面」那一块，absolute + 50% 一定在窗口里。
+      const host = document.querySelector<HTMLElement>(".app-frame, .qb-frame") ?? document.body;
+      if (!hud || !hud.isConnected || hud.parentElement !== host) {
+        hud?.remove();
         hud = document.createElement("div");
         hud.className = "zoom-hud";
         // 纯展示用，读屏念一遍「字号」没有意义（滑条本来就有 aria）
         hud.setAttribute("aria-hidden", "true");
-        document.body.appendChild(hud);
+        host.appendChild(hud);
       }
       hud.textContent = String(px);
       hud.classList.add("is-on");
       window.clearTimeout(hideTimer);
-      hideTimer = window.setTimeout(() => hud?.classList.remove("is-on"), 700);
+      hideTimer = window.setTimeout(() => hud?.classList.remove("is-on"), 900);
     };
 
     const onWheel = (e: WheelEvent) => {

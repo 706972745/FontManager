@@ -588,15 +588,15 @@ body,
   font-size: var(--fs-10);
 }
 
-/* Ctrl+滚轮调字号时的小气泡（useCtrlWheelZoom 动态插到 body 上）。
+/* Ctrl+滚轮调字号时的小气泡（useCtrlWheelZoom 挂在 .app-frame / .qb-frame 里）。
    滑条在顶栏，滚轮操作时光标可能在窗口另一头 —— 没有这行反馈就只剩「好像变了一下」。
-   放**底部居中**：顶栏那行本来就挤着示例文字和滑条，气泡压上去会挡住输入框；
-   底部一瞬即逝的一条，不挡任何要读的东西。 */
+   定在外框底部居中：既不会压住顶栏那行示例文字和滑条，又保证一定在窗口里面。
+   注意是 absolute 不是 fixed —— 透明窗口下 fixed 的基准不是可见区域，实测会飘到窗口外。 */
 .zoom-hud {
-  position: fixed;
-  bottom: 72px;
+  position: absolute;
+  bottom: 24px;
   left: 50%;
-  z-index: 90;
+  z-index: 60;
   padding: 5px 11px;
   border-radius: 999px;
   background: var(--tooltip-bg);
@@ -621,9 +621,9 @@ body,
   opacity: 1;
   transform: translate(-50%, 0);
 }
-/* 速览是竖长条，底部还有工具行，抬高一点免得贴着窗口边 */
-body.qb-mode .zoom-hud {
-  bottom: 96px;
+/* 速览底部有它自己的工具行，抬高一点 */
+.qb-frame .zoom-hud {
+  bottom: 88px;
 }
 
 .sort-wrap {
