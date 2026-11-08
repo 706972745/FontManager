@@ -24,7 +24,6 @@ import { ScriptChip } from "./ScriptChip";
 import { FaceLine, faceLineFontSize } from "./FaceLine";
 import { useT, type TKey } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
-import { ZoomHud } from "./ZoomHud";
 import { copyrightExpired } from "../lib/license";
 import { familyCopyrightClass } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
@@ -563,8 +562,6 @@ export function QuickBar() {
       animate={{ opacity: revealed ? 1 : 0 }}
       transition={intro ? easeTop : INTRO_OFF}
     >
-      {/* Ctrl+滚轮的字号气泡（与完整界面同一个组件、同一个状态） */}
-      <ZoomHud />
       <div
         className="qb-pin"
         data-pin={contentHeight != null ? "true" : undefined}

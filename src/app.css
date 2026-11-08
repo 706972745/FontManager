@@ -588,47 +588,6 @@ body,
   font-size: var(--fs-10);
 }
 
-/* Ctrl+滚轮调字号时的小气泡（useCtrlWheelZoom 挂在 .app-frame / .qb-frame 里）。
-   滑条在顶栏，滚轮操作时光标可能在窗口另一头 —— 没有这行反馈就只剩「好像变了一下」。
-   定在外框底部居中：既不会压住顶栏那行示例文字和滑条，又保证一定在窗口里面。
-   注意是 absolute 不是 fixed —— 透明窗口下 fixed 的基准不是可见区域，实测会飘到窗口外。 */
-.zoom-hud {
-  position: absolute;
-  bottom: 24px;
-  left: 50%;
-  z-index: 60;
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: var(--tooltip-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-mass);
-  color: var(--text-primary);
-  font-size: var(--fs-12);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  opacity: 0;
-  transform: translate(-50%, 6px);
-  transition: opacity 0.16s ease, transform 0.16s ease;
-  pointer-events: none;
-}
-.zoom-hud::after {
-  content: "px";
-  margin-left: 1px;
-  color: var(--text-tertiary);
-  font-size: var(--fs-10);
-}
-.zoom-hud.is-on {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-/* 速览底部有它自己的工具行，抬高一点 */
-.qb-frame .zoom-hud {
-  bottom: 88px;
-}
-
-.sort-wrap {
-  position: relative;
-}
 .sort-btn {
   display: flex;
   align-items: center;

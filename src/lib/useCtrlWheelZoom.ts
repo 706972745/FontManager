@@ -10,8 +10,9 @@ import { clampIndex, wheelStep } from "./previewWheel";
  * - 完整界面的样张视图 → `specimenSizeIndex`（样张单独一档，最低 8px）
  * - 速览界面 → `sizeIndex`
  *
- * 滚完把结果丢进 `zoomHint`，由 <ZoomHud /> 在窗口底部闪一下：
- * 滑条在顶栏，滚轮操作时光标可能在窗口另一头，没有反馈就不知道现在到底多大了。
+ * 反馈就是预览本身跟着变大变小 —— 不再额外弹「32px」气泡：在透明窗口里
+ * 试过 fixed 与挂进外框两种方案都没能稳定显示，为了不留一块看不见的死代码，
+ * 这条提示去掉了（顶栏滑条的数字本来也会同步跟着变）。
  *
  * WebView2 自己会吃掉 Ctrl+滚轮做整页缩放（整个界面包括侧栏一起变大，
  * 重新打开又恢复），那种「缩页面」不是用户要的 —— 所以只要按着 Ctrl 就
@@ -20,7 +21,6 @@ import { clampIndex, wheelStep } from "./previewWheel";
 export function useCtrlWheelZoom(skip?: () => boolean) {
   useEffect(() => {
     let acc = 0;
-    let hideTimer = 0;
 
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) {
@@ -50,17 +50,9 @@ export function useCtrlWheelZoom(skip?: () => boolean) {
         if (inSpecimen) st.setSpecimenSizeIndex(index);
         else st.setSizeIndex(index);
       }
-      // 顶到上下限也照样显示「96px / 24px」：让人知道已经到头了，而不是以为滚轮失灵
-      st.setZoomHint(SIZES[index]);
-      window.clearTimeout(hideTimer);
-      hideTimer = window.setTimeout(() => st.setZoomHint(null), 900);
     };
 
     window.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      window.removeEventListener("wheel", onWheel);
-      window.clearTimeout(hideTimer);
-      useFontStore.getState().setZoomHint(null);
-    };
+    return () => window.removeEventListener("wheel", onWheel);
   }, [skip]);
 }
