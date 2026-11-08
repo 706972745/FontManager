@@ -6207,8 +6207,10 @@ body.ui-fade-out .app-frame {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 17px;
-  /* 与完整界面 .card-name 同口径：界面字体 + 600，不跟随字体本身 */
+  /* 用户 2026-11-08：速览里这一行只当「这是哪个族」的标签用，不要抢预览文本的戏 ——
+     原来是 17px（与完整界面 .card-name 同口径），这里按需求缩到一半 9px。
+     其余（字号滑条控制的示例文字、版权行、徽标）一律不动。 */
+  font-size: 9px;
   font-weight: 600;
   line-height: 1.3;
 }
