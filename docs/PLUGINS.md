@@ -203,7 +203,7 @@ POST /api/v1/fonts/activate       { "paths": [...] }
 POST /api/v1/fonts/deactivate     { "paths": [...] }
 GET  /api/v1/curation
 PUT  /api/v1/curation/note        { "family": "...", "note": "..." }
-PUT  /api/v1/curation/rating      { "family": "...", "rating": 3 }
+PUT  /api/v1/curation/rating      { "family": "...", "stars": 3 }   ← 字段名是 stars，不是 rating
 PUT  /api/v1/curation/favorite    { "family": "...", "favorite": true }
 ```
 
