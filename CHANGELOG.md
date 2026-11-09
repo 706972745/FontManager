@@ -4,6 +4,28 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] — 2026-11-10（正式版）
+
+> 只改一个默认值：预览字号从 **24px** 提到 **32px**。
+
+### 变更
+
+- **默认预览字号 24px → 32px**（`sizeIndex` 默认档 3 → 4，`src/state/fontStore.ts`）。
+  速览界面里预览样张是唯一主角（族名 11px、版权/许可 9px 全部让位），24px 偏小；
+  32px 在 112px 行高里正好撑满，也与「样张」视图的初始档一致。
+  档位本身没变，仍是 `SIZES = [8, 14, 18, 24, 32, 48, 64, 96]`，滑条最低仍 24px。
+
+- **一次性迁移**：老用户 `state.json` 里存的是旧默认 3，只改默认值对他们无效
+  （有存值就直接用存值）。所以加了一条迁移 —— **没迁移标记**且**存值仍是 3** 时抬到 4，
+  并写入 `previewSizeMigrated32: true`；用户之后自己拨回 24px 不会被每次启动改回去。
+
+### 注意
+
+- `sizeIndex` 是**速览与完整界面（卡片 / 列表）共用**的档位，所以主界面的默认预览字号
+  也会一起变成 32px。这是现有结构决定的，不是新加的耦合；要不要给速览单独一条默认，
+  已记进 `UI待定问题清单.md`（B10）。
+- 「样张」视图用的是另一条 `specimenSizeIndex`（本来就是 32px 起），本次不受影响。
+
 ## [1.6.1] — 2026-11-10（正式版）
 
 > 只改**折叠态那一行提示**（把窗口拖回屏幕顶边后留下的 34px 提示带）。
