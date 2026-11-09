@@ -26,37 +26,79 @@ function openUrl(url: string) {
   invoke("open_url", { url }).catch((e) => toast.error(translate("toast.couldntOpenLink"), String(e)));
 }
 
+type LinkItem = { key: TKey; sub: string; url: string; icon: React.ReactNode };
+
 /**
- * 只留两个 GitHub 入口（2026-11-10 定）：原作者主页 + 上游源码仓库。
+ * 链接区分上下两层（2026-11-10 定）。
  *
- * 原来还有「更多项目」（zsync.eu）和「介绍与下载页」（zsync.eu/fontmanager）两张卡，
- * 已按需求删除 —— 这个定制版的用户要的是「谁是上游、代码在哪」，
- * 上游作者的其它站点不在这款软件的交付范围里。
+ * 这一页的信息其实是两件事，原来压在同一个列表里，读者分不出来：
+ *   ① 「这个版本是谁做的、代码在哪」—— 本项目自己的两个仓库；
+ *   ② 「它从哪来」—— 上游原作者的主页与仓库。
+ *
+ * 版式照用户给的参考图统一：**圆角玻璃卡、两列铺开、左图标 + 标题 + 一行描述**。
+ * 两层各用一个小分组标题分开（9px 等宽强调蓝，R4 第 4 级的做法），
+ * 不再用「整个列表一根分隔线」那种把两类信息混在一起的做法。
  *
  * 顺带说明一处**故意不改**的地方：`about.source` 的仓库名仍是 `ZFontManager`。
  * 上游原名就是它，本项目后来才改名 FontManager，这条链接必须指向上游原名，
  * 跟着改名会 404。
  */
-const LINKS: { key: TKey; sub: string; url: string; icon: React.ReactNode }[] = [
+const LOCAL_LINKS: LinkItem[] = [
+  {
+    key: "about.appRepo",
+    sub: "github.com/706972745/FontManager",
+    url: "https://github.com/706972745/FontManager",
+    icon: <GithubGlyph />,
+  },
+  {
+    key: "about.pluginRepo",
+    sub: "github.com/706972745/FontManager-Plugin",
+    url: "https://github.com/706972745/FontManager-Plugin",
+    // 插件用拼图图标，跟上面那张 GitHub 字形区分开（两张卡都是纯 GitHub 图标会看着像重复）
+    icon: <Puzzle size={16} strokeWidth={1.5} />,
+  },
+];
+
+const UPSTREAM_LINKS: LinkItem[] = [
+  {
+    key: "about.source",
+    sub: "github.com/TheHolyOneZ/ZFontManager",
+    url: "https://github.com/TheHolyOneZ/ZFontManager",
+    icon: <GithubGlyph />,
+  },
   {
     key: "about.githubUser",
     sub: "github.com/TheHolyOneZ",
     url: "https://github.com/TheHolyOneZ",
     icon: <GithubGlyph />,
   },
-  {
-    key: "about.source",
-    // 上游原作者的仓库名是 ZFontManager，别跟着本项目的改名一起改
-    sub: "github.com/TheHolyOneZ/ZFontManager",
-    url: "https://github.com/TheHolyOneZ/ZFontManager",
-    icon: <GithubGlyph />,
-  },
 ];
 
-const STACK = ["Tauri v2", "Rust", "React 19", "TypeScript", "Vite", "pnpm"];
+/** 一张链接卡。两层共用，保证两张网格长得完全一样 */
+function LinkCard({ item, delay }: { item: LinkItem; delay: number }) {
+  const t = useT();
+  return (
+    <motion.button
+      type="button"
+      className="about-link"
+      onClick={() => openUrl(item.url)}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...springSoft, delay }}
+      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.99 }}
+    >
+      <span className="about-link-icon">{item.icon}</span>
+      <span className="about-link-text">
+        <span className="about-link-label">{t(item.key)}</span>
+        <span className="about-link-sub detail-mono">{item.sub}</span>
+      </span>
+      <ArrowUpRight size={14} strokeWidth={1.5} className="about-link-arrow" />
+    </motion.button>
+  );
+}
 
-/** 本定制版的代码仓库 */
-const CUSTOM_BUILD_URL = "https://github.com/706972745/FontManager";
+const STACK = ["Tauri v2", "Rust", "React 19", "TypeScript", "Vite", "pnpm"];
 
 /** 这款软件现在真正有的能力（2026-11-05 重写口径：与 README 功能导览一致） */
 const FEATURES: { key: TKey; icon: React.ReactNode }[] = [
@@ -108,45 +150,26 @@ export function AboutView() {
         ))}
       </div>
 
-      {/* 链接区标题：说清血缘（从 ZFontManager 0.8.0 迭代而来）+ 这些链接指向原作者 */}
-      <div className="about-links-head">
-        <h2 className="about-links-title">{t("about.linksTitle")}</h2>
-        <p className="about-links-sub">{t("about.linksSub")}</p>
+      {/* ① 本项目仓库 —— 这两张是本版真正的「去哪儿看代码」，放上面 */}
+      <div className="about-section">
+        <span className="about-section-title">{t("about.localTitle")}</span>
       </div>
       <div className="about-links">
-        {LINKS.map((l, i) => (
-          <motion.button
-            key={l.url}
-            className="about-link"
-            onClick={() => openUrl(l.url)}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springSoft, delay: staggerDelay(i) }}
-            whileHover={{ y: -1 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <span className="about-link-icon">{l.icon}</span>
-            <span className="about-link-text">
-              <span className="about-link-label">{t(l.key)}</span>
-              <span className="about-link-sub detail-mono">{l.sub}</span>
-            </span>
-            <ArrowUpRight size={14} strokeWidth={1.5} className="about-link-arrow" />
-          </motion.button>
+        {LOCAL_LINKS.map((l, i) => (
+          <LinkCard key={l.url} item={l} delay={staggerDelay(i)} />
         ))}
       </div>
 
-      <motion.button
-        type="button"
-        className="about-custom"
-        onClick={() => openUrl(CUSTOM_BUILD_URL)}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ ...springSoft, delay: staggerDelay(LINKS.length) }}
-        whileHover={{ y: -1 }}
-        whileTap={{ scale: 0.98 }}
-      >
-        {t("about.customBuild")}
-      </motion.button>
+      {/* ② 上游项目 —— 说清血缘，用同一套卡片，避免两类链接混在一张网格里 */}
+      <div className="about-section">
+        <span className="about-section-title">{t("about.upstreamTitle")}</span>
+      </div>
+      <div className="about-links">
+        {UPSTREAM_LINKS.map((l, i) => (
+          <LinkCard key={l.url} item={l} delay={staggerDelay(i + LOCAL_LINKS.length)} />
+        ))}
+      </div>
+      <p className="about-upstream-note">{t("about.linksTitle")}</p>
     </motion.div>
   );
 }
