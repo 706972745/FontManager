@@ -4,6 +4,18 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] — 2026-11-10（正式版）
+
+### 修复
+
+- **在线字体库小卡两行不对齐**：`展示 · 1 种样式 · OFL` 比上面的族名左出一截。
+  根因是在线卡复用了 `.family-card`，而主列表的卡片现在是「行」——左边留 26px 给
+  状态锚点、`.card-head` 再缩进 22px 让位。在线卡照搬后，族名从 48px 起、
+  元信息从 26px 起，正好差 22px。
+  现在 `.online-card` 自己给 `padding: 12px 14px` / `min-height: 96px`
+  （R4 是 304×96 的小卡），族名与元信息缩进归零，两行同一个左缘；
+  同时隐藏 `::before` 的锚点圆点 —— 在线卡没有「启用状态」，那颗点在这里只是装饰。
+
 ## [1.7.0] — 2026-11-10（正式版）
 
 > **主界面整体换皮**：从「玻璃暗色」改为设计交付规格书 R4/R5 的「纸与墨」。
