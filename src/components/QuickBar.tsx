@@ -91,7 +91,18 @@ function QuickFaceRow({
   return <FaceLine family={family} face={face} probeText={probeText} onHover={onHover} />;
 }
 
-function QuickItem({ family, index }: { family: Family; index: number }) {
+function QuickItem({
+  family,
+  index,
+  active,
+  onActivate,
+}: {
+  family: Family;
+  index: number;
+  /** 当前「点中」的那一行（R2 设计：点击 / 键盘焦点 → 行首锚点转蓝并伸长） */
+  active: boolean;
+  onActivate: (name: string) => void;
+}) {
   const t = useT();
   // 速览里同样按界面语言显示字体名（与完整界面一个口径）
   const displayName = useDisplayName();
@@ -156,16 +167,29 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const animated = intro && index < ANIMATED_ITEMS;
   /** 展开这一族的字重列表（默认只显示字族，和完整界面一个思路） */
   const [expanded, setExpanded] = useState(false);
+  /** 点名字复制后就地给一个「已复制」，1.5s 消退（设计 R2 状态 4） */
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
+  const copyName = () => {
+    copyText(family.name, t("copy.familyName"));
+    onActivate(family.name);
+    setCopied(true);
+    window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
+  };
   // 展开字重后里面还有按钮，<button> 不能嵌套 <button>，所以根节点用 div + role
   const Item = animated ? motion.div : "div";
-  // 超出动画范围的卡片用 CSS 过渡做悬浮/按下反馈，观感一致但没有 motion 的初始化开销
+  /**
+   * 只有「首屏几张」走进场淡入，其余不动。
+   * R2 起不再做 y 位移 / 悬停上浮 / 按下缩放：这一版靠发丝线与锚点表达状态，
+   * 整行飘动会让 112px 的固定网格看起来在抖。
+   */
   const plainProps = animated
     ? {
-        initial: { opacity: 0, y: 12 },
-        animate: { opacity: 1, y: 0 },
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
         transition: { ...spring, delay: staggerDelay(index) },
-        whileHover: { y: -1 },
-        whileTap: { scale: 0.99 },
       }
     : {};
 
@@ -175,10 +199,12 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       role="button"
       tabIndex={0}
       className="qb-item"
+      data-active={active ? "true" : undefined}
       data-hint-text={t("quickbar.copyHint", { name: family.name })}
       onMouseEnter={previewMarquee.enter}
       onMouseLeave={previewMarquee.leave}
-      onClick={() => copyText(family.name, t("copy.familyName"))}
+      onClick={copyName}
+      onFocus={() => onActivate(family.name)}
       onKeyDown={(e) => {
         // div[role=button] 不会自己响应键盘：Enter / Space 得手动接（§5 第 31 条）。
         // 焦点在子控件（展开字重、字重行）上时那个控件负责，这里不抢。
@@ -187,109 +213,119 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
         e.preventDefault();
         // Space 同时是主界面的「启用 / 停用」：卡片自己消费掉，别再冒泡
         e.stopPropagation();
-        copyText(family.name, t("copy.familyName"));
+        copyName();
       }}
       onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(family))}
       {...plainProps}
     >
-      <span className="qb-item-head">
-        <span
-          className="qb-item-glyph"
-          style={fontFamily ? { fontFamily, fontStyle, fontWeight: previewWeight } : undefined}
-          aria-hidden="true"
-        >
-          Aa
-        </span>
-        <span className="qb-item-info">
-          {/* 族名用界面字体，不跟随字体本身（与完整界面 .card-name 口径一致） */}
-          <span className="qb-item-name">{displayName(family)}</span>
-          {/* 画不出示例文字的语言时，这一行直接换成「无中文」这类标注（与完整界面一致） */}
-          {hasScriptNote(scriptStatus) ? (
-            <span className="qb-item-noscript" style={{ minHeight: size * 1.15 }}>
-              <ScriptChip status={scriptStatus} />
-            </span>
-          ) : (
-            <motion.span
-              ref={previewMarquee.measureRef}
-              className={`qb-item-sample ${previewMarquee.open ? "marquee-open" : ""}`}
-              style={
-                fontFamily
-                  ? { fontFamily, fontStyle, fontWeight: previewWeight, fontSize: size }
-                  : { fontSize: size }
-              }
-              initial={animated ? { opacity: 0, y: 5 } : false}
-              animate={animated ? { opacity: 1, y: 0 } : undefined}
-              transition={animated ? spring : undefined}
-            >
-              <span
-                className={`marquee-roll ${previewMarquee.open ? "marquee-roll-on" : ""}`}
-                style={previewMarquee.moverStyle}
-              >
-                {text}
-              </span>
-            </motion.span>
-          )}
-        </span>
-        <span className="qb-item-aside">
-          <span className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`} data-hint-text={licTitle}>
-            {t(`copyright.${licCls}` as TKey)}
-          </span>
-          {/* 速览里也能一键收藏 / 打一星（与卡片同一套交互，别让人非得回主界面） */}
-          <StarRating
-            family={family.name}
-            iconSize={12}
-            labels={{
-              add: t("card.favorite", { name: family.name }),
-              remove: t("card.unfavorite", { name: family.name }),
-            }}
-          />
-          {scope.total > 1 && (
-            <button
-              data-hint="hint.qbExpand"
-              type="button"
-              className="qb-item-meta qb-item-expand tabular"
-              aria-expanded={expanded}
-              aria-label={
-                expanded
-                  ? t("card.collapseStyles")
-                  : t("card.expandStyles")
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                setExpanded((v) => !v);
-              }}
-            >
-              <ChevronRight
-                size={11}
-                strokeWidth={2}
-                style={{
-                  transform: expanded ? "rotate(90deg)" : undefined,
-                  transition: "transform 140ms ease",
-                }}
-              />
-              {scope.narrowed ? `${scope.shown}/${scope.total}` : scope.shown}
-            </button>
-          )}
-        </span>
+      {/* 行首定位锚点：静止是 6px 点，悬停长成灰线，点中 / 键盘焦点长成蓝线（三态共用起点） */}
+      <span className="qb-anchor-dot" aria-hidden="true" />
+      <span className="qb-anchor" aria-hidden="true" />
+      <span
+        className="qb-item-glyph"
+        style={fontFamily ? { fontFamily, fontStyle, fontWeight: previewWeight } : undefined}
+        aria-hidden="true"
+      >
+        Aa
       </span>
 
-      {hasChips && (
-        <span className="qb-item-chips">
-          {family.tags.map((tag) => (
-            <span key={`tag-${tag}`} className="member-chip qb-chip">
-              {tag}
-            </span>
-          ))}
-          {snapshotBadges.map((b) => (
-            <MemberChip key={`snap-${b.name}`} badge={b} kind="snap" className="qb-chip" />
-          ))}
-          {collectionBadges.map((b) => (
-            <MemberChip key={`coll-${b.name}`} badge={b} kind="coll" className="qb-chip" />
-          ))}
+      <span className="qb-item-info">
+        {/* 族名用界面字体，不跟随字体本身（与完整界面 .card-name 口径一致） */}
+        <span className="qb-item-name">
+          {displayName(family)}
+          <span className={`qb-copied ${copied ? "is-shown" : ""}`} aria-hidden={!copied}>
+            {t("quickbar.copied")}
+          </span>
         </span>
-      )}
+        {/* 画不出示例文字的语言时，这一行直接换成「无中文」这类标注（与完整界面一致） */}
+        {hasScriptNote(scriptStatus) ? (
+          <span className="qb-item-noscript">
+            <ScriptChip status={scriptStatus} />
+          </span>
+        ) : (
+          <motion.span
+            ref={previewMarquee.measureRef}
+            className={`qb-item-sample ${previewMarquee.open ? "marquee-open" : ""}`}
+            style={
+              fontFamily
+                ? { fontFamily, fontStyle, fontWeight: previewWeight, fontSize: size }
+                : { fontSize: size }
+            }
+            initial={animated ? { opacity: 0, y: 5 } : false}
+            animate={animated ? { opacity: 1, y: 0 } : undefined}
+            transition={animated ? spring : undefined}
+          >
+            <span
+              className={`marquee-roll ${previewMarquee.open ? "marquee-roll-on" : ""}`}
+              style={previewMarquee.moverStyle}
+            >
+              {text}
+            </span>
+          </motion.span>
+        )}
+        {(hasChips || copyright) && (
+          <span className="qb-item-foot">
+            {hasChips && (
+              <span className="qb-item-chips">
+                {family.tags.map((tag) => (
+                  <span key={`tag-${tag}`} className="member-chip qb-chip">
+                    {tag}
+                  </span>
+                ))}
+                {snapshotBadges.map((b) => (
+                  <MemberChip key={`snap-${b.name}`} badge={b} kind="snap" className="qb-chip" />
+                ))}
+                {collectionBadges.map((b) => (
+                  <MemberChip key={`coll-${b.name}`} badge={b} kind="coll" className="qb-chip" />
+                ))}
+              </span>
+            )}
+            {copyright && <span className="qb-item-copy">{copyright}</span>}
+          </span>
+        )}
+      </span>
 
-      {copyright && <span className="qb-item-copy">{copyright}</span>}
+      {/* 状态列：许可 → ★ → › N，右对齐成一列，方便竖着比（其余信息一律不进这一列） */}
+      <span
+        className={`qb-lic ${licExpired ? "is-expired" : ""}`}
+        data-hint-text={licTitle}
+      >
+        {t(`copyright.${licCls}` as TKey)}
+      </span>
+
+      {/* 速览里也能一键收藏 / 打一星（与卡片同一套交互，别让人非得回主界面） */}
+      <StarRating
+        family={family.name}
+        iconSize={12}
+        labels={{
+          add: t("card.favorite", { name: family.name }),
+          remove: t("card.unfavorite", { name: family.name }),
+        }}
+      />
+
+      {scope.total > 1 && (
+        <button
+          data-hint="hint.qbExpand"
+          type="button"
+          className="qb-item-expand tabular"
+          aria-expanded={expanded}
+          aria-label={expanded ? t("card.collapseStyles") : t("card.expandStyles")}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+        >
+          <ChevronRight
+            size={11}
+            strokeWidth={2}
+            style={{
+              transform: expanded ? "rotate(90deg)" : undefined,
+              transition: "transform 140ms ease",
+            }}
+          />
+          {scope.narrowed ? `${scope.shown}/${scope.total}` : scope.shown}
+        </button>
+      )}
 
       {expanded && visibleFaces.length > 0 && (
         <div
@@ -354,6 +390,12 @@ export function QuickBar() {
   // 速览 ↔ 完整界面切换期间把内容钉在目标尺寸上，窗口形变时内容不重排
   const morph = useFontStore((s) => s.morph);
   const [query, setQuery] = useState("");
+  /**
+   * 当前点中 / 聚焦的那一行（只影响视觉：行首锚点从 6px 灰点长成 96px 蓝线）。
+   * 不参与任何筛选与数据，换搜索词或换列表时清掉，避免蓝线停在无关的行上。
+   */
+  const [activeName, setActiveName] = useState<string | null>(null);
+  useEffect(() => setActiveName(null), [query]);
 
   // 拖到屏幕顶部时整个速览窗口收起成一条（contentHeight 用于动画期间钉住内容高度）
   const { docked, contentHeight, phase, bar } = useQuickbarDock(autoHide);
@@ -494,13 +536,14 @@ export function QuickBar() {
    * 以前这里是 `families.map(...)` —— 字体库 4211 个族就是 **4211 个 QuickItem 全部挂载**：
    * 每个组件有 6 个 store 订阅、十几个 DOM 节点，只靠 CSS `content-visibility` 跳过绘制。
    * 现在只渲染视口 + 上下各 4 条，DOM、React 组件、字体加载都跟着视口走。
-   * 行高不固定（有的带成员胶囊、有的带版权原文），用 measureElement 实测。
+   * 行高基准 112px（设计 R2 的固定网格）；展开字重、带胶囊的行更高，
+   * 仍用 measureElement 实测，滚动条不会跳。
    */
   const bodyRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: families.length,
     getScrollElement: () => bodyRef.current,
-    estimateSize: () => 104,
+    estimateSize: () => 112,
     overscan: QB_OVERSCAN,
     getItemKey: (i) => families[i].name,
   });
@@ -599,115 +642,144 @@ export function QuickBar() {
         </div>
       ) : (
         <div className="qb-content">
+          {/**
+           * 顶栏三段（设计 R2 §4.5）：0–56 范围/搜索/窗口动作 · 56–96 预览文字与字号 ·
+           * 96–120 元信息。所有横向坐标由 .qb-pad（24）与固定列宽算出，窗口变宽时
+           * 只有搜索框与预览文字的中间段伸缩，右侧状态列不动。
+           */}
           <header className="qb-head" onPointerDown={dragWindow}>
-            <span className="qb-title">
-              {t("quickbar.title")}
+            <div className="qb-bar qb-bar-1">
+              <span className="qb-title">{t("quickbar.title")}</span>
               <span className="qb-count tabular">{enabledCount}</span>
-            </span>
 
-            <div className="qb-search">
-              <Search size={13} strokeWidth={1.5} className="field-icon" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t("quickbar.search")}
-                aria-label={t("quickbar.search")}
-                spellCheck={false}
-              />
-              {query && (
+              <div className="qb-search">
+                <Search size={13} strokeWidth={1.5} className="field-icon" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("quickbar.search")}
+                  aria-label={t("quickbar.search")}
+                  spellCheck={false}
+                />
+                {query && (
+                  <button
+                    className="search-clear"
+                    onClick={() => setQuery("")}
+                    aria-label={t("top.searchClear")}
+                  >
+                    <X size={12} strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+
+              <div className="qb-actions">
                 <button
-                  className="search-clear"
-                  onClick={() => setQuery("")}
-                  aria-label={t("top.searchClear")}
+                  data-hint="hint.qbAutoHide"
+                  className={`qb-btn ${autoHide ? "qb-btn-on" : ""}`}
+                  aria-pressed={autoHide}
+                  aria-label={t("quickbar.autoHide")}
+                  onClick={() => setAutoHide(!autoHide)}
                 >
-                  <X size={12} strokeWidth={2} />
+                  {autoHide ? <Pin size={13} strokeWidth={1.5} /> : <PinOff size={13} strokeWidth={1.5} />}
                 </button>
-              )}
+                <button
+                  data-hint="hint.backFull"
+                  className="qb-btn qb-btn-text"
+                  aria-label={t("quickbar.back")}
+                  onClick={() => void setQuickbar(false)}
+                >
+                  {t("quickbar.backShort")}
+                </button>
+                <button
+                  data-hint="hint.minimize"
+                  className="qb-btn"
+                  aria-label={t("titlebar.minimize")}
+                  onClick={() => {
+                    // 贴在屏幕顶边时由 dock 接管：内容先卷走、再真最小化，且不播系统飞行动画
+                    void minimizeQuickbar()
+                      .then((handled) => {
+                        if (!handled) void win.minimize();
+                      })
+                      // 接管失败（几何读不到 / 锁被别人拿着）就退回普通最小化，
+                      // 不能留一个 unhandled rejection 让按钮看起来「点了没反应」（§5 第 16 条）
+                      .catch(() => {
+                        void win.minimize();
+                      });
+                  }}
+                >
+                  <Minimize2 size={12} strokeWidth={1.6} />
+                </button>
+                <button
+                  data-hint="hint.close"
+                  className="qb-btn qb-btn-close"
+                  aria-label={t("titlebar.close")}
+                  onClick={() => void win.close()}
+                >
+                  <X size={13} strokeWidth={1.6} />
+                </button>
+              </div>
             </div>
 
-            <div className="qb-actions">
-              <button
-                data-hint="hint.qbAutoHide"
-                className={`qb-btn ${autoHide ? "qb-btn-on" : ""}`}
-                aria-pressed={autoHide}
-                aria-label={t("quickbar.autoHide")}
-                onClick={() => setAutoHide(!autoHide)}
+            <div className="qb-bar qb-bar-2">
+              <div className="topbar-field qb-sample">
+                <Type size={13} strokeWidth={1.5} className="field-icon" />
+                <input
+                  value={sampleText}
+                  onChange={(e) => setSampleText(e.target.value)}
+                  placeholder={t("top.samplePlaceholder")}
+                  aria-label={t("top.sampleAria")}
+                  spellCheck={false}
+                />
+              </div>
+              <span className="qb-a qb-a-sm" aria-hidden="true">
+                A
+              </span>
+              <div
+                className="topbar-size qb-size"
+                style={{ "--fill": `${(sizeIndex / (SIZES.length - 1)) * 100}%` } as CSSProperties}
               >
-                {autoHide ? <Pin size={13} strokeWidth={1.5} /> : <PinOff size={13} strokeWidth={1.5} />}
-              </button>
-              <button
-                data-hint="hint.backFull"
-                className="qb-btn"
-                aria-label={t("quickbar.back")}
-                onClick={() => void setQuickbar(false)}
-              >
-                {t("quickbar.backShort")}
-              </button>
-              <button
-                data-hint="hint.minimize"
-                className="qb-btn"
-                aria-label={t("titlebar.minimize")}
-                onClick={() => {
-                  // 贴在屏幕顶边时由 dock 接管：内容先卷走、再真最小化，且不播系统飞行动画
-                  void minimizeQuickbar()
-                    .then((handled) => {
-                      if (!handled) void win.minimize();
-                    })
-                    // 接管失败（几何读不到 / 锁被别人拿着）就退回普通最小化，
-                    // 不能留一个 unhandled rejection 让按钮看起来「点了没反应」（§5 第 16 条）
-                    .catch(() => {
-                      void win.minimize();
-                    });
-                }}
-              >
-                <Minimize2 size={12} strokeWidth={1.6} />
-              </button>
-              <button
-                data-hint="hint.close"
-                className="qb-btn qb-btn-close"
-                aria-label={t("titlebar.close")}
-                onClick={() => void win.close()}
-              >
-                <X size={13} strokeWidth={1.6} />
-              </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={SIZES.length - 1}
+                  step={1}
+                  value={sizeIndex}
+                  onChange={(e) => setSizeIndex(Number(e.target.value))}
+                  aria-label={t("top.sizeAria")}
+                />
+              </div>
+              <span className="qb-a qb-a-lg" aria-hidden="true">
+                A
+              </span>
+              <span className="qb-size-value tabular">{SIZES[sizeIndex]}px</span>
+              <FilterMenu membership />
+            </div>
+
+            <div className="qb-meta">
+              <span className="qb-meta-l tabular">
+                {families.length} / {enabledCount}
+                <span className="qb-meta-sep" aria-hidden="true">
+                  ·
+                </span>
+                {t(`sort.${sort}` as TKey)}
+              </span>
+              <span className="qb-meta-r tabular">
+                {SIZES[0]}–{SIZES[SIZES.length - 1]} PX
+              </span>
             </div>
           </header>
-
-          <div className="qb-tools">
-            <div className="topbar-field qb-sample">
-              <Type size={13} strokeWidth={1.5} className="field-icon" />
-              <input
-                value={sampleText}
-                onChange={(e) => setSampleText(e.target.value)}
-                placeholder={t("top.samplePlaceholder")}
-                aria-label={t("top.sampleAria")}
-                spellCheck={false}
-              />
-            </div>
-            <div
-              className="topbar-size qb-size"
-              style={{ "--fill": `${(sizeIndex / (SIZES.length - 1)) * 100}%` } as CSSProperties}
-            >
-              <input
-                type="range"
-                min={0}
-                max={SIZES.length - 1}
-                step={1}
-                value={sizeIndex}
-                onChange={(e) => setSizeIndex(Number(e.target.value))}
-                aria-label={t("top.sizeAria")}
-              />
-              <span className="size-value tabular">{SIZES[sizeIndex]}</span>
-            </div>
-            <FilterMenu membership />
-          </div>
 
           {/* 滚动容器是 .qb-body（overflow-y:auto）；.qb-list 只是 flex 列，
               事件挂在它身上收不到 scroll —— 0.9.9-23 第一次接就踩了这个坑 */}
           <div className="qb-body" ref={bodyRef}>
             {families.length === 0 ? (
               <p className="qb-empty">
-                {enabledCount > 0 ? t("empty.search.title") : t("quickbar.empty")}
+                <span>{enabledCount > 0 ? t("empty.search.title") : t("quickbar.empty")}</span>
+                {enabledCount > 0 && query.trim() && (
+                  <button className="qb-empty-clear" onClick={() => setQuery("")}>
+                    {t("top.searchClear")}
+                  </button>
+                )}
               </p>
             ) : (
               <div
@@ -731,7 +803,12 @@ export function QuickBar() {
                         transform: `translateY(${row.start}px)`,
                       }}
                     >
-                      <QuickItem family={family} index={row.index} />
+                      <QuickItem
+                        family={family}
+                        index={row.index}
+                        active={activeName === family.name}
+                        onActivate={setActiveName}
+                      />
                     </div>
                   );
                 })}

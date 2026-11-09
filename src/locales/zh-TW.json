@@ -432,6 +432,7 @@
   "quickbar.back": "返回完整介面",
   "quickbar.backShort": "完整介面",
   "quickbar.collapsedHint": "速覽已收起 · 靠近或按 {hotkey} 展開",
+  "quickbar.copied": "已複製",
   "quickbar.copyHint": "點擊複製「{name}」· 右鍵更多操作",
   "quickbar.empty": "尚未啟用任何字型",
   "quickbar.enter": "速覽已啟用字型（貼頂自動隱藏）",
