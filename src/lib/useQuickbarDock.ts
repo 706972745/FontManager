@@ -586,7 +586,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         const s = await win.scaleFactor();
         const from = Math.round(DOCK_HEIGHT_HINT * s);
         const to = Math.round(DOCK_HEIGHT_BAR * s);
-        const widthPhys = restoreSize?.width ?? Math.round(414 * s);
+        const widthPhys = restoreSize?.width ?? Math.round(420 * s);
         if (!alive || !dockedRef.current || phaseRef.current !== "hint") return;
         // 细线高度按「工作区屏高的 0.45%」取整（4~10px）。CSS 里的 vh 用不了：
         // 收起后窗口视口只有 12px，vh 恒等于 0。拿到屏幕高度失败就保持默认 5px。
@@ -719,7 +719,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           hintTimer = undefined;
         }
         const scale = await win.scaleFactor();
-        const widthPhys = restoreSize?.width ?? Math.round(414 * scale);
+        const widthPhys = restoreSize?.width ?? Math.round(420 * scale);
         const toH = restoreSize?.height ?? Math.round(1000 * scale);
         const wasBar = phaseRef.current === "bar";
         const fromH = wasBar ? Math.round(DOCK_HEIGHT_BAR * scale) : Math.round(DOCK_HEIGHT_HINT * scale);
@@ -790,7 +790,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           if (!alive || !dockedRef.current || phaseRef.current !== "bar") return;
           const from = Math.round(DOCK_HEIGHT_BAR * scale);
           const to = Math.round(DOCK_HEIGHT_HINT * scale);
-          const wide = restoreSize?.width ?? Math.round(414 * scale);
+          const wide = restoreSize?.width ?? Math.round(420 * scale);
           setPhaseBoth("hint");
           setBar(null);
           restoreWindowHints();
@@ -895,7 +895,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         return;
       }
       const scale = await win.scaleFactor();
-      const widthPhys = restoreSize?.width ?? Math.round(414 * scale);
+      const widthPhys = restoreSize?.width ?? Math.round(420 * scale);
       const toH = restoreSize?.height ?? Math.round(1000 * scale);
       // 退出速览前把窗口尺寸还原成速览展开时的尺寸（细线阶段高度是 12px）
       const fullscreen = await win.isFullscreen().catch(() => false);

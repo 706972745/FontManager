@@ -6709,7 +6709,8 @@ body.ui-fade-out .app-frame {
 }
 
 /* 窄宽（≤400）：收起 Aa 列，内容起点从 100 左移到 56（§5.5）。
-   阈值取 400 而不是设计稿的 420 —— 速览默认宽 414，420 会把常用宽度也切进窄档。 */
+   阈值 400 比默认窗口宽（420）低一档，默认宽度一定带 Aa 列；
+   照设计稿写 420 会正好压在默认宽度上（2026-11-10 就是这么踩的）。 */
 @media (max-width: 400px) {
   .qb-item {
     grid-template-columns: 32px minmax(0, 1fr) 62px 18px 28px;
@@ -6729,9 +6730,6 @@ body.ui-fade-out .app-frame {
   .qb-item-expand {
     grid-column: 5;
   }
-  .qb-faces {
-    grid-column: 2 / -1;
-  }
 }
 
 /* 速览里就地展开的字重列表（行本身是 .face-line，与完整界面共用一套）。
@@ -6745,6 +6743,19 @@ body.ui-fade-out .app-frame {
   margin-top: 8px;
   padding-top: 5px;
   border-top: 1px solid var(--qb-hair);
+}
+/**
+ * 窄档（≤400）里「Aa」列没了，网格从 6 列变 5 列，字重列表要跟着从第 2 列起。
+ *
+ * ⚠️ 这条**必须写在上面基础规则之后**：之前它放在 6713 行那个大媒体查询块里，
+ * 而基础规则在 6739 行 —— 同优先级、后写的胜，于是窄档下这条永远不生效，
+ * `.qb-faces` 仍按 `grid-column: 3 / -1` 落在「许可(62) + ★(18) + 计数(28)」
+ * 这三列上，整块只有 108px 宽，字重名全被截成「Narr…」（用户 2026-11-10 截图）。
+ */
+@media (max-width: 400px) {
+  .qb-faces {
+    grid-column: 2 / -1;
+  }
 }
 .face-line {
   display: flex;
