@@ -134,6 +134,23 @@ export type ViewMode = "grid" | "list" | "specimen";
  * 小字号下的表现。SIZES = [8, 14, 18, 24, 32, 48, 64, 96]，24px 的下标是 3。
  */
 export const MIN_PREVIEW_SIZE_INDEX = 3;
+
+/**
+ * 预览字号默认档（2026-11-10：24px → 32px）。
+ *
+ * 速览界面里预览样张是唯一主角，族名/版权/许可都让位给它，24px 显得偏小；
+ * 32px 在 112px 行高里正好撑满，且与样张视图的初始档一致。
+ * 用 `SIZES.indexOf(32)` 而不是写死 4，免得以后往 SIZES 里插档位时这里悄悄错位。
+ */
+const PREVIEW_SIZE_DEFAULT_INDEX = SIZES.indexOf(32);
+
+/**
+ * 老用户存的是旧默认（24px）。只改默认值对他们没用 —— prefs 里有值就直接用存值，
+ * 所以做一次性迁移：**没有迁移标记**且**存值仍是旧默认**时才抬到 32px。
+ * 用户之后自己拨回 24px，标记会一起落盘，不会被每次启动改回去。
+ */
+const PREVIEW_SIZE_MIGRATED_KEY = "previewSizeMigrated32";
+const LEGACY_PREVIEW_SIZE_INDEX = 3;
 export type MotionPref = "system" | "reduced";
 export type TransparencyPref = "full" | "reduced";
 export type UiScale = "auto" | number;
@@ -990,6 +1007,8 @@ function persistPrefs(get: () => FontStore) {
       copyrightExpiry: s.copyrightExpiry,
       ratings: s.ratings,
       activatedAt: s.activatedAt,
+      // 一次性迁移标记：写进去之后，用户自己拨回 24px 才不会被改回 32px
+      [PREVIEW_SIZE_MIGRATED_KEY]: true,
       quickbarHotkey: s.quickbarHotkey,
       quickbarHotkeyOpens: s.quickbarHotkeyOpens,
       collectionFaces: s.collectionFaces,
@@ -1537,7 +1556,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   tourStep: null,
 
   sampleText: t("preview.defaultSample"),
-  sizeIndex: 3,
+  sizeIndex: PREVIEW_SIZE_DEFAULT_INDEX,
   specimenSizeIndex: 4,
   viewMode: "grid",
   sort: "name",
@@ -1618,7 +1637,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
             : get().sampleText,
         sizeIndex: Math.max(
           MIN_PREVIEW_SIZE_INDEX,
-          typeof prefs.sizeIndex === "number" ? prefs.sizeIndex : get().sizeIndex,
+          typeof prefs.sizeIndex === "number"
+            ? prefs[PREVIEW_SIZE_MIGRATED_KEY] === true ||
+              prefs.sizeIndex !== LEGACY_PREVIEW_SIZE_INDEX
+              ? prefs.sizeIndex
+              : PREVIEW_SIZE_DEFAULT_INDEX
+            : get().sizeIndex,
         ),
         // 样张自己的字号档：默认 4 = 32px（用户 2026-11-05 指定初始值）
         specimenSizeIndex:

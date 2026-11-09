@@ -55,6 +55,7 @@ _tauri.nobuild.json
 /字体文件影响清单-*.md
 /对比报告-*.md
 /未完成事项*.md
+/UI待定问题清单*.md
 
 # 剪贴板截图 / 屏幕截图（QA 留证只在本地 .workbuddy/ 与各临时目录）
 /Clipboard_Screenshot*.png
