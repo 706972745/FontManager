@@ -88,12 +88,11 @@ function LinkCard({ item, delay }: { item: LinkItem; delay: number }) {
       whileHover={{ y: -1 }}
       whileTap={{ scale: 0.99 }}
     >
+      {/* 结构对齐参考图：第一行「图标 + 标题 + 箭头」，第二行地址跨整宽压在图标下方 */}
       <span className="about-link-icon">{item.icon}</span>
-      <span className="about-link-text">
-        <span className="about-link-label">{t(item.key)}</span>
-        <span className="about-link-sub detail-mono">{item.sub}</span>
-      </span>
+      <span className="about-link-label">{t(item.key)}</span>
       <ArrowUpRight size={14} strokeWidth={1.5} className="about-link-arrow" />
+      <span className="about-link-sub detail-mono">{item.sub}</span>
     </motion.button>
   );
 }
