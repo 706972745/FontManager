@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.5.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.5.3-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -449,6 +449,24 @@ Español · Français · Português (Brasil) · Русский。
 
 两个安装包都**未做代码签名**，SmartScreen 可能会请求确认。运行前请先核对
 Release 说明中的 SHA-256。
+
+### 卸载
+
+用「设置 → 应用」或卸载程序卸载 NSIS 版时，确认页有一个
+**「同时删除应用数据」** 复选框：
+
+- **不勾（默认）**：只删程序本体。字体库、插件、运行时、`state.json`、缓存、
+  备注、快照全部保留，重装后接着用。
+- **勾选**：除程序本体外，把本软件自己创建／下载的内容按白名单清干净 ——
+  安装目录下的 `字体库`、`plugins`、`python-runtime`、`node-runtime`，
+  `%APPDATA%\FontManager`（及旧目录 `ZFontManager`），
+  `%LOCALAPPDATA%\FontManager\字体库`，三个文件关联注册键，以及 HKCU 字体表里
+  **值数据指向本软件字体库**的注册项；恢复到像没装过的状态。
+
+清理**不会**动系统字体、系统字体注册项、用户自定义字体库里的字体、用户放进
+安装目录的其它文件，也不会删你导出到文档或其它位置的快照与样张。
+覆盖安装／自动更新不会触发清理；MSI 版没有这个复选框，卸载始终只删程序本体、
+保留数据。
 
 ---
 

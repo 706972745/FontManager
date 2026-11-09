@@ -588,7 +588,7 @@ body,
   font-size: var(--fs-10);
 }
 
-/* 修复（0.5.3 · P0）：排序 / 筛选菜单是 absolute 定位（top: calc(100% + 5px); right: 0），
+/* 修复（1.5.3 · P0）：排序 / 筛选菜单是 absolute 定位（top: calc(100% + 5px); right: 0），
    但 .sort-wrap 以前没有任何定位样式，菜单只好锚到 .app-frame ——
    top = 应用窗口整个高度 + 5px，等于渲染到窗口正下方（屏幕外）。
    表现：点「筛选」「排序」按钮看似毫无反应（其实菜单开了，只是看不见，
@@ -4828,7 +4828,7 @@ h2.detail-title.copy-name {
 .settings-translate .settings-data-btn {
   white-space: nowrap;
 }
-/* 插件仓库入口（0.5.2）：与语言区的「翻译」块同一套外观 —— 用户一眼知道这是"去外面拿东西" */
+/* 插件仓库入口（1.5.2）：与语言区的「翻译」块同一套外观 —— 用户一眼知道这是"去外面拿东西" */
 .settings-plugins-more .settings-translate-title {
   display: flex;
   align-items: center;
