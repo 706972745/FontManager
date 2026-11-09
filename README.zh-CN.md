@@ -28,6 +28,7 @@
 **[📝 更新日志](CHANGELOG.md)** ·
 **[🐛 问题反馈](../../issues)** ·
 **[🔌 插件开发](docs/PLUGINS.md)** ·
+**[🎨 界面规范](docs/UI设计交付规格书.md)** ·
 **[🤖 MCP 接入](mcp/README.md)**
 
 <br>
