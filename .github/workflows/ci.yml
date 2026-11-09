@@ -7,7 +7,7 @@
 #
 # 职责划分：
 #   ci.yml              → push / PR 时验证（本文件）
-#   release-signed.yml  → 推 v* tag 时构建 + 签名 + 发布
+#   release.yml         → 推 v* tag 时构建 + 发布（签名密钥配齐后自动启用签名）
 
 name: CI (Windows)
 

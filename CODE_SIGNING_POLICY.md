@@ -1,11 +1,16 @@
 # 代码签名策略（Code Signing Policy）
 
-**当前状态：通过 [SignPath Foundation](https://signpath.org) 免费 OV 代码签名。**
+**当前状态：尚未启用。截至 v1.5.4，所有已发布的安装包（`.exe` / `.msi`）均未做数字签名。**
 
-## 我们用什么签名
+签名流水线代码已经就绪（`release.yml` 的签名步骤 + 正文里的「已签名 / 未签名」两套模板），
+但仓库尚未配置签名密钥，因此每次发版该步骤都会被跳过，Release 正文如实标注
+「⚠️ 本版本未做代码签名」。配齐下方四个 Secrets 后，下一次发版会自动切换为签名发布，
+不需要改代码。
 
-FontManager 是个人维护的免费开源项目（GPL-3.0，公开仓库）。本项目通过
-[SignPath Foundation](https://signpath.org) 的免费开源计划获得代码签名：
+## 我们打算用什么签名
+
+FontManager 是个人维护的免费开源项目（GPL-3.0，公开仓库）。计划通过
+[SignPath Foundation](https://signpath.org) 的免费开源计划申请代码签名：
 
 - 证书级别为 **OV（组织验证）**，由 SignPath Foundation 签发，私钥托管在其 HSM 上，
   签名在 CI（GitHub Actions）中自动完成，私钥永不离开 HSM；
@@ -15,11 +20,18 @@ FontManager 是个人维护的免费开源项目（GPL-3.0，公开仓库）。�
 
 ## 这对用户意味着什么
 
-- 下载 / 安装时**不再出现「未知发布者」警告**，浏览器与 Windows 的智能应用控制（SAC）
-  能据此验证发布者，安装体验更顺；
+**当前（未启用签名）**：Windows 会显示「未知发布者」，SmartScreen 可能弹出确认；
+每个 Release 正文都标注「本版本未做代码签名」，并附两个安装包的 SHA-256。
+这不是病毒告警，核对哈希一致即可确认文件完整。
+
+**签名启用后**（条件语气，尚未发生）：
+
+- 下载 / 安装时不再出现「未知发布者」警告，浏览器与 Windows 的智能应用控制（SAC）
+  能据此验证发布者；
 - 安装包属性里的「数字签名」标签页可见 **SignPath Foundation** 的签名与时间戳；
-- 发布流程一旦未配置签名密钥（例如本地手工发版、或 Secrets 缺失），会自动退回
-  「未签名 + SHA-256」模式，正文会明确标注——详见每个 Release 的说明。
+  注意发布者显示为 SignPath Foundation，**不是维护者 IIEOzo 本人**（免费开源计划的固有形式）；
+- 若某次发布未配置签名密钥（本地手工发版或 Secrets 缺失），会自动退回
+  「未签名 + SHA-256」模式，正文会明确标注。
 
 ## 如何确认下载的文件是完整的
 
@@ -38,8 +50,9 @@ Get-FileHash .\FontManager_<version>_x64-setup.exe -Algorithm SHA256
 
 ## 技术实现（维护者）
 
-- 签名在 `.github/workflows/release.yml` 的「代码签名（SignPath Foundation）」步骤完成，
+- 签名将在 `.github/workflows/release.yml` 的「代码签名（SignPath Foundation）」步骤完成，
   通过 `Submit-SigningRequest`（PowerShell `SignPath` 模块）提交未签名制品并写回；
+  **该步骤在 v1.5.4 及以前的发布中均为 `skipped`**；
 - 该步骤受 GitHub Secrets 保护，**仅当 `SIGNPATH_TOKEN` 配置后才执行**，否则跳过；
 - 需要在仓库 Secrets 中配置四项：
   - `SIGNPATH_ORGANIZATION_ID` —— SignPath 组织 ID

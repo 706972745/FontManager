@@ -47,12 +47,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "publisher": "TheHolyOneZ / IIEOzo",
-    "copyright": "Copyright © 2026 TheHolyOneZ / IIEOzo",
+    "publisher": "IIEOzo",
+    "copyright": "Copyright © 2026 IIEOzo",
     "category": "Utility",
     "homepage": "https://zsync.eu/fontmanager/",
     "shortDescription": "The free, open-source font manager for Linux, Windows and macOS.",
-    "longDescription": "FontManager by TheHolyOneZ — preview, tag, activate/deactivate, and install fonts across Linux, Windows and macOS from one clean native app. Free software under GPL-3.0.",
+    "longDescription": "FontManager by IIEOzo — preview, tag, activate/deactivate, and install fonts across Linux, Windows and macOS from one clean native app. Free software under GPL-3.0.",
     "license": "GPL-3.0-only",
     "icon": [
       "icons/32x32.png",

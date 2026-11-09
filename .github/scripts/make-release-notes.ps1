@@ -4,8 +4,8 @@
     用法（CI 与本地通用，PowerShell 5.1 与 pwsh 7 均可）：
       .\.github\scripts\make-release-notes.ps1 -Version 1.1.3 -ReleaseDir release -OutFile release-notes.md
 
-    说明：本项目通过 SignPath Foundation 免费 OV 签名（见 CODE_SIGNING_POLICY.md）。
-    未配置签名密钥时输出未签名说明；传 -Signed 时输出已签名说明。
+    说明：签名方案为 SignPath Foundation 免费 OV（见 CODE_SIGNING_POLICY.md），
+    当前尚未启用；未配置签名密钥时输出未签名说明，传 -Signed 时输出已签名说明。
 
     注意：正文里大量 markdown 反引号，反引号是 PowerShell 的转义符，
     所以模板一律用**单引号 here-string**（@' ... '@），版本号用 __VER__ 占位后替换。
