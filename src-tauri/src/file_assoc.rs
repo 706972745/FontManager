@@ -51,13 +51,15 @@ fn wide(s: &str) -> Vec<u16> {
 }
 
 /// 内容一致就不写盘：启动路径每次都跑，别白白写三份 50 KB。
-fn write_if_changed(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// 返回是否真的写了盘（换图标版本时要靠这个结果去通知资源管理器）。
+fn write_if_changed(path: &Path, bytes: &[u8]) -> std::io::Result<bool> {
     if let Ok(existing) = std::fs::read(path) {
         if existing == bytes {
-            return Ok(());
+            return Ok(false);
         }
     }
-    std::fs::write(path, bytes)
+    std::fs::write(path, bytes)?;
+    Ok(true)
 }
 
 fn icon_dir() -> Option<PathBuf> {
@@ -145,7 +147,7 @@ fn set_if_changed(key: &str, wanted: &str, changed: &mut bool) -> Result<(), Str
 }
 
 /// 幂等：三个扩展名的图标 + 双击命令都已经指向本程序就什么都不做。
-/// 返回是否真的改过注册表（只在这种情况下才通知 Explorer 刷新）。
+/// 返回是否需要通知 Explorer 刷新（注册表或图标文件任一真的变了）。
 pub fn ensure_associations() -> Result<bool, String> {
     let dir = icon_dir().ok_or_else(|| "couldn't place the association icons".to_string())?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -154,8 +156,14 @@ pub fn ensure_associations() -> Result<bool, String> {
     let mut changed = false;
     for a in &ASSOCS {
         let icon_path = dir.join(a.icon_name);
-        write_if_changed(&icon_path, a.icon_bytes)
-            .map_err(|e| format!("couldn't write {}: {e}", icon_path.display()))?;
+        // 图标文件内容换了（注册表里的路径没变）：也要让 Explorer 重读一遍，
+        // 否则资源管理器继续拿缓存里的旧图标画 .S/.P/.L —— 1.7.3 换整set 图标
+        // 时就是这样，文件明明已经替换，双击列表里看到的还是上一版。
+        if write_if_changed(&icon_path, a.icon_bytes)
+            .map_err(|e| format!("couldn't write {}: {e}", icon_path.display()))?
+        {
+            changed = true;
+        }
         let icon_value = format!("{},0", icon_path.display());
         set_if_changed(
             &format!(r"Software\Classes\.{}\DefaultIcon", a.ext),

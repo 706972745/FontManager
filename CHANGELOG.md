@@ -4,6 +4,34 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.3] — 2026-11-10（正式版）
+
+### 变更
+
+- **全套应用图标换成「拼贴纸片风」终稿**（撕纸毛边 / 叠纸层次 / 半透明胶带 / 手写首字母）。
+  五套母版一次换齐：
+  - 软件图标 → `src-tauri/icons/*`（exe、任务栏、托盘、安装包、开始菜单都跟着变）
+    与 `public/icon*.png`、`public/favicon.png`（标题栏、引导浮层、关于页、设置页脚）；
+  - `.S-FontManager` 快照 → `assets/snapshot-icon.ico`；
+  - `.P-FontManager` 导出包 → `assets/pack-icon.ico`；
+  - `.L-FontManager` 仅数据 → `assets/data-icon.ico`；
+  - 字体库文件夹 → `icons/library-folder.ico`（启动时盖到库根目录的 `.zfm-folder.ico`）。
+- 界面内「导出 / 选库」用的四枚插图（`ArtIcon`）同步换成同一套 64px 档；
+  旧版 SVG 源已无引用，移出 `public/icons`。
+- 标题栏品牌标去掉旧玻璃时代那圈蓝色光晕（`.brand-mark` 的 `drop-shadow`）：
+  新图标是白纸片、自带纸片投影，再叠一层蓝光会在纸边糊出一圈脏边。
+
+### 修复
+
+- **换图标后资源管理器还显示旧图**：`ensure_associations()` 原来只在注册表值变化时
+  发 `SHCNE_ASSOCCHANGED`。图标文件路径没变、内容变了的情况下不会通知，
+  Explorer 会继续用缓存画 `.S/.P/.L`。现在只要图标字节真的写盘也会通知。
+
+### 文档
+
+- 新增 `docs/图标规范.md` + `docs/icons/`（设计交付板 HTML、五套母版、两张预览图），
+  README 两个语言版本加入口，界面规范书补第 7 节。
+
 ## [1.7.2] — 2026-11-10（正式版）
 
 ### 修复
