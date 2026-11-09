@@ -226,7 +226,7 @@ fn runtimes() -> &'static Mutex<HashMap<String, Runtime>> {
 /// 本次会话里「起来过、后来自己没了」的插件（崩溃 / 被任务管理器结束）。
 ///
 /// 只用来把界面那句话写准：这种情况跟「解释器找不到」是两回事，
-/// 一律提示「多半是缺解释器」会把用户带偏（0.5.1 实测踩到）。
+/// 一律提示「多半是缺解释器」会把用户带偏（1.5.1 实测踩到）。
 fn crashed() -> &'static Mutex<HashSet<String>> {
     static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     SET.get_or_init(|| Mutex::new(HashSet::new()))
@@ -507,7 +507,7 @@ pub fn list() -> Vec<PluginInfo> {
                 };
                 if err.is_none() && wanted.contains(&m.id) && !running.contains(&m.id) {
                     // 「起来过又没了」和「一次都没起来」不是一回事：前者是崩溃/被结束，
-                    // 后者才多半是解释器。0.5.1 里统一写成「多半是缺解释器」，会误导排障。
+                    // 后者才多半是解释器。1.5.1 里统一写成「多半是缺解释器」，会误导排障。
                     let died = crashed().lock().map(|c| c.contains(&m.id)).unwrap_or(false);
                     err = Some(if died {
                         "上次运行中退出了（崩溃或被结束），重新打开一次试试".into()
@@ -1351,7 +1351,7 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
                             )),
                             "toast" => {
                                 // 插件以为「弹了提示」，但这里以前只写日志 —— 用户端一片安静
-                                // （0.5.1 实测：导出 PNG、字库统计都只看到日志行）。
+                                // （1.5.1 实测：导出 PNG、字库统计都只看到日志行）。
                                 // 现在转发成 plugin:toast 事件，由前端走应用内提示。
                                 let msg = v
                                     .get("message")

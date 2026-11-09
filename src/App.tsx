@@ -660,7 +660,7 @@ export default function App() {
             <LoadProgress />
             <ApplyProgress />
             <PluginProgress />
-            {/* 插件 toast（0.5.2）：后端转发 plugin:toast，这里接到应用内提示上 */}
+            {/* 插件 toast（1.5.2）：后端转发 plugin:toast，这里接到应用内提示上 */}
             <PluginToastBridge />
             <WarmFooter />
           </div>

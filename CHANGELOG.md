@@ -4,9 +4,33 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.5.3] — 2026-11-09
+## [1.5.3] — 2026-11-09（正式版）
 
 > 完整软件测试抓到的最要命一个：筛选、排序按钮点了「没反应」，其实是菜单开在屏幕外面。
+>
+> **版本号修正**：本轮正式版应接续 `1.4.10`，正确编号是 `1.5.0` → `1.5.3`，
+> 此前误写成 `0.5.0` → `0.5.3`（版本号倒退）。此处统一更正，功能内容与修复项不变；
+> GitHub 上误发的 `v0.5.3` 作废，请下载 `v1.5.3`。
+
+### 新增
+
+- **卸载时可选「删除全部数据」**：NSIS 卸载确认页本来就有「同时删除应用数据」
+  复选框，但以前勾了也只清掉 WebView2 缓存，字体库、插件、按需下载的运行时、
+  `state.json`、文件关联和字体注册项全都留在机器上。现在勾上会按白名单
+  精确清干净，像没装过一样；**不勾就只删程序本体**，数据一字不动，重装接着用。
+- 勾选时清理：安装目录下的 `字体库`、`plugins`、`python-runtime`、`node-runtime`、
+  `resources\*-runtime` 与三个文件关联图标；`%APPDATA%\FontManager`（状态、缓存、
+  回收站、在线目录、日志、API 令牌）与旧目录 `ZFontManager`；
+  `%LOCALAPPDATA%\FontManager\字体库`；`HKCU\Software\Classes` 下的
+  `.S-/.P-/.L-FontManager` 三个关联键；HKCU 字体表里**值数据指向本软件字体库**
+  的注册项；`%TEMP%` 里三个已知临时文件。
+- **明确不动**：系统字体目录与系统字体注册项、用户自定义字体库里的字体、
+  用户放进安装目录的其它文件、导出到文档或任意位置的快照与样张，以及
+  `%LOCALAPPDATA%\Microsoft\Windows\Fonts` 这类系统／用户字体目录。
+  数据目录只有含本软件特征文件时才整体删除，避免同名目录被误删。
+- 覆盖安装／自动更新（`/UPDATE`）与静默卸载都不会误清数据。
+- MSI 版由 Windows Installer 卸载，没有这个复选框，行为保持「只删本体、保留数据」；
+  需要完整清理请用 NSIS 安装包。
 
 ### 修复
 
@@ -16,10 +40,11 @@ All notable changes to FontManager are documented here. The format follows
   菜单其实已经打开、焦点也进了菜单，方向键 + 回车还能真的改排序 / 筛出结果，
   但界面上什么都没有 —— 用户只会以为「按钮坏了」。现在给 wrapper 补上
   `position: relative`，菜单回到按钮正下方。完整界面与速览界面共用这个组件，一处修两边。
-- 该问题来自 0.5.2 完整测试（见 `测试文档-完整-0.5.2.md` D3/D4 与 `测试报告-完整-0.5.2.md`），
-  复验方式：装 0.5.3 后点顶栏漏斗 / 排序按钮，菜单应出现在按钮下方并可点选。
+- 该问题来自 1.5.2 完整测试（文档名沿用旧编号：`测试文档-完整-0.5.2.md` D3/D4
+  与 `测试报告-完整-0.5.2.md`），复验方式：装 1.5.3 后点顶栏漏斗 / 排序按钮，
+  菜单应出现在按钮下方并可点选。
 
-## [0.5.2] — 2026-11-08
+## [1.5.2] — 2026-11-08
 
 > 插件能装 ZIP，却没说去哪拿 ZIP —— 补一个直达插件仓库的入口。
 
@@ -38,7 +63,7 @@ All notable changes to FontManager are documented here. The format follows
 - **崩溃/被结束的插件不再被说成「缺解释器」**：设置 → 插件 的那句提示改成
   「上次运行中退出了（崩溃或被结束）」，只有**从来没起来过**的才提示缺解释器。
 
-## [0.5.1] — 2026-11-08
+## [1.5.1] — 2026-11-08
 
 > 挑字的时候手在滚轮上，眼在预览上 —— 不该为了改字号再跑回顶栏拖滑条。
 
@@ -65,7 +90,7 @@ All notable changes to FontManager are documented here. The format follows
   （`TheHolyOneZ/ZFontManager`），留言会跑到别人那儿；现在都指到本项目
   （`706972745/FontManager`），按钮直接打开 issue 新建页 —— 就是「给作者留言」。
 
-## [0.5.0] — 2026-11-08（正式版）
+## [1.5.0] — 2026-11-08（正式版）
 
 > 解释器占不占用户的磁盘，应该由用户决定 —— 不是安装包替所有人决定。
 
