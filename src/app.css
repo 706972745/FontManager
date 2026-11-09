@@ -8019,6 +8019,15 @@ body.ui-fade-out .app-frame {
   border-radius: 1px;
   background: var(--ui-line);
 }
+/**
+ * 手柄：干净实心蓝圆点（2026-11-10 用户指定，照速览那颗）。
+ *
+ * ⚠️ 必须显式 `box-shadow: none`。旧样式给手柄压了三层阴影 ——
+ * `0 0 0 1px rgba(0,0,0,.25)` 的黑描边 + `0 0 10px` 的蓝色光晕 + 地面投影，
+ * 在玻璃拟物里那是「凸起的白旋钮」；换成蓝色实心点之后，那圈黑边会让圆点
+ * 看起来发脏、外圈光晕又像没聚焦，和速览里那颗干净的蓝点不一样。
+ * 下面的 :hover / :focus-visible 也要一起清，否则一悬停光晕又回来了。
+ */
 .topbar-size input[type="range"]::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
@@ -8027,7 +8036,20 @@ body.ui-fade-out .app-frame {
   border-radius: 50%;
   background: var(--ui-accent);
   border: 0;
+  box-shadow: none;
   cursor: pointer;
+}
+.topbar-size input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: none;
+}
+.topbar-size input[type="range"]::-webkit-slider-thumb:active,
+.topbar-size input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: none;
+}
+/* 聚焦不靠光晕，改用一圈 2px 的间隙环 —— 键盘用户必须看得出焦点在哪 */
+.topbar-size input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid color-mix(in srgb, var(--ui-accent) 45%, transparent);
+  outline-offset: 2px;
 }
 /* 视图切换：当前项 2% 底，不套蓝框 */
 .view-toggle > * {
