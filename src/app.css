@@ -5959,12 +5959,16 @@ body.ui-fade-out .app-frame {
 .qb-dockbar {
   display: flex;
   align-items: center;
-  /* 提示条宽度跟着速览窗口走（远宽于文字），整组「圆点 + 文案」居中放，
-     否则文案贴在最左边、右边空出一大片 */
-  justify-content: center;
-  gap: 7px;
+  /**
+   * 两端对齐（R3 §5.6）：左边是「状态」，右边是「怎么把窗口叫回来」。
+   * 原来整组居中，状态与操作挤成一行、没有层级；现在把状态贴左、操作贴右，
+   * 中间留白分层，眼球先看到状态、需要时再读到操作。
+   */
+  justify-content: space-between;
+  gap: 12px;
   height: 20px;
-  padding: 0 10px;
+  /* 左右各留 --qb-pad（24），与展开态顶栏同一条竖线 */
+  padding: 0 var(--qb-pad);
   min-width: 0;
   cursor: grab;
   touch-action: none;
@@ -5999,25 +6003,74 @@ body.ui-fade-out .app-frame {
   border-radius: 3px;
   background: rgba(138, 138, 143, 0.85);
 }
-.qb-dock-dot {
-  flex-shrink: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--text-tertiary);
-  opacity: 0.7;
-}
+/**
+ * 提示行本体：左「状态」+ 右「操作」。
+ * 一行里两种字号（11 / 9），用 baseline 对齐才不会让 9px 那截看着往上飘。
+ * 收窄窗口 / 长文案（俄语）时只有右端收缩并出省略号，左端状态永远完整可读。
+ */
 .qb-dock-label {
-  /* 不占满剩余宽度（那样 justify-content 就没效果了），按内容宽度参与居中；
-     文案比窗口还长时（俄语等）才允许收缩并出省略号 */
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+/* 状态：11px Medium、主文字色 —— 这一行最该先被看见的信息 */
+.qb-dock-state {
+  flex: 0 0 auto;
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--qb-fg);
+  letter-spacing: 0.01em;
+}
+/**
+ * 操作引导：9px、次文字色（#6B6B66 / #9A9A94，对比 ≥ 4.5:1）。
+ * 原来用三级灰，等于把「怎么把窗口找回来」这条关键信息调成了背景音。
+ * 这里保持块级 + 单行省略：块级才能让 text-overflow 作用到行内文字上。
+ */
+.qb-dock-action {
+  display: block;
   flex: 0 1 auto;
   min-width: 0;
-  font-size: var(--fs-10);
-  color: var(--text-tertiary);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 9px;
+  color: var(--qb-fg-2);
+  letter-spacing: 0.02em;
+}
+/**
+ * 键帽：只是「文字 + 1px 描边框」，不是图标资源（§5.6 / §8 第 5 条）。
+ *
+ * 用 inline-block + baseline 对齐，而不是 inline-flex + 居中：
+ * inline-flex 会把盒子自身的基线换成首个子项的基线，键帽里的字会整体掉到
+ * 相邻正文基线以下 3px（实测 6 倍放大可见「Alt」比旁边的汉字矮一截）。
+ * inline-block 里让 line-height 撑出行盒后，盒内文字自然落在同一基线上，
+ * 盒子按行盒居中，上下各露出约 3px 边框 —— 正是规格书里那枚键帽的样子。
+ */
+.qb-kbd {
+  display: inline-block;
+  box-sizing: border-box;
+  height: 16px;
+  min-width: 18px;
+  margin: 0 3px;
+  padding: 0 3px;
+  border: 1px solid var(--qb-hair);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  /* 16px 盒子减上下各 1px 描边 */
+  line-height: 14px;
+  text-align: center;
+  color: var(--qb-fg-2);
+  vertical-align: baseline;
+}
+/* 「+」是普通文本，不做成键帽（设计明确保留为分隔符） */
+.qb-kbd-plus {
+  margin: 0 1px;
+  color: var(--qb-fg-3);
 }
 
 /**
