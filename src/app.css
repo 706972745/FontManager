@@ -7813,6 +7813,11 @@ body.ui-fade-out .app-frame {
   border-radius: 12px;
   border-color: var(--ui-line);
   box-shadow: var(--shadow-ambient);
+  /* 必须显式给底色：旧样式在这几个面板上写了 `background: rgba(14,14,14,.3)`，
+     那层是「在模糊玻璃上再压一点」，换成不模糊之后就成了半透明黑 —— 深色下
+     面板和背景几乎同色，边界只剩一圈描边，看着像没弹出来。
+     用 --e3 这一档（深 #242422 / 浅 #fff），浮层最上层该是最亮的一级。 */
+  background: var(--e3);
 }
 .shortcuts-panel h2,
 .compare-title,
