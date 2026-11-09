@@ -588,6 +588,15 @@ body,
   font-size: var(--fs-10);
 }
 
+/* 修复（0.5.3 · P0）：排序 / 筛选菜单是 absolute 定位（top: calc(100% + 5px); right: 0），
+   但 .sort-wrap 以前没有任何定位样式，菜单只好锚到 .app-frame ——
+   top = 应用窗口整个高度 + 5px，等于渲染到窗口正下方（屏幕外）。
+   表现：点「筛选」「排序」按钮看似毫无反应（其实菜单开了，只是看不见，
+   键盘方向键仍能在隐形菜单里选到选项）。给 wrapper 一个定位上下文即可。 */
+.sort-wrap {
+  position: relative;
+}
+
 .sort-btn {
   display: flex;
   align-items: center;
