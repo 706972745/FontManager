@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { motion } from "motion/react";
 import {
   ArrowUpRight,
-  Download,
   Globe,
   Puzzle,
   Search,
@@ -27,24 +26,23 @@ function openUrl(url: string) {
   invoke("open_url", { url }).catch((e) => toast.error(translate("toast.couldntOpenLink"), String(e)));
 }
 
+/**
+ * 只留两个 GitHub 入口（2026-11-10 定）：原作者主页 + 上游源码仓库。
+ *
+ * 原来还有「更多项目」（zsync.eu）和「介绍与下载页」（zsync.eu/fontmanager）两张卡，
+ * 已按需求删除 —— 这个定制版的用户要的是「谁是上游、代码在哪」，
+ * 上游作者的其它站点不在这款软件的交付范围里。
+ *
+ * 顺带说明一处**故意不改**的地方：`about.source` 的仓库名仍是 `ZFontManager`。
+ * 上游原名就是它，本项目后来才改名 FontManager，这条链接必须指向上游原名，
+ * 跟着改名会 404。
+ */
 const LINKS: { key: TKey; sub: string; url: string; icon: React.ReactNode }[] = [
   {
     key: "about.githubUser",
     sub: "github.com/TheHolyOneZ",
     url: "https://github.com/TheHolyOneZ",
     icon: <GithubGlyph />,
-  },
-  {
-    key: "about.moreProjects",
-    sub: "zsync.eu",
-    url: "https://zsync.eu",
-    icon: <Globe size={16} strokeWidth={1.5} />,
-  },
-  {
-    key: "about.landing",
-    sub: "zsync.eu/fontmanager",
-    url: "https://zsync.eu/fontmanager/",
-    icon: <Download size={16} strokeWidth={1.5} />,
   },
   {
     key: "about.source",

@@ -2,8 +2,6 @@
   "about.customBuild": "IIEOzo 定制版 GitHub 地址",
   "about.desc": "预览、标签、分组与快照、双击安装、一键启停——几千款字体也能在一台机器上整理清楚；自动识别重复与授权来源，字体文件始终留在本地，不联网也能用全部功能。还能安装插件、开放本地 API、接入 MCP，把字体能力交给其他工具一起用。",
   "about.githubUser": "TheHolyOneZ 的 GitHub",
-  "about.landing": "介绍与下载页",
-  "about.moreProjects": "更多项目",
   "about.source": "ZFontManager 源代码",
   "about.stackAria": "技术栈",
   "about.version": "版本 {version} · {license}",

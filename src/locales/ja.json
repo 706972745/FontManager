@@ -2,8 +2,6 @@
   "about.customBuild": "IIEOzo カスタムビルド（GitHub）",
   "about.desc": "プレビュー、タグ、グループとスナップショット、ダブルクリックでインストール、ワンクリックで有効/無効化——数千のフォントも一台のマシンで整理でき、重複やライセンスも自動判別。フォントファイルは常にローカルに残り、オフラインでも全機能が使えます。プラグインのインストール、ローカル API、MCP に対応し、フォント機能を他のツールとつなげられます。",
   "about.githubUser": "GitHub の TheHolyOneZ",
-  "about.landing": "紹介・ダウンロードページ",
-  "about.moreProjects": "他のプロジェクト",
   "about.source": "ZFontManager のソースコード",
   "about.stackAria": "使用技術",
   "about.version": "バージョン {version} · {license}",

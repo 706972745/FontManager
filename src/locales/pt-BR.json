@@ -2,8 +2,6 @@
   "about.customBuild": "Build personalizada da IIEOzo no GitHub",
   "about.desc": "Visualize, marque, agrupe e crie snapshots de milhares de fontes, instale com clique duplo e ative ou desative famílias com um clique — tudo offline, com detecção de duplicatas e notas de licença. Seus arquivos de fonte ficam sempre no seu computador.Plugins instaláveis, API local e suporte a MCP conectam as fontes a outras ferramentas.",
   "about.githubUser": "TheHolyOneZ no GitHub",
-  "about.landing": "Página do projeto e downloads",
-  "about.moreProjects": "Mais projetos",
   "about.source": "Código-fonte do ZFontManager",
   "about.stackAria": "Tecnologias",
   "about.version": "Versão {version} · {license}",
