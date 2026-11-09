@@ -111,8 +111,10 @@ $downloadTable = @'
 - **`.msi`**：装到 `Program Files`，需要管理员权限，适合域内 GPO / Intune / SCCM 静默推送：
   `msiexec /i FontManager___VER___x64_en-US.msi /qn`。
 
-> ⚠️ 两个安装器共用注册表项 `HKCU\Software\TheHolyOneZ / IIEOzo\FontManager` 记录安装目录，
+> ⚠️ 两个安装器共用注册表项 `HKCU\Software\IIEOzo\FontManager` 记录安装目录，
 > **裸 `.msi` 只在干净机器上用**；已经装过 setup.exe 的机器请继续用 setup.exe。
+> `1.5.5` 起发布者署名改为 `IIEOzo`，该键路径随之变化；若你曾**自定义安装目录**，
+> 建议先卸载旧版（**不要勾选「删除全部数据」**）再安装本版，用户数据不会丢。
 '@
 
 $signBlock = if ($Signed) { $signSigned } else { $signUnsigned }
