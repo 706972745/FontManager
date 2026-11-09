@@ -7559,3 +7559,116 @@ body.ui-fade-out .app-frame {
 .toolbar {
   border-bottom: 1px solid var(--ui-line);
 }
+
+/* ─── 关于页 · 链接区（2026-11-10，版式照用户参考图） ──────────────────
+   两层各一组卡片：上层「本项目仓库」、下层「上游项目」。
+   卡片形态按需求保留**圆角玻璃卡**：图标方块 + 标题 + 一行等宽描述 + 右上箭头。
+   两层之间只靠「分组小标题 + 留白」分开，不画横线、不新增容器。 */
+
+/* 分组小标题：R4 第 4 级的做法（9px 等宽、强调蓝） */
+.about-section {
+  width: min(600px, 100%);
+  margin-top: 28px;
+  display: flex;
+  justify-content: center;
+}
+.about-section-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ui-accent);
+}
+
+/* 卡片网格 680：一张卡要装得下「标题 + 完整仓库名」。
+   实测 github.com/706972745/FontManager-Plugin 在 11px 等宽下要 215px，
+   560（每卡 274）装不下会被省略号切尾巴；680 时每卡 334、文字区 230，够。 */
+.about-links {
+  width: min(680px, 100%);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+/* 卡片本体：内边距略放大、圆角 10、浅色图标底，贴近参考图的分量 */
+.about-link {
+  padding: 14px 16px;
+  gap: 12px;
+  border-radius: 10px;
+}
+.about-link-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+.about-link-label {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.about-link-sub {
+  /* 10px + 等宽：地址本身是「要照着敲」的信息，等宽更像地址栏；
+     再小一级就挤得下最长的那条（FontManager-Plugin） */
+  font-size: var(--fs-10);
+  line-height: 1.5;
+  /* 用次文字色而不是弱文字色：#666660 压在 #111110 上只有 3:1，10px 会糊成一条灰影 */
+  color: var(--text-secondary);
+}
+.about-link-arrow {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: color var(--t-quick) ease;
+}
+.about-link:hover .about-link-arrow {
+  color: var(--text-secondary);
+}
+
+/* 血缘说明：一行小字，压在两层卡片之后 */
+.about-upstream-note {
+  width: min(600px, 100%);
+  margin: 20px 0 0;
+  font-size: var(--fs-11);
+  line-height: 1.7;
+  color: var(--text-tertiary);
+}
+
+/* 窄窗：两层都退成一列（参考图是两列，但窗口 <640 时两列会把仓库名压没） */
+@media (max-width: 640px) {
+  .about-links {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── 减重：功能一览不再是「卡片」 ─────────────────────────────────────
+   这一页原来只有功能 6 块带底色，看着还行；现在链接区是 4 张实心卡片，
+   6 个灰块跟它们撞在一起，读者分不清哪个能点。所以功能降级成「图标 + 文字」
+   的轻量行：有底色的、带箭头的，这一页就只留给真正能点的链接卡。
+   这也正是 R4 §4.4 第 4 级「功能区」的说法 —— 一栏短语，不是六个盒子。 */
+.about-feature {
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.about-feature-icon {
+  color: var(--ui-accent);
+  opacity: 0.75;
+}
+.about-feature-text {
+  color: var(--text-secondary);
+}
+
+/* 字阶按 R4 §4.4：应用名 22、描述 11 / 行高 1.75、版本 10 等宽弱色 */
+.about-name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.about-version {
+  font-family: var(--font-mono);
+  font-size: var(--fs-10);
+}
+.about-desc {
+  font-size: var(--fs-11);
+  line-height: 1.75;
+  max-width: 560px;
+}
