@@ -2,8 +2,6 @@
   "about.customBuild": "IIEOzo Custom-Build auf GitHub",
   "about.desc": "Vorschau, Tags, Gruppen und Snapshots, Installation per Doppelklick, Aktivieren/Deaktivieren mit einem Klick – Tausende Schriften bleiben übersichtlich; Duplikate und Lizenzen werden automatisch erkannt. Die Schriftdaten bleiben jederzeit auf deinem Rechner.Installierbare Plugins, eine lokale HTTP-API und MCP-Anbindung bringen Schriftfunktionen in andere Tools.",
   "about.githubUser": "TheHolyOneZ auf GitHub",
-  "about.landing": "Projekt- und Downloadseite",
-  "about.moreProjects": "Weitere Projekte",
   "about.source": "ZFontManager-Quellcode",
   "about.stackAria": "Technik",
   "about.version": "Version {version} · {license}",

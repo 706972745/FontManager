@@ -2,8 +2,6 @@
   "about.customBuild": "Build personnalisé IIEOzo sur GitHub",
   "about.desc": "Prévisualisez, étiquetez, regroupez et créez des instantanés de milliers de polices, installez-les d'un double clic, activez ou désactivez une famille en un clic — le tout hors ligne, avec détection des doublons et notes de licence. Vos fichiers de polices restent sur votre machine.Extensions installables, API locale et prise en charge MCP : connectez vos polices à d'autres outils.",
   "about.githubUser": "TheHolyOneZ sur GitHub",
-  "about.landing": "Page de présentation et téléchargement",
-  "about.moreProjects": "Autres projets",
   "about.source": "Code source de ZFontManager",
   "about.stackAria": "Technologies",
   "about.version": "Version {version} · {license}",
