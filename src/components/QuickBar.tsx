@@ -10,7 +10,7 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useMarquee } from "../design/primitives/useMarquee";
@@ -68,6 +68,28 @@ import { StarRating } from "./StarRating";
  * 占住几百毫秒，窗口形变动画就被拖出可见的停顿；屏幕外的卡片本来也看不到动画。
  */
 const ANIMATED_ITEMS = 24;
+
+/**
+ * 折叠提示条的分段（R3 规格书 §5.6 / §6.13）。
+ *
+ * 原文是一整句「状态 · 操作」，设计上要拆成左右两端：左「速览已收起」用主文字色
+ * 11px Medium，右「靠近或按 Alt + ` 展开」用次文字色 9px，中间那个「·」改成留白。
+ * 拆分完全基于文案本身（各语言用「·」或「—」当分隔符），不写死任何语言的词，
+ * 9 个语言包共用一套逻辑；热键本身从 {hotkey} 占位处让位，由调用方播成键帽。
+ *
+ * 取不到分隔符时（理论上不会有）整句退回左端，不丢字、不改词序。
+ */
+function splitDockHint(raw: string) {
+  const at = raw.indexOf("{hotkey}");
+  const head = at >= 0 ? raw.slice(0, at) : raw;
+  const tail = at >= 0 ? raw.slice(at + "{hotkey}".length) : "";
+  const m = head.match(/^(.*?)\s+[·—]\s+(.*)$/);
+  return {
+    state: (m ? m[1] : head).trim(),
+    lead: (m ? m[2] : "").trim(),
+    tail: tail.trim(),
+  };
+}
 
 /**
  * 速览里的一行字重。
@@ -428,6 +450,9 @@ export function QuickBar() {
   // 提示里显示的按键跟着设置走（用户可能把它改成了 Ctrl+Alt+Q 之类）
   const hotkeyLabel = useFontStore((s) => s.quickbarHotkey.label);
   const dockHint = t("quickbar.topbarHint", { hotkey: hotkeyLabel });
+  /** 折叠提示条：文案拆成「状态 / 操作」两端，热键拆成键帽（见 splitDockHint） */
+  const dockText = splitDockHint(t("quickbar.collapsedHint"));
+  const dockKeys = hotkeyLabel.split(/\s*\+\s*/).filter(Boolean);
   // 自实现拖动：绕开系统标题栏拖动带来的「拖到顶部就最大化」
   const dragWindow = useWindowDrag();
   // 进入速览的那一下窗口正在形变，列表不要再做逐个入场的动作
@@ -635,9 +660,22 @@ export function QuickBar() {
             void expandQuickbarPanel();
           }}
         >
-          <span className="qb-dock-dot" aria-hidden="true" />
           <span className="qb-dock-label">
-            {t("quickbar.collapsedHint", { hotkey: hotkeyLabel })}
+            <span className="qb-dock-state">{dockText.state}</span>
+            {/* 操作引导只在有内容时才建节点：万一某个语言包没写分隔符，
+                也不该多出一个空的右侧列把布局撑歪 */}
+            {(dockText.lead || dockText.tail) && (
+              <span className="qb-dock-action">
+                {dockText.lead && <span className="qb-dock-lead">{dockText.lead}</span>}
+                {dockKeys.map((k, i) => (
+                  <Fragment key={`${k}-${i}`}>
+                    {i > 0 && <span className="qb-kbd-plus">+</span>}
+                    <kbd className="qb-kbd">{k}</kbd>
+                  </Fragment>
+                ))}
+                {dockText.tail && <span className="qb-dock-tail">{dockText.tail}</span>}
+              </span>
+            )}
           </span>
         </div>
       ) : (
