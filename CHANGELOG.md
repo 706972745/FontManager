@@ -4,6 +4,31 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.4] — 2026-11-09（正式版）
+
+> 插件「下载了用不了」大多不是插件坏了、也不是软件版本不对，而是**环境没配齐**：
+> 缺 Python、缺 Pillow、自带的可执行文件丢了。这一版把运行环境摆到明面上。
+
+### 新增
+
+- **插件清单每一行都标出运行环境**：`plugin.json` 新增可选的 `requirements`
+  （`runtime` / `libraries` / `system` / `platforms` / `note`）。徽标显示
+  「自带 Python 3.13」「需要 Python」「无需额外环境」「环境未知」；悬停给出完整
+  依赖清单（第三方库、系统组件、适用平台、插件作者补充说明）。
+- **缺运行时会标红**：后端按与启动逻辑完全相同的口径推断解释器
+  （`interpreter` → `entry` 后缀 → `interpreterPath`），并探测本机是否具备，
+  缺了就在徽标上追加「缺少运行时」，提示到下方「运行时管理」下载。
+  老插件没写 `requirements` 也会按推断结果显示，不会一片空白。
+- 九种语言文案齐全；`docs/PLUGINS.md` 补 `requirements` 字段说明。
+- 配套插件集同步更新：`font-sync` 0.8.11 / `font-stats` 1.1.2 /
+  `specimen-export` 1.2.2 / `template-hello` 1.0.1；四个插件都写了依赖自述、
+  补了 README「运行环境 / 依赖」章节，发布页表格新增「运行环境」列。
+- **font-sync 令牌安全**（插件仓改动）：令牌迁出插件目录，改存
+  **Windows 凭据管理器**（回退时存 `%APPDATA%` 下的 DPAPI 加盐密文），
+  插件 ZIP / 目录 / 代码里都翻不到令牌；上传与复制令牌前必须在浏览器登录
+  对应 GitHub 账号完成验证（OAuth Device Flow，插件不放 client_secret），
+  **下载字体不需要验证**。
+
 ## [1.5.3] — 2026-11-09（正式版）
 
 > 完整软件测试抓到的最要命一个：筛选、排序按钮点了「没反应」，其实是菜单开在屏幕外面。

@@ -705,8 +705,11 @@ export function SettingsOverlay() {
                   </button>
                 </div>
               </div>
-              {/* 解释器两行已移除（2026-11-05 用户口径）：插件自带运行环境（runtime/ + interpreterPath）
-                  或由软件静默自动探测，正常情况用户永远不需要看见或手动指定解释器。 */}
+              {/* 这里仍然不提供「手动指定解释器路径」的输入框（2026-11-05 口径）：
+                  探测由软件自动完成，用户不该被要求填路径。
+                  但 1.5.4 起改成「看得见」—— 插件清单每一行都会标出需要什么环境、
+                  是否自带、本机是否具备；用户下载插件后不会再因为缺解释器
+                  而误以为插件坏了或软件版本不对。 */}
             </section>
 
             <section className="settings-section">
@@ -1118,12 +1121,51 @@ export function SettingsOverlay() {
                     </button>
                   </div>
                 </div>
-                {plugins.map((p) => (
-                  <div
-                    key={p.id}
-                    className="settings-row settings-plugin-row"
-                    onContextMenu={(e) => openPluginRowMenu(e, p)}
-                  >
+      {plugins.map((p) => {
+        // 依赖徽标（1.5.4）：装之前就知道要什么环境，别把「缺解释器」当成插件坏了。
+        // 常驻显示简短标签，完整清单放悬停气泡，不挤掉卡片小字。
+        const req = p.requirements;
+        const runtimeName =
+          req?.runtime?.trim() ||
+          (p.interpreter === "python" ? "Python" : p.interpreter === "node" ? "Node.js" : p.interpreter);
+        const missing =
+          !p.runtimeReady && p.interpreter !== "exe" && p.interpreter !== "unknown";
+        const badge =
+          p.interpreter === "unknown"
+            ? t("settings.plugRtUnknown")
+            : p.bundled
+              ? t("settings.plugRtBundled", { runtime: runtimeName })
+              : p.interpreter === "exe"
+                ? t("settings.plugRtSelfContained")
+                : t("settings.plugRtNeeds", { runtime: runtimeName });
+        const source = p.bundled
+          ? t("settings.plugRtSourceBundled")
+          : p.interpreter === "exe"
+            ? t("settings.plugRtSourceNone")
+            : t("settings.plugRtSourceManaged");
+        const detail = [
+          t("settings.plugRtRuntimeLine", { runtime: runtimeName }),
+          t("settings.plugRtSourceLine", { source }),
+          req?.libraries?.length
+            ? t("settings.plugRtLibs", { libs: req.libraries.join("、") })
+            : "",
+          req?.system?.length
+            ? t("settings.plugRtSystem", { sys: req.system.join("、") })
+            : "",
+          req?.platforms?.length
+            ? t("settings.plugRtPlatforms", { platforms: req.platforms.join("、") })
+            : "",
+          req?.note?.trim() || "",
+          missing ? t("settings.plugRtMissingHint") : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+        return (
+        <div
+          key={p.id}
+          className="settings-row settings-plugin-row"
+          onContextMenu={(e) => openPluginRowMenu(e, p)}
+        >
                   <div>
                     <div className="settings-label">
                       <PillToggle
@@ -1132,8 +1174,15 @@ export function SettingsOverlay() {
                         label={p.name}
                       />
                       <span>{p.name}</span>
-                      <span className="settings-plugin-version">v{p.version}</span>
-                      {p.running && <span className="settings-plugin-running" aria-hidden />}
+            <span className="settings-plugin-version">v{p.version}</span>
+            <span
+              className={"settings-plugin-runtime" + (missing ? " is-missing" : "")}
+              data-hint-text={detail}
+            >
+              {badge}
+              {missing ? ` · ${t("settings.plugRtMissing")}` : ""}
+            </span>
+            {p.running && <span className="settings-plugin-running" aria-hidden />}
                     </div>
                     <div
                       className="settings-sub"
@@ -1176,7 +1225,8 @@ export function SettingsOverlay() {
                     </button>
                   </div>
                   </div>
-                ))}
+                );
+              })}
                 {/* 运行时管理（1.4.11）：安装包不再自带 Python/Node —— 在这看得见、可下载补全、可删除 */}
                 <RuntimeManager />
               </div>

@@ -6694,6 +6694,26 @@ body.ui-fade-out .app-frame {
   opacity: 0.65;
 }
 
+/* 插件依赖徽标（1.5.4）：装之前就知道要什么环境，别把「缺解释器」当成插件坏了。
+   常驻显示在版本旁边，完整清单走 data-hint-text 悬停气泡。 */
+.settings-plugin-runtime {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 28%, transparent);
+  border-radius: 999px;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: help;
+  flex-shrink: 0;
+}
+.settings-plugin-runtime.is-missing {
+  color: #e5484d;
+  border-color: color-mix(in srgb, #e5484d 45%, transparent);
+  background: color-mix(in srgb, #e5484d 10%, transparent);
+}
+
 /* ── 1.3.0 ①：端口输入框 / 回退提示 / 插件运行点 ── */
 .settings-port-input {
   flex: 0 0 auto;
