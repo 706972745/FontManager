@@ -92,7 +92,11 @@ body,
   height: 21px;
   display: block;
   user-select: none;
-  filter: drop-shadow(0 0 7px var(--accent-glow-soft)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+  /* 旧图标是深色圆角块，靠一圈蓝色光晕 + 投影从玻璃底上浮起来；
+     1.7.3 换成白纸片图标之后，那圈光晕变成糊在白纸边上的蓝边，
+     而图标自己已经带了纸片投影 —— 这里一律不叠。
+     （2026-11-10 图标换新，见 docs/图标规范.md） */
+  filter: none;
 }
 .titlebar-title {
   font-size: var(--fs-13);

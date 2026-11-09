@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>FontManager 图标方案 · 拼贴纸片风（黑白灰）</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family:"Inter","Microsoft YaHei",sans-serif;
+    background:#ececee; padding:28px 40px; width:1080px;
+  }
+  h1 { font-size:19px; font-weight:700; color:#111; letter-spacing:.5px; }
+  .sub { font-size:11px; color:#8a8a90; margin-top:6px; letter-spacing:1px; }
+  .cards { display:flex; gap:16px; margin-top:22px; }
+  .card {
+    flex:1; background:#fff; border-radius:12px; padding:20px 14px 16px;
+    display:flex; flex-direction:column; align-items:center;
+    box-shadow:0 1px 3px rgba(0,0,0,.05);
+  }
+  .hero { width:120px; height:120px; display:flex; align-items:center; justify-content:center; }
+  .hero img { max-width:120px; max-height:120px; }
+  .name { font-size:12.5px; font-weight:700; color:#1a1a1a; margin-top:12px; }
+  .en   { font-size:11px; color:#6d6d73; margin-top:4px; font-family:Geist Mono,Consolas,monospace; }
+  .desc { font-size:10px; color:#9a9aa0; margin-top:3px; }
+  .file { font-size:9px; color:#b0b0b6; margin-top:5px; font-family:Consolas,monospace; }
+  .sizes {
+    margin-top:14px; padding-top:12px; width:100%;
+    border-top:1px dashed #e2e2e6;
+    display:flex; align-items:flex-end; justify-content:center; gap:14px;
+  }
+  .sizes .cell { display:flex; flex-direction:column; align-items:center; gap:5px; }
+  .sizes .lbl  { font-size:8.5px; color:#b6b6bc; font-family:Consolas,monospace; }
+  .foot {
+    margin-top:18px; font-size:10.5px; color:#9a9aa0; letter-spacing:.5px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .foot .blue { color:#3b6fe0; }
+  table { width:100%; margin-top:12px; border-collapse:collapse; font-size:10px; color:#55555c; }
+  td { padding:5px 8px; border-top:1px solid #e6e6ea; font-family:Consolas,monospace; }
+  td:first-child { color:#1a1a1a; font-family:Inter,"Microsoft YaHei",sans-serif; font-weight:600; width:150px; }
+</style>
+</head>
+<body>
+  <h1>FontManager 图标方案 · 拼贴纸片风（黑白灰）</h1>
+  <div class="sub">撕纸毛边 / 叠纸层次 / 半透明胶带 / 手写首字母 / 主图标白底板 · 文件图标原色透明</div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="hero"><img src="main/main_256.png"></div>
+      <div class="name">软件图标</div>
+      <div class="en">FontManager</div>
+      <div class="desc">深色卡片 + 白纸片</div>
+      <div class="file">main/main.ico</div>
+      <div class="sizes">
+        <div class="cell"><img src="main/main_48.png" width="48" height="48"><div class="lbl">48</div></div>
+        <div class="cell"><img src="main/main_32.png" width="32" height="32"><div class="lbl">32</div></div>
+        <div class="cell"><img src="main/main_24.png" width="24" height="24"><div class="lbl">24</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hero"><img src="snapshot/snapshot_256.png"></div>
+      <div class="name">快照导出 · S</div>
+      <div class="en">Snapshot</div>
+      <div class="desc">网点纸 + 白纸叠 · 透明底</div>
+      <div class="file">snapshot/snapshot.ico</div>
+      <div class="sizes">
+        <div class="cell"><img src="snapshot/snapshot_48.png" width="48" height="48"><div class="lbl">48</div></div>
+        <div class="cell"><img src="snapshot/snapshot_32.png" width="32" height="32"><div class="lbl">32</div></div>
+        <div class="cell"><img src="snapshot/snapshot_24.png" width="24" height="24"><div class="lbl">24</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hero"><img src="pack/pack_256.png"></div>
+      <div class="name">导出 · 含字体 · P</div>
+      <div class="en">Pack · FontManager</div>
+      <div class="desc">四张纸厚叠 · 透明底</div>
+      <div class="file">pack/pack.ico</div>
+      <div class="sizes">
+        <div class="cell"><img src="pack/pack_48.png" width="48" height="48"><div class="lbl">48</div></div>
+        <div class="cell"><img src="pack/pack_32.png" width="32" height="32"><div class="lbl">32</div></div>
+        <div class="cell"><img src="pack/pack_24.png" width="24" height="24"><div class="lbl">24</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hero"><img src="library/library_256.png"></div>
+      <div class="name">导出 · 仅数据 · L</div>
+      <div class="en">Library · json</div>
+      <div class="desc">主纸 + 数据线副纸 · 透明底</div>
+      <div class="file">library/library.ico</div>
+      <div class="sizes">
+        <div class="cell"><img src="library/library_48.png" width="48" height="48"><div class="lbl">48</div></div>
+        <div class="cell"><img src="library/library_32.png" width="32" height="32"><div class="lbl">32</div></div>
+        <div class="cell"><img src="library/library_24.png" width="24" height="24"><div class="lbl">24</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hero"><img src="folder/folder_256.png"></div>
+      <div class="name">文件库文件夹 · F</div>
+      <div class="en">Folder</div>
+      <div class="desc">灰底 + 撕边撕纸 · 透明底</div>
+      <div class="file">folder/folder.ico</div>
+      <div class="sizes">
+        <div class="cell"><img src="folder/folder_48.png" width="48" height="48"><div class="lbl">48</div></div>
+        <div class="cell"><img src="folder/folder_32.png" width="32" height="32"><div class="lbl">32</div></div>
+        <div class="cell"><img src="folder/folder_24.png" width="24" height="24"><div class="lbl">24</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>下排依次 <span class="blue">48 / 32 / 24 px</span> —— 检查小尺寸下是否容易认得出</span>
+    <span>每套均含 .ico（256/128/64/48/32/24/16 七档）+ 各档 PNG</span>
+  </div>
+
+  <table>
+    <tr><td>main/main.ico</td><td>软件主图标 → 替换 src-tauri/icons 下应用图标（icon.ico / 128x128.png / 32x32.png 等）</td></tr>
+    <tr><td>snapshot/snapshot.ico</td><td>快照导出文件关联图标</td></tr>
+    <tr><td>pack/pack.ico</td><td>导出包（含字体）关联图标</td></tr>
+    <tr><td>library/library.ico</td><td>导出数据（json）关联图标</td></tr>
+    <tr><td>folder/folder.ico</td><td>文件库文件夹关联图标</td></tr>
+  </table>
+</body>
+</html>
