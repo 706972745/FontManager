@@ -8300,3 +8300,295 @@ body.ui-fade-out .app-frame {
 .filter-menu {
   border-radius: 4px;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   插件界面 R7（2026-11-10）
+   --------------------------------------------------------------------
+   依据：handoff《FontManager-插件界面UI视觉建议-深色版》(R7·深色定稿)，
+   深色设计稿 plugin-deliverables/插件万能界面-03/04。
+   仍然是**追加覆盖**：一行原有样式都没删，删掉本段即整体回滚。
+
+   和 R4 的分工：
+   · R7 只给「插件分区 / 运行时管理 / 插件仓库入口 / 菜单 / Toast」定规格，
+     这几块按 R7 落地；其余界面继续按 R4。
+   · R7 的深色配色是「墨水灰阶 + 灰白强调 + 警示红唯一彩色」。但本项目在 R4
+     已经把强调色定成蓝（`--ui-accent`，用户 2026-11-10 明确要蓝色滑杆），
+     同一窗口里一半蓝一半灰会像两个软件拼起来的。所以这里走 R7 §1 自己给的
+     **备选口径**：「若实现侧希望保留彩色强调，备选亮蓝 #6d9eff」——
+     用现有 `--ui-accent`（#5B8CFF，同一色系、深底 4.6:1），不引入第二种蓝。
+     其余中性层（面板 / 浮层 / 控件底 / 发丝线 / 三级文字 / 警示红）逐条照文档取值。
+     想切成纯灰白：把下面的 `--pl-accent` 改成 #d4d4d8、`--pl-knob` 改成 #17171b 即可。
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ─── 令牌：只在插件相关容器内生效，不外溢到别的分区 ─────────────────── */
+/* 浅色沿用 R4 纸墨（R7 没给浅色 token 表，浅色两屏是「蓝色强调」的对照稿） */
+:root {
+  --pl-plate: var(--e3);
+  --pl-float: var(--ui-menu);
+  --pl-control: transparent;
+  --pl-hair: var(--ui-line);
+  --pl-stroke: var(--ui-line);
+  --pl-stroke-control: var(--ui-line);
+  --pl-stroke-badge: var(--ui-line);
+  --pl-fg: var(--text-primary);
+  --pl-fg2: var(--text-secondary);
+  --pl-fg3: var(--text-tertiary);
+  --pl-fg4: var(--text-tertiary);
+  --pl-accent: var(--ui-accent);
+  --pl-knob: var(--canvas);
+  --pl-danger: #e5484d;
+  --pl-danger-bg: color-mix(in srgb, #e5484d 8%, transparent);
+}
+/* 深色：R7 §1 实测值（面板 #161619 / 浮层 #1e1e22 / 控件 #1d1d21 …） */
+:root:not([data-theme="light"]) {
+  --pl-plate: #161619;
+  --pl-float: #1e1e22;
+  --pl-control: #1d1d21;
+  --pl-hair: #26262b;
+  --pl-stroke: #2e2e33;
+  --pl-stroke-control: #3a3a40;
+  --pl-stroke-badge: #3c3c42;
+  --pl-fg: #e8e8e8;
+  --pl-fg2: #909095;
+  --pl-fg3: #5f5f66;
+  --pl-fg4: #4a4a52;
+  --pl-accent: var(--ui-accent); /* = 文档备选亮蓝口径 */
+  --pl-knob: #17171b;
+  --pl-danger: #e5484d;
+  --pl-danger-bg: #2a1416;
+}
+
+/* ─── 插件分区：清单头 ──────────────────────────────────────────────── */
+.settings-plugin-group .settings-plugins-head {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.settings-plugin-group .settings-plugins-head .settings-sub {
+  font-size: 10.5px;
+  color: var(--pl-fg3);
+}
+/* 清单头右侧三枚动作：26 高 / r=2 / 1px 描边 / 10px（R7 §2） */
+.settings-plugin-group .settings-add-folder {
+  height: 26px;
+  padding: 0 9px;
+  gap: 5px;
+  border-radius: 2px;
+  border: 1px solid var(--pl-stroke-control);
+  background: var(--pl-control);
+  font-size: 10px;
+  color: var(--pl-fg2);
+}
+:root:not([data-theme="light"]) .settings-plugin-group .settings-add-folder {
+  background: #1d1d21;
+}
+.settings-plugin-group .settings-add-folder:hover:not(:disabled) {
+  color: var(--pl-fg);
+  border-color: color-mix(in srgb, var(--pl-accent) 45%, var(--pl-stroke-control));
+}
+
+/* ─── 插件行（R7 §2 / §4 状态矩阵） ─────────────────────────────────── */
+.settings-plugin-group .settings-plugin-row {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--pl-hair);
+  align-items: flex-start;
+}
+/* 族名 12 Medium；版本 9 mono 弱；徽标 16 高胶囊 / 8.5 mono */
+.settings-plugin-group .settings-plugin-row .settings-label {
+  font-size: var(--fs-12, 12px);
+  font-weight: 500;
+  color: var(--pl-fg);
+  gap: 7px;
+}
+.settings-plugin-group .settings-plugin-version {
+  margin-left: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  opacity: 1;
+  color: var(--pl-fg3);
+}
+.settings-plugin-group .settings-plugin-runtime {
+  margin-left: 0;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--pl-stroke-badge);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  line-height: 16px;
+  color: var(--pl-fg3);
+  background: none;
+}
+/* 缺运行时：红描边 + 红字 + 红底 10%（全界面唯一的彩色） */
+.settings-plugin-group .settings-plugin-runtime.is-missing {
+  color: var(--pl-danger);
+  border-color: color-mix(in srgb, var(--pl-danger) 60%, transparent);
+  background: var(--pl-danger-bg);
+}
+.settings-plugin-group .settings-plugin-running {
+  background: var(--pl-accent);
+}
+/* 副文 10.5；错误信息原样显示（R7 §4「summary 为 error 时原样显示」） */
+.settings-plugin-group .settings-plugin-row .settings-sub {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--pl-fg2);
+}
+/* 行尾 ⚙ / 📂：24×24 的图标按钮（R7 §2「右侧 ⚙ + 📂」） */
+.settings-plugin-group .settings-plugin-actions {
+  gap: 4px;
+  align-self: center;
+}
+.settings-plugin-group .settings-plugin-actions .settings-library-open {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 2px;
+  color: var(--pl-fg3);
+}
+.settings-plugin-group .settings-plugin-actions .settings-library-open:hover:not(:disabled) {
+  color: var(--pl-fg);
+  background: var(--pl-control);
+}
+.settings-plugin-group .settings-plugin-actions .settings-library-open:disabled {
+  opacity: 0.32;
+}
+
+/* ─── 运行时管理（R7 §2） ───────────────────────────────────────────── */
+.settings-plugin-group .settings-plugins-head + .settings-plugin-row {
+  border-top: 0;
+}
+/* 运行时行：名称 11 Medium + 版本 9 mono + 状态 10 */
+.settings-plugin-row .load-progress {
+  padding: 0;
+  background: none;
+  border-top: 0;
+}
+.settings-plugin-row .load-progress .load-track {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--pl-hair);
+}
+.settings-plugin-row .load-progress .load-fill {
+  border-radius: 999px;
+  background: var(--pl-accent);
+}
+
+/* ─── 仓库入口（R7 §2）：1px 描边块 r=2 ─────────────────────────────── */
+.settings-plugins-more {
+  border: 1px solid var(--pl-stroke);
+  border-radius: 2px;
+  background: none;
+  padding: 13px 14px;
+  margin-top: 10px;
+  /* R7 §2 的仓库入口是「左文右按钮」的一行；.settings-translate 原本是竖排
+     （翻译区那种「标题 / 副文 / 按钮」上下堆），这里改成横排。 */
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.settings-plugins-more .settings-translate-text {
+  min-width: 0;
+}
+.settings-plugins-more .settings-translate-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pl-fg);
+  gap: 6px;
+}
+.settings-plugins-more .settings-translate-text .settings-sub {
+  font-size: 10px;
+  color: var(--pl-fg2);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.settings-plugins-url {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--pl-accent);
+  margin-top: 4px;
+}
+.settings-plugins-more .settings-data-btn {
+  height: 28px;
+  border-radius: 2px;
+  border: 1px solid var(--pl-stroke-control);
+  background: var(--pl-control);
+  font-size: 10px;
+  color: var(--pl-fg2);
+}
+.settings-plugins-more .settings-data-btn:hover:not(:disabled) {
+  color: var(--pl-fg);
+  border-color: color-mix(in srgb, var(--pl-accent) 45%, var(--pl-stroke-control));
+}
+
+/* ─── 菜单族：8px 圆角 / 32 行高 / 10.5px（R7 §3，与 R4 §5.1 的 8px 对齐） ── */
+.ctx-menu {
+  border-radius: 8px;
+  padding: 5px;
+  box-shadow: var(--shadow-mass);
+}
+:root:not([data-theme="light"]) .ctx-menu {
+  background: var(--pl-float);
+  border-color: var(--pl-stroke);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.ctx-item {
+  /* 用 min-height 不用 height：`.ctx-label` 是 nowrap + 省略号，单行刚好 32；
+     万一以后某项要两行，也不会被裁掉。 */
+  height: auto;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 0;
+  font-size: 10.5px;
+  gap: 8px;
+}
+:root:not([data-theme="light"]) .ctx-item:hover:not(:disabled),
+:root:not([data-theme="light"]) .ctx-item.ctx-submenu-open {
+  background: #2a2a30;
+}
+.ctx-sep {
+  background: var(--pl-hair);
+}
+
+/* ─── Toast：错误态竖条换警示红（R7 §3 六条 Toast） ─────────────────── */
+:root:not([data-theme="light"]) .toast {
+  background: var(--pl-float);
+  border-color: var(--pl-stroke);
+}
+.toast-error::before {
+  background: var(--pl-danger);
+}
+.toast-error .toast-icon.error {
+  color: var(--pl-danger);
+}
+
+/* 清单头里那个嵌套的 `.settings-row` 只是「右对齐按钮组」的容器，不是一行条目：
+   它自带 padding + 底部分隔线，会把清单头撑成两层、并多出一条发丝线。 */
+.settings-plugins-head > .settings-row,
+.settings-plugins-head .settings-row-tight {
+  padding: 0;
+  border: 0;
+  background: none;
+  gap: 6px;
+  min-height: 0;
+}
+
+/* ─── 设置分区标题（R7 §2）：13px Medium、正体 ────────────────────────
+   R4 把分组标题做成了「9/10px 全大写等宽弱色」（`.detail-heading` 原样），
+   在插件分区里读起来像脚注；R7 的深色稿里「插件」「Affinity CPU 亲和」都是
+   13px Medium 的正体标题。这里只动设置弹窗内的标题，详情面板的 `.detail-heading`
+   继续用 R4 那套。 */
+.settings-panel .detail-heading {
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--pl-fg);
+  margin-bottom: 10px;
+}
