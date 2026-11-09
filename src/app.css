@@ -5642,22 +5642,61 @@ h2.detail-title.copy-name {
 }
 
 /* ─── 速览界面：只显示已启用的字体 ───────────────────────────── */
+/**
+ * 速览专用设计令牌（设计交付规格书 R2 §4.2）。
+ *
+ * 为什么单独一套、不直接用 --canvas / --text-*：
+ * 速览是「纸与墨」的极简单列，靠 1px 发丝线分栏，底色需要比完整界面更中性、
+ * 层级只靠字号与字重（9/11/13/32 四级），所以显式写死色值，不受完整界面
+ * 的玻璃质感与灰度层级影响。深色是默认（与 tokens.css 的 :root 一致）。
+ */
+:root {
+  --qb-bg: #111110;
+  --qb-fg: #f2f2ef;
+  --qb-fg-2: #9a9a94;
+  --qb-fg-3: #666660;
+  --qb-hair: #2a2a27;
+  --qb-hover: #1c1c1a;
+  --qb-anchor: #3a3a36;
+  --qb-anchor-hover: #9a9a94;
+  --qb-accent: #5b8cff;
+  --qb-pad: 24px;
+}
+:root[data-theme="light"] {
+  --qb-bg: #fafaf8;
+  --qb-fg: #141412;
+  --qb-fg-2: #6b6b66;
+  --qb-fg-3: #9b9b95;
+  --qb-hair: #e2e2dd;
+  --qb-hover: #f1f1ed;
+  --qb-anchor: #d2d2cc;
+  --qb-anchor-hover: #9b9b95;
+  --qb-accent: #1b4fe0;
+}
+
 .qb-frame {
   display: flex;
   flex-direction: column;
   height: 100%;
   position: relative;
-  border: 1px solid rgba(var(--ink-rgb), 0.08);
-  background: var(--canvas);
+  border: 1px solid var(--qb-hair);
+  background: var(--qb-bg);
   overflow: hidden;
   /* 圆角全程常开（半径 = 8 物理像素 / DPR，见 useQuickbarDock 的 --qb-radius）。
      以前只在收起态（hint/retract）加：展开时 docked 立刻变 false，这条规则失效，
      而系统圆角要等 IPC 往返才切回来，中间几帧窗口是直角 —— 就是「展开时四角闪一下」。 */
   border-radius: var(--qb-radius, 8px);
+  color: var(--qb-fg);
+  -webkit-font-smoothing: antialiased;
   /* 收起成细线时底色要淡成透明（retract 阶段），过渡而不是一帧切过去 */
   transition:
     background-color 0.26s linear,
     border-color 0.26s linear;
+}
+/* 形变 / 淡出垫底用速览自己的底色，免得切换途中露出一块颜色不同的矩形 */
+body.qb-mode.is-morphing #root,
+body.qb-mode.ui-fade-out #root {
+  background: var(--qb-bg);
 }
 
 /**
@@ -5995,47 +6034,85 @@ body.ui-fade-out .app-frame {
 
 .qb-head {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 8px 8px 14px;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 0;
   touch-action: none;
 }
 /* 标题区域内的可交互控件不吃拖动 */
 .qb-head :is(input, button) {
   touch-action: auto;
 }
-.qb-title {
+
+/**
+ * 顶栏三段（§4.5）：56px 范围/搜索/窗口动作 → 40px 预览文字与字号 → 24px 元信息。
+ * 一律 flex 横向排布、左右各留 --qb-pad：窗口宽度是用户拖出来的，不能让关键竖线
+ * 跟着宽度漂（所以右侧状态列用固定列宽，只有中间段伸缩）。
+ */
+.qb-bar {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
   flex-shrink: 0;
-  font-size: var(--fs-11);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
+  padding: 0 var(--qb-pad);
+}
+.qb-bar-1 {
+  height: 56px;
+  gap: 10px;
+  border-bottom: 1px solid var(--qb-hair);
+}
+.qb-bar-2 {
+  height: 40px;
+  gap: 8px;
+  border-bottom: 1px solid var(--qb-hair);
+}
+
+/* 「已启用」标签：11px 次文字，固定 44px 宽，让后面的数字永远落在同一条竖线上 */
+.qb-title {
+  flex: none;
+  min-width: 44px;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  color: var(--qb-fg-2);
   white-space: nowrap;
 }
+/* 数字走等宽字体：166 → 165 时右侧控件不会横向抖 */
 .qb-count {
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: var(--fs-10);
-  letter-spacing: 0;
-  background: var(--e2);
-  color: var(--text-primary);
+  flex: none;
+  margin-left: -4px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--qb-fg);
 }
 
 .qb-search {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 100px;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 6px;
-  background: var(--e1);
-  border: 1px solid rgba(var(--ink-rgb), 0.06);
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 80px;
+  height: 32px;
+  padding: 0 0 1px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--qb-hair);
+  border-radius: 0;
+  transition: border-color var(--t-quick) ease;
   -webkit-app-region: no-drag;
+}
+/* 唯一强调色出现的地方＝「此刻这里可输入」，所以焦点态只换下划线颜色 */
+.qb-search:focus-within {
+  border-bottom-color: var(--qb-accent);
+  box-shadow: none;
+}
+.qb-search .field-icon {
+  color: var(--qb-fg-3);
+}
+.qb-search:focus-within .field-icon {
+  color: var(--qb-fg-2);
 }
 .qb-search input {
   flex: 1;
@@ -6043,239 +6120,577 @@ body.ui-fade-out .app-frame {
   border: 0;
   outline: 0;
   background: none;
-  color: var(--text-primary);
-  font-size: var(--fs-13);
+  color: var(--qb-fg);
+  font-size: 11px;
   font-family: var(--font-ui);
 }
 .qb-search input::placeholder {
-  color: var(--text-tertiary);
+  color: var(--qb-fg-3);
+}
+.qb-search .search-clear {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--qb-fg-3);
+}
+.qb-search .search-clear:hover {
+  background: none;
+  color: var(--qb-fg);
 }
 
 .qb-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
+/* 图标按钮热区 28×28，视觉图标仍按原资源尺寸，不放大不描边 */
 .qb-btn {
   display: grid;
   place-items: center;
-  height: 26px;
-  min-width: 26px;
-  padding: 0 8px;
-  border-radius: 5px;
-  font-size: var(--fs-11);
-  color: var(--text-tertiary);
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--qb-fg-2);
   transition: background var(--t-quick) ease, color var(--t-quick) ease;
 }
 .qb-btn:hover {
-  background: var(--e2);
-  color: var(--text-primary);
+  background: var(--qb-hover);
+  color: var(--qb-fg);
+}
+.qb-btn-text {
+  width: auto;
+  padding: 0 6px;
+  white-space: nowrap;
 }
 .qb-btn-on {
-  background: var(--e1);
-  color: var(--text-primary);
+  color: var(--qb-accent);
 }
 .qb-btn-close:hover {
-  background: color-mix(in srgb, #ef4444 20%, transparent);
-  color: #f87171;
+  background: color-mix(in srgb, #ef4444 16%, transparent);
+  color: #ef4444;
 }
 
-/* 第二行工具栏：示例文本 + 字号滑条 + 排序（与完整界面顶栏同款） */
-.qb-tools {
+/* 第二行：可编辑预览文字 + 字号滑杆 + 筛选（全部去框，只留一条下划线） */
+.qb-bar-2 .topbar-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 0 3px;
+  gap: 7px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--qb-hair);
+  border-radius: 0;
+  box-shadow: none;
+  transition: border-color var(--t-quick) ease;
+}
+.qb-bar-2 .topbar-field:hover {
+  background: none;
+}
+.qb-bar-2 .topbar-field:focus-within {
+  background: none;
+  border-bottom-color: var(--qb-accent);
+  box-shadow: none;
+}
+.qb-bar-2 .topbar-field input {
+  font-size: 13px;
+  color: var(--qb-fg);
+}
+.qb-bar-2 .topbar-field input::placeholder {
+  color: var(--qb-fg-3);
+}
+.qb-bar-2 .field-icon {
+  color: var(--qb-fg-2);
+}
+.qb-bar-2 .topbar-field:focus-within .field-icon {
+  color: var(--qb-fg-2);
+}
+
+.qb-a {
+  flex: none;
+  font-family: var(--font-ui);
+  color: var(--qb-fg-3);
+  line-height: 1;
+}
+.qb-a-sm {
+  font-size: 9px;
+}
+.qb-a-lg {
+  font-size: 13px;
+}
+
+.qb-bar-2 .topbar-size {
+  flex: none;
+  gap: 0;
+  padding: 0;
+}
+/* 滑杆：1px 轨道 + 8px 圆点，已填充的一段用主文字色（不是强调色，避免抢焦点） */
+.qb-bar-2 .topbar-size input[type="range"] {
+  width: 118px;
+  height: 2px;
+  border-radius: 1px;
+  background:
+    linear-gradient(90deg, var(--qb-fg) 0 var(--fill, 0%), var(--qb-hair) var(--fill, 0%) 100%);
+}
+.qb-bar-2 .topbar-size input[type="range"]::-webkit-slider-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  margin-top: -3px;
+  background: var(--qb-fg);
+  box-shadow: none;
+}
+.qb-bar-2 .topbar-size input[type="range"]::-webkit-slider-thumb:hover,
+.qb-bar-2 .topbar-size input[type="range"]::-webkit-slider-thumb:active {
+  transform: none;
+  box-shadow: none;
+}
+.qb-size-value {
+  flex: none;
+  min-width: 38px;
+  margin-left: -2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: right;
+  color: var(--qb-fg-2);
+}
+.qb-bar-2 .sort-wrap {
+  flex: none;
+}
+/* 筛选按钮在速览里也是「无框图标」，只有激活筛选时用强调色报个数 */
+.qb-bar-2 .sort-btn {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--qb-fg-2);
+}
+.qb-bar-2 .sort-btn:hover,
+.qb-bar-2 .sort-open {
+  background: none;
+  color: var(--qb-fg);
+}
+.qb-bar-2 .sort-btn svg {
+  color: inherit;
+}
+.qb-bar-2 .filter-live {
+  border: 0;
+  box-shadow: none;
+  color: var(--qb-accent);
+}
+.qb-bar-2 .filter-live svg,
+.qb-bar-2 .filter-count {
+  color: var(--qb-accent);
+}
+
+/* 元信息行：9px 等宽小字，底部一条 450(=W-48) 的发丝线，作为列表的表头基线 */
+.qb-meta {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px 8px 14px;
-  -webkit-app-region: no-drag;
+  justify-content: space-between;
+  gap: 12px;
+  height: 24px;
+  padding: 0 var(--qb-pad);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--qb-fg-3);
+  white-space: nowrap;
 }
-.qb-tools .topbar-field {
-  height: 28px;
-  flex: 1;
-  min-width: 0;
-  padding: 0 8px;
+.qb-meta::after {
+  content: "";
+  position: absolute;
+  left: var(--qb-pad);
+  right: var(--qb-pad);
+  bottom: 0;
+  height: 1px;
+  background: var(--qb-hair);
 }
-.qb-tools .topbar-size {
-  flex-shrink: 0;
-  gap: 6px;
+.qb-meta-l {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.qb-tools .topbar-size input[type="range"] {
-  width: 60px;
+.qb-meta-sep {
+  margin: 0 6px;
+  opacity: 0.6;
 }
-.qb-tools .size-value {
-  font-size: var(--fs-10);
-  color: var(--text-tertiary);
-  min-width: 20px;
-  text-align: right;
+.qb-meta-r {
+  flex: none;
 }
 
 .qb-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 10px 12px;
+  padding: 0;
 }
-/* 窄竖排列表：条目样式对齐完整界面右侧详情面板的字体预览。
-   0.9.9-25 起是虚拟列表：子项绝对定位（行高不固定，由 QuickBar 实测），
-   gap 交给 .qb-row 的 padding-bottom，这样测出来的行高已含间距。 */
+/* 窄竖排列表：0.9.9-25 起是虚拟列表，子项绝对定位（行高由 QuickBar 实测）。
+   R2 起行与行之间不再留间距，分隔完全交给 1px 发丝线。 */
 .qb-list {
   position: relative;
   display: block;
 }
 .qb-row {
-  padding-bottom: 8px;
+  padding: 0;
 }
+/**
+ * 一行 = 底部一条发丝线 + 六列网格（设计 R2 §4.5）。
+ * 列起点 x：24（锚点）→ 56（Aa）→ 100（内容）→ 366（许可）→ 428（★）→ 446（› N）→ 474。
+ * 合计 450 = 窗口宽 498 − 左右各 24；窗口变宽时只有第 3 列（内容）跟着长，
+ * 右侧状态列永远贴在同一条竖线上，竖着扫一眼就能比。
+ *
+ * 0 卡片、0 圆角、0 阴影：层级只靠 9 / 11 / 13 / 32 四级字号与发丝线建立。
+ */
 .qb-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 9px;
-  background: var(--e1);
-  border: 1px solid rgba(var(--ink-rgb), 0.05);
-  color: var(--text-primary);
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px 44px minmax(0, 1fr) 62px 18px 28px;
+  align-items: start;
+  min-height: 112px;
+  padding: 14px var(--qb-pad) 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--qb-fg);
   text-align: left;
-  /* 未走 motion 的条目（见 QuickBar 的 ANIMATED_ITEMS）靠这条做悬浮 / 按下反馈 */
-  transition:
-    background var(--t-quick) ease,
-    transform var(--t-quick) ease;
+  outline: none;
+  transition: background-color var(--t-quick) ease-out;
   /**
-   * 速览可能要渲染上千个字体条目。屏幕外的条目跳过布局与绘制，
-   * 进入速览时才不会把主线程占住几百毫秒、拖慢窗口形变动画。
-   * contain-intrinsic-size 给一个接近实际的占位高度，滚动条才不会跳。
+   * 屏幕外的行跳过布局与绘制，进入速览时才不会把主线程占住几百毫秒。
+   * contain-intrinsic-size 给基准行高，滚动条才不会跳。
    */
   content-visibility: auto;
-  contain-intrinsic-size: auto 104px;
+  contain-intrinsic-size: auto 112px;
 }
+/* 行底发丝线：左右各内缩 24（450 宽），和顶栏表头线对齐 */
+.qb-item::after {
+  content: "";
+  position: absolute;
+  left: var(--qb-pad);
+  right: var(--qb-pad);
+  bottom: 0;
+  height: 1px;
+  background: var(--qb-hair);
+}
+/* 整行只给悬停 2% 底色；点中 / 焦点刻意不叠底色，交给行首锚点表达 */
 .qb-item:hover {
-  background: var(--e3);
-  transform: translateY(-1px);
+  background: var(--qb-hover);
 }
+/* 按下的一下要有回应：原来靠 translateY/scale，这一版不允许整行飘动，
+   改用比悬停再深一档的底色（5% 墨），手感在但不破坏网格 */
 .qb-item:active {
-  transform: scale(0.99);
+  background: color-mix(in srgb, var(--qb-fg) 5%, var(--qb-bg));
 }
-/* 首行：字形样张 + 族名/示例 + 版权徽标 */
-.qb-item-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+.qb-item:focus-visible {
+  box-shadow: none;
 }
-/* 大字 specimen，效果同详情面板的 .specimen-glyphs（渐变文字） */
+
+/* ── 行首定位锚点：点 → 灰线 → 蓝线，三态共用同一个生长起点（x=26 / 行首 +16）──
+   用 scaleY 而不是 height 做动效：只走合成器，整表不重排。 */
+.qb-anchor-dot {
+  position: absolute;
+  left: var(--qb-pad);
+  top: 17px;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--qb-anchor);
+  transition: opacity var(--t-quick) ease-out;
+  pointer-events: none;
+}
+.qb-anchor {
+  position: absolute;
+  left: 26px;
+  top: 16px;
+  width: 2px;
+  height: 96px;
+  border-radius: 1px;
+  background: var(--qb-anchor-hover);
+  transform: scaleY(0.0625);
+  transform-origin: top center;
+  opacity: 0;
+  transition:
+    transform var(--t-quick) ease-out,
+    opacity var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
+  pointer-events: none;
+}
+.qb-item:hover .qb-anchor-dot,
+.qb-item[data-active="true"] .qb-anchor-dot {
+  opacity: 0;
+}
+/* 悬停：2 × 80 灰线 */
+.qb-item:hover .qb-anchor {
+  opacity: 1;
+  transform: scaleY(0.8333);
+  background: var(--qb-anchor-hover);
+}
+/* 点中 / 键盘焦点：2 × 96 蓝线（长度 + 颜色双重编码，色觉障碍下靠长度也能分） */
+.qb-item[data-active="true"] .qb-anchor,
+.qb-item:focus-visible .qb-anchor,
+.qb-item[data-active="true"]:hover .qb-anchor {
+  opacity: 1;
+  transform: scaleY(1);
+  background: var(--qb-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .qb-anchor,
+  .qb-anchor-dot {
+    transition: none;
+  }
+}
+:root[data-motion="reduced"] .qb-anchor,
+:root[data-motion="reduced"] .qb-anchor-dot {
+  transition: none;
+}
+
+/* Aa 列：13px、跟随该字族本身（不是装饰，是「这个族长什么样」的第一个证据） */
 .qb-item-glyph {
-  flex-shrink: 0;
-  min-width: 40px;
-  text-align: center;
-  font-size: 27px;
+  grid-column: 2;
+  font-size: 13px;
   font-weight: 400;
-  line-height: 1;
-  letter-spacing: -0.025em;
-  background: var(--hero-grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  line-height: 14px;
+  letter-spacing: -0.01em;
+  color: var(--qb-fg-2);
+  white-space: nowrap;
 }
+
 .qb-item-info {
+  grid-column: 3;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  flex: 1;
   min-width: 0;
 }
+/* 族名用界面字体，不跟随字体本身：11px / 600，是「标签」不是主角 */
 .qb-item-name {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  color: var(--qb-fg);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  /* 用户 2026-11-08：速览里这一行只当「这是哪个族」的标签用，不要抢预览文本的戏 ——
-     原来是 17px（与完整界面 .card-name 同口径），这里按需求缩到一半 9px。
-     其余（字号滑条控制的示例文字、版权行、徽标）一律不动。 */
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1.3;
 }
-/* 预览文本：与完整界面主列表 card-preview 同款（示例文本 + 可调字号），右缘渐隐 */
+/* 「已复制」就地反馈：1.5s 后淡出，不弹 toast 抢占视线 */
+.qb-copied {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--qb-accent);
+  opacity: 0;
+  transition: opacity 0.2s linear;
+}
+.qb-copied.is-shown {
+  opacity: 1;
+}
+
+/**
+ * 预览样张：唯一的主角。
+ * 高度按字号走（32px 档恰好 46px），不用固定高度裁字 —— 96px 档若硬裁，
+ * 看到的只是字形中间一条带子，放大就失去意义了。全表同字号，所以各行仍等齐。
+ */
 .qb-item-sample {
   display: block;
+  margin-top: 5px;
+  padding: 5px 0;
+  min-height: 46px;
   line-height: 1.15;
-  color: var(--text-primary);
+  color: var(--qb-fg);
   white-space: nowrap;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, black 86%, transparent);
-  mask-image: linear-gradient(90deg, black 86%, transparent);
 }
 /* 速览里「无中文」替换示例文字：靠左、垂直居中，并顶住原来那一行的高度 */
 .qb-item-noscript {
   display: flex;
   align-items: center;
+  margin-top: 5px;
+  min-height: 46px;
 }
-.qb-item-meta {
-  font-size: var(--fs-10);
-  color: var(--text-tertiary);
-}
-/* 版权徽标 + 样式数：靠右贴在首行 */
-.qb-item-aside {
+
+/* 第三行：归属胶囊（有才显示）+ 版权原文，单行、长版权省略号 */
+.qb-item-foot {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
+  margin-top: 6px;
+  min-height: 14px;
+  min-width: 0;
+  overflow: hidden;
 }
-/* 归属徽标行（标签 / 快照 / 分组），复用完整界面的 member-chip */
 .qb-item-chips {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 1 auto;
   align-items: center;
   gap: 4px;
-}
-.qb-chip {
-  max-width: 150px;
-}
-/* 版权原文：与详情面板「版权信息」同款小字，最多三行，完整内容见悬停提示 */
-.qb-item-copy {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  min-width: 0;
   overflow: hidden;
-  font-size: var(--fs-10);
-  line-height: 1.55;
-  color: var(--text-tertiary);
-  word-break: break-word;
 }
-.qb-empty {
-  margin: 26px 0;
-  text-align: center;
-  font-size: var(--fs-13);
-  color: var(--text-tertiary);
+/* 归属徽标在速览里降到最低存在感：9px 细边框，不用实底胶囊 */
+.qb-chip {
+  max-width: 96px;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: 400;
+  border-radius: 2px;
+  border-color: var(--qb-hair);
+  background: transparent;
+  color: var(--qb-fg-3);
+}
+.qb-item-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 9px;
+  line-height: 12px;
+  color: var(--qb-fg-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 速览卡片：字重数量徽标变成可点开的按钮 */
-.qb-item-expand {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px 4px;
-  border: 1px solid transparent;
-  border-radius: 5px;
+/* 许可：状态组第一列，9px。用「次文字」而不是「弱文字」——它是要读的状态，
+   #666660 在 #111110 上只有 3:1，9px 会看成一条灰影（对比度降到 4.5:1 以下就失去意义） */
+.qb-lic {
+  grid-column: 4;
+  padding-top: 1px;
+  font-size: 9px;
+  line-height: 12px;
+  color: var(--qb-fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 版权到期是唯一的「错误」语义，只在这一处让颜色越出单一强调色 */
+.qb-lic.is-expired {
+  color: #f87171;
+}
+:root[data-theme="light"] .qb-lic.is-expired {
+  color: #dc2626;
+}
+
+/* ★ 收藏：12px 线态弱文字，收藏后实心强调色 */
+.qb-item .star-wrap {
+  grid-column: 5;
+  margin-top: -6px;
+  justify-self: start;
+}
+/* 12px 图标装进 24×24 的热区（padding 6 + 负 margin 抵消，视觉位置仍是行首 +14） */
+.qb-item .star-btn {
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
+  padding: 6px;
+  border-radius: 4px;
+  color: var(--qb-fg-3);
+}
+.qb-item .star-btn:hover {
   background: none;
-  color: var(--text-tertiary);
-  font-size: var(--fs-10);
+  color: var(--qb-fg);
+}
+.qb-item .star-on,
+.qb-item .star-on:hover {
+  color: var(--qb-accent);
+}
+.qb-item .star-on svg {
+  fill: var(--qb-accent);
+}
+.qb-item .star-rating-badge {
+  right: -4px;
+  bottom: -4px;
+  min-width: 10px;
+  height: 10px;
+  padding: 0 2px;
+  border-radius: 5px;
+  background: var(--qb-accent);
+  color: var(--qb-bg);
+  font-size: 8px;
+  line-height: 10px;
+}
+
+/* › N：状态组最后一列，右对齐到内容右边界 */
+.qb-item-expand {
+  grid-column: 6;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+  height: 20px;
+  margin-top: -3px;
+  padding: 0 3px;
+  border: 0;
+  background: none;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--qb-fg-2);
   cursor: pointer;
 }
 .qb-item-expand:hover {
-  color: var(--text-primary);
-  border-color: rgba(var(--ink-rgb), 0.12);
+  color: var(--qb-fg);
 }
 
-/* 速览卡片里展开的字重列表（行本身是 .face-line） */
+.qb-empty {
+  margin: 40px var(--qb-pad);
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--qb-fg-3);
+}
+.qb-empty-clear {
+  display: block;
+  margin: 2px auto 0;
+  font-size: 12px;
+  color: var(--qb-accent);
+}
+
+/* 窄宽（≤400）：收起 Aa 列，内容起点从 100 左移到 56（§5.5）。
+   阈值取 400 而不是设计稿的 420 —— 速览默认宽 414，420 会把常用宽度也切进窄档。 */
+@media (max-width: 400px) {
+  .qb-item {
+    grid-template-columns: 32px minmax(0, 1fr) 62px 18px 28px;
+  }
+  .qb-item-glyph {
+    display: none;
+  }
+  .qb-item-info {
+    grid-column: 2;
+  }
+  .qb-lic {
+    grid-column: 3;
+  }
+  .qb-item .star-wrap {
+    grid-column: 4;
+  }
+  .qb-item-expand {
+    grid-column: 5;
+  }
+  .qb-faces {
+    grid-column: 2 / -1;
+  }
+}
+
+/* 速览里就地展开的字重列表（行本身是 .face-line，与完整界面共用一套）。
+   落在网格第二行、从内容列一直铺到右边界，行高由内容决定（虚拟列表实测）。 */
 .qb-faces {
+  grid-column: 3 / -1;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-top: 4px;
-  padding: 4px 0 0;
-  border-top: 1px solid rgba(var(--ink-rgb), 0.05);
+  margin-top: 8px;
+  padding-top: 5px;
+  border-top: 1px solid var(--qb-hair);
 }
 .face-line {
   display: flex;
