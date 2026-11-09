@@ -7255,3 +7255,307 @@ body.ui-fade-out .app-frame {
   padding-top: 9px;
   padding-bottom: 9px;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   主界面视觉对齐 R4 / R5（2026-11-10）
+   --------------------------------------------------------------------
+   这一整段是**追加覆盖**：原有样式一行没删、没改，靠「同优先级后写优先」盖住。
+   想整体回滚只需删掉本段。依据：handoff 的 R4《全界面 UI 设计交付文案》
+   + R5《全界面交互预览》。
+
+   · 0 容器：卡片不再是一枚圆角玻璃卡，而是「行」—— 底部 1px 发丝线分栏
+   · 行首三态锚点：6px 点 → 2×80 灰线 → 2×96 蓝线（与速览同一套语言）
+   · 字阶收到 9 / 11 / 13 / 32 四级；数字一律等宽
+   · 单一强调色只标「当前行」，不再用彩色徽标
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ─── 令牌：把「玻璃半透明」换成「纸 / 墨」平色 ───────────────────── */
+:root {
+  --ui-bg: var(--qb-bg);
+  --ui-panel: #171715;
+  --ui-menu: #1c1c1a;
+  --ui-fg: var(--qb-fg);
+  --ui-fg-2: var(--qb-fg-2);
+  --ui-fg-3: var(--qb-fg-3);
+  --ui-line: var(--qb-hair);
+  --ui-hover: var(--qb-hover);
+  --ui-accent: var(--qb-accent);
+  --ui-dot: var(--qb-anchor);
+  --ui-line-hover: var(--qb-anchor-hover);
+  --ui-pad: 24px;
+
+  /* 旧变量的语义重映射：7000 行样式都吃这几个，改这里等于整体换皮 */
+  --canvas: #111110;
+  --text-primary: #f2f2ef;
+  --text-secondary: #9a9a94;
+  --text-tertiary: #666660;
+  --glass-border: #2a2a27;
+  --hero-grad: linear-gradient(180deg, currentColor, currentColor);
+}
+:root[data-theme="light"] {
+  --ui-panel: #ffffff;
+  --ui-menu: #ffffff;
+  --canvas: #fafaf8;
+  --text-primary: #141412;
+  --text-secondary: #6b6b66;
+  --text-tertiary: #9b9b95;
+  --glass-border: #e2e2dd;
+  --hero-grad: linear-gradient(180deg, currentColor, currentColor);
+}
+
+/* 窗口与主区底色：纸白 / 墨黑，不再是渐变玻璃 */
+.app-frame,
+.app-shell,
+.app-main,
+.sidebar {
+  background: var(--ui-bg);
+}
+
+/* 滚动条：1px 发丝线（R4 §2.4） */
+.app-content ::-webkit-scrollbar,
+.list-scroll::-webkit-scrollbar,
+.grid-scroll::-webkit-scrollbar,
+.detail-panel::-webkit-scrollbar {
+  width: 1px;
+  height: 1px;
+}
+.app-content ::-webkit-scrollbar-thumb,
+.list-scroll::-webkit-scrollbar-thumb,
+.grid-scroll::-webkit-scrollbar-thumb,
+.detail-panel::-webkit-scrollbar-thumb {
+  background: var(--ui-fg-3);
+  border-radius: 0;
+}
+
+/* ─── 侧栏：选中用 2px 蓝竖线 + 2% 底，不用整行框 ─────────────────── */
+.nav-row {
+  position: relative;
+  height: 32px;
+  border-radius: 0;
+  font-size: 11px;
+  color: var(--ui-fg-2);
+  background: transparent;
+}
+.nav-row:hover {
+  background: var(--ui-hover);
+  color: var(--ui-fg);
+}
+.nav-row.nav-active,
+.nav-row.nav-active:hover {
+  background: var(--ui-hover);
+  color: var(--ui-fg);
+  box-shadow: none;
+}
+.nav-row.nav-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 32px;
+  background: var(--ui-accent);
+}
+.nav-count,
+.nav-no {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-fg-3);
+}
+
+/* ─── 卡片浏览：一行一族，0 容器 + 底部发丝线（R4 §3.2） ───────────── */
+.family-card {
+  position: relative;
+  border-radius: 0;
+  padding: 20px 24px 22px 26px;
+  min-height: 196px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
+  box-shadow: none;
+  transform: none;
+}
+.family-card:hover {
+  background: var(--ui-hover);
+  border-color: var(--ui-line);
+  box-shadow: none;
+}
+.family-card.card-selected,
+.family-card.card-selected:hover {
+  background: transparent;
+  border-color: var(--ui-line);
+  box-shadow: none;
+}
+/* 行首三态锚点：与速览同一套（点 → 80 灰线 → 96 蓝线），生长起点固定 */
+.family-card::before {
+  content: "";
+  position: absolute;
+  left: 26px;
+  top: 24px;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ui-dot);
+  transition:
+    width var(--t-quick) ease-out,
+    height var(--t-quick) ease-out,
+    border-radius var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
+}
+.family-card:hover::before {
+  width: 2px;
+  height: 80px;
+  border-radius: 1px;
+  background: var(--ui-line-hover);
+}
+.family-card.card-selected::before,
+.family-card.card-selected:hover::before {
+  width: 2px;
+  height: 96px;
+  border-radius: 1px;
+  background: var(--ui-accent);
+}
+/* 头部：格式徽标 → 族名 → 样式数 …… 右端 许可 / ☆ / 开关 */
+.card-head {
+  margin-left: 22px;
+  gap: 10px;
+  min-height: 16px;
+}
+.card-name {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--ui-fg);
+}
+/* 格式徽标：文字 + 1px 描边，不是图标、0 圆角 */
+.badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 14px;
+  padding: 0 4px;
+  border: 1px solid var(--ui-line);
+  border-radius: 0;
+  background: none;
+  color: var(--ui-fg-2);
+  letter-spacing: 0.04em;
+}
+.card-expand {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 0;
+  color: var(--ui-fg-2);
+}
+.card-expand:hover {
+  background: var(--ui-hover);
+  border-color: var(--ui-line);
+}
+/* 许可：9px 次文字，不再用彩色胶囊 */
+.lic-chip {
+  font-size: 9px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-fg-2);
+}
+/* 预览：32px 档，左缘与族名同一条竖线，右侧渐隐 */
+.card-preview {
+  margin-left: 22px;
+  padding-top: 10px;
+  min-height: 46px;
+}
+.preview-text {
+  line-height: 1.15;
+  color: var(--ui-fg);
+}
+/* 样式数那一行 / 字重列表：与速览同一套 face-line */
+.card-styles {
+  margin-left: 22px;
+  border-top: 1px solid var(--ui-line);
+  padding-top: 6px;
+}
+
+/* ─── 表格浏览：32px 行高、发丝线、数字等宽右对齐（R4 §3.3） ───────── */
+.list-header {
+  grid-template-columns: minmax(0, 1fr) 64px 96px 120px 64px;
+  padding: 12px 24px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ui-fg-3);
+  background: none;
+  border-bottom: 1px solid var(--ui-line);
+}
+.list-row {
+  grid-template-columns: minmax(0, 1fr) 64px 96px 120px 64px;
+  height: 32px;
+  padding: 0 24px;
+  font-size: 11px;
+  color: var(--ui-fg);
+  border-bottom: 1px solid var(--ui-line);
+  background: transparent;
+}
+.list-row:hover {
+  background: var(--ui-hover);
+}
+.list-row.row-selected,
+.list-row[aria-selected="true"] {
+  background: transparent;
+  box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+.list-row .col-styles,
+.list-row .col-size,
+.list-row .col-format {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  color: var(--ui-fg-2);
+  text-align: right;
+}
+.list-row .col-styles {
+  font-size: 11px;
+  color: var(--ui-fg-3);
+}
+
+/* ─── 网格浏览：单元 1px 描边、0 圆角（R4 §3.4） ─────────────────── */
+.grid-row {
+  border-radius: 0;
+}
+
+/* ─── 详情检查器：发丝线分区 + 属性表等宽（R4 §6.1 / R5） ──────────── */
+.detail-panel {
+  background: var(--ui-bg);
+  border-left: 1px solid var(--ui-line);
+}
+.detail-head {
+  border-bottom: 1px solid var(--ui-line);
+}
+.detail-meta dl {
+  grid-template-columns: 104px minmax(0, 1fr);
+  row-gap: 10px;
+  font-size: 10.5px;
+}
+.detail-meta dt {
+  color: var(--ui-fg-3);
+}
+.detail-meta dd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ui-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── 顶栏：1px 发丝线 + 2px 圆角的输入框，聚焦转蓝（R4 §3.6） ─────── */
+.topbar-field {
+  border-radius: 2px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-panel);
+}
+.topbar-field:focus-within {
+  border-color: var(--ui-accent);
+  box-shadow: none;
+}
+.toolbar {
+  border-bottom: 1px solid var(--ui-line);
+}
