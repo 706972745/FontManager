@@ -23,6 +23,7 @@ import { styleScope } from "../lib/styleScope";
 import { ScriptChip } from "./ScriptChip";
 import { FaceLine, faceLineFontSize } from "./FaceLine";
 import { useT, type TKey } from "../lib/i18n";
+import { dockKeysFor, splitDockHint } from "../lib/dockHint";
 import { useDisplayName } from "../lib/displayName";
 import { copyrightExpired } from "../lib/license";
 import { familyCopyrightClass } from "../lib/license";
@@ -68,28 +69,6 @@ import { StarRating } from "./StarRating";
  * 占住几百毫秒，窗口形变动画就被拖出可见的停顿；屏幕外的卡片本来也看不到动画。
  */
 const ANIMATED_ITEMS = 24;
-
-/**
- * 折叠提示条的分段（R3 规格书 §5.6 / §6.13）。
- *
- * 原文是一整句「状态 · 操作」，设计上要拆成左右两端：左「速览已收起」用主文字色
- * 11px Medium，右「靠近或按 Alt + ` 展开」用次文字色 9px，中间那个「·」改成留白。
- * 拆分完全基于文案本身（各语言用「·」或「—」当分隔符），不写死任何语言的词，
- * 9 个语言包共用一套逻辑；热键本身从 {hotkey} 占位处让位，由调用方播成键帽。
- *
- * 取不到分隔符时（理论上不会有）整句退回左端，不丢字、不改词序。
- */
-function splitDockHint(raw: string) {
-  const at = raw.indexOf("{hotkey}");
-  const head = at >= 0 ? raw.slice(0, at) : raw;
-  const tail = at >= 0 ? raw.slice(at + "{hotkey}".length) : "";
-  const m = head.match(/^(.*?)\s+[·—]\s+(.*)$/);
-  return {
-    state: (m ? m[1] : head).trim(),
-    lead: (m ? m[2] : "").trim(),
-    tail: tail.trim(),
-  };
-}
 
 /**
  * 速览里的一行字重。
@@ -452,7 +431,8 @@ export function QuickBar() {
   const dockHint = t("quickbar.topbarHint", { hotkey: hotkeyLabel });
   /** 折叠提示条：文案拆成「状态 / 操作」两端，热键拆成键帽（见 splitDockHint） */
   const dockText = splitDockHint(t("quickbar.collapsedHint"));
-  const dockKeys = hotkeyLabel.split(/\s*\+\s*/).filter(Boolean);
+  /** 键帽 ≤2 枚才画，超过就退回纯文本（清单 B2） */
+  const dockHotkey = dockKeysFor(hotkeyLabel);
   // 自实现拖动：绕开系统标题栏拖动带来的「拖到顶部就最大化」
   const dragWindow = useWindowDrag();
   // 进入速览的那一下窗口正在形变，列表不要再做逐个入场的动作
@@ -568,7 +548,14 @@ export function QuickBar() {
   const virtualizer = useVirtualizer({
     count: families.length,
     getScrollElement: () => bodyRef.current,
-    estimateSize: () => 112,
+    /**
+     * 估高要跟着字号档走（清单 C3）。
+     * 行的视觉重心是那串预览大字（`line-height:1.15`），其余部件高度基本固定：
+     * 32px 档实测整行 112；96px 档预览块把行撑到约 120。所以估高取
+     * `max(112, 预览字高 × 1.15 + 8)` —— 32/48/64 档都落在 112，96 档给到 ≈118。
+     * 这只是估高：滚动位置的最终值由 measureElement 实测覆盖，估偏只影响滑块长度。
+     */
+    estimateSize: () => Math.max(112, Math.round(SIZES[sizeIndex] * 1.15) + 8),
     overscan: QB_OVERSCAN,
     getItemKey: (i) => families[i].name,
   });
@@ -652,6 +639,9 @@ export function QuickBar() {
           tabIndex={0}
           onPointerDown={dragWindow}
           data-hint-text={dockHint}
+          /* 视觉上把「·」换成了留白，但读屏不能跟着丢标点（清单 B1）：
+             这里给它整句原文，屏幕阅读器读到的是完整的一句话。 */
+          aria-label={t("quickbar.collapsedHint", { hotkey: hotkeyLabel })}
           onKeyDown={(e) => {
             // 收起态这条也是「入口」：键盘用户必须能把它叫出来（§5 第 31 条）
             if (e.key !== "Enter" && e.key !== " ") return;
@@ -667,12 +657,17 @@ export function QuickBar() {
             {(dockText.lead || dockText.tail) && (
               <span className="qb-dock-action">
                 {dockText.lead && <span className="qb-dock-lead">{dockText.lead}</span>}
-                {dockKeys.map((k, i) => (
-                  <Fragment key={`${k}-${i}`}>
-                    {i > 0 && <span className="qb-kbd-plus">+</span>}
-                    <kbd className="qb-kbd">{k}</kbd>
-                  </Fragment>
-                ))}
+                {/* 键帽 ≤2 枚才画；Ctrl+Shift+F1 这种长组合退回纯文本（清单 B2） */}
+                {dockHotkey.plain ? (
+                  <span className="qb-dock-hotkey">{dockHotkey.plain}</span>
+                ) : (
+                  dockHotkey.keys.map((k, i) => (
+                    <Fragment key={`${k}-${i}`}>
+                      {i > 0 && <span className="qb-kbd-plus">+</span>}
+                      <kbd className="qb-kbd">{k}</kbd>
+                    </Fragment>
+                  ))
+                )}
                 {dockText.tail && <span className="qb-dock-tail">{dockText.tail}</span>}
               </span>
             )}

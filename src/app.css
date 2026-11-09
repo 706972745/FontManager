@@ -3239,7 +3239,7 @@ h2.detail-title.copy-name {
 }
 /* 一格只有三百多像素：头部的徽章、星标、开关都比卡片里小一号 */
 .specimen-head .badge {
-  font-size: 9px;
+  font-size: var(--fs-9);
   padding: 2px 5px;
   letter-spacing: 0.05em;
 }
@@ -3282,7 +3282,7 @@ h2.detail-title.copy-name {
   align-items: center;
   gap: 3px;
   flex: none;
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 500;
   color: var(--text-tertiary);
   padding: 1px 5px;
@@ -3292,7 +3292,7 @@ h2.detail-title.copy-name {
 .specimen-os-lock {
   /* 与卡片里的锁标记同一个外观，只把内边距收小 */
   padding: 2px 5px;
-  font-size: 9px;
+  font-size: var(--fs-9);
 }
 .specimen-tools {
   display: flex;
@@ -3306,7 +3306,7 @@ h2.detail-title.copy-name {
 }
 .specimen-tools .member-chip {
   padding: 2px 5px;
-  font-size: 9px;
+  font-size: var(--fs-9);
   max-width: 78px;
 }
 .specimen-weight {
@@ -5660,6 +5660,8 @@ h2.detail-title.copy-name {
   --qb-fg-2: #9a9a94;
   --qb-fg-3: #666660;
   --qb-hair: #2a2a27;
+  /* 键帽专用的一档深描边（清单 B5）：--qb-hair 只有 1.3:1，1x 屏上键帽会糊成文字 */
+  --qb-hair-strong: #3a3a36;
   --qb-hover: #1c1c1a;
   --qb-anchor: #3a3a36;
   --qb-anchor-hover: #9a9a94;
@@ -5672,6 +5674,7 @@ h2.detail-title.copy-name {
   --qb-fg-2: #6b6b66;
   --qb-fg-3: #9b9b95;
   --qb-hair: #e2e2dd;
+  --qb-hair-strong: #d2d2cc;
   --qb-hover: #f1f1ed;
   --qb-anchor: #d2d2cc;
   --qb-anchor-hover: #9b9b95;
@@ -6040,7 +6043,7 @@ body.ui-fade-out .app-frame {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 9px;
+  font-size: var(--fs-9);
   color: var(--qb-fg-2);
   letter-spacing: 0.02em;
 }
@@ -6063,7 +6066,7 @@ body.ui-fade-out .app-frame {
   border: 1px solid var(--qb-hair);
   border-radius: 3px;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 500;
   /* 16px 盒子减上下各 1px 描边 */
   line-height: 14px;
@@ -6276,7 +6279,7 @@ body.ui-fade-out .app-frame {
   line-height: 1;
 }
 .qb-a-sm {
-  font-size: 9px;
+  font-size: var(--fs-9);
 }
 .qb-a-lg {
   font-size: 13px;
@@ -6362,7 +6365,7 @@ body.ui-fade-out .app-frame {
   height: 24px;
   padding: 0 var(--qb-pad);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 500;
   letter-spacing: 0.08em;
   color: var(--qb-fg-3);
@@ -6545,7 +6548,7 @@ body.ui-fade-out .app-frame {
 /* 「已复制」就地反馈：1.5s 后淡出，不弹 toast 抢占视线 */
 .qb-copied {
   margin-left: 6px;
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 400;
   color: var(--qb-accent);
   opacity: 0;
@@ -6600,7 +6603,7 @@ body.ui-fade-out .app-frame {
 .qb-chip {
   max-width: 96px;
   padding: 1px 4px;
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 400;
   border-radius: 2px;
   border-color: var(--qb-hair);
@@ -6610,7 +6613,7 @@ body.ui-fade-out .app-frame {
 .qb-item-copy {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 9px;
+  font-size: var(--fs-9);
   line-height: 12px;
   color: var(--qb-fg-3);
   white-space: nowrap;
@@ -6623,7 +6626,7 @@ body.ui-fade-out .app-frame {
 .qb-lic {
   grid-column: 4;
   padding-top: 1px;
-  font-size: 9px;
+  font-size: var(--fs-9);
   line-height: 12px;
   color: var(--qb-fg-2);
   white-space: nowrap;
@@ -7003,7 +7006,7 @@ body.ui-fade-out .app-frame {
   border-radius: 6px;
   background: var(--warning);
   color: var(--canvas);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 700;
   line-height: 12px;
   text-align: center;
@@ -7358,6 +7361,9 @@ body.ui-fade-out .app-frame {
   width: 2px;
   height: 32px;
   background: var(--ui-accent);
+  /* 必须压在 .nav-pill 之上：pill 是后插入的绝对定位元素，会盖住这条伪元素。
+     以前 pill 是半透明玻璃壳看不出来，换成实底之后蓝竖线就整条消失了。 */
+  z-index: 1;
 }
 .nav-count,
 .nav-no {
@@ -7433,7 +7439,7 @@ body.ui-fade-out .app-frame {
 /* 格式徽标：文字 + 1px 描边，不是图标、0 圆角 */
 .badge {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   line-height: 14px;
   padding: 0 4px;
   border: 1px solid var(--ui-line);
@@ -7443,7 +7449,7 @@ body.ui-fade-out .app-frame {
   letter-spacing: 0.04em;
 }
 .card-expand {
-  font-size: 9px;
+  font-size: var(--fs-9);
   padding: 2px 6px;
   border-radius: 0;
   color: var(--ui-fg-2);
@@ -7454,7 +7460,7 @@ body.ui-fade-out .app-frame {
 }
 /* 许可：9px 次文字，不再用彩色胶囊 */
 .lic-chip {
-  font-size: 9px;
+  font-size: var(--fs-9);
   padding: 0;
   border: 0;
   background: none;
@@ -7578,7 +7584,7 @@ body.ui-fade-out .app-frame {
 }
 .about-section-title {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ui-accent);
@@ -7839,7 +7845,7 @@ body.ui-fade-out .app-frame {
 .shortcuts-panel .shortcuts-heading,
 .palette-panel .palette-label {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -7896,7 +7902,7 @@ body.ui-fade-out .app-frame {
 }
 .ctx-heading {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 500;
   letter-spacing: 0.08em;
   padding: 7px 10px 4px;
@@ -8155,7 +8161,7 @@ body.ui-fade-out .app-frame {
 }
 .online-card-meta {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   color: var(--text-tertiary);
 }
 /* VAR：34×16 蓝底小标签，不是描边胶囊 */
@@ -8200,7 +8206,7 @@ body.ui-fade-out .app-frame {
 }
 .specimen-styles {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   color: var(--text-tertiary);
 }
 
@@ -8273,7 +8279,7 @@ body.ui-fade-out .app-frame {
 /* ─── 标签 / 星级（R4 §6.8） ───────────────────────────────────────── */
 /* 标签是文字 chip，不是彩色胶囊；星级靠形状不靠颜色 */
 .member-chip {
-  font-size: 9px;
+  font-size: var(--fs-9);
   border-radius: 2px;
   padding: 1px 5px;
   border: 1px solid var(--ui-line);
@@ -8292,7 +8298,7 @@ body.ui-fade-out .app-frame {
 .filter-heading,
 .sort-sep {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   letter-spacing: 0.08em;
   color: var(--text-tertiary);
 }
@@ -8402,7 +8408,7 @@ body.ui-fade-out .app-frame {
 .settings-plugin-group .settings-plugin-version {
   margin-left: 0;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   opacity: 1;
   color: var(--pl-fg3);
 }
@@ -8591,4 +8597,89 @@ body.ui-fade-out .app-frame {
   letter-spacing: 0;
   color: var(--pl-fg);
   margin-bottom: 10px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   待定清单收口（1.7.5，2026-11-10）
+   --------------------------------------------------------------------
+   这一批是《UI待定问题清单》里能当场拍板的小问题，编号写在每条注释里。
+   仍然是追加覆盖，删掉本段即回滚。
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ─── 侧栏选中态：拆掉 .nav-pill 的旧玻璃外壳 ──────────────────────────
+   `nav-pill` 是给「深色圆角小方块 + 蓝光晕」那套做的：1px 描边 + 5px 圆角 +
+   inset 顶部高光 + `0 0 16px var(--accent-glow-soft)` + 投影。R4 把侧栏改成
+   「0 圆角 + 2px 蓝竖线 + 平底」之后，这层外壳没跟着拆 —— 于是选中行外面仍然
+   套着一个圆角发光小盒子（用户 2026-11-10 截图指出：右侧那圈圆角 + 蓝边）。
+   现在只留底色，滑动动画（framer 的 layoutId）照样在行间走。 */
+.nav-pill {
+  border: 0;
+  border-radius: 0;
+  background: var(--ui-hover);
+  box-shadow: none;
+}
+/* 底色已经由 pill 画了；行自己再铺一层会把滑动动画盖住 */
+.nav-row.nav-active,
+.nav-row.nav-active:hover {
+  background: transparent;
+}
+
+/* ─── B4：折叠提示带可点，却没有任何 hover 反馈 ────────────────────────
+   2% 墨底（与列表行同口径）+ 右端操作文案加下划线，不改变「退到背景里」的取向。 */
+.qb-dockbar:hover {
+  background: color-mix(in srgb, var(--qb-fg) 3%, transparent);
+}
+.qb-dockbar:hover .qb-dock-action {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ─── B5：键帽描边从 --qb-hair（1.3:1）提到 --qb-hair-strong（≈2:1） ────
+   只给键帽，发丝线一律不动 —— 该浅的还是要浅。 */
+.qb-kbd {
+  border-color: var(--qb-hair-strong);
+}
+
+/* ─── B2：热键超过两枚时退回纯文本，这里给那段文字一个与键帽同字阶的样式 ── */
+.qb-dock-hotkey {
+  font-family: var(--font-mono);
+  font-size: var(--fs-9);
+  color: var(--qb-fg-2);
+}
+
+/* ─── B9：窗口窄到 340px 以下时先丢尾句（「展开」），保住状态与键位 ────── */
+@media (max-width: 340px) {
+  .qb-dock-tail {
+    display: none;
+  }
+}
+
+/* ─── B18 / R4§4.2：遮罩压暗按文档的 60%（深色）─────────────────────
+   原来是 0.46，比设计写的「约 60% 压暗」浅一档，弹窗浮起来不够。
+   浅色仍是 0.24：纸白底上压到 60% 会像关灯，浅色只需要把后面的内容推远。 */
+:root:not([data-theme="light"]) .compare-backdrop,
+:root:not([data-theme="light"]) .settings-backdrop,
+:root:not([data-theme="light"]) .palette-backdrop,
+:root:not([data-theme="light"]) .online-detail-backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* ─── B18 / R7§3：Toast 栈叠间距 8 → 14 ───────────────────────────────
+   两条同时出现时 8px 太挤，标题会被下一条压住。 */
+.toaster {
+  gap: 14px;
+}
+
+/* ─── D4：「减弱动态效果」下折叠三阶段也要缩短 ────────────────────────
+   原来只接管了 .qb-content 的入场动画；折叠带（hint → retract → bar）的
+   260ms 过渡仍然在跑。与其它 [data-motion="reduced"] 规则一样压到 1ms。 */
+:root[data-motion="reduced"] .qb-dockbar,
+:root[data-motion="reduced"] .qb-grip-bar {
+  transition-duration: 1ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .qb-dockbar,
+  .qb-grip-bar {
+    transition-duration: 1ms;
+  }
 }
