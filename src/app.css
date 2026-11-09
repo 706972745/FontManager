@@ -6092,8 +6092,9 @@ body.ui-fade-out .app-frame {
   display: flex;
   align-items: center;
   gap: 7px;
+  /* 可以一直压到 48px：窗口很窄时先让搜索框缩，别把右侧四个窗口动作挤出去 */
   flex: 1 1 auto;
-  min-width: 80px;
+  min-width: 48px;
   height: 32px;
   padding: 0 0 1px;
   background: none;

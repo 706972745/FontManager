@@ -39,7 +39,7 @@ All notable changes to FontManager are documented here. The format follows
 ### 保持不变
 
 - **窗口 12px 圆角 + 1px 淡描边**：`--qb-radius` 的来源与收起/展开动画一律未动。
-- **收起态**：抓手线、34px 提示条（`速览已收起 · 靠近或按 Alt + ` 展开`）、
+- **收起态**：抓手线、34px 提示条（「速览已收起 · 靠近或按 Alt + \` 展开」）、
   收成一条时的滑出滑回，全部按原样保留。
 - **全部功能与交互**：启用计数、搜索（含 Esc 先清空再退出的两段行为）、
   可编辑预览文字与 8–96px 八档字号、`Ctrl + Wheel` 调字号、★ 收藏与评分浮层、
