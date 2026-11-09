@@ -42,6 +42,7 @@ FontManager 的插件是**进程外程序**：主程序绝不把插件代码加�
 | `entry` | 入口文件：`main.py` / `index.mjs` / 直接一个 `.exe` |
 | `interpreter` | `python` / `node` / 留空（entry 是 exe 时留空即可） |
 | `interpreterPath` | **自带解释器**：相对插件目录的路径（如 `"runtime/python.exe"`）。写了它就不做系统探测——插件自己背环境，用户机器上什么都不用装 |
+| `requirements` | **运行环境自述（1.5.4 起，强烈建议写）**：`runtime`（如 `"Python 3.10+"`）、`libraries`（如 `["Pillow 13"]`）、`system`（如 `["Windows PowerShell"]`）、`platforms`、`note`。软件会在插件清单每一行标出「自带 / 需要 Python / 无需环境 / 缺少运行时」并在悬停里给出完整清单，发布页也会生成「运行环境」列。不写时软件按 `interpreter` + `interpreterPath` 推断 |
 | `permissions` | 申请的权限：`read:fonts` / `read:curation` / `write:curation` / `import` 等；令牌按这个列表过滤，没申请的路由返回 403 |
 | `menus` | 右键菜单项：`title` 显示文本，`on` 挂载对象 —— `family`（字族右键，默认）/ `plugin`（**插件自己那一行**的右键，1.3.7 起） |
 | `settings` | **有设置面板就写这一项**（1.3.7 起）：`title` 是齿轮的悬停文字，`hook` 是要调的钩子名（默认 `settings`）。不写 = 没有设置，界面上不显示齿轮 |

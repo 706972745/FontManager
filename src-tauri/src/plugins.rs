@@ -143,6 +143,32 @@ pub struct PluginManifest {
     pub summary: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// 插件自述运行环境（1.5.4）：软件据此在插件旁边标清楚「要什么解释器、
+    /// 要不要额外装东西、是不是自带」，用户装之前就知道能不能用，
+    /// 不会把「缺环境」误判成插件坏了或软件版本不对。
+    #[serde(default)]
+    pub requirements: Option<PluginRequirements>,
+}
+
+/// 插件自己声明的依赖。全部是技术名词（不做翻译），界面用 i18n 拼成句子。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginRequirements {
+    /// 运行时及版本，如 "Python 3.10+"、"Node.js 22 LTS"；留空按 interpreter 推断
+    #[serde(default)]
+    pub runtime: Option<String>,
+    /// 第三方库，如 ["Pillow 13"]
+    #[serde(default)]
+    pub libraries: Vec<String>,
+    /// 系统组件，如 ["Windows PowerShell", ".NET Framework (WinForms)"]
+    #[serde(default)]
+    pub system: Vec<String>,
+    /// 适用平台，如 ["Windows"]；空表示不限
+    #[serde(default)]
+    pub platforms: Vec<String>,
+    /// 一句补充说明（显示在悬停详情最后，插件作者自己写）
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 fn default_api_level() -> u32 {
@@ -208,6 +234,14 @@ pub struct PluginInfo {
     pub running: bool,
     /// 启用失败的原因（manifest 坏了 / 解释器找不到 / 版本不兼容）
     pub error: Option<String>,
+    /// 解析后的解释器类型："python" / "node" / "exe" / "unknown"（manifest 读不出来）
+    pub interpreter: String,
+    /// 插件自带解释器（plugin.json 写了 interpreterPath）
+    pub bundled: bool,
+    /// 这台机器上现在有没有能跑它的解释器（只探测，不启动进程）
+    pub runtime_ready: bool,
+    /// 插件自述的运行环境；老插件没写就是 None，界面按推断结果兜底
+    pub requirements: Option<PluginRequirements>,
 }
 
 // ───────────────────────────── 运行时 ─────────────────────────────
@@ -474,6 +508,69 @@ pub fn install_zip(zip_path: &Path) -> Result<(String, String, String), String> 
     install_zip_into(zip_path, &plugins_dir())
 }
 
+/// 与启动逻辑完全同一套推断：py → python、js/mjs/cjs → node、其余 → exe。
+/// 界面标注和真正启动必须用同一个口径，否则「标着需要 Python 却按 exe 启动」会误导排障。
+fn interpreter_kind(m: &PluginManifest) -> String {
+    if let Some(k) = m
+        .interpreter
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return k.to_ascii_lowercase();
+    }
+    let ext = std::path::Path::new(&m.entry)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "py" => "python".into(),
+        "js" | "mjs" | "cjs" => "node".into(),
+        _ => "exe".into(),
+    }
+}
+
+/// 插件有没有自带解释器（写了 interpreterPath 就算；文件真的在不在由 runtime_ready 判断）。
+fn has_bundled_runtime(m: &PluginManifest) -> bool {
+    m.interpreter_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_some()
+}
+
+/// 这台机器现在能不能跑它：只看解释器在不在，不启动任何插件进程。
+/// 设置页每打开一次会调一次；resolve() 有缓存，重复调用几乎零开销。
+fn runtime_ready(dir: &Path, m: &PluginManifest, kind: &str) -> bool {
+    if let Some(rel) = m
+        .interpreter_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return dir.join(rel).is_file();
+    }
+    match kind {
+        "python" | "node" => {
+            if !cfg!(test) {
+                let shared = if kind == "python" {
+                    shared_python_runtime()
+                } else {
+                    shared_node_runtime()
+                };
+                if shared.is_some() {
+                    return true;
+                }
+            }
+            resolve(kind, override_for(kind).as_deref()).is_some()
+        }
+        "unknown" => false,
+        // exe / 其它自包含入口：不需要解释器
+        _ => true,
+    }
+}
+
 /// 扫描插件目录（不启动任何东西）
 pub fn list() -> Vec<PluginInfo> {
     let root = plugins_dir();
@@ -497,6 +594,9 @@ pub fn list() -> Vec<PluginInfo> {
         }
         match read_manifest(&dir) {
             Ok(m) => {
+                let kind = interpreter_kind(&m);
+                let bundled = has_bundled_runtime(&m);
+                let ready = runtime_ready(&dir, &m, &kind);
                 let mut err = if m.api_level > API_LEVEL {
                     Some(format!(
                         "这个插件要求 API 级别 {}，当前软件只支持 {API_LEVEL}，请升级软件",
@@ -529,6 +629,10 @@ pub fn list() -> Vec<PluginInfo> {
                     settings: m.settings,
                     dir: dir.to_string_lossy().into_owned(),
                     error: err,
+                    interpreter: kind,
+                    bundled,
+                    runtime_ready: ready,
+                    requirements: m.requirements,
                 });
             }
             Err(e) => out.push(PluginInfo {
@@ -551,6 +655,10 @@ pub fn list() -> Vec<PluginInfo> {
                 enabled: false,
                 running: false,
                 error: Some(e),
+                interpreter: "unknown".into(),
+                bundled: false,
+                runtime_ready: false,
+                requirements: None,
             }),
         }
     }
@@ -1166,14 +1274,8 @@ fn command_for(dir: &Path, m: &PluginManifest) -> Result<(Command, String), Stri
     if !entry.is_file() {
         return Err(format!("入口文件不存在：{}", entry.display()));
     }
-    let kind = m
-        .interpreter
-        .clone()
-        .unwrap_or_else(|| match entry.extension().and_then(|s| s.to_str()).unwrap_or("") {
-            "py" => "python".into(),
-            "js" | "mjs" | "cjs" => "node".into(),
-            _ => "exe".into(),
-        });
+    // 与界面标注共用同一套推断（interpreter_kind），别在两处各写一份规则。
+    let kind = interpreter_kind(m);
     let (mut cmd, how) = match kind.as_str() {
         "python" | "node" => {
             // 插件自带解释器：路径相对插件目录，直接用，不做任何系统探测。
@@ -1520,20 +1622,29 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
             }
         });
     }
-    Ok(list().into_iter().find(|p| p.id == m.id).unwrap_or(PluginInfo {
-        id: m.id,
-        name: m.name,
-        version: m.version,
-        summary: m.summary,
-        description: m.description,
-        permissions: m.permissions,
-        hooks: m.hooks,
-        menus: m.menus,
-        settings: m.settings,
-        dir: dir.to_string_lossy().into_owned(),
-        enabled: true,
-        running: true,
-        error: None,
+    Ok(list().into_iter().find(|p| p.id == m.id).unwrap_or({
+        let kind = interpreter_kind(&m);
+        let bundled = has_bundled_runtime(&m);
+        let ready = runtime_ready(&dir, &m, &kind);
+        PluginInfo {
+            id: m.id,
+            name: m.name,
+            version: m.version,
+            summary: m.summary,
+            description: m.description,
+            permissions: m.permissions,
+            hooks: m.hooks,
+            menus: m.menus,
+            settings: m.settings,
+            dir: dir.to_string_lossy().into_owned(),
+            enabled: true,
+            running: true,
+            error: None,
+            interpreter: kind,
+            bundled,
+            runtime_ready: ready,
+            requirements: m.requirements,
+        }
     }))
 }
 
@@ -1718,6 +1829,7 @@ mod tests {
             settings: None,
             summary: None,
             description: None,
+            requirements: None,
         }
     }
 

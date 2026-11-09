@@ -717,6 +717,28 @@ export interface PluginInfo {
   enabled: boolean;
   running: boolean;
   error: string | null;
+  /** 解析后的解释器类型："python" / "node" / "exe" / "unknown" */
+  interpreter: string;
+  /** 插件自带解释器（plugin.json 写了 interpreterPath） */
+  bundled: boolean;
+  /** 这台机器上现在有没有能跑它的解释器 */
+  runtimeReady: boolean;
+  /** 插件自述的运行环境；老插件没写就是 null */
+  requirements: PluginRequirements | null;
+}
+
+/** 插件在 plugin.json 里自述的运行环境（技术名词，不翻译） */
+export interface PluginRequirements {
+  /** 运行时及版本，如 "Python 3.10+" */
+  runtime: string | null;
+  /** 第三方库，如 ["Pillow 13"] */
+  libraries: string[];
+  /** 系统组件，如 ["Windows PowerShell"] */
+  system: string[];
+  /** 适用平台，如 ["Windows"] */
+  platforms: string[];
+  /** 补充说明 */
+  note: string | null;
 }
 
 /** 插件的设置面板声明：主程序点齿轮时会把 `settings.hook` 钩子发给插件，由插件自己弹面板 */
