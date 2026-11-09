@@ -8063,12 +8063,31 @@ body.ui-fade-out .app-frame {
   border-color: var(--ui-accent);
   color: #fff;
 }
-/* 小卡：1px 描边、0 圆角，去掉玻璃底 */
+/* 小卡：1px 描边、0 圆角，去掉玻璃底。
+ *
+ * ⚠️ 这里的 padding / 缩进必须整套重置。在线卡复用的是 `.family-card` 这个类，
+ * 而主列表的卡片是「行」——左边留 26 给锚点、`.card-head` 再缩进 22 给锚点让位。
+ * 在线卡不参与启用状态，照搬过来就变成：族名从 48 起，元信息从 26 起，
+ * 两行左缘差 22px（用户 2026-11-10 截图指出）。这里统一归零，两行同一个左缘。 */
 .online-card {
   border-radius: 0;
   border: 1px solid var(--ui-line);
   background: none;
   box-shadow: none;
+  padding: 12px 14px;
+  min-height: 96px;
+  gap: 6px;
+}
+/* 在线卡没有「启用状态」这回事，锚点圆点不该出现 */
+.online-card::before {
+  display: none;
+}
+.online-card .card-head {
+  margin-left: 0;
+}
+.online-card .online-card-meta {
+  margin-left: 0;
+  padding-left: 0;
 }
 .online-card:hover {
   border-color: color-mix(in srgb, var(--ui-accent) 40%, var(--ui-line));
