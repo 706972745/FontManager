@@ -6,9 +6,10 @@
 #   ci.yml       → push / PR 时验证代码（类型检查 + 单测 + 编译检查）
 #   release.yml  → 推 v* tag 时构建两个安装包并发布到 GitHub Release（本文件）
 #
-# 说明：项目通过 SignPath Foundation 免费 OV 签名（见 CODE_SIGNING_POLICY.md）。
+# 说明：签名方案为 SignPath Foundation 免费 OV（见 CODE_SIGNING_POLICY.md），
+#       **当前尚未启用** —— 仓库没有配置签名 Secrets，所有已发布版本均为未签名。
 # release.yml 在「收集安装包」后插入签名步骤；未配置 SIGNPATH_TOKEN 时自动跳过，
-# 正文随之退回「未签名 + SHA-256」说明，与历史行为一致。
+# 正文随之退回「未签名 + SHA-256」说明；配齐 Secrets 后自动切换为签名发布。
 
 name: Release (Windows)
 

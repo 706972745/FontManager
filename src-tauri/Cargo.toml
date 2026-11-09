@@ -2,10 +2,10 @@
 name = "fontmanager"
 version = "1.5.4"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
-authors = ["TheHolyOneZ", "IIEOzo"]
+authors = ["IIEOzo"]
 license = "GPL-3.0-only"
 homepage = "https://zsync.eu/fontmanager/"
-repository = "https://github.com/TheHolyOneZ/FontManager"
+repository = "https://github.com/706972745/FontManager"
 edition = "2021"
 
 [lib]
