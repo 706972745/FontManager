@@ -7728,3 +7728,495 @@ body.ui-fade-out .app-frame {
   line-height: 1.75;
   max-width: 560px;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   主界面视觉对齐 R4 / R5 · 第二批（2026-11-10）
+   弹窗 / 菜单 / 反馈 / 在线库 / 样张 / 引导
+   --------------------------------------------------------------------
+   与第一批同样用「追加覆盖」：原样式不动，靠后写覆盖。删掉本段即回滚。
+
+   这一步做的是三件贯穿全界面的事：
+   ① 强调色从「灰」换成 R4 的蓝 —— 原来 --accent-a 是一档灰（#d4d4d8/#3f3f46），
+      全项目的按钮、链接、开关都是灰的，界面没有「唯一强调色」这回事；
+   ② 灰阶实色化 —— --e1..--e4 原本是「白色 4%~12% 叠加」，叠在渐变玻璃上才有层次，
+      换成纸墨底之后会糊成一片，改成实色阶；
+   ③ 浮层去模糊、去多层阴影 —— 纸墨体系靠 1px 发丝线分界，不靠投影堆叠。
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ─── ① 唯一强调色 ─────────────────────────────────────────────────── */
+:root {
+  --accent-a: #5b8cff;
+  --accent-b: #2f6bff;
+  --accent-gradient: linear-gradient(135deg, #5b8cff, #2f6bff);
+  --accent-glow: rgba(91, 140, 255, 0.42);
+  --accent-glow-soft: rgba(91, 140, 255, 0.2);
+}
+:root[data-theme="light"] {
+  --accent-a: #1b4fe0;
+  --accent-b: #1a42b8;
+  --accent-gradient: linear-gradient(135deg, #1b4fe0, #1a42b8);
+  --accent-glow: rgba(27, 79, 224, 0.3);
+  --accent-glow-soft: rgba(27, 79, 224, 0.14);
+}
+
+/* ─── ② 灰阶实色化（深色默认 / 浅色覆盖） ──────────────────────────── */
+:root {
+  --e1: #1a1a18;
+  --e2: #1f1f1d;
+  --e3: #242422;
+  --e4: #2a2a28;
+  /* 玻璃顶部高光在纸墨体系里没有意义，留着会在卡片上缘画一道假亮边 */
+  --glass-top-highlight: transparent;
+  --glass-top-highlight-strong: transparent;
+  --shadow-ground: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-mass: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-ambient: 0 12px 32px rgba(0, 0, 0, 0.34);
+}
+:root[data-theme="light"] {
+  --e1: #f2f2ee;
+  --e2: #eaeae5;
+  --e3: #ffffff;
+  --e4: #f7f7f3;
+  --shadow-ground: 0 1px 2px rgba(20, 20, 18, 0.06);
+  --shadow-mass: 0 4px 12px rgba(20, 20, 18, 0.08);
+  --shadow-ambient: 0 12px 32px rgba(20, 20, 18, 0.1);
+}
+
+/* ─── ③ 浮层基底：去掉背景模糊 ──────────────────────────────────────── */
+.glass,
+.glass-e3 {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 遮罩只压暗，不加模糊（R4 §4.2） */
+.compare-backdrop,
+.settings-backdrop,
+.palette-backdrop,
+.online-detail-backdrop {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(0, 0, 0, 0.46);
+}
+:root[data-theme="light"] .compare-backdrop,
+:root[data-theme="light"] .settings-backdrop,
+:root[data-theme="light"] .palette-backdrop,
+:root[data-theme="light"] .online-detail-backdrop {
+  background: rgba(20, 20, 18, 0.24);
+}
+
+/* ─── 弹窗族：12px 圆角 + 1px 发丝线（R4 §4.2） ─────────────────────── */
+.settings-panel,
+.shortcuts-panel,
+.palette-panel,
+.compare-panel {
+  border-radius: 12px;
+  border-color: var(--ui-line);
+  box-shadow: var(--shadow-ambient);
+}
+.shortcuts-panel h2,
+.compare-title,
+.settings-heading {
+  font-size: var(--fs-16);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+/* 分组标题统一成「9px 等宽弱色」——原来各处 10~11px 混着。
+   这里带上父选择器提权：弹窗里还有 `.settings-xxx p { font-size: 12px }` 一类规则，
+   单类选择器压不住，中文又没有 text-transform 大写可依赖，结果就是「分组标题
+   和正文一样大」，分组感全没了。 */
+.settings-panel .settings-group-title,
+.settings-panel .settings-col > p,
+.shortcuts-panel .shortcuts-heading,
+.palette-panel .palette-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+/* 弹窗里的行：发丝线分栏，不用底色块。
+   ⚠️ 必须显式 background:none —— 旧样式给每行铺了一层半透明底 + 8px 圆角，
+   在玻璃底上像「一叠卡片」，换到纸墨底之后就是一块块灰砖。 */
+.settings-row,
+.settings-library-row {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ui-line);
+}
+.settings-row:hover,
+.settings-library-row:hover {
+  background: color-mix(in srgb, var(--ui-fg) 3%, transparent);
+}
+
+/* ─── 菜单族 ───────────────────────────────────────────────────────── */
+.ctx-menu {
+  border-radius: 4px;
+  padding: 5px;
+  box-shadow: var(--shadow-mass);
+}
+/* R4 §5.1 写「菜单项 10.5px、行高 44」；实测 44 对 10.5px 的字等于四倍行距，
+   菜单会长到一屏放不下。这里取 11px / 30px —— 密度接近原生菜单，
+   与主界面的 9/11/13 字阶一致。已记 UI待定问题清单 A11。 */
+.ctx-item {
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: var(--fs-11);
+  gap: 8px;
+}
+/* 焦点项用 2px 蓝竖线，不用整行高亮框（R4 §5.1）——hover 底只做 4% 墨 */
+.ctx-item:hover:not(:disabled),
+.ctx-item.ctx-submenu-open {
+  background: color-mix(in srgb, var(--ui-fg) 5%, var(--ui-menu));
+  color: var(--text-primary);
+}
+.ctx-item:hover:not(:disabled)::before,
+.ctx-item.ctx-submenu-open::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--ui-accent);
+}
+.ctx-item {
+  position: relative;
+}
+.ctx-heading {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  padding: 7px 10px 4px;
+}
+.ctx-label {
+  font-size: var(--fs-11);
+}
+.ctx-sep {
+  margin: 4px 8px;
+  background: var(--ui-line);
+}
+/* 菜单顶部那行族名：10px 等宽弱色 + 一条标题线（R4 §5.1）。
+   ⚠️ 必须 border: 0 + border-radius: 0：旧样式把它做成了「搜索框」那种四边描边胶囊，
+   在菜单顶上看着像一个输入框，用户会去点它。这里只留一条下边线。 */
+.ctx-scope {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
+  border-radius: 0;
+  background: none;
+  padding: 2px 2px 7px;
+  margin: 0 2px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Toast：66px 高、8px 圆角、左侧 2px 蓝竖线（R4 §6.4） ──────────── */
+.toast {
+  position: relative;
+  min-height: 52px;
+  border-radius: 8px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-menu);
+  box-shadow: var(--shadow-mass);
+  overflow: hidden;
+}
+.toast::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ui-accent);
+}
+.toast-title {
+  font-size: var(--fs-11);
+  font-weight: 500;
+}
+.toast-detail {
+  font-size: 9.5px;
+  color: var(--text-secondary);
+}
+/* 「撤销」是文字动作，不能长成按钮 */
+.toast-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--fs-11);
+  color: var(--ui-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ─── 空态族：14px 粗标题 + 次文字两行 + 一个强调色文字动作（R4 §6.5） ── */
+.empty-state h2 {
+  font-size: var(--fs-14);
+  font-weight: 700;
+}
+.empty-state p {
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ─── 进度族：3px 发丝线轨道 + 蓝已填条（R4 §6.6） ──────────────────── */
+.install-track,
+.progress-track {
+  height: 3px;
+  border-radius: 0;
+  background: var(--ui-line);
+  overflow: hidden;
+}
+.install-fill,
+.progress-fill {
+  background: var(--ui-accent);
+}
+
+/* ─── 选择条 / 对比浮层：8px 圆角、0 阴影（R4 §6.2） ────────────────── */
+.compare-panel,
+.selection-bar {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   主界面视觉对齐 R4 / R5 · 第三批（2026-11-10）
+   顶栏细节 / 在线字体库 / 样张浏览 / 分组与快照条 / 引导拖放 / 标签星级
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ─── 顶栏（R4 §3.6） ──────────────────────────────────────────────── */
+/* 详情面板打开、主区收窄时整体换行，不裁切不竖排挤压；用 min-height 不用固定高 */
+.toolbar {
+  flex-wrap: wrap;
+  min-height: 64px;
+  row-gap: 8px;
+  border-bottom: 1px solid var(--ui-line);
+}
+/* 字号滑杆：2px 轨道 + 8px 圆头手柄（不是默认那根粗轨道）。
+   ⚠️ 高度要给在 input 上做事件区、轨道画在 ::-webkit-slider-runnable-track 上。
+   第一版直接把 input 的 height 设成 2px，整个滑杆塌成一条线、手柄也点不到 —— 
+   拖动手感靠的是元素高度，不是轨道高度。 */
+.topbar-size input[type="range"] {
+  height: 16px;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.topbar-size input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ui-line);
+}
+.topbar-size input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-accent);
+  border: 0;
+  cursor: pointer;
+}
+/* 视图切换：当前项 2% 底，不套蓝框 */
+.view-toggle > * {
+  border-radius: 2px;
+}
+.view-toggle > [aria-pressed="true"],
+.view-toggle > [data-active="true"],
+.view-toggle > .view-on {
+  background: color-mix(in srgb, var(--ui-fg) 2%, var(--ui-bg));
+  box-shadow: none;
+  color: var(--text-primary);
+}
+
+/* ─── 在线字体库（R4 §4.1） ────────────────────────────────────────── */
+/* 分类标签改成 0 圆角方片，选中蓝底白字（原来是胶囊 + 描边） */
+.online-chips > * {
+  height: 26px;
+  min-width: 76px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 0;
+  border: 1px solid var(--ui-line);
+  background: none;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+}
+.online-chips > [aria-pressed="true"],
+.online-chips > [data-active="true"],
+.online-chips > .on {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: #fff;
+}
+/* 小卡：1px 描边、0 圆角，去掉玻璃底 */
+.online-card {
+  border-radius: 0;
+  border: 1px solid var(--ui-line);
+  background: none;
+  box-shadow: none;
+}
+.online-card:hover {
+  border-color: color-mix(in srgb, var(--ui-accent) 40%, var(--ui-line));
+  background: none;
+}
+.online-card .card-name {
+  font-size: var(--fs-12, 12px);
+  font-weight: 500;
+}
+.online-card-meta {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-tertiary);
+}
+/* VAR：34×16 蓝底小标签，不是描边胶囊 */
+.badge-variable {
+  width: 34px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  background: var(--ui-accent);
+  color: #fff;
+}
+.online-bar {
+  border-bottom: 1px solid var(--ui-line);
+}
+
+/* ─── 样张浏览（R4 §3.5） ──────────────────────────────────────────── */
+/* 不用卡片盒：行与行之间只留 1px 发丝线，字形与样张共用同一基线网格 */
+.specimen-tile {
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.specimen-tile:hover {
+  background: var(--ui-hover);
+}
+.specimen-tile.card-selected,
+.specimen-tile.card-selected:hover {
+  background: none;
+  box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+.specimen-name {
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.specimen-styles {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-tertiary);
+}
+
+/* ─── 分组与快照条（R4 §4.7） ──────────────────────────────────────── */
+/* h=44、左侧 2px 蓝锚点、条底 1px 发丝线 */
+.snapshot-bar {
+  height: 44px;
+  border-bottom: 1px solid var(--ui-line);
+  background: none;
+}
+.snapshot-bar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ui-accent);
+}
+.snapshot-bar {
+  position: relative;
+}
+.snapshot-bar-title {
+  font-size: var(--fs-11);
+  font-weight: 500;
+}
+.snapshot-btn {
+  font-size: var(--fs-11);
+  border-radius: 2px;
+}
+/* 危险项不另设红色（单一强调色原则） */
+.snapshot-danger {
+  color: var(--text-secondary);
+}
+
+/* ─── 引导与拖放（R4 §6.7） ────────────────────────────────────────── */
+.tour-card,
+.tour-invite {
+  border-radius: 12px;
+  border: 1px solid var(--ui-line);
+  box-shadow: var(--shadow-ambient);
+}
+.tour-card-title,
+.tour-invite-title {
+  font-size: var(--fs-14);
+  font-weight: 650;
+}
+.tour-btn {
+  border-radius: 2px;
+  font-size: var(--fs-11);
+}
+/* 拖放遮罩：1px 虚线框 + 一行字，不要半透明大色块 */
+.dropchoice-panels {
+  background: none;
+}
+.dropchoice {
+  border: 1px dashed var(--ui-line);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ui-bg) 92%, transparent);
+}
+.dropchoice-title {
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+.dropchoice-sub {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+/* ─── 标签 / 星级（R4 §6.8） ───────────────────────────────────────── */
+/* 标签是文字 chip，不是彩色胶囊；星级靠形状不靠颜色 */
+.member-chip {
+  font-size: 9px;
+  border-radius: 2px;
+  padding: 1px 5px;
+  border: 1px solid var(--ui-line);
+  background: none;
+  color: var(--text-secondary);
+}
+.star-btn {
+  color: var(--text-tertiary);
+}
+.star-btn[aria-pressed="true"],
+.star-btn.star-on {
+  color: var(--ui-accent);
+}
+
+/* ─── 筛选 / 排序菜单（R4 §5.3 / §5.4） ────────────────────────────── */
+.filter-heading,
+.sort-sep {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+.sort-menu,
+.filter-menu {
+  border-radius: 4px;
+}
