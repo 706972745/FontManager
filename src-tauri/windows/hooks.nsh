@@ -34,6 +34,14 @@
     DeleteRegKey HKCU "Software\Classes\.S-FontManager"
     DeleteRegKey HKCU "Software\Classes\.P-FontManager"
     DeleteRegKey HKCU "Software\Classes\.L-FontManager"
+
+    ; 1.5.5 起 publisher 从 "TheHolyOneZ / IIEOzo" 改为 "IIEOzo"，
+    ; 安装记录键随之从 Software\TheHolyOneZ / IIEOzo\FontManager
+    ; 变成 Software\IIEOzo\FontManager。模板只会删新键，旧键会残留，
+    ; 这里按精确键名补删（/ifempty 保证不误删别人的子键）。
+    DeleteRegValue HKCU "Software\TheHolyOneZ / IIEOzo\FontManager" "Installer Language"
+    DeleteRegKey /ifempty HKCU "Software\TheHolyOneZ / IIEOzo\FontManager"
+    DeleteRegKey /ifempty HKCU "Software\TheHolyOneZ / IIEOzo"
   ${EndIf}
 
   ; ── 2. 只有勾选「删除全部数据」且不是覆盖更新时才清数据 ──

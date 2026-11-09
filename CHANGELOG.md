@@ -4,6 +4,35 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.5] — 2026-11-09（正式版）
+
+> 这一版没有新功能：把「发布者是谁」和「到底有没有签名」两件写错的地方改对。
+
+### 修复
+
+- **发布者署名只留 IIEOzo**：安装包的 `publisher` / `copyright` / `longDescription`
+  原先写成 `TheHolyOneZ / IIEOzo`，Windows「已安装的应用」和安装包属性里
+  会显示成两个人；现在统一为 `IIEOzo`。同时把 `package.json` 的
+  `author` / `repository` / `bugs` 与 `Cargo.toml` 的 `authors` / `repository`
+  指回本人仓库 —— 旧的 `bugs` 地址指向上游仓库，用户反馈会跑到别人那里。
+  README / LICENSE 中对上游 TheHolyOneZ 的致谢按 GPL-3.0 要求保留；
+  应用标识 `com.theholyonez.fontmanager` 保持不变（改了会被 Windows 当作新应用，
+  导致数据目录迁移、状态丢失）。
+  安装记录键因此从 `HKCU\Software\TheHolyOneZ / IIEOzo\FontManager` 变为
+  `HKCU\Software\IIEOzo\FontManager`：卸载钩子会精确清掉旧键（勾选删除数据时），
+  曾自定义安装目录的用户建议先卸载旧版（**不要勾选删除数据**）再装本版。
+- **签名状态如实标注**：`CODE_SIGNING_POLICY.md`、`release.yml`、
+  `make-release-notes.ps1` 原本写着「项目通过 SignPath Foundation 免费 OV 签名」，
+  与事实不符 —— 签名密钥从未配置，签名步骤每次都是 `skipped`，
+  所有已发布安装包（含本版）均**未做数字签名**。现已改成分清「当前未启用」
+  与「启用后会怎样」；`ci.yml` 注释里不存在的 `release-signed.yml` 改为 `release.yml`。
+- 签名流水线代码保持就绪：仓库 Secrets 配齐 `SIGNPATH_TOKEN` 等四项后，
+  下一次发版会自动切换为签名发布，无需改代码。
+
+> ⚠️ 本版安装包仍然**没有数字签名**，Windows 会显示「未知发布者」、
+> SmartScreen 可能拦截。发布者字段只是文本信息，不等于代码签名。
+> 请只从 Releases 下载并核对下方 SHA-256。
+
 ## [1.5.4] — 2026-11-09（正式版）
 
 > 插件「下载了用不了」大多不是插件坏了、也不是软件版本不对，而是**环境没配齐**：
