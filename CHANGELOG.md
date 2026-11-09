@@ -4,6 +4,23 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.2] — 2026-11-10（正式版）
+
+### 修复
+
+- **在线字体库小卡：圆角、行首锚点、两行对齐一起回来**。1.7.1 为了修「两行左缘差 22px」，
+  把卡片做成了「1px 描边 + 0 圆角 + 隐藏锚点 + 两行都贴到卡片左缘」—— 结果圆角没了、
+  悬停时那颗圆点长成竖线的反馈也没了（用户连发两张截图指出）。
+
+  现在的口径：
+  - 卡片恢复 **8px 圆角** + 1px 发丝线，仍是透明底、无阴影；
+  - 行首锚点恢复：6px 圆点（`left: 14px` / `top: 17px`），悬停长成 **2×64px** 竖线
+    （主列表是 2×80，卡片只有 96 高，按内容高度收短）；
+  - 对齐改成「小字跟着族名缩进」：`.card-head` 与 `.online-card-meta` **同为
+    `margin-left: 22px`**，族名与小字都落在距卡片左缘 37px 处，两行左缘对齐，
+    谁都不贴边；
+  - 悬停补回底色 `--ui-hover`、边框混 40% 蓝、`--shadow-mass` 轻浮起，`--t-quick` 过渡。
+
 ## [1.7.1] — 2026-11-10（正式版）
 
 ### 修复

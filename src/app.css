@@ -8085,35 +8085,65 @@ body.ui-fade-out .app-frame {
   border-color: var(--ui-accent);
   color: #fff;
 }
-/* 小卡：1px 描边、0 圆角，去掉玻璃底。
+/* 小卡：1px 描边 + 8px 圆角，去掉玻璃底，但保留主界面的「行首锚点 + 悬停生长」。
  *
- * ⚠️ 这里的 padding / 缩进必须整套重置。在线卡复用的是 `.family-card` 这个类，
- * 而主列表的卡片是「行」——左边留 26 给锚点、`.card-head` 再缩进 22 给锚点让位。
- * 在线卡不参与启用状态，照搬过来就变成：族名从 48 起，元信息从 26 起，
- * 两行左缘差 22px（用户 2026-11-10 截图指出）。这里统一归零，两行同一个左缘。 */
+ * ⚠️ 2026-11-10 第二次修订（用户连发两张截图）：
+ * ① 圆角：R4 §4.1 写「304×96、0 圆角」，落地时顺手把卡片的 8px 圆角也归零了。
+ *   但主列表的 0 圆角是「整行 + 底部发丝线」，在线卡是网格里的一张独立小卡，
+ *   方角看着像从别处裁下来的贴片 —— 用户要求圆角回来。
+ * ② 锚点 + 交互：上一版把 `.online-card::before` 直接 display:none，连悬停时
+ *   圆点长成竖线的动效一起没了。用户原话「主页面的那个点还是要保留的，还有交互效果」。
+ * ③ 对齐：正确做法不是把两行都贴到卡片左缘，而是让下面的小字跟着上面的族名
+ *   走同一个左缘 —— 族名照旧缩进 22 给锚点让位，小字也缩进 22。
+ */
 .online-card {
-  border-radius: 0;
+  border-radius: 8px;
   border: 1px solid var(--ui-line);
   background: none;
   box-shadow: none;
   padding: 12px 14px;
   min-height: 96px;
   gap: 6px;
+  transition:
+    background-color var(--t-quick) ease,
+    border-color var(--t-quick) ease,
+    box-shadow var(--t-quick) ease;
 }
-/* 在线卡没有「启用状态」这回事，锚点圆点不该出现 */
+/* 行首锚点：与主列表同一套（点 → 悬停变 2px 竖线），只是卡片矮，竖线取 64 */
 .online-card::before {
-  display: none;
+  content: "";
+  display: block;
+  position: absolute;
+  left: 14px;
+  top: 17px;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ui-dot);
+  transition:
+    width var(--t-quick) ease-out,
+    height var(--t-quick) ease-out,
+    border-radius var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
 }
+.online-card:hover::before {
+  width: 2px;
+  height: 64px;
+  border-radius: 1px;
+  background: var(--ui-line-hover);
+}
+/* 族名给锚点让位 22；下面的小字跟族名同一个左缘（用户要的就是这两行对齐） */
 .online-card .card-head {
-  margin-left: 0;
+  margin-left: 22px;
 }
 .online-card .online-card-meta {
-  margin-left: 0;
+  margin-left: 22px;
   padding-left: 0;
 }
 .online-card:hover {
   border-color: color-mix(in srgb, var(--ui-accent) 40%, var(--ui-line));
-  background: none;
+  background: var(--ui-hover);
+  box-shadow: var(--shadow-mass);
 }
 .online-card .card-name {
   font-size: var(--fs-12, 12px);
