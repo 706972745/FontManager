@@ -4,6 +4,21 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.3] — 2026-11-09
+
+> 完整软件测试抓到的最要命一个：筛选、排序按钮点了「没反应」，其实是菜单开在屏幕外面。
+
+### 修复
+
+- **【P0】筛选 / 排序菜单现在看得见了**：`.sort-wrap` 从来没有定位样式，
+  而菜单是 `position: absolute; top: calc(100% + 5px)`，于是锚到了 `.app-frame`，
+  被渲染到整个窗口**下方**（屏幕外）。表现极具迷惑性：按钮按下会高亮、
+  菜单其实已经打开、焦点也进了菜单，方向键 + 回车还能真的改排序 / 筛出结果，
+  但界面上什么都没有 —— 用户只会以为「按钮坏了」。现在给 wrapper 补上
+  `position: relative`，菜单回到按钮正下方。完整界面与速览界面共用这个组件，一处修两边。
+- 该问题来自 0.5.2 完整测试（见 `测试文档-完整-0.5.2.md` D3/D4 与 `测试报告-完整-0.5.2.md`），
+  复验方式：装 0.5.3 后点顶栏漏斗 / 排序按钮，菜单应出现在按钮下方并可点选。
+
 ## [0.5.2] — 2026-11-08
 
 > 插件能装 ZIP，却没说去哪拿 ZIP —— 补一个直达插件仓库的入口。
