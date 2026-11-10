@@ -737,6 +737,70 @@ body,
   font-size: var(--fs-9);
   color: var(--ui-fg-3);
 }
+
+/* ─── 搜索建议下拉（用户 2026-11-10） ────────────────────────────────
+   主界面与速览共用。每条前面必须带类型图标（字体 / 标签 / 分组 / 快照）：
+   否则「搜 sdad 却出现一堆名字里没有 sdad 的字体」会让人以为搜错了。 */
+.suggest-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 70;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--ui-menu);
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-ambient);
+}
+.suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 4px;
+  font-size: var(--fs-11);
+  color: var(--ui-fg-2);
+  text-align: left;
+}
+.suggest-item:hover {
+  background: var(--ui-hover);
+  color: var(--ui-fg);
+}
+.suggest-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--ui-fg-3);
+}
+.suggest-item:hover .suggest-icon {
+  color: var(--ui-fg-2);
+}
+.suggest-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.suggest-kind {
+  flex: none;
+  font-size: var(--fs-9);
+  color: var(--ui-fg-3);
+}
+.suggest-empty {
+  padding: 8px 9px;
+  font-size: var(--fs-11);
+  color: var(--ui-fg-3);
+}
+/* 速览的搜索框也要能承载绝对定位的建议面板 */
+.qb-search {
+  position: relative;
+}
 .filter-charrow {
   display: flex;
   align-items: center;

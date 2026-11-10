@@ -61,6 +61,7 @@ const QB_ROOT_MARGIN = experiment.quickbarRootMargin();
 import type { FontFace } from "../lib/ipc";
 import { buildFaceIndexCached, entryFaceIds, faceKey } from "../lib/snapshotKey";
 import { FilterMenu } from "./TopBar";
+import { SearchSuggest, type Suggestion } from "./SearchSuggest";
 import { StarRating } from "./StarRating";
 
 /**
@@ -391,6 +392,8 @@ export function QuickBar() {
   // 速览 ↔ 完整界面切换期间把内容钉在目标尺寸上，窗口形变时内容不重排
   const morph = useFontStore((s) => s.morph);
   const [query, setQuery] = useState("");
+  /** 搜索框是否聚焦：决定下拉建议要不要显示 */
+  const [queryFocus, setQueryFocus] = useState(false);
   /**
    * 当前点中 / 聚焦的那一行（只影响视觉：行首锚点从 6px 灰点长成 96px 蓝线）。
    * 不参与任何筛选与数据，换搜索词或换列表时清掉，避免蓝线停在无关的行上。
@@ -690,10 +693,27 @@ export function QuickBar() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
+                  onFocus={() => setQueryFocus(true)}
+                  onBlur={() => window.setTimeout(() => setQueryFocus(false), 120)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setQueryFocus(false);
+                  }}
                   placeholder={t("quickbar.search")}
                   aria-label={t("quickbar.search")}
                   spellCheck={false}
                 />
+                {/* 搜索建议（用户 2026-11-10）：与完整界面同一套，每类带自己的图标 */}
+                {queryFocus && query.trim().length > 0 && (
+                  <SearchSuggest
+                    query={query}
+                    onPick={(sg: Suggestion) => {
+                      // 速览里就是把关键词填成选中的名字：标签名本身也在搜索口径里，
+                      // 填进去等于「只看这个标签 / 分组 / 快照」
+                      setQuery(sg.label);
+                      setQueryFocus(false);
+                    }}
+                  />
+                )}
                 {query && (
                   <button
                     className="search-clear"

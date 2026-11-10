@@ -21,6 +21,7 @@ import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
 import { familiesFor, MIN_PREVIEW_SIZE_INDEX, SIZES, allTags, useFontStore, type SortMode } from "../state/fontStore";
+import { SearchSuggest, type Suggestion } from "./SearchSuggest";
 import { useFontCss } from "../lib/fontLoader";
 import type { Classification, FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
@@ -804,6 +805,25 @@ export function TopBar() {
     return () => window.clearTimeout(id);
   }, [searchText, search, setSearch]);
 
+  /**
+   * 搜索建议（用户 2026-11-10）：输入时就近给「标签 / 分组 / 快照 / 字体」四类候选，
+   * 每类带自己的图标，避免用户看到一堆名字里没有关键词的字体时以为搜错了。
+   * 选中后统一清空搜索再跳转 —— 留着关键词会把目标列表继续过滤掉。
+   */
+  const [searchFocus, setSearchFocus] = useState(false);
+  const pickSuggestion = (sg: Suggestion) => {
+    setSearchText("");
+    setSearch("");
+    setSearchFocus(false);
+    const st = useFontStore.getState();
+    // 选中即可：三个列表视图（列表 / 网格 / 样张）都监听 selectedFamily 自动
+    // scrollIntoView + 蓝竖线，详情面板同时打开（用户 2026-11-10 要求的效果）
+    if (sg.kind === "family") useFontStore.setState({ selectedFamily: sg.label });
+    else if (sg.kind === "tag") st.setNav({ kind: "tag", tag: sg.label });
+    else if (sg.kind === "collection") st.setNav({ kind: "collection", name: sg.label });
+    else st.setNav({ kind: "snapshot", name: sg.label });
+  };
+
   const intro = useIntro();
   /**
    * 预览字号下限随视图走（用户 2026-11-05）：
@@ -831,10 +851,19 @@ export function TopBar() {
           data-hint="hint.search"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
+          onFocus={() => setSearchFocus(true)}
+          // 失焦延时关：mousedown 里 preventDefault 已经挡住一半，这里再兜一层
+          onBlur={() => window.setTimeout(() => setSearchFocus(false), 120)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setSearchFocus(false);
+          }}
           placeholder={t("top.searchPlaceholder")}
           aria-label={t("top.searchAria")}
           spellCheck={false}
         />
+        {searchFocus && searchText.trim().length > 0 && (
+          <SearchSuggest query={searchText} onPick={pickSuggestion} />
+        )}
         {searchText.length > 0 && (
           <button
             className="search-clear"
