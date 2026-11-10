@@ -22,12 +22,36 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 /// 单卷上限（用户定的 2 GiB）。再留 8 MiB 给 manifest / 目录区，保证成品文件本身 < 2 GiB。
 pub const PART_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+
+/// 导出取消标志（用户 2026-11-10）。前端同一时刻只允许跑一个导出，所以一个全局量就够。
+static PACK_CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// 取消的返回值前缀。前端按它认出「用户主动取消」，弹中性提示而不是红色失败。
+pub const PACK_CANCELLED: &str = "PACK_CANCELLED";
+
+pub fn request_pack_cancel() {
+    PACK_CANCEL.store(true, Ordering::SeqCst);
+}
+
+fn pack_cancelled() -> bool {
+    PACK_CANCEL.load(Ordering::SeqCst)
+}
+
+/// 取消时的收尾：删掉写了一半的 `.writing` 和本次已经成卷的包。
+/// 不删的话用户会拿到「第 1 卷正常、后面没有」的半套包，导入时才发现缺卷。
+fn abort_pack(paths: &[String], tmp: &Path) {
+    let _ = fs::remove_file(tmp);
+    for p in paths {
+        let _ = fs::remove_file(p);
+    }
+}
 const PART_HEADROOM: u64 = 8 * 1024 * 1024;
 
 const MANIFEST: &str = "manifest.json";
@@ -384,6 +408,8 @@ pub fn export_pack_with_limit(
     limit: u64,
     on_progress: &dyn Fn(PackProgress),
 ) -> Result<PackExportReport, String> {
+    // 每次导出都从「未取消」开始（上一次取消的标志不能带到这次）
+    PACK_CANCEL.store(false, Ordering::SeqCst);
     if !library.is_dir() {
         return Err(format!("字体库目录不存在：{}", library.display()));
     }
@@ -466,6 +492,13 @@ pub fn export_pack_with_limit(
         });
 
         for file in files.iter().skip(cursor).take(*count) {
+            // 每个文件开头查一次取消：5500 个文件 × 几十~几百 KB，响应是毫秒级的，
+            // 不必再进到读块循环里查（那样反而要处理借用）
+            if pack_cancelled() {
+                drop(zw);
+                abort_pack(&paths, &tmp_path);
+                return Err(PACK_CANCELLED.into());
+            }
             let mut src = File::open(&file.abs)
                 .map_err(|e| format!("读取 {} 失败：{e}", file.abs.display()))?;
             zw.start_file(format!("{FONT_DIR}/{}", file.rel), opts)

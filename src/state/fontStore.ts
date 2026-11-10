@@ -619,6 +619,12 @@ interface FontStore {
    * 放在阻塞线程池里跑，进度走 `pack:progress` 事件，界面只负责显示。
    */
   exportLibraryPack: (dest: string) => Promise<void>;
+  /**
+   * 取消正在跑的整包导出（用户 2026-11-10）。
+   * 只置后端标志：写了一半的 `.writing` 与已生成的卷由后端循环删掉，
+   * 前端收到 `PACK_CANCELLED` 后把进度条收掉、弹一条中性提示（不是红色失败）。
+   */
+  cancelExportPack: () => Promise<void>;
   /** 统一导入入口：按文件内容分辨整包 / 整理数据 / 快照，与文件后缀无关 */
   importLibraryFile: (src: string) => Promise<void>;
   setNav: (n: Nav) => void;
@@ -4185,7 +4191,22 @@ export const useFontStore = create<FontStore>((set, get) => ({
       );
     } catch (e) {
       set({ packProgress: null });
-      toast.error(t("toast.packExportFailed"), String(e));
+      // 用户主动取消：后端返回 PACK_CANCELLED，不是故障，别弹红框
+      if (String(e).includes("PACK_CANCELLED")) {
+        toast.info(t("pack.cancelled"), t("pack.cancelledSub"));
+      } else {
+        toast.error(t("toast.packExportFailed"), String(e));
+      }
+    }
+  },
+
+  cancelExportPack: async () => {
+    // 只发标志，不在这里清 packProgress：后端删完文件才返回，
+    // 提前清会让用户以为「取消完了，但磁盘上还留着一堆包」
+    try {
+      await ipc.cancelExportPack();
+    } catch (e) {
+      console.warn("[pack] 取消导出失败", e);
     }
   },
 

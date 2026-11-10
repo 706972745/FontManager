@@ -1827,6 +1827,14 @@ async fn export_library_pack(
     .map_err(|e| e.to_string())?
 }
 
+/// 取消正在跑的整包导出（用户 2026-11-10）。
+/// 这里只置标志；真正的磁盘清理在后端循环里做（删 `.writing` 与已生成的卷），
+/// 所以取消后前端会先看到进度条消失，文件删除要等循环走到下一个文件。
+#[tauri::command]
+fn cancel_export_pack() {
+    library_pack::request_pack_cancel();
+}
+
 /// 解包 .FontManager：字体铺回字库（重复的跳过），整理数据原样交回前端合并。
 #[tauri::command]
 async fn import_library_pack(
@@ -2692,6 +2700,7 @@ pub fn run() {
             export_fonts,
             export_font_folder,
             export_library_pack,
+            cancel_export_pack,
             import_library_pack,
             write_text_file,
             read_text_file,

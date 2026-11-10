@@ -133,24 +133,6 @@ body,
   min-height: 0;
 }
 
-/**
- * 右边缘悬停唤出速览（用户 2026-11-10）。
- *
- * 完整界面时窗口最右边一条**隐形**热区：鼠标撞上去 → 进速览并展开面板，移开 → 退回完整界面。
- * 两个刻意的取舍：
- *  · z-index 比 `.resize-grip`（200）低一档 —— 最右 3px 仍然留给「拖窗口换宽度」，
- *    热区实际吃的是距边缘 3~10px 那条带；
- *  · 从 56px 才开始，不盖住右上角的窗口按钮和标题栏拖拽区。
- */
-.edge-hotzone {
-  position: fixed;
-  top: 56px;
-  right: 0;
-  bottom: 8px;
-  width: 10px;
-  z-index: 199;
-}
-
 .resize-grip {
   position: fixed;
   z-index: 200;
@@ -6720,6 +6702,13 @@ body.ui-fade-out .app-frame {
   color: var(--qb-fg);
   white-space: nowrap;
   overflow: hidden;
+  /**
+   * 向右借道（用户 2026-11-10）：
+   * 示例文字原来只在第 3 列里，右边被「未知(62) + 星级(18) + 展开(28)」三列挡住，
+   * 32px 字只够显示半行就硬裁。那三列在示例这一行的**垂直区间里是空的**，
+   * 所以吃掉它们的宽度（108px），让右缘正好落在行内边距上 —— 与左侧 `--qb-pad` 对称。
+   */
+  margin-right: calc(-1 * (62px + 18px + 28px));
 }
 /* 速览里「无中文」替换示例文字：靠左、垂直居中，并顶住原来那一行的高度 */
 .qb-item-noscript {
@@ -7466,20 +7455,41 @@ body.ui-fade-out .app-frame {
   background: var(--ui-bg);
 }
 
-/* 滚动条：1px 发丝线（R4 §2.4） */
+/* 滚动条：1px 发丝线（R4 §2.4）
+   ── 2026-11-10 用户要求：像速览那样「能用鼠标拖」。
+   做法是**槽位固定 10px、视觉宽度靠透明 border 收细**：
+   · 平时 4.5px 透明边 → 视觉 1px，跟原来一样是条发丝线；
+   · 指针靠近窗口右边缘（body.scrollbar-hot）→ 边收成 2px → 视觉 6px，抓得住、拖得动。
+   槽位不随状态变，所以变粗时不会把内容挤得跳一下（这是不用 `width` 做动画的原因）。 */
 .app-content ::-webkit-scrollbar,
 .list-scroll::-webkit-scrollbar,
 .grid-scroll::-webkit-scrollbar,
 .detail-panel::-webkit-scrollbar {
-  width: 1px;
-  height: 1px;
+  width: 10px;
+  height: 10px;
+}
+.app-content ::-webkit-scrollbar-track,
+.list-scroll::-webkit-scrollbar-track,
+.grid-scroll::-webkit-scrollbar-track,
+.detail-panel::-webkit-scrollbar-track {
+  background: transparent;
 }
 .app-content ::-webkit-scrollbar-thumb,
 .list-scroll::-webkit-scrollbar-thumb,
 .grid-scroll::-webkit-scrollbar-thumb,
 .detail-panel::-webkit-scrollbar-thumb {
   background: var(--ui-fg-3);
-  border-radius: 0;
+  background-clip: padding-box;
+  border: 4.5px solid transparent;
+  border-radius: 999px;
+  min-height: 36px;
+}
+body.scrollbar-hot .app-content ::-webkit-scrollbar-thumb,
+body.scrollbar-hot .list-scroll::-webkit-scrollbar-thumb,
+body.scrollbar-hot .grid-scroll::-webkit-scrollbar-thumb,
+body.scrollbar-hot .detail-panel::-webkit-scrollbar-thumb {
+  border-width: 2px;
+  background-color: color-mix(in srgb, var(--ui-fg) 40%, transparent);
 }
 
 /* ─── 侧栏：选中用 2px 蓝竖线 + 2% 底，不用整行框 ─────────────────── */
