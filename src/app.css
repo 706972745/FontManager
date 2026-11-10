@@ -6361,26 +6361,20 @@ body.ui-fade-out .app-frame {
   gap: 0;
   padding: 0;
 }
-/* 滑杆：1px 轨道 + 8px 圆点，已填充的一段用主文字色（不是强调色，避免抢焦点） */
+/**
+ * 滑条：**只留宽度，其余全交给通用段**（`.topbar-size input[type=range]`，本文件末尾 R4 段）。
+ *
+ * 1.6.0 R2 这里原本是「1px 轨道 + 已填充段 + 8px 墨点 + input 高 2px」。
+ * 1.7.1 把通用段改成「2px 发丝轨道 + 8px 实心蓝点」时，这条选择器特异性更高
+ * （0,2,2 > 0,1,2），把通用段整套盖住了 —— 于是速览是墨点带填充、主界面是蓝点无填充，
+ * 两处外观分叉（待定清单 C8 当时自测成「已一致」，是误判）。
+ * 顺带一个真 bug：`height: 2px` 让滑杆的可拖区域只剩一条线，随手点基本点不中。
+ *
+ * 现在两边共用同一套规则，一致性由单一来源保证，别再往这里加颜色/尺寸覆盖。
+ * （`--fill` 变量仍由 JSX 下发，保留着不影响渲染，将来若要加填充段可直接用。）
+ */
 .qb-bar-2 .topbar-size input[type="range"] {
   width: 118px;
-  height: 2px;
-  border-radius: 1px;
-  background:
-    linear-gradient(90deg, var(--qb-fg) 0 var(--fill, 0%), var(--qb-hair) var(--fill, 0%) 100%);
-}
-.qb-bar-2 .topbar-size input[type="range"]::-webkit-slider-thumb {
-  width: 8px;
-  height: 8px;
-  border-radius: 4px;
-  margin-top: -3px;
-  background: var(--qb-fg);
-  box-shadow: none;
-}
-.qb-bar-2 .topbar-size input[type="range"]::-webkit-slider-thumb:hover,
-.qb-bar-2 .topbar-size input[type="range"]::-webkit-slider-thumb:active {
-  transform: none;
-  box-shadow: none;
 }
 .qb-size-value {
   flex: none;
@@ -8128,10 +8122,14 @@ body.ui-fade-out .app-frame {
   cursor: pointer;
 }
 .topbar-size input[type="range"]::-webkit-slider-thumb:hover {
+  /* 旧「白旋钮」时代 hover 会 scale(1.15)，换成 8px 实心点后那点放大看不出来、
+     只会让两处滑条的手感各自漂移；一律不缩放。 */
+  transform: none;
   box-shadow: none;
 }
 .topbar-size input[type="range"]::-webkit-slider-thumb:active,
 .topbar-size input[type="range"]:focus-visible::-webkit-slider-thumb {
+  transform: none;
   box-shadow: none;
 }
 /* 聚焦不靠光晕，改用一圈 2px 的间隙环 —— 键盘用户必须看得出焦点在哪 */
