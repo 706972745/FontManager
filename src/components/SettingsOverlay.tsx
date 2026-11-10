@@ -42,6 +42,20 @@ const PLUGIN_REPO_URL = "https://github.com/706972745/FontManager-Plugin";
 
 /** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
 const EXPORT_FONTS_KEY = "zfm.exportFonts";
+/**
+ * 最近一次「连字体文件一起导出」完成的时间（毫秒时间戳，本机记录）。
+ * 用户 2026-11-10 要求：勾了「同时导出字体文件」时，在这条设置旁边显示上次导出的年月日，
+ * 便于判断「上次搬家是什么时候、这次要不要再导一遍」。
+ * 与 EXPORT_FONTS_KEY 一样存 localStorage：这是本机使用痕迹，不属于字体库数据。
+ */
+const LAST_PACK_AT_KEY = "zfm.lastExportPackAt";
+
+/** 只到「年月日」的本地时间串（2026-11-10）：用户要的粒度就是天 */
+function fmtYmd(ts: number): string {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 /** 最多保存几个字体库地址（与后端 store::MAX_LIBRARY_DIRS 一致） */
 const MAX_LIBRARY_DIRS = 3;
@@ -158,6 +172,15 @@ export function SettingsOverlay() {
       return localStorage.getItem(EXPORT_FONTS_KEY) === "1";
     } catch {
       return false;
+    }
+  });
+  /** 最近一次「连字体一起导出」的时间；null = 从没导过 */
+  const [lastPackAt, setLastPackAt] = useState<number | null>(() => {
+    try {
+      const raw = Number(localStorage.getItem(LAST_PACK_AT_KEY));
+      return Number.isFinite(raw) && raw > 0 ? raw : null;
+    } catch {
+      return null;
     }
   });
 
@@ -616,6 +639,16 @@ export function SettingsOverlay() {
     if (exportFonts) setSettingsOpen(false);
     if (exportFonts) await useFontStore.getState().exportLibraryPack(dest);
     else await useFontStore.getState().exportLibraryData(dest);
+    // 只有「连字体一起导出」才记时间：纯整理数据（L 包）几秒钟就完，记它没有参考价值
+    if (exportFonts) {
+      const at = Date.now();
+      setLastPackAt(at);
+      try {
+        localStorage.setItem(LAST_PACK_AT_KEY, String(at));
+      } catch {
+        // 隐私模式写不进去：只影响「下次还记不记得」，不影响这次导出
+      }
+    }
   };
 
   const importData = async () => {
@@ -1342,6 +1375,11 @@ ${t("settings.onlineHosts")}`} />
                     />
                     <span>{t("settings.exportPackToggle")}</span>
                   </label>
+                  {exportFonts && lastPackAt !== null && (
+                    <span className="settings-check-note tabular">
+                      {t("settings.lastPackAt", { date: fmtYmd(lastPackAt) })}
+                    </span>
+                  )}
                 </div>
                 <div className="settings-data-actions">
                   <button

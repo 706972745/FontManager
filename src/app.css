@@ -174,7 +174,6 @@ body,
 }
 .app-shell.shell-specimen .sidebar .nav-label,
 .app-shell.shell-specimen .sidebar .nav-count,
-.app-shell.shell-specimen .sidebar .nav-no,
 .app-shell.shell-specimen .sidebar .sidebar-heading-row,
 .app-shell.shell-specimen .sidebar .sidebar-add,
 .app-shell.shell-specimen .sidebar .sidebar-hint,
@@ -183,8 +182,16 @@ body,
 }
 .app-shell.shell-specimen .sidebar .nav-row {
   justify-content: center;
-  gap: 0;
+  gap: 2px;
   padding: 6px 0;
+}
+/* 样张视图也显示分组 / 快照序号（用户 2026-11-10）：只留图标时认不出是哪一组，
+   序号是唯一还能对上的线索（字重行胶囊写「快照4」）。
+   62px 宽里图标 15 + 序号 12 放得下，所以不再藏。 */
+.app-shell.shell-specimen .sidebar .nav-no {
+  margin-left: 0;
+  margin-right: 0;
+  opacity: 1;
 }
 .app-shell.shell-specimen .sidebar-section {
   padding-bottom: 6px;
@@ -270,15 +277,19 @@ body,
   z-index: 1;
 }
 /* 分组 / 快照的序号：字重行胶囊上写的是「快照4」，用户靠这个号把两边对上（0.9.9-20）。
-   等宽数字 + 右对齐，个位数与两位数之间不会把名字推得跳来跳去。 */
+   等宽数字 + 右对齐，个位数与两位数之间不会把名字推得跳来跳去。
+   ⚠️ 2026-11-10 用户要求：序号要**贴着图标**，不是贴着组名 ——
+   原来是 `text-align: right` + `margin-right: -4px`，把 1 粘在名字前面成了「1dfs」，
+   看着像名字的一部分。现在改成左对齐 + `margin-left: -4px` 靠图标。 */
 .nav-no {
   flex: none;
   min-width: 12px;
-  margin-right: -4px;
+  margin-left: -4px;
+  margin-right: 0;
   font-size: var(--fs-10);
   font-weight: 600;
   line-height: 1;
-  text-align: right;
+  text-align: left;
   color: var(--text-tertiary);
   opacity: 0.75;
 }
@@ -679,6 +690,52 @@ body,
   min-width: 176px;
   max-height: min(480px, calc(100vh - 140px));
   overflow-y: auto;
+}
+/* ─── 筛选菜单的「范围」二级菜单（标签 / 分组 / 快照，2026-11-10） ─────
+   ⚠️ 必须 fixed 定位：.filter-menu 自己有 overflow-y:auto，绝对定位的子面板会被裁掉。
+   ⚠️ 向左弹（translateX(-100%)）：完整界面与速览窗口都不宽，往右一定出界。 */
+.filter-sub-trigger {
+  width: 100%;
+}
+.filter-sub-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-fg-3);
+}
+.filter-sub-open {
+  background: var(--ui-hover);
+  color: var(--ui-fg);
+}
+.filter-submenu {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-100%, -6px) translateX(-6px);
+  min-width: 156px;
+  max-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-menu);
+  box-shadow: var(--shadow-ambient);
+}
+.filter-submenu .sort-item {
+  font-size: var(--fs-11);
+  padding: 6px 9px;
+}
+.filter-sub-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-sub-count {
+  margin-left: auto;
+  font-size: var(--fs-9);
+  color: var(--ui-fg-3);
 }
 .filter-charrow {
   display: flex;
@@ -3776,6 +3833,14 @@ h2.detail-title.copy-name {
   margin: 0;
   accent-color: var(--accent-a);
   cursor: pointer;
+}
+/* 「最近导出字体文件：2026-11-10」—— 跟在复选框后面的一行弱提示 */
+.settings-check-note {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  vertical-align: middle;
 }
 
 /* 设置里录制快捷键：一块「按键框」+ 恢复默认 */
@@ -8120,6 +8185,12 @@ body.ui-fade-out .app-frame {
   border: 0;
   box-shadow: none;
   cursor: pointer;
+  /**
+   * 垂直居中：Chromium 把 thumb 的**顶边**对齐到 2px 轨道顶边，8px 的点就会整体
+   * 沉下去 (8-2)/2 = 3px（用户 2026-11-10 截图：点压在线上、下半截悬空）。
+   * 上移 3px 让点中心落在轨道中心。改轨道高度时这里要跟着算。
+   */
+  margin-top: -3px;
 }
 .topbar-size input[type="range"]::-webkit-slider-thumb:hover {
   /* 旧「白旋钮」时代 hover 会 scale(1.15)，换成 8px 实心点后那点放大看不出来、

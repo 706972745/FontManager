@@ -388,6 +388,8 @@ interface FontStore {
   collectionFilter: string[];
   /** 速览界面「范围」筛选：只看属于这些快照的字族（按快照名，空 = 不限） */
   snapshotFilter: string[];
+  /** 筛选菜单「标签」二级菜单：只看带这些标签的字族（多选，取交集，空 = 不限） */
+  tagFilter: string[];
   /** 速览界面：只显示已启用的字体，窗口压缩成一条，贴顶时自动隐藏 */
   quickbar: boolean;
   /** 速览界面里是否启用「贴顶自动隐藏」 */
@@ -474,6 +476,17 @@ interface FontStore {
   requestDeleteCollection: (name: string) => void;
   renameCollection: (from: string, to: string) => Promise<void>;
   toggleFamilyInCollection: (collection: string, family: string) => Promise<void>;
+  /**
+   * 把「当前启用的字体」按字族并入分组（用户 2026-11-10）。
+   * **只加不删** —— 不能复用 toggleFamilyInCollection：那个是开关语义，
+   * 已在组里的字体会被踢出去，「加入」反而变成「移出」。
+   */
+  addActiveToCollection: (collection: string) => Promise<void>;
+  /**
+   * 应用分组（用户 2026-11-10）：把组内字体转成快照条目后走同一条应用流水线。
+   * switch = 只启用组内字体；merge = 叠加到当前启用之上。
+   */
+  applyCollection: (name: string, mode?: SnapshotApplyMode) => Promise<void>;
   /** 批量把字族移出分组（只删成员关系，不删字体）。一条都没命中时静默返回。 */
   removeFamiliesFromCollection: (collection: string, families: string[]) => Promise<void>;
   createSnapshot: (name: string) => Promise<void>;
@@ -594,6 +607,7 @@ interface FontStore {
   setFavoriteOnly: (v: boolean) => void;
   toggleCollectionFilter: (name: string) => void;
   toggleSnapshotFilter: (id: string) => void;
+  toggleTagFilter: (tag: string) => void;
   /** status 为 null / "auto" 时恢复为按版权信息自动识别 */
   setCopyrightStatus: (family: string, status: string | null) => void;
   /** date 为 null 时清除到期日期 */
@@ -1611,6 +1625,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   ratingFilter: 0,
   collectionFilter: [],
   snapshotFilter: [],
+  tagFilter: [],
   copyrightStatus: {},
   copyrightExpiry: {},
   nav: { kind: "library" },
@@ -3042,6 +3057,52 @@ export const useFontStore = create<FontStore>((set, get) => ({
     await applyEntries(snap.entries, mode, name);
   },
 
+  addActiveToCollection: async (collection) => {
+    const prev = get().collections;
+    const cur = prev[collection] ?? [];
+    const have = new Set(cur);
+    const add = new Set<string>();
+    // 按字族并入：分组的主口径就是字族（collectionFaces 只用于「只加了某个字重」的例外）
+    for (const f of get().fonts) {
+      if (!f.active) continue;
+      if (have.has(f.family)) continue;
+      add.add(f.family);
+    }
+    if (add.size === 0) {
+      toast.info?.(t("coll.alreadyIn", { name: collection }));
+      return;
+    }
+    const families = [...cur, ...add];
+    set({ collections: { ...prev, [collection]: families } });
+    try {
+      await ipc.setCollection(collection, families);
+      toast.success(
+        t("toast.addedToCollection", { count: add.size, name: collection }),
+        undefined,
+        "install",
+      );
+    } catch (e) {
+      set({ collections: prev });
+      toast.error(t("toast.couldntUpdateCollection"), String(e));
+    }
+  },
+
+  applyCollection: async (name, mode = "merge") => {
+    const s = get();
+    const members = new Set(s.collections[name] ?? []);
+    const faceKeys = new Set(s.collectionFaces?.[name] ?? []);
+    // 与分组视图的过滤口径完全一致（selectVisibleFamilies 的 collection 分支）：
+    // 字族级成员 + 字重级成员，缺一都会出现「界面上看得到、应用时却没被算进去」
+    const entries = s.fonts
+      .filter((f) => members.has(f.family) || faceKeys.has(faceKey(f)))
+      .map(entryFromFace);
+    if (entries.length === 0) {
+      toast.info?.(t("toast.emptyCollection"), t("snap.nothingToApply"));
+      return;
+    }
+    await applyEntries(entries, mode, name);
+  },
+
   removeMissingFromSnapshot: async (name) => {
     const st = get();
     // 扫描没跑完时 `fonts` 只是「已经扫到的那一部分」。这时候按「解析不到」判定缺失，
@@ -3915,6 +3976,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const cur = get().snapshotFilter;
     set({ snapshotFilter: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
   },
+  toggleTagFilter: (tag) => {
+    const cur = get().tagFilter;
+    set({ tagFilter: cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag] });
+  },
   setCopyrightStatus: (family, status) => {
     const next = { ...get().copyrightStatus };
     if (!status || status === "auto") {
@@ -4442,6 +4507,10 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
   collections: Record<string, string[]>;
   collectionFaces?: Record<string, string[]>;
   snapshots: Snapshot[];
+  /** 筛选菜单的「范围」二级菜单（标签 / 分组 / 快照），空 = 不限 */
+  tagFilter?: string[];
+  collectionFilter?: string[];
+  snapshotFilter?: string[];
   favorites: string[];
   sessionActivated: string[];
   lastImported: string[];
@@ -4469,6 +4538,41 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
   const families = [...familiesFor(s.fonts, s.tags).values()];
   const q = s.search.trim().toLowerCase();
   let out = applyFamilyFilters(families, s);
+  /**
+   * 筛选菜单的「范围」二级菜单（标签 / 分组 / 快照，用户 2026-11-10）。
+   * 口径与侧栏导航、速览的同一批筛选**必须一致**：
+   *  · 分组取「字族级 ∪ 字重级」并集；
+   *  · 快照按可移植标识解析成本机字面 id，不能按路径比（一个 TTC 里有多个族）；
+   *  · 标签多选取**交集**（「既带 A 又带 B」），与分类 / 特性两个多选口径一致。
+   */
+  const tagFilter = s.tagFilter ?? [];
+  const collectionFilter = s.collectionFilter ?? [];
+  const snapshotFilter = s.snapshotFilter ?? [];
+  if (tagFilter.length > 0) {
+    out = out.filter((f) => tagFilter.every((tg) => f.tags.includes(tg)));
+  }
+  if (collectionFilter.length > 0) {
+    const memberNames = new Set<string>();
+    const memberFaces = new Set<string>();
+    for (const g of collectionFilter) {
+      for (const n of s.collections[g] ?? []) memberNames.add(n);
+      for (const k of s.collectionFaces?.[g] ?? []) memberFaces.add(k);
+    }
+    out = out.filter(
+      (f) =>
+        memberNames.has(f.name) ||
+        (memberFaces.size > 0 && f.faces.some((fc) => memberFaces.has(faceKey(fc)))),
+    );
+  }
+  if (snapshotFilter.length > 0) {
+    const index = buildFaceIndexCached(s.fonts);
+    const ids = new Set<string>();
+    for (const snap of s.snapshots) {
+      if (!snapshotFilter.includes(snap.name)) continue;
+      for (const id of entryFaceIds(snap.entries, index)) ids.add(id);
+    }
+    out = out.filter((f) => f.faces.some((fc) => ids.has(fc.id)));
+  }
   if (s.nav.kind === "tag") {
     const tag = s.nav.tag;
     out = out.filter((f) => f.tags.includes(tag));

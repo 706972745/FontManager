@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowUpDown,
   Check,
+  ChevronRight,
   Columns2,
   Filter,
   FolderOpen,
@@ -19,7 +20,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
-import { familiesFor, MIN_PREVIEW_SIZE_INDEX, SIZES, useFontStore, type SortMode } from "../state/fontStore";
+import { familiesFor, MIN_PREVIEW_SIZE_INDEX, SIZES, allTags, useFontStore, type SortMode } from "../state/fontStore";
 import { useFontCss } from "../lib/fontLoader";
 import type { Classification, FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
@@ -160,6 +161,40 @@ const SCRIPT_FILTERS = [
  * `membership`：速览界面传 true，多出一段「范围」—— 收藏 / 分组 / 快照。
  * 完整界面不需要（那边走侧栏导航），所以默认不渲染，行为零变化。
  */
+/**
+ * 筛选菜单里的「二级菜单」入口（标签 / 分组 / 快照）。
+ * 右侧显示已选条数与箭头；点一下或悬停都会展开对应的子面板。
+ */
+function FilterSubTrigger({
+  label,
+  count,
+  active,
+  onClick,
+  onHover,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: (el: HTMLElement) => void;
+  onHover: (el: HTMLElement) => void;
+}) {
+  return (
+    <button
+      className={`sort-item filter-sub-trigger ${active ? "filter-sub-open" : ""}`}
+      aria-haspopup="menu"
+      aria-expanded={active}
+      onClick={(e) => onClick(e.currentTarget)}
+      onMouseEnter={(e) => onHover(e.currentTarget)}
+    >
+      <span>{label}</span>
+      <span className="filter-sub-meta">
+        {count > 0 && <span className="filter-count tabular">{count}</span>}
+        <ChevronRight size={12} strokeWidth={1.6} />
+      </span>
+    </button>
+  );
+}
+
 export function FilterMenu({ membership = false }: { membership?: boolean } = {}) {
   const t = useT();
   const classFilter = useFontStore((s) => s.classFilter);
@@ -191,9 +226,36 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
   const toggleCollectionFilter = useFontStore((s) => s.toggleCollectionFilter);
   const snapshotFilter = useFontStore((s) => s.snapshotFilter);
   const toggleSnapshotFilter = useFontStore((s) => s.toggleSnapshotFilter);
+  const tagFilter = useFontStore((s) => s.tagFilter);
+  const toggleTagFilter = useFontStore((s) => s.toggleTagFilter);
+  const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
   const snapshots = useFontStore((s) => s.snapshots);
   const { open, toggle, close, triggerRef, listRef } = usePopoverMenu("filter-menu");
+
+  /**
+   * 「范围」二级菜单（标签 / 分组 / 快照，用户 2026-11-10）。
+   *
+   * 不能做成菜单里的绝对定位子面板：`.filter-menu` 自己有 `overflow-y: auto`
+   * （内容超过 480px 要滚），任何超出菜单盒子的子元素都会被裁掉。
+   * 所以子菜单用 `position: fixed` 渲染在菜单外面，位置取被点那一项的 rect；
+   * 靠 `transform: translateX(-100%)` 整体向左弹出 —— 完整界面与速览的窗口都不宽，
+   * 往右弹会直接出界。菜单关闭 / 菜单内滚动时收起子菜单，否则位置会飘。
+   */
+  const [sub, setSub] = useState<{
+    kind: "tag" | "collection" | "snapshot";
+    top: number;
+    left: number;
+  } | null>(null);
+  const openSub = (kind: "tag" | "collection" | "snapshot", el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setSub({ kind, top: r.top, left: r.left });
+  };
+  const tagCounts = useMemo(() => allTags(tags), [tags]);
+  const collectionNames = useMemo(() => Object.keys(collections).sort(), [collections]);
+  useEffect(() => {
+    if (!open) setSub(null);
+  }, [open]);
 
   const activeCount =
     classFilter.length +
@@ -207,9 +269,10 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
     (toggleableOnly ? 1 : 0) +
     (incompleteOnly ? 1 : 0) +
     (ratingFilter > 0 ? 1 : 0) +
-    (membership
-      ? (favoriteOnly ? 1 : 0) + collectionFilter.length + snapshotFilter.length
-      : 0);
+    tagFilter.length +
+    collectionFilter.length +
+    snapshotFilter.length +
+    (membership && favoriteOnly ? 1 : 0);
 
   return (
     <div className="sort-wrap">
@@ -242,63 +305,56 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
               exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.13 } }}
               transition={springSnappy}
             >
+              {(membership || tagCounts.size > 0 || collectionNames.length > 0 || snapshots.length > 0) && (
+                <li className="filter-heading" role="none">
+                  {t("filter.scope")}
+                </li>
+              )}
               {membership && (
-                <>
-                  <li className="filter-heading" role="none">
-                    {t("filter.scope")}
-                  </li>
-                  <li>
-                    <button
-                      role="option"
-                      aria-selected={favoriteOnly}
-                      className={favoriteOnly ? "sort-item sort-active" : "sort-item"}
-                      onClick={() => setFavoriteOnly(!favoriteOnly)}
-                    >
-                      <span>{t("side.favorites")}</span>
-                      {favoriteOnly && <Check size={13} strokeWidth={2} />}
-                    </button>
-                  </li>
-                  {Object.keys(collections).length > 0 && (
-                    <li className="filter-heading" role="none">
-                      {t("side.collections")}
-                    </li>
-                  )}
-                  {Object.keys(collections).map((name) => (
-                    <li key={`c-${name}`}>
-                      <button
-                        role="option"
-                        aria-selected={collectionFilter.includes(name)}
-                        className={
-                          collectionFilter.includes(name) ? "sort-item sort-active" : "sort-item"
-                        }
-                        onClick={() => toggleCollectionFilter(name)}
-                      >
-                        <span>{name}</span>
-                        {collectionFilter.includes(name) && <Check size={13} strokeWidth={2} />}
-                      </button>
-                    </li>
-                  ))}
-                  {snapshots.length > 0 && (
-                    <li className="filter-heading" role="none">
-                      {t("side.snapshots")}
-                    </li>
-                  )}
-                  {snapshots.map((snap) => (
-                    <li key={`s-${snap.name}`}>
-                      <button
-                        role="option"
-                        aria-selected={snapshotFilter.includes(snap.name)}
-                        className={
-                          snapshotFilter.includes(snap.name) ? "sort-item sort-active" : "sort-item"
-                        }
-                        onClick={() => toggleSnapshotFilter(snap.name)}
-                      >
-                        <span>{snap.name}</span>
-                        {snapshotFilter.includes(snap.name) && <Check size={13} strokeWidth={2} />}
-                      </button>
-                    </li>
-                  ))}
-                </>
+                <li>
+                  <button
+                    role="option"
+                    aria-selected={favoriteOnly}
+                    className={favoriteOnly ? "sort-item sort-active" : "sort-item"}
+                    onClick={() => setFavoriteOnly(!favoriteOnly)}
+                  >
+                    <span>{t("side.favorites")}</span>
+                    {favoriteOnly && <Check size={13} strokeWidth={2} />}
+                  </button>
+                </li>
+              )}
+              {tagCounts.size > 0 && (
+                <li>
+                  <FilterSubTrigger
+                    label={t("side.tags")}
+                    count={tagFilter.length}
+                    active={sub?.kind === "tag"}
+                    onClick={(el) => openSub("tag", el)}
+                    onHover={(el) => openSub("tag", el)}
+                  />
+                </li>
+              )}
+              {collectionNames.length > 0 && (
+                <li>
+                  <FilterSubTrigger
+                    label={t("side.collections")}
+                    count={collectionFilter.length}
+                    active={sub?.kind === "collection"}
+                    onClick={(el) => openSub("collection", el)}
+                    onHover={(el) => openSub("collection", el)}
+                  />
+                </li>
+              )}
+              {snapshots.length > 0 && (
+                <li>
+                  <FilterSubTrigger
+                    label={t("side.snapshots")}
+                    count={snapshotFilter.length}
+                    active={sub?.kind === "snapshot"}
+                    onClick={(el) => openSub("snapshot", el)}
+                    onHover={(el) => openSub("snapshot", el)}
+                  />
+                </li>
               )}
               <li className="sort-sep" role="none" />
               <li className="filter-heading" role="none">
@@ -501,6 +557,58 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
           </>
         )}
       </AnimatePresence>
+      {/* 「范围」二级菜单：fixed 定位在菜单外（菜单自己 overflow-y:auto 会裁掉绝对定位子元素） */}
+      {open && sub && (
+        <ul
+          className="filter-submenu"
+          role="menu"
+          style={{ top: sub.top, left: sub.left }}
+          onMouseLeave={() => setSub(null)}
+        >
+          {sub.kind === "tag" &&
+            [...tagCounts.entries()].map(([tagName, count]) => (
+              <li key={tagName}>
+                <button
+                  className={tagFilter.includes(tagName) ? "sort-item sort-active" : "sort-item"}
+                  onClick={() => toggleTagFilter(tagName)}
+                >
+                  <span className="filter-sub-name">{tagName}</span>
+                  <span className="filter-sub-count tabular">{count}</span>
+                  {tagFilter.includes(tagName) && <Check size={12} strokeWidth={2} />}
+                </button>
+              </li>
+            ))}
+          {sub.kind === "collection" &&
+            collectionNames.map((name) => (
+              <li key={name}>
+                <button
+                  className={
+                    collectionFilter.includes(name) ? "sort-item sort-active" : "sort-item"
+                  }
+                  onClick={() => toggleCollectionFilter(name)}
+                >
+                  <span className="filter-sub-name">{name}</span>
+                  {collectionFilter.includes(name) && <Check size={12} strokeWidth={2} />}
+                </button>
+              </li>
+            ))}
+          {sub.kind === "snapshot" &&
+            snapshots.map((snap) => (
+              <li key={snap.name}>
+                <button
+                  className={
+                    snapshotFilter.includes(snap.name) ? "sort-item sort-active" : "sort-item"
+                  }
+                  onClick={() => toggleSnapshotFilter(snap.name)}
+                >
+                  <span className="filter-sub-name">{snap.name}</span>
+                  <span className="filter-sub-count tabular">{snap.entries.length}</span>
+                  {snapshotFilter.includes(snap.name) && <Check size={12} strokeWidth={2} />}
+                </button>
+              </li>
+            ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { OnlineView } from "./components/OnlineView";
 import { AboutView } from "./components/AboutView";
 import { SpecimenView } from "./components/SpecimenView";
 import { SnapshotBar } from "./components/SnapshotBar";
+import { CollectionBar } from "./components/CollectionBar";
 import { CompareOverlay } from "./components/CompareOverlay";
 import { SelectionBar } from "./components/SelectionBar";
 import { SettingsOverlay } from "./components/SettingsOverlay";
@@ -218,6 +219,9 @@ function MainContent() {
   const copyrightStatus = useFontStore((s) => s.copyrightStatus);
   const ratings = useFontStore((s) => s.ratings);
   const ratingFilter = useFontStore((s) => s.ratingFilter);
+  const tagFilter = useFontStore((s) => s.tagFilter);
+  const collectionFilter = useFontStore((s) => s.collectionFilter);
+  const snapshotFilter = useFontStore((s) => s.snapshotFilter);
   const activatedAt = useFontStore((s) => s.activatedAt);
 
   // 扫描中就用「已经读到的那些」先渲染；扫完 fonts 会被权威结果整体替换
@@ -229,9 +233,10 @@ function MainContent() {
         fonts: displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search,
         classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
         variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort,
+        tagFilter, collectionFilter, snapshotFilter,
         ratings, ratingFilter, activatedAt,
       }),
-    [displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort, ratings, ratingFilter, activatedAt],
+    [displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort, ratings, ratingFilter, activatedAt, tagFilter, collectionFilter, snapshotFilter],
   );
 
   // 非字族浏览页面（回收站 / 关于 / 在线栏目）没有「可见字族顺序」，必须清空：
@@ -280,6 +285,9 @@ function MainContent() {
           /* ← 这三项原来漏了：勾「只看不完整 / 损坏」筛出 0 条时会误报「字体库还空着」 */
           incompleteOnly ||
           licenseFilter.length > 0 ||
+          tagFilter.length > 0 ||
+          collectionFilter.length > 0 ||
+          snapshotFilter.length > 0 ||
           Object.keys(copyrightStatus).length > 0
         }
       />
@@ -294,6 +302,15 @@ function MainContent() {
     return (
       <div className="snapshot-view">
         <SnapshotBar name={nav.name} />
+        {body}
+      </div>
+    );
+  }
+  // 分组视图也有一条同款操作条（用户 2026-11-10）：快照能切换/合并，分组也要能
+  if (nav.kind === "collection") {
+    return (
+      <div className="snapshot-view">
+        <CollectionBar name={nav.name} />
         {body}
       </div>
     );
