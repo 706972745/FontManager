@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Camera, FolderOpen, Tag, Type } from "lucide-react";
-import { familiesFor, useFontStore } from "../state/fontStore";
+import { allTags, familiesFor, useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
 
 /**
@@ -39,15 +39,22 @@ export function SearchSuggest({
   const snapshots = useFontStore((s) => s.snapshots);
 
   const q = query.trim().toLowerCase();
+  /**
+   * `tags` 在 store 里是 **字族名 → 标签数组**（`Record<family, string[]>`），
+   * 不是「标签 → 成员」。所以这里必须走 `allTags()` 转成「标签 → 有多少个族」，
+   * 直接 `Object.entries(tags)` 拿到的是族名，会把字体名当成标签列出来
+   * （1.7.10 第一版就是这么错的，用户截图里标签一条都不出现）。
+   */
+  const tagIndex = useMemo(() => allTags(tags), [tags]);
 
   const items = useMemo<Suggestion[]>(() => {
     if (!q) return [];
     const out: Suggestion[] = [];
     let n = 0;
-    for (const [tag, members] of Object.entries(tags)) {
+    for (const [tag, count] of tagIndex) {
       if (n >= LIMIT_PER_KIND.tag) break;
       if (!tag.toLowerCase().includes(q)) continue;
-      out.push({ kind: "tag", key: `tag:${tag}`, label: tag, meta: String(members.length) });
+      out.push({ kind: "tag", key: `tag:${tag}`, label: tag, meta: String(count) });
       n++;
     }
     n = 0;
@@ -78,7 +85,7 @@ export function SearchSuggest({
       n++;
     }
     return out;
-  }, [q, fonts, tags, collections, snapshots]);
+  }, [q, fonts, tagIndex, collections, snapshots]);
 
   if (!q) return null;
 

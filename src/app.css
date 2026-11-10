@@ -2404,20 +2404,21 @@ h2.detail-title.copy-name {
 }
 /* 菜单超出窗口高度时内部滚动，滚动条要看得见（同 .lang-menu 风格） */
 .ctx-menu::-webkit-scrollbar {
-  width: 9px;
+  width: 10px;
+  height: 10px;
 }
 .ctx-menu::-webkit-scrollbar-track {
   background: transparent;
 }
 .ctx-menu::-webkit-scrollbar-thumb {
   background: rgba(var(--ink-rgb), 0.16);
-  border: 3px solid transparent;
+  border: 3.5px solid transparent;
   border-radius: 5px;
   background-clip: padding-box;
 }
 .ctx-menu::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--ink-rgb), 0.26);
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   background-clip: padding-box;
 }
 .ctx-item {
@@ -4919,20 +4920,21 @@ h2.detail-title.copy-name {
 }
 
 .lang-menu::-webkit-scrollbar {
-  width: 9px;
+  width: 10px;
+  height: 10px;
 }
 .lang-menu::-webkit-scrollbar-track {
   background: transparent;
 }
 .lang-menu::-webkit-scrollbar-thumb {
   background: rgba(var(--ink-rgb), 0.16);
-  border: 3px solid transparent;
+  border: 3.5px solid transparent;
   border-radius: 5px;
   background-clip: padding-box;
 }
 .lang-menu::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--ink-rgb), 0.26);
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   background-clip: padding-box;
 }
 
@@ -6767,12 +6769,15 @@ body.ui-fade-out .app-frame {
   white-space: nowrap;
   overflow: hidden;
   /**
-   * 向右借道（用户 2026-11-10）：
-   * 示例文字原来只在第 3 列里，右边被「未知(62) + 星级(18) + 展开(28)」三列挡住，
-   * 32px 字只够显示半行就硬裁。那三列在示例这一行的**垂直区间里是空的**，
-   * 所以吃掉它们的宽度（108px），让右缘正好落在行内边距上 —— 与左侧 `--qb-pad` 对称。
+   * 向右借道（用户 2026-11-10，同日二改收窄）：
+   * 示例文字原来只在第 3 列里，右边被「未知(62) + 星级(18) + 展开(28)」挡住，
+   * 32px 字只够显示半行就硬裁。第一版把 108px 全吃掉，一行铺到行内边距上 ——
+   * 用户看过之后说「太宽了」，要右缘落在**未知文字与星级图标中间**（他画了红框）。
+   * 所以只借 62px 那列里的 52px，右缘停在星级列左缘前 10px：
+   * 为什么是 10 而不是贴齐 —— 星级按钮的 24px 热区有 -6px 负 margin（视觉 12px 图标从
+   * 星级列左缘再往左 6px 起），再留 4px 才不会压到它的点击区。
    */
-  margin-right: calc(-1 * (62px + 18px + 28px));
+  margin-right: -52px;
 }
 /* 速览里「无中文」替换示例文字：靠左、垂直居中，并顶住原来那一行的高度 */
 .qb-item-noscript {
@@ -7519,41 +7524,41 @@ body.ui-fade-out .app-frame {
   background: var(--ui-bg);
 }
 
-/* 滚动条：1px 发丝线（R4 §2.4）
-   ── 2026-11-10 用户要求：像速览那样「能用鼠标拖」。
-   做法是**槽位固定 10px、视觉宽度靠透明 border 收细**：
-   · 平时 4.5px 透明边 → 视觉 1px，跟原来一样是条发丝线；
-   · 指针靠近窗口右边缘（body.scrollbar-hot）→ 边收成 2px → 视觉 6px，抓得住、拖得动。
-   槽位不随状态变，所以变粗时不会把内容挤得跳一下（这是不用 `width` 做动画的原因）。 */
-.app-content ::-webkit-scrollbar,
-.list-scroll::-webkit-scrollbar,
-.grid-scroll::-webkit-scrollbar,
-.detail-panel::-webkit-scrollbar {
+/* ─── 全局滚动条：1px 发丝线，靠近变 6px 可拖（R4 §2.4 + 用户 2026-11-10） ───
+   用户要求「主界面那个能拖的滚动条，软件里所有有滑块的地方都用这个」，
+   所以这里不再逐个容器列选择器，改成 `*` 的全局规则 —— 现在和以后新增的滚动容器
+   （详情面板、速览列表、设置面板、右键菜单…）自动同一套。
+
+   做法：**槽位固定 10px，视觉宽度靠透明 border 收细**
+   · 平时 `border: 4.5px` → 视觉 1px，仍然是一条发丝线；
+   · 指针靠近该容器右缘 14px 内（容器自己挂 `.scroll-hot`，见 App.tsx）→ 边收成 2px
+     → 视觉 6px，抓得住、拖得动；
+   · 槽位不随状态变，所以变粗时不会把内容挤得跳一下（这也是不用 `width` 做动画的原因）。
+   `.scroll-hot` 必须挂在**滚动容器自己**身上：::-webkit-scrollbar 只认宿主元素的类。 */
+*::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-.app-content ::-webkit-scrollbar-track,
-.list-scroll::-webkit-scrollbar-track,
-.grid-scroll::-webkit-scrollbar-track,
-.detail-panel::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
-.app-content ::-webkit-scrollbar-thumb,
-.list-scroll::-webkit-scrollbar-thumb,
-.grid-scroll::-webkit-scrollbar-thumb,
-.detail-panel::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
   background: var(--ui-fg-3);
   background-clip: padding-box;
   border: 4.5px solid transparent;
   border-radius: 999px;
   min-height: 36px;
 }
-body.scrollbar-hot .app-content ::-webkit-scrollbar-thumb,
-body.scrollbar-hot .list-scroll::-webkit-scrollbar-thumb,
-body.scrollbar-hot .grid-scroll::-webkit-scrollbar-thumb,
-body.scrollbar-hot .detail-panel::-webkit-scrollbar-thumb {
+/* 变粗的三种触发：靠近（.scroll-hot）/ 指针压在条上（:hover）/ 拖着（:active） */
+.scroll-hot::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active {
   border-width: 2px;
   background-color: color-mix(in srgb, var(--ui-fg) 40%, transparent);
+  background-clip: padding-box;
 }
 
 /* ─── 侧栏：选中用 2px 蓝竖线 + 2% 底，不用整行框 ─────────────────── */
