@@ -4,7 +4,13 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [1.7.10] — 2026-11-10
+## [1.8.0] — 2026-11-10（正式版）
+
+> 这一版把此前只在本机迭代、没有单独发布的 **1.7.9 / 1.7.10** 合并后正式发布。
+> 内容集中在用户实测后提出的界面细节：字号滑条统一并居中对齐、分组视图操作条、
+> 筛选菜单的标签 / 分组 / 快照二级菜单、搜索建议（含标签搜索）、
+> 全软件统一的「靠近变粗可拖」滚动条、整包导出可取消、侧栏序号贴图标、
+> 最近一次导出日期。所有界面数值都已回写 `docs/UI设计交付规格书.md`。
 
 ### 新增
 
@@ -38,8 +44,6 @@ All notable changes to FontManager are documented here. The format follows
   第一版向右借了 108px 铺到行内边距上，用户看过说「太宽了」。现在只借 **52px**，
   右缘停在**「未知」与「★」之间**（星级列左缘前 10px，避开星级按钮 −6px 负 margin 的热区）。
 
-### 新增（续）
-
 - **搜索建议下拉**（用户要求）：主界面与速览的搜索框，输入时在下方给出候选 ——
   **标签 / 分组 / 快照 / 字体**四类，每条带自己的图标（标签用 Tag、分组用文件夹、快照用相机、
   字体用 Aa 字形），并在右侧标出类型与条数。用户原话：「如果是标签要加入标签 icon，
@@ -64,11 +68,10 @@ All notable changes to FontManager are documented here. The format follows
   下半截悬空。给手柄补 `margin-top: -3px` 让中心对齐轨道中心；
   完整界面与速览共用同一条规则，两处一起修好。
   （此前的白旋钮版本靠 15px 手柄 + 阴影遮掩，看不出这个偏移。）
-
-## [1.7.9] — 2026-11-10
-
-### 修复
-
+- **侧栏分组 / 快照的序号贴着组名**（用户截图指出）：序号用 `text-align: right` +
+  负 margin 顶到名字前面，看起来像「1dfs」—— 序号以为了是名字的一部分。
+  改成左对齐 + 贴图标，读法是「图标 → 1 → dfs」；两位数与一位数左缘对齐。
+  样张视图（62px 窄侧栏）原来是连序号一起隐藏的，按用户要求一并显示。
 - **字号滑条在完整界面与速览里长得不一样**（用户截图对照）：完整界面是
   「发丝灰轨道 + 8px 蓝点」，速览却是「墨点 + 已填充段」，两端还多了 A。
   根因是速览另有一份滑条样式（1.6.0 R2 写的），选择器特异性比通用规则高，
@@ -83,6 +86,8 @@ All notable changes to FontManager are documented here. The format follows
 ### 文档
 
 - `docs/UI设计交付规格书.md` §2.2 / §3.2 补上「速览与完整界面共用同一套滑条、无已填充段」。
+- `docs/UI设计交付规格书.md` 全篇按实际生效数值复核过一遍（§2.2 顶栏 / §2.3 速览行 /
+  §3.2 筛选菜单 / §3.13 全局滚动条 / 分组操作条），HTML 版用 `python docs/make-spec-html.py` 重生成。
 
 ## [1.7.8] — 2026-11-10（正式版）
 

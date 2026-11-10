@@ -43,7 +43,7 @@ export function SearchSuggest({
    * `tags` 在 store 里是 **字族名 → 标签数组**（`Record<family, string[]>`），
    * 不是「标签 → 成员」。所以这里必须走 `allTags()` 转成「标签 → 有多少个族」，
    * 直接 `Object.entries(tags)` 拿到的是族名，会把字体名当成标签列出来
-   * （1.7.10 第一版就是这么错的，用户截图里标签一条都不出现）。
+   * （1.8.0 内测第一版就是这么错的，用户截图里标签一条都不出现）。
    */
   const tagIndex = useMemo(() => allTags(tags), [tags]);
 
