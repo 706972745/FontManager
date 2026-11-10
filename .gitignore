@@ -62,3 +62,7 @@ _tauri.nobuild.json
 /clipboard-*.png
 /截图*.png
 /屏幕截图*.png
+
+# 内置运行时里跑出来的字节码缓存（1000+ 文件，不该进库）
+__pycache__/
+*.pyc
