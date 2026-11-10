@@ -267,7 +267,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 侧栏分组标题 `.sidebar-heading` | 10px / 600 / 全大写 / 字距 0.1em / 弱色；`padding: 14px 11px 5px` |
 | 侧栏行 `.nav-row` | 高 **32px**；11px；次文字色；**0 圆角**；底透明；悬停 = `--ui-hover` |
 | 侧栏选中态 | 底色由 `.nav-pill` 承担（**纯底色、0 圆角、无描边无阴影**，1.7.5 拆掉旧玻璃壳）+ `::before` 2×32 蓝竖线（`z-index: 1`，否则会被 pill 盖住） |
-| 侧栏计数 `.nav-count` / `.nav-no` | 等宽 `tabular-nums` / 弱色 |
+| 侧栏计数 `.nav-count` / `.nav-no` | 等宽 `tabular-nums` / 弱色；**序号 `.nav-no` 紧跟图标**（左对齐、`margin-left: -4px`），名称随后 —— 不再贴组名（2026-11-10 用户要求） |
 | 侧栏快捷键 `.nav-kbd` | 10px 等宽 / min-width 18px / 透明度 0.75 |
 | 侧栏页脚 `.sidebar-footer` | `margin-top: auto`；顶部 1px 线；`padding-top: 8px` |
 
@@ -282,6 +282,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 视图切换 `.view-toggle` | 项 **4px 圆角**；当前项 = 主文字色 + 2% 墨底（**不套蓝框**） |
 | 排序 / 筛选按钮 `.sort-btn` | 4px 圆角；生效时 `.filter-live` = 主文字色 + 1px `--accent-glow-soft` 环 |
 | 筛选计数 `.filter-count` | 11px / 600 / 强调色 |
+| 筛选「范围」二级菜单 `.filter-submenu` | **8px 圆角** / 1px `--ui-line` / `--ui-menu` 底 / `position: fixed` **向左弹出**（`.filter-menu` 有 `overflow-y:auto`，子元素不能放在它里面）；入口右侧显示已选条数与 `›`；**标签 / 分组 / 快照有数据才出现** |
 | 排序菜单 `.sort-menu` | **8px 圆角**（R8）；筛选菜单 `.filter-menu` 仍是 **4px** —— 两者同类却不同档，见 §4 |
 | 菜单项 `.sort-item` | `padding: 8px 11px` / 4px 圆角 / 13px；选中 `.sort-active` 主文字色 500 |
 | 菜单分组标题 `.filter-heading` / `.sort-sep` | 等宽 **9px** / 字距 0.08em / 全大写 / 弱色 |
@@ -289,7 +290,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 字号滑杆 `.topbar-size` | flex / gap 8px / `padding: 0 4px`；**速览与完整界面共用同一套**，速览只额外固定宽 118px |
 | 滑杆事件区 `input[type=range]` | 高 **16px**（高度给在 input 上，否则整个滑杆塌成一条线；速览 1.6.0 曾写成 2px，1.7.9 修正） |
 | 滑杆轨道 `::-webkit-slider-runnable-track` | 高 **2px** / r=1px / `--ui-line`；**无已填充段**（速览原有一条 `--fill` 填充，1.7.9 取消） |
-| 滑杆手柄 `::-webkit-slider-thumb` | **8px 实心蓝圆点**；`box-shadow: none`（旧的三层阴影在实心蓝点上看成脏边）；`:hover` 不缩放；聚焦用 2px `outline` + `offset: 2px` |
+| 滑杆手柄 `::-webkit-slider-thumb` | **8px 实心蓝圆点**；`box-shadow: none`（旧的三层阴影在实心蓝点上看成脏边）；`margin-top: -3px` 让点中心落在 2px 轨道中心（Chromium 把 thumb 顶边对齐轨道顶边，不改会下沉 3px）；`:hover` 不缩放；聚焦用 2px `outline` + `offset: 2px` |
 
 ### 3.3 卡片视图（`grid` · 一行一族）
 
@@ -336,6 +337,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 工具行 `.specimen-tools` | 高 20 / flex / gap 5 |
 | 字重胶囊 `.specimen-weight` | **999px 胶囊**（语义值）/ `padding: 2px 4px 2px 7px` / `max-width: 132` / 10px |
 | 样张文字 `.specimen-text` | `line-height: 1.12` / 居中 / `nowrap` / `text-overflow: clip`（直接裁，不出省略号） |
+| 样张侧栏 | 62px 只留图标；**分组 / 快照行保留序号**（`gap: 2px`，图标右紧跟数字），文字与计数照旧隐藏 |
 
 ### 3.6 详情面板
 
@@ -368,6 +370,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 令牌输入 `.settings-api-token` | 4px 圆角 / 等宽（长令牌靠内距 8px 留余量，不贴角） |
 | 页脚 `.settings-footer` | 10px 等宽 / 弱色 / 居中 / 顶部 1px 线 |
 | 勾选行 `.settings-check` | inline-flex / gap 7 / 12px 500 / 次文字色 |
+| 勾选行旁注 `.settings-check-note` | 10px / 弱色 / `margin-left: 8`；目前只有「最近导出字体文件：2026-11-10」用它 |
 | 开关 `.pill-toggle` | **34×19**（`--pill-w` / `--pill-h`）；滑块 15×15 / 10px 圆角（C 级语义值） |
 | 插件分区 | 见 **3.12**（R7 深色稿） |
 
@@ -376,6 +379,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 元素 | 规格 |
 |---|---|
 | 快照条 `.snapshot-bar` | 高 **44px**；底部 1px 发丝线；**左侧 2px 蓝锚点**（`::before`，left 0 / 上下 0） |
+| 分组条（复用 `.snapshot-bar`） | 与快照条**同一套骨架与尺寸**，由 `CollectionBar` 渲染。按钮：`N 个字体` chip → 只启用这些 → 添加到当前启用 → 加入当前启用的字体 → 存为快照 / 导出字体列表 / 删除分组 |
 | 快照标题 `.snapshot-bar-title` | 11px / 500 |
 | 快照按钮 `.snapshot-btn` | 4px 圆角 / 11px；危险项 `.snapshot-danger` 用**次文字色**（不设红，守单一强调色） |
 | 系统标记 `.snapshot-system-chip` | **999px 胶囊** / `padding: 3px 8px` / 中性灰 `#a1a1aa` / 11px |
