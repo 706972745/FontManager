@@ -109,6 +109,8 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
   聚焦时转为 `--qb-accent`
 - 搜索框可一直压到 48px：窗口很窄时先让搜索缩，不许把右侧四个窗口动作挤出去
 - 窗口动作顺序：图钉（自动收起）/ 完整界面 / 最小化 / 关闭；全部沿用原有图标资源，未重绘
+- 字号滑条与完整界面顶栏是**同一套控件**（2px 发丝轨道 / 8px 实心蓝点 / 无填充段，见 §3.2），
+  速览只把它定宽 **118px**；两端的小 A / 大 A 属第二段的布局元素，不是滑条本体
 
 ### 2.3 列表行
 
@@ -284,10 +286,10 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 菜单项 `.sort-item` | `padding: 8px 11px` / 4px 圆角 / 13px；选中 `.sort-active` 主文字色 500 |
 | 菜单分组标题 `.filter-heading` / `.sort-sep` | 等宽 **9px** / 字距 0.08em / 全大写 / 弱色 |
 | 评分筛选 `.rating-pick` | 23×23 / 4px 圆角 |
-| 字号滑杆 `.topbar-size` | flex / gap 8px / `padding: 0 4px` |
-| 滑杆事件区 `input[type=range]` | 高 **16px**（高度给在 input 上，否则整个滑杆塌成一条线） |
-| 滑杆轨道 `::-webkit-slider-runnable-track` | 高 **2px** / r=1px / `--ui-line` |
-| 滑杆手柄 `::-webkit-slider-thumb` | **8px 实心蓝圆点**；`box-shadow: none`（旧的三层阴影在实心蓝点上看成脏边）；聚焦用 2px `outline` + `offset: 2px` |
+| 字号滑杆 `.topbar-size` | flex / gap 8px / `padding: 0 4px`；**速览与完整界面共用同一套**，速览只额外固定宽 118px |
+| 滑杆事件区 `input[type=range]` | 高 **16px**（高度给在 input 上，否则整个滑杆塌成一条线；速览 1.6.0 曾写成 2px，1.7.9 修正） |
+| 滑杆轨道 `::-webkit-slider-runnable-track` | 高 **2px** / r=1px / `--ui-line`；**无已填充段**（速览原有一条 `--fill` 填充，1.7.9 取消） |
+| 滑杆手柄 `::-webkit-slider-thumb` | **8px 实心蓝圆点**；`box-shadow: none`（旧的三层阴影在实心蓝点上看成脏边）；`:hover` 不缩放；聚焦用 2px `outline` + `offset: 2px` |
 
 ### 3.3 卡片视图（`grid` · 一行一族）
 
