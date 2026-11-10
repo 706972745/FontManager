@@ -8589,10 +8589,15 @@ body.ui-fade-out .app-frame {
   --pl-danger: #e5484d;
   --pl-danger-bg: color-mix(in srgb, #e5484d 8%, transparent);
 }
-/* 深色：R7 §1 实测值（面板 #161619 / 浮层 #1e1e22 / 控件 #1d1d21 …） */
+/* 深色：R7 §1 实测值（面板 #161619 / 浮层 #1e1e22 / 控件 #1d1d21 …）
+   ⚠️ 2026-11-11 浮层底改成暖墨 #1c1c1a：R7 的原值带冷蓝偏移（#1e1e22），
+   跟主界面纸墨体系（--ui-menu #1c1c1a / --e3 #242422 全是暖墨）不是同一套色相，
+   右键菜单压在字体列表上时能看出一块紫灰补丁（用户截图指出）。
+   Toast 也是浮层、同样用了 --pl-float，一起回暖。R7 其余中性层（面板 / 控件 /
+   发丝线 / 描边）暂未动 —— 若要整块统一，把下面几行的 B 通道也往暖端收即可。 */
 :root:not([data-theme="light"]) {
   --pl-plate: #161619;
-  --pl-float: #1e1e22;
+  --pl-float: #1c1c1a;
   --pl-control: #1d1d21;
   --pl-hair: #26262b;
   --pl-stroke: #2e2e33;
@@ -8784,8 +8789,8 @@ body.ui-fade-out .app-frame {
   box-shadow: var(--shadow-mass);
 }
 :root:not([data-theme="light"]) .ctx-menu {
-  background: var(--pl-float);
-  border-color: var(--pl-stroke);
+  background: var(--ui-menu);
+  border-color: var(--ui-line);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .ctx-item {
@@ -8798,18 +8803,21 @@ body.ui-fade-out .app-frame {
   font-size: 10.5px;
   gap: 8px;
 }
+/* hover 底从 R7 的 #2a2a30（冷紫）换成「墨底 + 8% 前景色」，与浮层同一个暖色相。
+   不用固定色值：浮层底以后调深调浅，hover 自动跟着走。 */
 :root:not([data-theme="light"]) .ctx-item:hover:not(:disabled),
 :root:not([data-theme="light"]) .ctx-item.ctx-submenu-open {
-  background: #2a2a30;
+  background: color-mix(in srgb, var(--ui-fg) 8%, var(--ui-menu));
 }
 .ctx-sep {
-  background: var(--pl-hair);
+  /* 菜单里的分隔线跟浮层底一起换暖（--pl-hair 是 R7 的冷灰 #26262b） */
+  background: var(--ui-line);
 }
 
 /* ─── Toast：错误态竖条换警示红（R7 §3 六条 Toast） ─────────────────── */
 :root:not([data-theme="light"]) .toast {
   background: var(--pl-float);
-  border-color: var(--pl-stroke);
+  border-color: var(--ui-line);
 }
 .toast-error::before {
   background: var(--pl-danger);
@@ -9155,4 +9163,48 @@ body.ui-fade-out .app-frame {
   align-items: center;
   gap: 6px;
   margin: 2px 0 8px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   设置面板首帧优化（2026-11-11，用户反馈「有时候打开设置会卡一下」）
+   ════════════════════════════════════════════════════════════════════
+   面板一次挂 12 个分区、31 行设置、16 个开关（每个开关还带一个 layout 动画的
+   滑块），首帧要全部布局 + 光栅化；可视区其实只有最上面一两个分区。
+   `content-visibility: auto` 让 WebView 跳过屏外分区（Chromium 111+，
+   Tauri 用的 WebView2 远高于这个版本），Tab 聚焦 / 页内查找时会自动渲染，
+   不影响可访问性。
+
+   `contain-intrinsic-size: auto 240px` 是占位高度：首次滚动到该分区前用估值，
+   渲染过一次后浏览器会记住真实高度（`auto` 关键字），滚动条不会来回跳。
+
+   删掉这两行即回滚。
+   ──────────────────────────────────────────────────────────────────── */
+.settings-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
+}
+
+/* ─── 菜单项文字回到主文字色（2026-11-11，用户截图「这个颜色不好看」） ──
+   右键菜单项一律用 --text-secondary（#9a9a94），整块菜单压得灰扑扑的 ——
+   而主界面的逻辑是「族名用主文字色、说明性小字才用次色」。
+   菜单项是可操作对象，属于前者；图标仍留弱色做层次，禁用项明确降一档
+   （原来禁用与可用同色，「导出字体样张」这类灰着也看不出是被禁了）。 */
+.ctx-item {
+  color: var(--text-primary);
+}
+.ctx-item:disabled {
+  color: var(--text-tertiary);
+}
+.ctx-item:disabled .ctx-icon {
+  color: var(--text-tertiary);
+}
+
+/* ─── 设置面板滚动：别把滚动链传给背后的字体列表（2026-11-11） ──────────
+   用户反馈「设置里滚动会卡一下」。除了订阅粒度（见 SettingsOverlay 的
+   ScanProgressLine / AffinityStatusRow），还有一条常被忽略：
+   `.settings-scroll` 滚到底之后，wheel 会继续传给 body，背后的虚拟列表
+   跟着滚一帧 —— 那一下既要重算可见区间又要重绘几千行，看起来就是卡顿。
+   `contain` 把滚动关在面板里；`overscroll-behavior` 同时挡掉滚动回弹。 */
+.settings-scroll {
+  overscroll-behavior: contain;
 }
