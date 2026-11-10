@@ -28,7 +28,7 @@ and MCP when you want your tools to join in.
 **[📝 Changelog](CHANGELOG.md)** ·
 **[🐛 Issues](../../issues)** ·
 **[🔌 Plugins](docs/PLUGINS.md)** ·
-**[🎨 UI Spec](docs/UI设计交付规格书.md)** ·
+**[🎨 UI Spec](docs/UI设计交付规格书.md)** ([HTML](docs/UI设计交付规格书.html)) ·
 **[🧩 Icons](docs/图标规范.md)** ·
 **[🤖 MCP](mcp/README.md)**
 
