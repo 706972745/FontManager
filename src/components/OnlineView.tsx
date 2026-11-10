@@ -7,6 +7,18 @@ import { PillToggle } from "../design/primitives/PillToggle";
 import { SIZES, useFontStore } from "../state/fontStore";
 import { useT, type TKey } from "../lib/i18n";
 import { usePathFontCss } from "../lib/fontLoader";
+import {
+  failedFamilyCount,
+  subscribeFailedFamilies,
+  useOnlineFamilyFont,
+} from "../lib/onlineFamilyFont";
+import {
+  ONLINE_SOURCES,
+  matchesQuery,
+  sourceById,
+  sourceHasFamily,
+  subsetCounts,
+} from "../lib/onlineSources";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
 import { ipc, type FontFace, type OnlineFamily } from "../lib/ipc";
@@ -52,6 +64,8 @@ export function OnlineView() {
   const category = useFontStore((s) => s.onlineCategory);
   const license = useFontStore((s) => s.onlineLicense);
   const variableOnly = useFontStore((s) => s.onlineVariableOnly);
+  const source = useFontStore((s) => s.onlineSource);
+  const subset = useFontStore((s) => s.onlineSubset);
   const detail = useFontStore((s) => s.onlineDetail);
   const detailLoading = useFontStore((s) => s.onlineDetailLoading);
   const downloading = useFontStore((s) => s.onlineDownloading);
@@ -67,6 +81,8 @@ export function OnlineView() {
   const setCategory = useFontStore((s) => s.setOnlineCategory);
   const setLicense = useFontStore((s) => s.setOnlineLicense);
   const setVariableOnly = useFontStore((s) => s.setOnlineVariableOnly);
+  const setSource = useFontStore((s) => s.setOnlineSource);
+  const setSubset = useFontStore((s) => s.setOnlineSubset);
   const openFamily = useFontStore((s) => s.openOnlineFamily);
   const closeFamily = useFontStore((s) => s.closeOnlineFamily);
 
@@ -98,6 +114,13 @@ export function OnlineView() {
 
   const [draft, setDraft] = useState(query);
   const timer = useRef<number | null>(null);
+
+  /**
+   * 族名「用自身字体显示」取不到时的说明行。
+   * 取不到就回退界面字体，但**不静默** —— 用户得知道有多少字族没能用自己的字体显示。
+   */
+  const [selfFontFails, setSelfFontFails] = useState(0);
+  useEffect(() => subscribeFailedFamilies(() => setSelfFontFails(failedFamilyCount())), []);
   useEffect(() => {
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => setQuery(draft.trim()), 300);
@@ -246,15 +269,30 @@ export function OnlineView() {
 
   const visible = useMemo(() => {
     if (!families) return [];
-    const q = query.toLowerCase();
+    const src = sourceById(source);
     return families.filter((f) => {
-      if (q && !f.family.toLowerCase().includes(q) && !f.id.includes(q)) return false;
+      if (!matchesQuery(f, query, ONLINE_SOURCES)) return false;
       if (category && f.category !== category) return false;
       if (license && f.license !== license) return false;
       if (variableOnly && !f.variable) return false;
+      // 来源筛选：这个地址下有没有东西可取
+      if (src && !sourceHasFamily(f, src)) return false;
+      // 子集筛选：分片是镜像源独有的维度，选了镜像源才可能有意义
+      if (subset && !(f.subsets ?? []).includes(subset)) return false;
       return true;
     });
-  }, [families, query, category, license, variableOnly]);
+  }, [families, query, category, license, variableOnly, source, subset]);
+
+  /** 各 unicode-range 子集覆盖多少族（子集 chip 上的计数） */
+  const subsetStats = useMemo(() => subsetCounts(families), [families]);
+  /** 只列出值得摆出来的子集：覆盖够多的排前面，零星的收在后面 */
+  const subsetList = useMemo(
+    () =>
+      [...subsetStats.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([name, count]) => ({ name, count })),
+    [subsetStats],
+  );
 
   if (!enabled) {
     return (
@@ -346,8 +384,52 @@ export function OnlineView() {
         <button className="online-refresh" onClick={() => void load(true)} disabled={loading} aria-label={t("online.refresh")}>
           <RefreshCw size={13} strokeWidth={1.5} className={loading ? "spin" : undefined} /> {t("online.refresh")}
         </button>
-        <span className="online-hosts detail-mono">{t("online.hostsLine")}</span>
+        <span className="online-sources">
+          <span className="online-sources-label">{t("online.sourcesLabel")}</span>
+          {ONLINE_SOURCES.map((s) => (
+            <button
+              key={s.id}
+              className={`online-host${source === s.id ? " online-host-on" : ""}`}
+              onClick={() => setSource(source === s.id ? null : s.id)}
+              aria-pressed={source === s.id}
+              data-hint-text={t(s.roleKey)}
+              title={t(s.roleKey)}
+            >
+              {s.host}
+            </button>
+          ))}
+          <a
+            className="online-sources-open"
+            href={(sourceById(source) ?? ONLINE_SOURCES[0]).url}
+            onClick={(e) => {
+              e.preventDefault();
+              void openUrl((sourceById(source) ?? ONLINE_SOURCES[0]).url);
+            }}
+          >
+            {t("online.sourcesOpen")} <ExternalLink size={10} strokeWidth={1.5} />
+          </a>
+        </span>
       </div>
+
+      {source && sourceById(source)?.providesSubsets && subsetList.length > 0 && (
+        <div className="online-chips online-subsets" role="group" aria-label={t("online.subsetsLabel")}>
+          {subsetList.map((s) => (
+            <button
+              key={s.name}
+              className="online-chip"
+              aria-pressed={subset === s.name}
+              onClick={() => setSubset(subset === s.name ? null : s.name)}
+              data-hint-text={`${s.count}`}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selfFontFails > 0 && (
+        <p className="online-note">{t("online.selfFontFailed", { count: selfFontFails })}</p>
+      )}
 
       {visible.length === 0 ? (
         <div className="empty-state" style={{ paddingTop: 48 }}>
@@ -534,6 +616,7 @@ function OnlineCard({
   onOpen: () => void;
 }) {
   const t = useT();
+  const selfFont = useOnlineFamilyFont(f);
   return (
     <motion.article
       className="family-card online-card"
@@ -555,7 +638,13 @@ function OnlineCard({
       }}
     >
       <div className="card-head">
-        <span className="card-name">{f.family}</span>
+        <span
+          className="card-name"
+          ref={selfFont.setEl}
+          style={selfFont.fontFamily ? { fontFamily: selfFont.fontFamily } : undefined}
+        >
+          {f.family}
+        </span>
         <span className="card-spacer" />
         {f.variable && <span className="badge badge-variable">VAR</span>}
         {coverage === "complete" && (

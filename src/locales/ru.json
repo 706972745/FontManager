@@ -378,7 +378,6 @@
   "online.fillLicense": "Добавить файл лицензии",
   "online.fillMissing": "Дополнить ({done}/{total})",
   "online.fullText": "Полный текст",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "В библиотеке",
   "online.inLibraryComplete": "Полный",
   "online.inLibraryCompleteHint": "Все начертания и файл лицензии уже есть в библиотеке",
@@ -407,8 +406,12 @@
   "online.reservedFontName": "Зарезервированное имя шрифта: {name}",
   "online.retry": "Повторить",
   "online.searchPlaceholder": "Поиск свободных шрифтов",
+  "online.selfFontFailed": "{count} семейств не удалось загрузить собственный шрифт — они показаны шрифтом интерфейса.",
   "online.showing": "{shown} из {total} семейств",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "Каталог: список семейств и лицензии (без файлов шрифтов)",
+  "online.sourceRole.mirror": "Зеркало: полные файлы и фрагменты по unicode-range",
+  "online.sourceRole.raw": "Исходный репозиторий: полные файлы шрифтов (медленно или недоступно в некоторых сетях)",
   "online.styleCount_few": "{count} стиля",
   "online.styleCount_many": "{count} стилей",
   "online.styleCount_one": "{count} стиль",
@@ -1121,5 +1124,8 @@
   "settings.rtDeleteHint": "Освобождает место; можно снова скачать одним кликом",
   "settings.rtConfirmDelete": "Удалить {label}?\nПлагины, которые её используют ({plugins}), перейдут на системный интерпретатор — без него их нельзя будет включить.\nВсегда можно снова скачать здесь одним кликом.",
   "sc.zoom": "Масштаб текста предпросмотра",
-  "key.wheel": "Колесо"
+  "key.wheel": "Колесо",
+  "online.sourcesLabel": "Источник",
+  "online.sourcesOpen": "Открыть",
+  "online.subsetsLabel": "Набор символов"
 }

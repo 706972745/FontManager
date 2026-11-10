@@ -374,7 +374,6 @@
   "online.fillLicense": "Adicionar arquivo de licença",
   "online.fillMissing": "Completar faltantes ({done}/{total})",
   "online.fullText": "Texto completo",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "Na biblioteca",
   "online.inLibraryComplete": "Completo",
   "online.inLibraryCompleteHint": "Todos os estilos e o arquivo de licença já estão na biblioteca",
@@ -402,8 +401,12 @@
   "online.reservedFontName": "Nome de fonte reservado: {name}",
   "online.retry": "Tentar de novo",
   "online.searchPlaceholder": "Buscar fontes livres",
+  "online.selfFontFailed": "{count} famílias não conseguiram carregar a própria tipografia e aparecem com a fonte da interface.",
   "online.showing": "{shown} de {total} famílias",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "Catálogo: lista de famílias e licenças (sem arquivos de fonte)",
+  "online.sourceRole.mirror": "Espelho: arquivos completos e fatias por unicode-range",
+  "online.sourceRole.raw": "Repositório original: arquivos de fonte completos (lento ou inacessível em algumas redes)",
   "online.styleCount_many": "{count} estilos",
   "online.styleCount_one": "{count} estilo",
   "online.styleCount_other": "{count} estilos",
@@ -1104,5 +1107,8 @@
   "settings.rtDeleteHint": "Libera espaço; pode baixar de volta com um clique quando quiser",
   "settings.rtConfirmDelete": "Excluir {label}?\nOs plugins que o usam ({plugins}) usarão o interpretador do sistema — sem um, não poderão ser ativados.\nSempre pode baixar de volta aqui com um clique.",
   "sc.zoom": "Ampliar o texto da prévia",
-  "key.wheel": "Roda"
+  "key.wheel": "Roda",
+  "online.sourcesLabel": "Origem",
+  "online.sourcesOpen": "Abrir",
+  "online.subsetsLabel": "Conjunto de caracteres"
 }

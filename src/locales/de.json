@@ -370,7 +370,6 @@
   "online.fillLicense": "Lizenzdatei ergänzen",
   "online.fillMissing": "Fehlende ergänzen ({done}/{total})",
   "online.fullText": "Volltext",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "In Bibliothek",
   "online.inLibraryComplete": "Vollständig",
   "online.inLibraryCompleteHint": "Alle Schnitte und die Lizenzdatei sind bereits in der Bibliothek",
@@ -397,8 +396,12 @@
   "online.reservedFontName": "Reservierter Schriftname: {name}",
   "online.retry": "Erneut versuchen",
   "online.searchPlaceholder": "Freie Schriften suchen",
+  "online.selfFontFailed": "{count} Familien konnten ihre eigene Schriftart nicht laden und werden in der UI-Schriftart angezeigt.",
   "online.showing": "{shown} von {total} Familien",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "Katalog: Familienliste und Lizenzen (keine Schriftdateien)",
+  "online.sourceRole.mirror": "Spiegel: vollständige Dateien plus unicode-range-Scheiben",
+  "online.sourceRole.raw": "Original-Repository: vollständige Schriftdateien (in manchen Netzen langsam oder nicht erreichbar)",
   "online.styleCount_one": "{count} Schnitt",
   "online.styleCount_other": "{count} Schnitte",
   "online.systemLocked": "Vom System bereitgestellt – nicht löschbar",
@@ -1087,5 +1090,8 @@
   "settings.rtDeleteHint": "Gibt Speicherplatz frei; jederzeit per Klick wieder herunterladbar",
   "settings.rtConfirmDelete": "{label} löschen?\nPlugins, die sie nutzen ({plugins}), fallen auf den System-Interpreter zurück – ohne einen können sie nicht aktiviert werden.\nJederzeit hier per Klick wieder herunterladbar.",
   "sc.zoom": "Vorschautext zoomen",
-  "key.wheel": "Mausrad"
+  "key.wheel": "Mausrad",
+  "online.sourcesLabel": "Quelle",
+  "online.sourcesOpen": "Öffnen",
+  "online.subsetsLabel": "Zeichensatz"
 }

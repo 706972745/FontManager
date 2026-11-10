@@ -374,7 +374,6 @@
   "online.fillLicense": "Ajouter le fichier de licence",
   "online.fillMissing": "Compléter ({done}/{total})",
   "online.fullText": "Texte complet",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "Dans la bibliothèque",
   "online.inLibraryComplete": "Complet",
   "online.inLibraryCompleteHint": "Tous les styles et le fichier de licence sont déjà dans la bibliothèque",
@@ -402,8 +401,12 @@
   "online.reservedFontName": "Nom de police réservé : {name}",
   "online.retry": "Réessayer",
   "online.searchPlaceholder": "Chercher des polices libres",
+  "online.selfFontFailed": "{count} familles n’ont pas pu charger leur propre police et s’affichent avec la police de l’interface.",
   "online.showing": "{shown} familles sur {total}",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "Catalogue : liste des familles et licences (pas de fichiers de police)",
+  "online.sourceRole.mirror": "Miroir : fichiers complets et tranches par unicode-range",
+  "online.sourceRole.raw": "Dépôt d’origine : fichiers de police complets (lent ou inaccessible sur certains réseaux)",
   "online.styleCount_many": "{count} styles",
   "online.styleCount_one": "{count} style",
   "online.styleCount_other": "{count} styles",
@@ -1104,5 +1107,8 @@
   "settings.rtDeleteHint": "Libère de l'espace ; retéléchargeable en un clic à tout moment",
   "settings.rtConfirmDelete": "Supprimer {label} ?\nLes plugins qui l'utilisent ({plugins}) utiliseront l'interpréteur système — sans, ils ne pourront pas être activés.\nRetéléchargeable ici en un clic à tout moment.",
   "sc.zoom": "Zoomer le texte d’aperçu",
-  "key.wheel": "Molette"
+  "key.wheel": "Molette",
+  "online.sourcesLabel": "Source",
+  "online.sourcesOpen": "Ouvrir",
+  "online.subsetsLabel": "Jeu de caractères"
 }

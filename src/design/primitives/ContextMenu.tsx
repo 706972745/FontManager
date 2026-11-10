@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Check, ChevronRight, Search } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ReactNode, MouseEvent as ReactMouseEvent } from "react";
+import type { ReactNode, MouseEvent as ReactMouseEvent, UIEvent as ReactUIEvent } from "react";
 import { create } from "zustand";
 import { recordContextMenuSize } from "../../lib/menuMetrics";
 import { useT } from "../../lib/i18n";
@@ -386,6 +386,25 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
 
   const searching = search !== null && search.trim() !== "";
 
+  /**
+   * 命中列表分批渲染：先出 30 条，滚到底再放 30 条。
+   *
+   * 为什么不全量渲染：搜索范围是「已启用的所有字体」，真实库能有几千个族，
+   * 一次全渲染会卡住菜单展开。分批 + 滚动加载是菜单该有的样子 ——
+   * 用户 2026-11-10 反馈的就是这个：在结果上滚滚轮应该滚动列表，不是把菜单关掉。
+   */
+  const [hitLimit, setHitLimit] = useState(30);
+  /** 搜索词或范围变了，已渲染的批次作废 */
+  useEffect(() => {
+    setHitLimit(30);
+  }, [search, scope]);
+
+  const onHitsScroll = (e: ReactUIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight < el.scrollHeight - 4) return;
+    setHitLimit((n) => (n < hits.length ? Math.min(n + 30, hits.length) : n));
+  };
+
   const setSearchBoth = (v: string | null) => {
     searchActiveRef.current = v !== null;
     setSearch(v);
@@ -433,7 +452,7 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
     // 回填实测尺寸：速览界面用它保证窗口最小尺寸放得下菜单
     recordContextMenuSize(w, h);
     // 搜索框出现/结果增减都会改菜单高度，要重新 clamp，否则底部超出窗口
-  }, [x, y, search !== null, hits.length]);
+  }, [x, y, search !== null, hits.length, hitLimit]);
 
   useEffect(() => {
     const el = ref.current;
@@ -572,8 +591,8 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
           <div className="ctx-nomatch">{t("menu.searchNoMatch")}</div>
         ) : (
           <>
-            <div className="ctx-hits">
-              {hits.slice(0, 30).map((name) => (
+            <div className="ctx-hits" onScroll={onHitsScroll}>
+              {hits.slice(0, hitLimit).map((name) => (
                 <button
                   key={name}
                   role="menuitem"
@@ -584,9 +603,9 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
                 </button>
               ))}
             </div>
-            {hits.length > 30 && (
+            {hits.length > hitLimit && (
               <div className="ctx-more">
-                {t("menu.searchMore", { n: String(hits.length - 30) })}
+                {t("menu.searchMore", { n: String(hits.length - hitLimit) })}
               </div>
             )}
           </>
@@ -626,13 +645,26 @@ export function ContextMenuHost() {
       e.stopImmediatePropagation();
       close();
     };
+    /**
+     * 滚轮：只有**落在菜单外面**才关菜单。
+     *
+     * 原来是无条件 close() —— 用户 2026-11-10 反馈：在搜索结果列表上滚滚轮，
+     * 菜单直接消失（速览里看着像「整个界面退出了」）。菜单自己的命中列表
+     * 是可滚的（`.ctx-hits` 有 max-height + overflow-y），滚轮应该滚它。
+     * 面板内部一律不关：列表滚到底后继续滚也不关（要关用 Esc 或点别处）。
+     */
+    const onWheel = (e: WheelEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && typeof t.closest === "function" && t.closest(".ctx-menu")) return;
+      close();
+    };
     const onScroll = () => close();
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener("wheel", onScroll, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true });
     window.addEventListener("resize", onScroll);
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("wheel", onScroll);
+      window.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", onScroll);
     };
   }, [open, close]);

@@ -370,7 +370,6 @@
   "online.fillLicense": "Add licence file",
   "online.fillMissing": "Fill missing ({done}/{total})",
   "online.fullText": "Full text",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "In library",
   "online.inLibraryComplete": "Complete",
   "online.inLibraryCompleteHint": "All styles and the licence file are already in your library",
@@ -397,8 +396,12 @@
   "online.reservedFontName": "Reserved Font Name: {name}",
   "online.retry": "Try again",
   "online.searchPlaceholder": "Search free fonts",
+  "online.selfFontFailed": "{count} families could not load their own typeface and fall back to the interface font.",
   "online.showing": "{shown} of {total} families",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "Catalogue: family list and licences (no font files)",
+  "online.sourceRole.mirror": "Mirror: complete files plus unicode-range slices",
+  "online.sourceRole.raw": "Original repository: complete font files (slow or unreachable on some networks)",
   "online.styleCount_one": "{count} style",
   "online.styleCount_other": "{count} styles",
   "online.systemLocked": "Provided by the system — can't be deleted",
@@ -1087,5 +1090,8 @@
   "settings.rtDeleteHint": "Frees up space; you can always download it back with one click",
   "settings.rtConfirmDelete": "Delete {label}?\nPlugins using it ({plugins}) will fall back to the system interpreter — without one they cannot be enabled.\nYou can always download it back here with one click.",
   "sc.zoom": "Zoom preview text",
-  "key.wheel": "Wheel"
+  "key.wheel": "Wheel",
+  "online.sourcesLabel": "Source",
+  "online.sourcesOpen": "Open",
+  "online.subsetsLabel": "Character set"
 }

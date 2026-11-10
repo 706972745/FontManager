@@ -369,7 +369,6 @@
   "online.fillLicense": "补充版权文件",
   "online.fillMissing": "补全缺失（{done}/{total}）",
   "online.fullText": "全文",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "已在字体库",
   "online.inLibraryComplete": "字库完整",
   "online.inLibraryCompleteHint": "字库已收录全部样式与版权文件",
@@ -395,8 +394,12 @@
   "online.reservedFontName": "保留字体名：{name}",
   "online.retry": "重试",
   "online.searchPlaceholder": "搜索免费字体",
+  "online.selfFontFailed": "有 {count} 个字族没能加载到自身字体，已回退为界面字体显示。",
   "online.showing": "共 {total} 个字体家族，显示 {shown} 个",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "目录：族清单与许可证（不含字体文件）",
+  "online.sourceRole.mirror": "镜像：完整字体文件，以及按 unicode-range 切好的分片",
+  "online.sourceRole.raw": "原始仓库：完整字体文件（部分网络直连慢或不通）",
   "online.styleCount_other": "{count} 种样式",
   "online.systemLocked": "系统自带，无法删除",
   "online.updatedDays_other": "{count} 天前更新",
@@ -1078,5 +1081,8 @@
   "settings.rtDeleteHint": "释放磁盘空间；之后随时可以一键重新下载",
   "settings.rtConfirmDelete": "删除 {label}？\n使用它的插件（{plugins}）之后将回退到系统解释器，没装的话无法启用。\n随时可以在这里一键重新下载。",
   "sc.zoom": "缩放预览文字",
-  "key.wheel": "滚轮"
+  "key.wheel": "滚轮",
+  "online.sourcesLabel": "来源",
+  "online.sourcesOpen": "打开",
+  "online.subsetsLabel": "字符集"
 }
