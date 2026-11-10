@@ -117,6 +117,17 @@ $downloadTable = @'
 > 建议先卸载旧版（**不要勾选「删除全部数据」**）再安装本版，用户数据不会丢。
 '@
 
+# 插件运行时（不是给普通用户下的）：plugins.rs::runtime_zip_url 指向
+# releases/latest/download/{kind}-runtime.zip，所以每个 Release 都必须带这两个包，
+# 缺了插件面板的「补全运行时」会 404。这里在正文里说明一句，免得被当成多余文件。
+$runtimeBlock = @'
+### 插件运行时（普通用户不用下）
+
+`python-runtime.zip` / `node-runtime.zip` 是**插件系统**用的可选运行时。插件面板点「补全运行时」
+时，程序从本 Release 的 `latest/download/<kind>-runtime.zip` 拉取，所以这两个包必须一起上传。
+不装插件的话完全用不到，**不必下载**。
+'@
+
 $signBlock = if ($Signed) { $signSigned } else { $signUnsigned }
 $signBlock = $signBlock.Replace("__VER__", $Version)
 $downloadTable = $downloadTable.Replace("__VER__", $Version)
@@ -134,6 +145,8 @@ if ($section.Count -gt 0) {
 $parts.Add($signBlock.Trim())
 $parts.Add("")
 $parts.Add($downloadTable.Trim())
+$parts.Add("")
+$parts.Add($runtimeBlock.Trim())
 if ($hashLines.Count -gt 0) {
     $parts.Add("")
     $parts.Add("SHA-256：")
