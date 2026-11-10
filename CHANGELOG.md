@@ -4,6 +4,42 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.8] — 2026-11-10（正式版）
+
+> 这一版合并 UI 设计师的《UI 设计交付规格书 · 修订稿》：4 项修订里 1 项是**真实代码 bug**
+> （已修并实测确认），3 项是文档表述补正。另按用户要求**加宽速览样张显示范围**。
+
+### 变更
+
+- **速览样张的显示范围加宽**（用户 2026-11-10 要求：样张显示范围宽度按图示来）
+  - 速览第 3 列（族名 / 预览样张 / 版权）的宽度 = 面板宽 − 232，
+    默认面板 420 时只有 **188px** —— 放不下 32px 的一整行默认示例，
+    `useMarquee` 被迫开跑马灯，滚到一半的字看着像渲染坏了
+    （实拍：Consolas 那行显示成「IIEOzoHel」，开头的 "Hello " 不见了）。
+  - 改法：默认宽度 **420 → 472**（样张列 188 → **240px**，与用户图上量的 239px 对齐），
+    最小尺寸同步改为 `max(右键菜单推导值, 默认宽度)` —— 窗口拖不到比样张列下限更窄的地方。
+  - 顺带修一处数值漂移：`useQuickbarDock.ts` 里 4 处写死的 `Math.round(420 * …)`
+    兜底改为引用 `QUICKBAR_WIDTH` 常量。
+- **修一个圆角 bug**：对比浮层 `.compare-panel` 四角实际是 **8px**，而设置面板 / 命令面板 /
+  在线详情都是 12px —— 肉眼能看出对比浮层「更方」。
+  - 根因：1.7.7 修「同一组件两个圆角值」时只删了基础段的 `10px`，漏了第三批覆盖段
+    （`app.css` 第三批段）还把它圈进 `8px` 组，于是 8px 反而成了生效值；
+    R8 段的注释「`.compare-panel` 原本就是 12，不重复声明」判断错了 —— 只看到弹窗族那条 12，
+    漏了第三批段的 8。
+  - 修法：把 `.compare-panel` 从那条 8px 分组里摘掉，**只保留 `box-shadow: none`**
+    （R4 §6.2 对比浮层本就无阴影）。圆角改由「弹窗族」那条给（12px）。
+  - 实测（headless Edge 读 computed `border-radius`）：修前 `8px` → 修后 `12px`，
+    `box-shadow` 全程 `none` 未受影响；同族的 `.selection-bar` / `.settings-panel` /
+    `.palette-panel` / `.shortcuts-panel` / `.online-detail` 均为 12px，现已完全一致。
+- **《UI 设计交付规格书》合并 4 项修订**（`docs/UI设计交付规格书.md`，HTML 版同步重生成）：
+  - §7 应用图标整节重写：图标设计已迭代到 v2 / v3（深炭圆角卡 + 绿→深绿渐变 + 颗粒做旧），
+    旧文档写的「拼贴纸片终稿」已脱节；同时补上「**界面内 lucide 图标严格不改**」这条硬约束。
+  - §0 速查与 §3.14 补注：表里的圆角档位是「**生效值**」，`src/app.css` 基础规则段仍残留
+    约 99 处旧值，由文末 R8 追加段覆盖收口（删段即回滚）—— 避免 grep 的人误判设计意图。
+  - §3.14 例外清单补第四处：`.face-line-name` / `.diag-hud` 保持 `5px`
+    （二者自带 `overflow: hidden`，改 4 会露直角）。
+  - 新增 §9 代码勘误，记录 `.compare-panel` 圆角的根因、修法与实测数据。
+
 ## [1.7.7] — 2026-11-10（正式版）
 
 > 这一版按设计交付的《UI 尺度收口与圆角变更清单》R8 执行：把散落的 13 档圆角、
