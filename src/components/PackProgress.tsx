@@ -11,6 +11,7 @@ import { useFontStore } from "../state/fontStore";
 export function PackProgress() {
   const t = useT();
   const pack = useFontStore((s) => s.packProgress);
+  const cancelExportPack = useFontStore((s) => s.cancelExportPack);
   if (!pack) return null;
 
   const { kind, done, total, part, parts } = pack;
@@ -39,6 +40,16 @@ export function PackProgress() {
         )}
       </div>
       <span className="load-text tabular">{text}</span>
+      {/* 只有「导出」能取消：解包（导入）中途停下会把字体铺一半，暂不支持 */}
+      {kind === "export" && (
+        <button
+          className="load-cancel"
+          onClick={() => void cancelExportPack()}
+          data-hint-text={t("pack.cancelHint")}
+        >
+          {t("pack.cancel")}
+        </button>
+      )}
     </div>
   );
 }

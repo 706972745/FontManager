@@ -582,6 +582,11 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    */
   exportLibraryPack: (dest: string, curation: string, createdAt: string) =>
     invoke<PackExportReport>("export_library_pack", { dest, curation, createdAt }),
+  /**
+   * 取消正在跑的整包导出（2026-11-10）。只置标志，磁盘清理在后端循环里做：
+   * 写了一半的 `.writing` 与本次已生成的卷会被删掉，不给用户留半套包。
+   */
+  cancelExportPack: () => invoke<void>("cancel_export_pack"),
   /** 解包：字体铺回字库（重复跳过），整理数据以字符串交回前端合并 */
   importLibraryPack: (src: string) =>
     invoke<PackImportReport>("import_library_pack", { src }),
