@@ -374,7 +374,6 @@
   "online.fillLicense": "Añadir archivo de licencia",
   "online.fillMissing": "Completar faltantes ({done}/{total})",
   "online.fullText": "Texto completo",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "En la biblioteca",
   "online.inLibraryComplete": "Completo",
   "online.inLibraryCompleteHint": "Todos los estilos y el archivo de licencia ya están en la biblioteca",
@@ -402,8 +401,12 @@
   "online.reservedFontName": "Nombre de fuente reservado: {name}",
   "online.retry": "Reintentar",
   "online.searchPlaceholder": "Buscar fuentes libres",
+  "online.selfFontFailed": "{count} familias no pudieron cargar su propia tipografía y se muestran con la fuente de la interfaz.",
   "online.showing": "{shown} de {total} familias",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "Catálogo: lista de familias y licencias (sin archivos de fuente)",
+  "online.sourceRole.mirror": "Espejo: archivos completos y porciones por unicode-range",
+  "online.sourceRole.raw": "Repositorio original: archivos de fuente completos (lento o inaccesible en algunas redes)",
   "online.styleCount_many": "{count} estilos",
   "online.styleCount_one": "{count} estilo",
   "online.styleCount_other": "{count} estilos",
@@ -1104,5 +1107,8 @@
   "settings.rtDeleteHint": "Libera espacio; siempre puedes volver a descargarlo con un clic",
   "settings.rtConfirmDelete": "¿Eliminar {label}?\nLos plugins que lo usan ({plugins}) usarán el intérprete del sistema; sin uno no podrán activarse.\nSiempre puedes volver a descargarlo aquí con un clic.",
   "sc.zoom": "Ampliar el texto de vista previa",
-  "key.wheel": "Rueda"
+  "key.wheel": "Rueda",
+  "online.sourcesLabel": "Fuente",
+  "online.sourcesOpen": "Abrir",
+  "online.subsetsLabel": "Conjunto de caracteres"
 }

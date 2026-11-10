@@ -323,6 +323,10 @@ interface FontStore {
   onlineCategory: string | null;
   onlineLicense: string | null;
   onlineVariableOnly: boolean;
+  /** 来源筛选：null = 不按来源筛 */
+  onlineSource: string | null;
+  /** unicode-range 子集筛选：null = 不按子集筛 */
+  onlineSubset: string | null;
   onlineDetail: OnlineFamilyDetail | null;
   onlineDetailLoading: boolean;
   onlinePreviewPath: string | null;
@@ -532,6 +536,8 @@ interface FontStore {
   setOnlineCategory: (c: string | null) => void;
   setOnlineLicense: (l: string | null) => void;
   setOnlineVariableOnly: (on: boolean) => void;
+  setOnlineSource: (s: string | null) => void;
+  setOnlineSubset: (s: string | null) => void;
   openOnlineFamily: (id: string) => Promise<void>;
   closeOnlineFamily: () => void;
   /**
@@ -1554,6 +1560,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   onlineCategory: null,
   onlineLicense: null,
   onlineVariableOnly: false,
+  onlineSource: null,
+  onlineSubset: null,
   onlineDetail: null,
   onlineDetailLoading: false,
   onlinePreviewPath: null,
@@ -3615,6 +3623,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
   setOnlineCategory: (onlineCategory) => set({ onlineCategory }),
   setOnlineLicense: (onlineLicense) => set({ onlineLicense }),
   setOnlineVariableOnly: (onlineVariableOnly) => set({ onlineVariableOnly }),
+  // 换来源时把子集筛选一起清掉：子集是镜像源独有的维度，换源后它可能不再成立
+  setOnlineSource: (onlineSource) => set({ onlineSource, onlineSubset: null }),
+  setOnlineSubset: (onlineSubset) => set({ onlineSubset }),
 
   openOnlineFamily: async (id) => {
     // 详情 / 预览都是异步回来的：关掉弹层或连点另一张卡片时，旧请求晚到会把

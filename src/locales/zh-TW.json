@@ -366,7 +366,6 @@
   "online.fillLicense": "補充版權檔案",
   "online.fillMissing": "補全缺失（{done}/{total}）",
   "online.fullText": "全文",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "已在字型庫",
   "online.inLibraryComplete": "字庫完整",
   "online.inLibraryCompleteHint": "字庫已收錄全部樣式與版權檔案",
@@ -392,8 +391,12 @@
   "online.reservedFontName": "保留字型名稱：{name}",
   "online.retry": "重試",
   "online.searchPlaceholder": "搜尋免費字型",
+  "online.selfFontFailed": "有 {count} 個字族沒能載入自身字體，已回退為介面字體顯示。",
   "online.showing": "共 {total} 個字型家族，顯示 {shown} 個",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "目錄：字族清單與授權條款（不含字型檔案）",
+  "online.sourceRole.mirror": "鏡像：完整字型檔案，以及依 unicode-range 切好的分片",
+  "online.sourceRole.raw": "原始倉庫：完整字型檔案（部分網路直連慢或不通）",
   "online.styleCount_other": "{count} 種樣式",
   "online.systemLocked": "系統自帶，無法刪除",
   "online.updatedDays_other": "{count} 天前更新",
@@ -1070,5 +1073,8 @@
   "settings.rtDeleteHint": "釋放磁碟空間；之後隨時可以一鍵重新下載",
   "settings.rtConfirmDelete": "刪除 {label}？\n使用它的外掛（{plugins}）之後將退回系統直譯器，沒裝的話無法啟用。\n隨時可以在這裡一鍵重新下載。",
   "sc.zoom": "縮放預覽文字",
-  "key.wheel": "滾輪"
+  "key.wheel": "滾輪",
+  "online.sourcesLabel": "來源",
+  "online.sourcesOpen": "開啟",
+  "online.subsetsLabel": "字元集"
 }

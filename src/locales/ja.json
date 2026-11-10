@@ -366,7 +366,6 @@
   "online.fillLicense": "ライセンスファイルを追加",
   "online.fillMissing": "不足分を補完（{done}/{total}）",
   "online.fullText": "全文",
-  "online.hostsLine": "api.fontsource.org · raw.githubusercontent.com · cdn.jsdelivr.net",
   "online.inLibrary": "ライブラリにあり",
   "online.inLibraryComplete": "完全",
   "online.inLibraryCompleteHint": "すべてのスタイルとライセンスファイルがライブラリにあります",
@@ -392,8 +391,12 @@
   "online.reservedFontName": "保護されたフォント名: {name}",
   "online.retry": "再試行",
   "online.searchPlaceholder": "フリーフォントを検索",
+  "online.selfFontFailed": "{count} 件のフォントで自前の書体を取得できなかったため、UI フォントで表示されます。",
   "online.showing": "{total} ファミリー中 {shown} 件",
   "online.sourceLine": "google/fonts/{dir}/{id}",
+  "online.sourceRole.catalogue": "カタログ：ファミリー一覧とライセンス（フォントファイルは含まない）",
+  "online.sourceRole.mirror": "ミラー：完全なファイルと unicode-range 別のスライス",
+  "online.sourceRole.raw": "元リポジトリ：完全なフォントファイル（一部のネットワークでは遅いか到達不可）",
   "online.styleCount_other": "{count} スタイル",
   "online.systemLocked": "システム提供のため削除できません",
   "online.updatedDays_other": "{count} 日前に更新",
@@ -1070,5 +1073,8 @@
   "settings.rtDeleteHint": "容量を解放します。いつでもワンクリックで再ダウンロードできます",
   "settings.rtConfirmDelete": "{label} を削除しますか？\n使用中のプラグイン（{plugins}）はシステムのインタプリタにフォールバックし、なければ有効化できません。\nいつでもここからワンクリックで再ダウンロードできます。",
   "sc.zoom": "プレビュー文字の拡大縮小",
-  "key.wheel": "ホイール"
+  "key.wheel": "ホイール",
+  "online.sourcesLabel": "入手元",
+  "online.sourcesOpen": "開く",
+  "online.subsetsLabel": "文字セット"
 }
