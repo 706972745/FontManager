@@ -5,8 +5,7 @@
 > 改了代码请同步改这里 —— 否则它会变成一份骗人的文档。
 >
 > - 适用版本：**1.7.7**
-> - 落地进度：速览与主界面**均已落地**；第 3 节 3.1–3.10 的逐项数值**待补全**
->   （已补全的小节：3.11 在线库小卡、3.12 插件分区、3.13 插件面板、3.14 尺度收口）
+> - 落地进度：速览与主界面**均已落地**；第 3 节全部小节（3.1–3.14）数值已按源码回写
 > - 界面语言：9 种（`src/locales/*.json`），本文所有文案键都指这些文件里的 key
 
 ---
@@ -23,7 +22,7 @@
 | 左右内边距 | **24px**（`--qb-pad`），顶栏、行、折叠提示带共用同一条竖线 |
 | 折叠态高度 | 提示带 34px / 细线 12px（可见线 5px） |
 | 圆角档位（全局） | **0 / 4 / 8 / 12** + 语义值（`999` 胶囊 / `2` 轨道 / `1` 锚点圆头 / `3` 抓手） |
-| 控件高度档（全局） | **24** 行内图标 / **28** 标准按钮 / **32** 主按钮与输入框 |
+| 控件高度档（全局） | **24** 行内图标 / **28** 标准按钮 / **32** 主按钮、输入框、菜单项；**36** 的特殊块（顶栏 `--control-h`）与 **20** 的微型徽标按 R8 §3 保持不动 |
 
 ---
 
@@ -233,22 +232,180 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 
 ---
 
-## 3. 完整界面（主窗口 · R4/R5 已落地，数值待补全）
+## 3. 完整界面（主窗口 · R4/R5 已落地）
 
 > 主窗口已按 R4/R5 重做过一轮（1.7.0–1.7.7），纸墨两色底、单一蓝强调、去玻璃模糊、
-> 行首三态锚点、三视图都已落地。**但 3.1–3.10 的逐项数值表还没写进本文**，
-> 下面留的是骨架清单；补数值时请以源码为准，逐条回写。
+> 行首三态锚点、三视图都已落地。**3.1–3.10 的逐项数值已按源码回写**（每条都能在
+> `src/app.css` 里找到对应类名），下面是与主界面共用的那套骨架。
 
-- 3.1 窗口与标题栏
-- 3.2 顶栏（搜索 / 视图切换 / 排序 / 筛选 / 窗口动作）
-- 3.3 卡片视图（`grid`）—— **悬停时显示停用开关**（速览不支持，这里必须有）
-- 3.4 列表视图（`list`）
-- 3.5 样张视图（`specimen`）
-- 3.6 右侧详情面板（字形样张 / 字重 / 版权 / 许可 / 标签）
-- 3.7 设置面板
-- 3.8 收藏 / 快照 / 分组
-- 3.9 命令面板
-- 3.10 空态 / 加载 / 错误 / 引导
+### 3.1 窗口与标题栏
+
+主窗口外框与速览**同源**：圆角用 `--qb-radius`（运行期按 DPR 算好写入），
+所以两个窗口的弧度永远一致；DWM 那圈系统阴影一并去掉，改由 CSS 画。
+
+| 元素 | 规格 |
+|---|---|
+| 窗口外框 `.app-frame` | `border-radius: var(--qb-radius, 8px)`；1px 描边；底 `--ui-bg`；`overflow: hidden` |
+| 标题栏 `.titlebar` | 高 **40px**；`padding: 0 5px 0 14px`；两端对齐；底部 1px 发丝线；整条 `-webkit-app-region: drag`（可拖窗） |
+| 品牌区 `.titlebar-brand` | flex / gap 9px；`pointer-events: none`（点不中，拖窗优先） |
+| 品牌标 `.brand-mark` | 21×21；`filter: none`（1.7.3 去掉旧玻璃时代的蓝色光晕） |
+| 标题 `.titlebar-title` | 13px / 500 / 字距 0.01em / 次文字色 |
+| 右侧动作 `.titlebar-controls` | flex / gap 1px；`-webkit-app-region: no-drag` |
+| 动作分隔线 `.titlebar-sep` | 1px × 16px / margin 0 4px |
+| 关闭按钮 `.tc-close` | 悬停 = 错误红 18% 底 + 红字（**全软件唯一的红**只用在这个危险动作上） |
+| 侧栏 `.sidebar` | 底 `--ui-bg`；`.sidebar-scroll` flex 1 / gap 4px |
+| 侧栏分组标题 `.sidebar-heading` | 10px / 600 / 全大写 / 字距 0.1em / 弱色；`padding: 14px 11px 5px` |
+| 侧栏行 `.nav-row` | 高 **32px**；11px；次文字色；**0 圆角**；底透明；悬停 = `--ui-hover` |
+| 侧栏选中态 | 底色由 `.nav-pill` 承担（**纯底色、0 圆角、无描边无阴影**，1.7.5 拆掉旧玻璃壳）+ `::before` 2×32 蓝竖线（`z-index: 1`，否则会被 pill 盖住） |
+| 侧栏计数 `.nav-count` / `.nav-no` | 等宽 `tabular-nums` / 弱色 |
+| 侧栏快捷键 `.nav-kbd` | 10px 等宽 / min-width 18px / 透明度 0.75 |
+| 侧栏页脚 `.sidebar-footer` | `margin-top: auto`；顶部 1px 线；`padding-top: 8px` |
+
+### 3.2 顶栏（搜索 / 视图切换 / 排序 / 筛选 / 字号）
+
+| 元素 | 规格 |
+|---|---|
+| 顶栏容器 `.topbar` | flex / gap 8px；`flex-wrap: wrap` + `row-gap: 8px`（窄窗换行，**不让按钮溢出压到详情面板上**）；`padding: 10px 16px`；底部 1px 线 |
+| 控件高度 | `--control-h: 36px`（R8 §3 明确「36px 的特殊块保持不动」） |
+| 搜索框 `.topbar-search` | `flex: 1 1 90px` / `min-width: 0`（窄时先让搜索缩） |
+| 输入框 `.topbar-field` | 高 36；`padding: 0 12px`；1px 描边；**4px 圆角**（R8）；底 `--ui-panel`；聚焦边框转 `--ui-accent` |
+| 视图切换 `.view-toggle` | 项 **4px 圆角**；当前项 = 主文字色 + 2% 墨底（**不套蓝框**） |
+| 排序 / 筛选按钮 `.sort-btn` | 4px 圆角；生效时 `.filter-live` = 主文字色 + 1px `--accent-glow-soft` 环 |
+| 筛选计数 `.filter-count` | 11px / 600 / 强调色 |
+| 排序菜单 `.sort-menu` | **8px 圆角**（R8）；筛选菜单 `.filter-menu` 仍是 **4px** —— 两者同类却不同档，见 §4 |
+| 菜单项 `.sort-item` | `padding: 8px 11px` / 4px 圆角 / 13px；选中 `.sort-active` 主文字色 500 |
+| 菜单分组标题 `.filter-heading` / `.sort-sep` | 等宽 **9px** / 字距 0.08em / 全大写 / 弱色 |
+| 评分筛选 `.rating-pick` | 23×23 / 4px 圆角 |
+| 字号滑杆 `.topbar-size` | flex / gap 8px / `padding: 0 4px` |
+| 滑杆事件区 `input[type=range]` | 高 **16px**（高度给在 input 上，否则整个滑杆塌成一条线） |
+| 滑杆轨道 `::-webkit-slider-runnable-track` | 高 **2px** / r=1px / `--ui-line` |
+| 滑杆手柄 `::-webkit-slider-thumb` | **8px 实心蓝圆点**；`box-shadow: none`（旧的三层阴影在实心蓝点上看成脏边）；聚焦用 2px `outline` + `offset: 2px` |
+
+### 3.3 卡片视图（`grid` · 一行一族）
+
+卡片不再是「圆角玻璃方块」，而是**一行**：0 圆角、0 描边、只留底部 1px 发丝线。
+
+| 元素 | 规格 |
+|---|---|
+| 卡片 `.family-card` | `padding: 20px 24px 22px 26px`；`min-height: 196px`（按 96px 档预留）；0 圆角 / 0 描边 / 透明底 / 无阴影 |
+| 行首锚点 `::before` | 6px 圆点 @ `left: 26 / top: 24` → 悬停 **2×80** 灰线 → 选中 **2×96** 蓝线（r=1px 圆头）；与速览同一套 |
+| 卡头 `.card-head` | `margin-left: 22`（给锚点让位）/ gap 10 / `min-height: 16` |
+| 族名 `.card-name` | 11px / 500 / `line-height: 16` / 主文字色 |
+| 格式徽标 `.badge` | 等宽 **9px** / `line-height: 14` / `padding: 0 4px` / 1px 描边 / **0 圆角** / 次文字色 / 字距 0.04em |
+| `VAR` 徽标 `.badge-variable` | **34×16** / 0 圆角 / 8px 等宽 / 蓝底白字 / 字距 0.04em |
+| 预览区 `.card-preview` | `margin-left: 22` / `padding-top: 10` / `min-height: 46`（32px 档恰好） |
+| 预览文字 `.preview-text` | `line-height: 1.15` / 主文字色 |
+| 字重区 `.card-styles` | `margin-left: 22` / 顶部 1px 发丝线 / `padding-top: 6` |
+| 归属芯片 `.member-chip` | 9px / **2px 圆角** / `padding: 1px 5px` / 1px 描边 / 无底色 |
+| 许可 `.lic-chip` | 9px / 无描边无底色 / 次文字色 |
+| 展开按钮 `.card-expand` | 4px 圆角 / 9px |
+| 停用开关 | **常驻显示**（不做「悬停才显形」，可发现性优先） |
+
+### 3.4 列表视图（`list` · 表格）
+
+| 元素 | 规格 |
+|---|---|
+| 列网格（表头与行同） | `minmax(0,1fr) 64px 96px 120px 64px` = 族名 / 字重数 / 格式 / 大小 / 状态 |
+| 表头 `.list-header` | `padding: 12px 24px`；等宽 **10px** / 500 / 字距 0.04em / **不大写** / 弱色；底部 1px 线；无底色 |
+| 行 `.list-row` | 高 **32px**；`padding: 0 24px`；11px；底部 1px 发丝线；透明底；悬停 `--ui-hover` |
+| 选中态 | 不铺底 + `inset 2px 0 0 var(--ui-accent)`（左侧 2px 蓝竖线） |
+| 数字列 `.col-styles` / `.col-size` / `.col-format` | 等宽 / `tabular-nums` / 右对齐 / 10px / 次文字色（`.col-styles` 为 11px 弱色） |
+| 族名 `.row-name` | 单行省略（`text-overflow: ellipsis`） |
+| 归属芯片 `.row-members` | inline-flex / gap 3 / `max-width: 45%` |
+
+### 3.5 样张视图（`specimen`）
+
+| 元素 | 规格 |
+|---|---|
+| 单元 `.specimen-tile` | **0 圆角 / 0 描边 / 无底色 / 无阴影**，只留底部 1px 发丝线；悬停 `--ui-hover`；选中 = `inset 2px 0 0` 蓝竖线 |
+| 族名 `.specimen-name` | 13px / 500 |
+| 字重数 `.specimen-styles` | 等宽 **9px** / 弱色 |
+| 行容器 `.specimen-row` | 绝对定位铺满；grid / gap 10 / `padding-bottom: 10` |
+| 头行 `.specimen-head` | 高 22 / flex / gap 8 |
+| 字形区 `.specimen-body` | flex 1 / 居中 / `overflow: hidden` |
+| 工具行 `.specimen-tools` | 高 20 / flex / gap 5 |
+| 字重胶囊 `.specimen-weight` | **999px 胶囊**（语义值）/ `padding: 2px 4px 2px 7px` / `max-width: 132` / 10px |
+| 样张文字 `.specimen-text` | `line-height: 1.12` / 居中 / `nowrap` / `text-overflow: clip`（直接裁，不出省略号） |
+
+### 3.6 详情面板
+
+| 元素 | 规格 |
+|---|---|
+| 面板 `.detail-panel` | 底 `--ui-bg`；**左边 1px 发丝线**（不画卡片外框） |
+| 头部 `.detail-head` | 底部 1px 发丝线 |
+| 分区标题 `.detail-heading` | 10px / 600 / 全大写 / 字距 0.1em / 弱色 / `margin-bottom: 8`（**设置弹窗内的同名类被改成 13px 正体**，见 3.7） |
+| 属性表 `.detail-meta dl` | 两列 `104px minmax(0,1fr)`；`row-gap: 10`；11px |
+| 属性名 `.detail-meta dt` | 弱色 |
+| 属性值 `.detail-meta dd` | 等宽 **10px** / 主文字色 / 单行省略 |
+| 字重行 `.face-line` | 4px 圆角；`.face-line-name` 11px / `line-height: 1.3` / 单行省略（自带 `overflow: hidden`，圆角保持 5px） |
+| 预览按钮 `.face-line-apply` | 4px 圆角 |
+| 可变轴 `.axis-list` | 1px 描边 / 8px 圆角 / `padding: 12px 14px` / gap 8；`.axis-row` flex / gap 10 |
+| 关闭按钮 `.detail-close` | 4px 圆角 |
+| 等宽文本 `.detail-mono` | 等宽 11px |
+| 星级 `.star-btn` | 弱色；已点 = 强调色（靠形状 + 颜色双编码） |
+
+### 3.7 设置面板
+
+| 元素 | 规格 |
+|---|---|
+| 面板 `.settings-panel` | 宽 `min(520px, 100%)`；**12px 圆角**；1px 描边；`--shadow-ambient`；底 `--e3` |
+| 行 `.settings-row` | `padding: 12px 14px`；**无底色、无描边**（旧版是半透明底 + 8px 圆角，换纸墨底后像一叠灰砖），只留底部 1px 发丝线 |
+| 行标题 `.settings-label` | 14px / 500 |
+| 行副文 `.settings-sub` | 11px / 弱色 / `line-height: 1.5` |
+| 分区标题 `.settings-panel .detail-heading` | **13px / 500 / 正体 / 主文字色** / `margin-bottom: 10`（R4 那套 10px 全大写在设置弹窗里像脚注） |
+| 按钮 `.settings-data-btn` | 4px 圆角 |
+| 文件夹按钮 `.settings-folder` | 4px 圆角；`.settings-folders` gap 6 |
+| 令牌输入 `.settings-api-token` | 4px 圆角 / 等宽（长令牌靠内距 8px 留余量，不贴角） |
+| 页脚 `.settings-footer` | 10px 等宽 / 弱色 / 居中 / 顶部 1px 线 |
+| 勾选行 `.settings-check` | inline-flex / gap 7 / 12px 500 / 次文字色 |
+| 开关 `.pill-toggle` | **34×19**（`--pill-w` / `--pill-h`）；滑块 15×15 / 10px 圆角（C 级语义值） |
+| 插件分区 | 见 **3.12**（R7 深色稿） |
+
+### 3.8 收藏 / 快照 / 分组
+
+| 元素 | 规格 |
+|---|---|
+| 快照条 `.snapshot-bar` | 高 **44px**；底部 1px 发丝线；**左侧 2px 蓝锚点**（`::before`，left 0 / 上下 0） |
+| 快照标题 `.snapshot-bar-title` | 11px / 500 |
+| 快照按钮 `.snapshot-btn` | 4px 圆角 / 11px；危险项 `.snapshot-danger` 用**次文字色**（不设红，守单一强调色） |
+| 系统标记 `.snapshot-system-chip` | **999px 胶囊** / `padding: 3px 8px` / 中性灰 `#a1a1aa` / 11px |
+| 评级徽标 `.star-rating-badge` | 12×12 / **6px 圆角（正圆）** / 绝对定位 `right: -3 / bottom: -3`；速览内 `.qb-item` 变体 10×10 / 5px |
+| 分组与收藏输入 `.collection-input` | 4px 圆角 |
+| 侧栏新增按钮 `.sidebar-add` | 20×20 / 4px 圆角 / 透明描边 |
+
+### 3.9 命令面板
+
+| 元素 | 规格 |
+|---|---|
+| 面板 `.palette-panel` | 宽 `min(560px, 100%)`；高 `min(420px, calc(100vh - 160px))`；**12px 圆角**；1px 描边；`--shadow-ambient`；底 `--e3` |
+| 输入行 `.palette-input` | `padding: 13px 16px` / gap 10 / 底部 1px 线 / 弱色 |
+| 列表 `.palette-list` | `padding: 6` / gap 1 |
+| 条目 `.palette-item` | 4px 圆角；`.palette-label` 单行省略；`.palette-item-hint` 11px 弱色 |
+| 分组标题 `.palette-panel .palette-label` | 等宽 **9px** / 全大写 / 字距 0.08em / 弱色（与条目标签**同名不同值**，改时注意作用域） |
+| 空态 `.palette-empty` | `padding: 18` / 居中 / 13px 弱色 |
+| 遮罩 `.palette-backdrop` | 深色 `rgba(0,0,0,.6)` / 浅色 `rgba(20,20,18,.24)`；**不加模糊** |
+
+### 3.10 空态 / 加载 / 错误 / 引导
+
+| 元素 | 规格 |
+|---|---|
+| 空态容器 `.empty-state` | 整区居中 / gap 6 / `padding: 32`（下留 `8vh`，让内容偏上不压底） |
+| 空态标题 `.empty-state h2` | **14px / 700** |
+| 空态段落 `.empty-state p` | **11px** / 次文字色 / `max-width: 380` |
+| 进度轨 `.progress-track` / `.install-track` | 高 **3px** / 0 圆角 / 底 `--ui-line`；填充 `.progress-fill` / `.install-fill` = `--ui-accent` |
+| 引导卡 `.tour-card` | 宽 340 / `padding: 16px 18px 14px` / **12px 圆角** / 1px 描边 / `--shadow-ambient` / gap 8 |
+| 引导标题 `.tour-card-title` | 14px / 650 |
+| 引导按钮 `.tour-btn` | 4px 圆角 / 11px；`.tour-dots` gap 4；`.tour-nav` gap 6 |
+| 邀请卡 `.tour-invite` | 12px 圆角 / 1px 描边 / `--shadow-ambient` |
+| 拖放区 `.dropchoice` | **1px 虚线** / 4px 圆角 / 底 92% 不透明（不要半透明大色块） |
+| 拖放面板 `.dropchoice-panel` | 12px 圆角；标题 `.dropchoice-title` 13px/600；副文 `.dropchoice-sub` 11px |
+| Toast `.toast` | `max-width: 340` / `padding: 12px 15px` / **8px 圆角** / 1px 描边 / `--shadow-mass` / **左侧 2px 竖条**（错误态换警示红） |
+| Toast 文字 | 标题 `.toast-title` 11px/500；副文 `.toast-detail` **10px**；动作 `.toast-action` = 文字 + 下划线（**不做成按钮**） |
+| Toast 栈 `.toaster` | 固定 `top: 54 / right: 16`；**gap 14**（R7 §3） |
+| 右键菜单 `.ctx-menu` | `min-width: 200 / max-width: 280` / **8px 圆角** / `padding: 5`；项 `.ctx-item` `min-height: 32` / 11px / 0 圆角 |
+| 菜单分组标题 `.ctx-heading` | 等宽 9px / 字距 0.08em / `padding: 7px 10px 4px` |
+| 菜单作用域行 `.ctx-scope` | **11px** / 等宽 / 只留一条下边线（**不做成输入框**，否则用户会去点它） |
+| 菜单分隔线 `.ctx-sep` | 1px 发丝线 / `margin: 4px 8px` |
 - 3.11 在线视图 / 插件面板
 
 ---
@@ -344,8 +501,10 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 详情属性表 11 / Toast 副文 10 / 空态段落 11 / 拖放副文 11 / 插件清单头 11 / 插件行副文 11 /
 运行时徽标 9。
 
-**控件高度只有三档**：`24`（行内图标热区）/ `28`（标准按钮、插件清单头按钮）/
+**控件高度归成三档**：`24`（行内图标热区）/ `28`（标准按钮、插件清单头按钮）/
 `32`（主按钮、输入框、菜单项）。`.nav-row` 那条 29px 的奇数高度是手误，已归 28。
+R8 §3 明确「20px 的微型徽标与 36px 的特殊块保持不动」，所以顶栏那一组控件仍是
+`--control-h: 36px`，不在三档之内。
 
 > 三处与 R8 字面不同，理由见《UI 待定问题清单》A14：`.nav-row` / `.nav-pill` 保持 `0`
 > （R4 与 1.7.5 已把它们从圆角收到平底，照 5→4 会把方角倒回去）、
@@ -366,6 +525,8 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 折叠细线换色 / 指针转蓝 | 建议 | **未采纳** | 手抓线保持既有中性灰：它浮在桌面上，跟主题或强调色都会破坏辨识 |
 | 键帽字体 | Geist Mono | 项目既有等宽（JetBrains Mono） | 不为几枚键帽引入第三套字体 |
 | 插件分区开关 | R7：34×19 | 代码本就是 34×19（`--pill-w/--pill-h`） | 之前记的「30×16」是旧文案，实际一直一致 |
+| 顶栏换行与底边线 | R4 §3.6：顶栏容器改 `.toolbar`，`min-height: 64px`、底边用发丝线 | 组件里用的是 **`.topbar`**（`.toolbar` 是遗留类名，已无任何元素使用），那两行覆盖因此**没生效**；`.topbar` 本来就会换行（`flex-wrap: wrap` + `row-gap: 8`），但底边线仍是旧的 `rgba(var(--ink-rgb), .05)` 而不是 `--ui-line` |
+| 排序菜单 vs 筛选菜单 | 同为浮层菜单 | `.sort-menu` **8px**（R8 归入「菜单归 8」），`.filter-menu` 仍是 **4px**（R8 没列它）—— 同一类浮层两种圆角 |
 | 在线库小卡 | 304×96、1px 描边、**0 圆角**、卡内无锚点 | **8px 圆角** + 1px 描边 + 行首锚点；族名与小字同为 22 缩进（距左缘 37） | 小卡是网格里的独立卡片而非整行，方角像裁出来的贴片；行首锚点是全软件统一的位置标记，悬停生长反馈也要一致 |
 
 ---
