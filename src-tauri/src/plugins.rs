@@ -64,10 +64,37 @@ fn classify_open_url(url: &str) -> UrlTarget {
     }
 }
 
+/// 面板窗口该用哪套主题：跟着主程序的设置走，而不是跟着 Windows。
+///
+/// 面板是独立的 WebviewWindow，`prefers-color-scheme` 默认跟系统 —— 用户把主程序
+/// 设成浅色（或深色）而 Windows 是另一套时，两个窗口会一深一浅并排。
+/// 这里把 prefs 里的 `themePref` 翻成 Tauri 的 Theme 塞给窗口，WebView2 会据此
+/// 决定 prefers-color-scheme，插件面板的 CSS 一行都不用改。
+/// `system`（或还没读到 prefs）返回 None = 交回系统默认，与主程序的「跟随系统」一致。
+fn panel_theme() -> Option<tauri::Theme> {
+    let hub = crate::api::hub()?;
+    let pref = hub
+        .store
+        .0
+        .lock()
+        .ok()?
+        .prefs
+        .get("themePref")
+        .and_then(|v| v.as_str())
+        .unwrap_or("system")
+        .to_string();
+    match pref.as_str() {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    }
+}
+
 fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), String> {
     // URL 先严格解析并校验，这个分支里**绝不 unwrap** —— 插件的数据不可信
     let url = validate_panel_url(url)?;
     let title = title.to_string();
+    let theme = panel_theme();
     let app = app.clone();
     // 接收者用临时克隆：闭包要把 app 移进去，而方法调用本身又借用了接收者。
     // run_on_main_thread 的 Result 只在「事件循环已退出」时才有意义，那时主程序
@@ -78,6 +105,7 @@ fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), Stri
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             WebviewWindowBuilder::new(&app, "plugin-panel", WebviewUrl::External(url.clone()))
                 .title(&title)
+                .theme(theme)
                 .inner_size(1040.0, 900.0)
                 .min_inner_size(760.0, 560.0)
                 .build()

@@ -4,6 +4,22 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.6] — 2026-11-10（正式版）
+
+### 变更
+
+- **插件设置面板与主界面统一视觉**（面板本体在 `FontManager-Plugin` 仓，
+  font-sync 0.8.16）：面板窗口和主窗口并排放在同一块屏幕上，旧的「深色玻璃 + 灰色强调」
+  与现在的「纸 / 墨 + 蓝强调」会像两个软件。面板已整体换成同一套令牌 ——
+  `#fafaf8` / `#111110` 底、四档文字、1px 发丝线、`#1b4fe0` / `#5b8cff` 强调、
+  0 圆角卡片分区、2px 蓝下划线页签、30 高 / 2px 圆角的输入与按钮、
+  3px 圆角进度条、左侧 2px 竖条的提示块。控件与文案一个没改，只换皮。
+- **面板窗口的主题改为跟随主程序**：面板是独立的 WebviewWindow，
+  `prefers-color-scheme` 原本跟 Windows 走 —— 主程序设了浅色而系统是深色时，
+  两个窗口一深一浅。现在打开面板时按 `prefs.themePref` 下发
+  （`WebviewWindowBuilder::theme`，`system` 不下发、交回系统），
+  插件面板的 CSS 一行都不用改就能对齐。
+
 ## [1.7.5] — 2026-11-10（正式版）
 
 > 这一版是《UI 待定问题清单》的收口：44 条逐条拍板，能改的直接改、能定的写死、
