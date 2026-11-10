@@ -165,7 +165,7 @@ pub fn discover_managed(dir: &std::path::Path, known: &std::collections::HashSet
         known.iter().map(|s| s.to_lowercase()).collect();
     let mut out: Vec<String> = Vec::new();
     for e in WalkDir::new(dir)
-        // 不跟符号链接 / junction（1.9.0 审查项 P5）：字体库是「我们自己的地盘」，
+        // 不跟符号链接 / junction（1.8.1 审查项 P5）：字体库是「我们自己的地盘」，
         // 里面一个指向别处的 junction 不该被当成库内字体收编，更不该一路跟进
         // C:\Windows\Fonts 之类的大目录。真要用库外的字体，走「添加文件夹」显式登记。
         .follow_links(false)

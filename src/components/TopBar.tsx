@@ -817,7 +817,7 @@ export function TopBar() {
     setSearch("");
     setSearchFocus(false);
     const st = useFontStore.getState();
-    // 插件（1.9.0）：不跳界面，直接让插件把自己的设置面板弹出来 ——
+    // 插件（1.8.1）：不跳界面，直接让插件把自己的设置面板弹出来 ——
     // 「搜到插件」的下一个动作几乎总是「打开它」，而不是「跳到设置页里那一行」
     if (sg.kind === "plugin") {
       if (sg.plugin) void openPluginSettings(sg.plugin);

@@ -8,7 +8,7 @@ use tauri::Emitter;
 
 pub struct WatchHandle(pub Mutex<Option<notify::RecommendedWatcher>>);
 
-/// 事件合并窗口（1.9.0 审查项 P6）。
+/// 事件合并窗口（1.8.1 审查项 P6）。
 ///
 /// 往字体库里拷 500 个字体，Windows 会给 500+ 个 create/modify 事件。
 /// 原来每个事件都 `emit("fonts:changed")` —— 前端虽然有 1.5s 防抖，但每来一个事件

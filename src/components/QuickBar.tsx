@@ -714,7 +714,7 @@ export function QuickBar() {
                   <SearchSuggest
                     query={query}
                     onPick={(sg: Suggestion) => {
-                      // 插件（1.9.0）：直接把它的设置面板弹出来，速览这边收起建议即可
+                      // 插件（1.8.1）：直接把它的设置面板弹出来，速览这边收起建议即可
                       if (sg.kind === "plugin") {
                         if (sg.plugin) void openPluginSettings(sg.plugin);
                         setQuery("");

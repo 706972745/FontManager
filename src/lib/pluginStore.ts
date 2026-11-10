@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { ipc, type PluginInfo } from "./ipc";
 
 /**
- * 已安装插件清单的只读副本（1.9.0）。
+ * 已安装插件清单的只读副本（1.8.1）。
  *
  * 为什么单独开一个 store 而不是塞进 `fontStore`：这份数据的生命周期跟着「插件目录」走，
  * 和字体库扫描没半点关系；`fontStore` 已经 4800 行，再挂一个跟字体无关的集合只会更难读。

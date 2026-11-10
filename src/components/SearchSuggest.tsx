@@ -13,7 +13,7 @@ import type { PluginInfo } from "../lib/ipc";
  * **必须带类型图标**：字体用 `Aa` 字形格、标签用 Tag、分组用文件夹、快照用相机、
  * 插件用拼图。用户原话：「如果是标签要加入标签 icon，不要让用户有误解」。
  *
- * 1.9.0 起多了**插件**这一类（用户要求：搜字体的时候也能搜到装过的插件）：
+ * 1.8.1 起多了**插件**这一类（用户要求：搜字体的时候也能搜到装过的插件）：
  * 命中范围是插件的名字、id、一句话介绍和完整介绍；左键打开它的设置面板，
  * 右键给的是和设置页同一套菜单（插件自己声明的项 + 打开插件目录）。
  *
@@ -137,12 +137,12 @@ export function SearchSuggest({
               // 用 mousedown 而不是 click：输入框 blur 会先把面板关掉，click 就点不到了
               onMouseDown={(e) => {
                 // 右键也会触发 mousedown：不挡住的话「右键插件 → 弹出菜单」会连带
-                // 先把插件的设置面板打开（1.9.0 自测发现）
+                // 先把插件的设置面板打开（1.8.1 自测发现）
                 if (e.button !== 0) return;
                 e.preventDefault();
                 onPick(it);
               }}
-              // 插件项右键 = 设置页插件行那一套菜单（1.9.0）
+              // 插件项右键 = 设置页插件行那一套菜单（1.8.1）
               onContextMenu={
                 it.plugin ? (e) => openPluginMenu(e, it.plugin!, "search") : undefined
               }
