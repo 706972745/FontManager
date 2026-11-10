@@ -608,13 +608,19 @@ interface FontStore {
 /**
  * 速览界面窗口尺寸（逻辑像素）：窄竖排面板，高度再翻一倍，靠滚动展示更多字体。
  *
- * 宽度取 420 而不是原来的 400：`app.css` 的窄档断点是 `max-width: 400px`，
+ * 宽度取 472 而不是原来的 400：`app.css` 的窄档断点是 `max-width: 400px`，
  * 400 正好落在断点上（max-width 含等号），于是**默认宽度就进了窄档** ——
  * 行首「Aa」字形列被收掉、就地展开的字重列表也被挤到只剩一百来像素，
- * 字重名全被截成「Narr…」。420 是设计稿 §5.5 写的窄宽边界，
- * 站在边界之外才谈得上「默认能看到 Aa」。
+ * 字重名全被截成「Narr…」。站在边界之外才谈得上「默认能看到 Aa」。
+ *
+ * 420 → 472（2026-11-10，用户要求「速览样张的显示范围宽度按图二来」）：
+ * 速览第 3 列（样张列）的宽度 = 面板宽 − 24×2 − 32 − 44 − 62 − 18 − 28 = 面板宽 − 232。
+ * 420 时样张列只剩 **188px**，放不下 32px 的默认示例「Hello IIEOzo」
+ * （等宽字体约需 230px），于是 `useMarquee` 开跑马灯，滚到一半的字看着像渲染坏了
+ * （实拍：Consolas 那行显示成「IIEOzoHel」，开头的 "Hello " 没了）。
+ * 472 → 样张列 **240px**，默认示例整行放得下，不再触发滚动。
  */
-const QUICKBAR_WIDTH = 420;
+export const QUICKBAR_WIDTH = 472;
 const QUICKBAR_HEIGHT = 992;
 /**
  * 速览窗口相对显示器左沿的横向偏移（用户 2026-11-04 指定）。
@@ -653,7 +659,13 @@ const MAIN_MIN_HEIGHT = 600;
 /** 由右键菜单尺寸推导速览窗口的最小尺寸（窗口外框，逻辑像素） */
 function quickbarMinSize(menu: { width: number; height: number }) {
   return {
-    width: Math.ceil(menu.width * QUICKBAR_MENU_WIDTH_RATIO) + QUICKBAR_FRAME_ALLOWANCE,
+    // 宽度取「菜单推导值」与「默认宽度」的较大者：
+    // 只按菜单算的话窗口能拖到 300 出头，样张列（面板宽 − 232）就只剩几十像素，
+    // 默认示例永远显示不全。样张列的下限就是默认宽度 —— 拖不窄于它。
+    width: Math.max(
+      QUICKBAR_WIDTH,
+      Math.ceil(menu.width * QUICKBAR_MENU_WIDTH_RATIO) + QUICKBAR_FRAME_ALLOWANCE,
+    ),
     height: Math.ceil(menu.height * QUICKBAR_MENU_HEIGHT_RATIO) + QUICKBAR_FRAME_ALLOWANCE,
   };
 }
