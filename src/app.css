@@ -3395,7 +3395,9 @@ h2.detail-title.copy-name {
   width: min(1080px, 100%);
   max-height: 100%;
   overflow-y: auto;
-  border-radius: 10px;
+  /* R8 §1.4：这里原来还有一条 `border-radius: 10px`，与后面弹窗族的 12px
+     撞成「同一组件两个圆角值」（实际生效的是后写的 10）。已按清单删掉旧值，
+     圆角统一由弹窗族那条 12px 决定。 */
   padding: 18px 20px 22px;
 }
 .compare-head {
@@ -8682,4 +8684,197 @@ body.ui-fade-out .app-frame {
   .qb-grip-bar {
     transition-duration: 1ms;
   }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   R8 尺度收口（2026-11-10）
+   --------------------------------------------------------------------
+   依据：handoff《FontManager · UI 尺度收口与圆角变更清单》R8。
+   目标：圆角 13 档 → 5 档（0 / 4 / 8 / 12 / 语义值），字阶 11 处半像素并入整档，
+   控件高度收成 24 / 28 / 32 三档。
+
+   仍然是**追加覆盖**，删掉本段即整体回滚。R8 特别强调「禁用全局替换」，
+   所以这里逐条写选择器白名单，而不是批量改数值。
+
+   ── C 级：以下五类**原样不动**，本段一条规则都没碰（改错必出视觉事故）──
+   ① `--qb-radius` 整条链（8 处 `var(--qb-radius…)`）：它必须与原生窗口圆角
+      逐像素对齐，是「物理像素 ÷ DPR」算出来的；改成固定值，125% 下四角露底色。
+   ② 胶囊类 `999px`（25 处）：999 是**语义**不是数值 —— 进度轨只有 3px 高、
+      状态胶囊 16–19px 高，靠它才成形。
+   ③ `.pill-toggle::before` 的 10px：34×19 轨道里那枚 15×15 滑块靠它成圆。
+   ④ 轨道类 2px（字号滑杆 / install-track/fill / axis-row）：轨道本身只有 2–3px 高。
+   ⑤ 锚点圆头 1px（`.qb-anchor` / `.family-card:hover::before`）：2px 宽 + 1px 圆头
+      = 圆头竖线，改 0 就成方头，行首三态的语言直接失效。
+   ⑥ `.qb-grip-bar` 在 bar / retract 阶段的 3px：5px 可见高度，r=3 才是圆头。
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ─── A 级之一：5px → 4px（主界面控件，33 处） ────────────────────────
+   这些都不带 overflow:hidden、也不参与窗口圆角，统一到 4 是安全的。
+   §1.2 明确「先别改」的四处已排除：`.diag-hud` / `.face-line-name`
+   （自带 overflow:hidden，要动得连带确认内部）+ 两条滚动条伪元素。
+
+   ⚠️ 两处例外：`.nav-row` / `.nav-pill`。清单量到的是**基础段**的 5px，
+   但 R4 已经把侧栏拍成「0 圆角 + 平底 + 2px 蓝竖线」，1.7.5 又把选中态的
+   旧玻璃壳（`.nav-pill`）拆成纯底色 —— 这两处现在是 0，比 4 更彻底。
+   照清单给 4 等于把方角又倒回圆角（用户此前专门否过侧栏那个圆角小盒子），
+   所以这里显式钉回 0，并写死在这里防止以后被基础段带跑。 */
+.topbar-field,
+.sort-btn,
+.filter-charinput,
+.feat-reset,
+.view-toggle,
+.card-expand,
+.detail-close,
+.copy-name,
+.tag-input,
+.detail-uninstall,
+.trash-empty-btn,
+.trash-action,
+.trashconfirm-cancel,
+.trashconfirm-run,
+.collection-input,
+.sidebar-hint,
+.compare-btn,
+.rescan-btn,
+.glyph-more,
+.settings-folder,
+.palette-hint,
+.kbd,
+.bulktag-apply,
+.tour-start,
+.tour-btn,
+.online-refresh,
+.face-line,
+.face-line-apply,
+.rating-star {
+  border-radius: 4px;
+}
+.nav-row,
+.nav-pill {
+  border-radius: 0;
+}
+
+/* ─── A 级之二：7px → 4px ───────────────────────────────────────────── */
+.lang-trigger,
+.about-link-icon {
+  border-radius: 4px;
+}
+
+/* ─── A 级之三：菜单归 8 ────────────────────────────────────────────── */
+.lang-menu,
+.sort-menu,
+.ctx-menu {
+  border-radius: 8px;
+}
+
+/* ─── A 级之四：6px → 4px（小片 / 按钮 / 输入） ──────────────────────── */
+.feat-chip,
+.about-custom,
+.toast-action,
+.conflict-file,
+.conflict-btn,
+.hotkey-field,
+.palette-item,
+.shortcuts-row,
+.settings-data-btn,
+.selection-compare,
+.lang-option,
+.online-search-input,
+.online-cta,
+.online-redownload,
+.online-download,
+.snapshot-btn,
+.copyright-expiry-input,
+.detail-copyright-text,
+.hover-hint {
+  border-radius: 4px;
+}
+/* `.settings-api-token` 带 overflow:hidden + 省略号，圆角变小只会裁得更紧，
+   已确认 2px 8px 的内距足够，长令牌不会贴角（R8 §1.2「需单独确认」） */
+.settings-api-token {
+  border-radius: 4px;
+}
+
+/* ─── A 级之五：14px → 12px（在线详情大图容器） ─────────────────────── */
+.online-detail {
+  border-radius: 12px;
+}
+
+/* ─── B 级：面板类 10 → 12 ────────────────────────────────────────────
+   内容裁得更松是安全的；四个原本就是 12 的（.settings-panel / .shortcuts-panel /
+   .palette-panel / .compare-panel）不重复声明，只列还停在 10 的。 */
+.dropchoice-panel,
+.dup-panel,
+.trashconfirm-panel,
+.bulktag-panel,
+.selection-bar,
+.tour-card,
+.online-licence,
+.online-preview {
+  border-radius: 12px;
+}
+
+/* ─── 字阶：半像素并入整档（R8 §2，11 处） ────────────────────────────
+   非整数桌面字号在 100% / 125% 下会落到不同亚像素位置，同一列表里 10 / 10.5
+   混排时笔画粗细会一跳一跳。 */
+.ctx-search {
+  font-size: var(--fs-13);
+}
+.ctx-scope {
+  font-size: var(--fs-11);
+}
+.ctx-more {
+  font-size: var(--fs-11);
+}
+.ctx-item {
+  font-size: var(--fs-11);
+}
+.detail-meta dl {
+  font-size: var(--fs-11);
+}
+.toast-detail {
+  font-size: var(--fs-10);
+}
+.empty-state p {
+  font-size: var(--fs-11);
+}
+.dropchoice-sub {
+  font-size: var(--fs-11);
+}
+.settings-plugin-group .settings-plugins-head .settings-sub {
+  font-size: var(--fs-11);
+}
+.settings-plugin-group .settings-plugin-row .settings-sub {
+  font-size: var(--fs-11);
+}
+/* 胶囊高 16，9px 仍居中（R8 §2 已算过） */
+.settings-plugin-group .settings-plugin-runtime {
+  font-size: var(--fs-9);
+}
+
+/* ─── 控件高度：24 / 28 / 32 三档（R8 §3） ────────────────────────────
+   29 是全库唯一的奇数高度，是手误；取 28 —— 侧栏行本身在 R4 里已经是
+   height:32，min-height 只在下限兜底，28 不会让行变矮。 */
+.nav-row {
+  min-height: 28px;
+}
+/* 菜单项 32（R7 已落，这里写明避免以后又被 base 的 30 带跑） */
+.ctx-item {
+  min-height: 32px;
+}
+/* 插件清单头的三枚动作：26 → 28（标准按钮档） */
+.settings-plugin-group .settings-add-folder {
+  height: 28px;
+}
+
+/* ─── R7 遗留的 2px 一并归到 4 ────────────────────────────────────────
+   R7 交付时把插件分区的小控件定成 2px（当时是「规格书里那种近方角按钮」）。
+   R8 把全库小片收成 4 一档后，同一个设置弹窗里「添加文件夹」是 4、
+   「重新扫描」是 2，并排能看出来 —— 跟随 R8，统一 4。
+   注意：轨道类（滑杆 / install-track）的 2px 属 C 级语义值，不在此列。 */
+.settings-plugin-group .settings-add-folder,
+.settings-plugin-actions .settings-library-open,
+.settings-plugins-more,
+.settings-plugins-more .settings-data-btn {
+  border-radius: 4px;
 }
