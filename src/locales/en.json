@@ -854,6 +854,7 @@
   "toast.snapshotsImported": "Imported {count} snapshot(s)",
   "toast.snapshotsImportedAll": "All {total} fonts are available here",
   "toast.snapshotsImportedPartial": "{missing} of {total} fonts are missing on this machine (snapshots store the list only, not the font files)",
+  "toast.snapshotRestoreMissing": "Fill the gaps from GitHub",
   "toast.specimenExported": "Specimen exported",
   "toast.trashEmptied": "Trash emptied",
   "toast.undo": "Undo",

@@ -844,6 +844,7 @@
   "toast.snapshotsImported": "{count} Schnappschuss/Schnappschüsse importiert",
   "toast.snapshotsImportedAll": "Alle {total} Schriften sind vorhanden",
   "toast.snapshotsImportedPartial": "{missing} von {total} Schriften fehlen auf diesem Rechner (Snapshots enthalten nur die Liste, nicht die Dateien)",
+  "toast.snapshotRestoreMissing": "Fehlende Schriften von GitHub holen",
   "toast.specimenExported": "Schriftmuster exportiert",
   "toast.trashEmptied": "Papierkorb geleert",
   "toast.undo": "Rückgängig",

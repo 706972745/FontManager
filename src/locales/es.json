@@ -860,6 +860,7 @@
   "toast.snapshotsImported": "Se importaron {count} instantánea(s)",
   "toast.snapshotsImportedAll": "Las {total} fuentes están disponibles aquí",
   "toast.snapshotsImportedPartial": "Faltan {missing} de {total} fuentes en este equipo (las instantáneas solo guardan la lista, no los archivos)",
+  "toast.snapshotRestoreMissing": "Completar desde GitHub",
   "toast.specimenExported": "Muestra exportada",
   "toast.trashEmptied": "Papelera vaciada",
   "toast.undo": "Deshacer",

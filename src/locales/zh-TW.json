@@ -830,6 +830,7 @@
   "toast.snapshotsImported": "已匯入 {count} 個快照",
   "toast.snapshotsImportedAll": "共 {total} 個字型，本機都有",
   "toast.snapshotsImportedPartial": "共 {total} 個字型，其中 {missing} 個本機沒有（快照只記清單，不含字型檔）",
+  "toast.snapshotRestoreMissing": "從 GitHub 補齊缺少的字型",
   "toast.specimenExported": "字型樣張已匯出",
   "toast.trashEmptied": "垃圾桶已清空",
   "toast.undo": "復原",
