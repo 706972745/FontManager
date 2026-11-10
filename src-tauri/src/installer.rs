@@ -378,6 +378,11 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
         // 解压后是平铺的临时目录，文件夹备注只能看压缩包自己的名字
         let zip_note = path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string());
         let mut out = Vec::new();
+        // 「压缩炸弹」闸门（2026-11-10 审查）：zip 条目头声明的解压尺寸不可信，
+        // 但把**声明值**累加就能挡住绝大多数构造包 —— 一个 20 MB 的 zip 声称要解出
+        // 400 GB 时，这里直接拒绝，不必等磁盘写满。真实字体包很少超过 2 GB。
+        const MAX_EXPANDED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+        let mut declared: u64 = 0;
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
             let Some(name) = entry.enclosed_name() else { continue };
@@ -385,6 +390,14 @@ fn expand_dropped(path: &Path, staging: &Path) -> Result<Vec<StagedFile>, String
             let is_info = !is_font && is_info_file(&name);
             if !is_font && !is_info {
                 continue; // 其余文件（安装器、图片等）不保留
+            }
+            declared = declared.saturating_add(entry.size());
+            if declared > MAX_EXPANDED_BYTES {
+                return Err(format!(
+                    "压缩包解压后超过 {} GB，已拒绝解压（可能是压缩炸弹）：{}",
+                    MAX_EXPANDED_BYTES / 1024 / 1024 / 1024,
+                    path.display()
+                ));
             }
             let file_name = name.file_name().ok_or("bad zip entry")?.to_owned();
             let dest = unique_dest(staging, &file_name);

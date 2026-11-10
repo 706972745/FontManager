@@ -30,6 +30,16 @@ use serde::{Deserialize, Serialize};
 /// 单卷上限（用户定的 2 GiB）。再留 8 MiB 给 manifest / 目录区，保证成品文件本身 < 2 GiB。
 pub const PART_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
 
+/// 导入时的解压总量闸门（2026-11-10 审查）。
+///
+/// 合法整包是「每卷 ≤ 2 GiB，多卷」，所以上限给到 4 卷的量；再大就大概率是构造的
+/// 压缩炸弹（zip 条目声明的解压尺寸远大于实际，一路写下去能把磁盘填满）。
+/// 条目头的声明值本身不可信，但**足以识别**这种包 —— 正常包声明多少就解多少。
+const MAX_IMPORT_BYTES: u64 = 4 * PART_LIMIT;
+
+/// 导入时的临时文件后缀。以点开头 + 非字体扩展名，扫描不会把它当成字体收编。
+const PART_SUFFIX: &str = ".zfmimport";
+
 /// 导出取消标志（用户 2026-11-10）。前端同一时刻只允许跑一个导出，所以一个全局量就够。
 static PACK_CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -629,6 +639,8 @@ pub fn import_pack(
     let mut skipped = 0u64;
     let mut failed = 0u64;
     let mut done = 0u64;
+    // 已见条目声明的解压总字节（跨分卷累加），闸门见 MAX_IMPORT_BYTES
+    let mut declared_total: u64 = 0;
 
     for (part_no, path) in &parts {
         let file = File::open(path).map_err(|e| e.to_string())?;
@@ -662,6 +674,15 @@ pub fn import_pack(
             };
             let target = library.join(&safe);
             let size = entry.size();
+            // 压缩炸弹闸门：见 MAX_IMPORT_BYTES 的注释
+            declared_total = declared_total.saturating_add(size);
+            if declared_total > MAX_IMPORT_BYTES {
+                return Err(format!(
+                    "整包解压后超过 {} GB，已停止导入（可能是压缩炸弹）。已导入的文件保留在库里：{}",
+                    MAX_IMPORT_BYTES / 1024 / 1024 / 1024,
+                    path.display()
+                ));
+            }
             let fname = safe
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -681,14 +702,20 @@ pub fn import_pack(
                         ok = false;
                     }
                 }
+                // 先写到同目录的隐藏临时文件再 rename（2026-11-10 审查）：
+                // 直接写目标路径的话，解压中途失败/断电会在字体库里留下一个
+                // **半截字体文件** —— 下次扫描读它出来是坏面，用户还会以为字体本身坏了。
+                let tmp = target.with_file_name(format!(".{fname}{PART_SUFFIX}"));
                 let written = ok
-                    && File::create(&target)
+                    && File::create(&tmp)
                         .and_then(|mut out| std::io::copy(&mut entry, &mut out).map(|_| ()))
+                        .and_then(|_| fs::rename(&tmp, &target))
                         .is_ok();
                 if written {
                     added += 1;
                     index.entry(fname).or_default().push(size);
                 } else {
+                    let _ = fs::remove_file(&tmp);
                     failed += 1;
                 }
             }

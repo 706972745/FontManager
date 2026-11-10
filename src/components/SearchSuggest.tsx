@@ -1,29 +1,38 @@
-import { useMemo } from "react";
-import { Camera, FolderOpen, Tag, Type } from "lucide-react";
-import { allTags, familiesFor, useFontStore } from "../state/fontStore";
+import { useEffect, useMemo } from "react";
+import { Camera, FolderOpen, Puzzle, Tag, Type } from "lucide-react";
+import { allTags, familiesFor, familyLowerNames, useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
+import { usePluginStore } from "../lib/pluginStore";
+import { openPluginMenu } from "../lib/pluginMenu";
+import type { PluginInfo } from "../lib/ipc";
 
 /**
  * 搜索时的下拉建议（用户 2026-11-10）。
  *
  * 「搜索结果里出现一个名字里没有关键词的字体」最容易让人以为搜错了 —— 所以每条建议
- * **必须带类型图标**：字体用 `Aa` 字形格、标签用 Tag、分组用文件夹、快照用相机。
- * 用户原话：「如果是标签要加入标签 icon，不要让用户有误解」，图标就画在这个下拉框里。
+ * **必须带类型图标**：字体用 `Aa` 字形格、标签用 Tag、分组用文件夹、快照用相机、
+ * 插件用拼图。用户原话：「如果是标签要加入标签 icon，不要让用户有误解」。
  *
- * 排序刻意把**标签 / 分组 / 快照排在字体前面**：字体动辄四千条，一搜一大片；
- * 标签和分组是用户自己建的三五个，命中往往就是他要找的那个。
+ * 1.9.0 起多了**插件**这一类（用户要求：搜字体的时候也能搜到装过的插件）：
+ * 命中范围是插件的名字、id、一句话介绍和完整介绍；左键打开它的设置面板，
+ * 右键给的是和设置页同一套菜单（插件自己声明的项 + 打开插件目录）。
+ *
+ * 排序刻意把**插件 / 标签 / 分组 / 快照排在字体前面**：字体动辄四千条，一搜一大片；
+ * 插件和标签是十来个，命中往往就是他要找的那个。
  */
 
 export type Suggestion = {
-  kind: "family" | "tag" | "collection" | "snapshot";
+  kind: "family" | "tag" | "collection" | "snapshot" | "plugin";
   /** 唯一键：`kind:name` */
   key: string;
   label: string;
   /** 右侧灰色小字（条数 / 类型） */
   meta?: string;
+  /** kind = plugin 时带上完整信息，父组件据此决定点下去干什么 */
+  plugin?: PluginInfo;
 };
 
-const LIMIT_PER_KIND = { tag: 6, collection: 6, snapshot: 6, family: 6 } as const;
+const LIMIT_PER_KIND = { plugin: 6, tag: 6, collection: 6, snapshot: 6, family: 6 } as const;
 
 export function SearchSuggest({
   query,
@@ -37,6 +46,13 @@ export function SearchSuggest({
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
   const snapshots = useFontStore((s) => s.snapshots);
+  const plugins = usePluginStore((s) => s.plugins);
+  const loadPlugins = usePluginStore((s) => s.load);
+  // 兜底：主界面启动那次 `plugins_list` 若失败，用户一打字这里还会再试一次
+  // （`load()` 在已加载时是空操作，不会每次按键都发 IPC）
+  useEffect(() => {
+    void loadPlugins();
+  }, [loadPlugins]);
 
   const q = query.trim().toLowerCase();
   /**
@@ -46,11 +62,28 @@ export function SearchSuggest({
    * （1.8.0 内测第一版就是这么错的，用户截图里标签一条都不出现）。
    */
   const tagIndex = useMemo(() => allTags(tags), [tags]);
+  // 小写名索引跟着字体库缓存：打字时只做 includes，不再每次新建 4000 个字符串
+  const familyNames = useMemo(() => familyLowerNames(familiesFor(fonts, tags)), [fonts, tags]);
 
   const items = useMemo<Suggestion[]>(() => {
     if (!q) return [];
     const out: Suggestion[] = [];
     let n = 0;
+    // 插件排最前：数量最少（个位数），命中就是用户想找的那一个
+    for (const p of plugins) {
+      if (n >= LIMIT_PER_KIND.plugin) break;
+      const hay = `${p.name}\n${p.id}\n${p.summary ?? ""}\n${p.description ?? ""}`.toLowerCase();
+      if (!hay.includes(q)) continue;
+      out.push({
+        kind: "plugin",
+        key: `plugin:${p.id}`,
+        label: p.name,
+        meta: `v${p.version}`,
+        plugin: p,
+      });
+      n++;
+    }
+    n = 0;
     for (const [tag, count] of tagIndex) {
       if (n >= LIMIT_PER_KIND.tag) break;
       if (!tag.toLowerCase().includes(q)) continue;
@@ -77,15 +110,15 @@ export function SearchSuggest({
       n++;
     }
     n = 0;
-    // 字体最后：四千多个名字里 contains 一遍不贵（纯字符串比较），但只取前几条
-    for (const name of familiesFor(fonts, tags).keys()) {
+    // 字体最后：走预计算的小写索引，只取前几条
+    for (const [lower, name] of familyNames) {
       if (n >= LIMIT_PER_KIND.family) break;
-      if (!name.toLowerCase().includes(q)) continue;
+      if (!lower.includes(q)) continue;
       out.push({ kind: "family", key: `fam:${name}`, label: name });
       n++;
     }
     return out;
-  }, [q, fonts, tagIndex, collections, snapshots]);
+  }, [q, plugins, familyNames, tagIndex, collections, snapshots]);
 
   if (!q) return null;
 
@@ -103,9 +136,16 @@ export function SearchSuggest({
               data-kind={it.kind}
               // 用 mousedown 而不是 click：输入框 blur 会先把面板关掉，click 就点不到了
               onMouseDown={(e) => {
+                // 右键也会触发 mousedown：不挡住的话「右键插件 → 弹出菜单」会连带
+                // 先把插件的设置面板打开（1.9.0 自测发现）
+                if (e.button !== 0) return;
                 e.preventDefault();
                 onPick(it);
               }}
+              // 插件项右键 = 设置页插件行那一套菜单（1.9.0）
+              onContextMenu={
+                it.plugin ? (e) => openPluginMenu(e, it.plugin!, "search") : undefined
+              }
             >
               <span className="suggest-icon" aria-hidden="true">
                 {it.kind === "family" ? (
@@ -114,6 +154,8 @@ export function SearchSuggest({
                   <Tag size={12} strokeWidth={1.6} />
                 ) : it.kind === "collection" ? (
                   <FolderOpen size={12} strokeWidth={1.6} />
+                ) : it.kind === "plugin" ? (
+                  <Puzzle size={12} strokeWidth={1.6} />
                 ) : (
                   <Camera size={12} strokeWidth={1.6} />
                 )}
@@ -122,7 +164,9 @@ export function SearchSuggest({
               <span className="suggest-kind">
                 {it.meta ?? ""}
                 {it.meta ? " · " : ""}
-                {t(`search.kind.${it.kind}` as Parameters<typeof t>[0])}
+                {it.plugin
+                  ? t("search.kind.plugin")
+                  : t(`search.kind.${it.kind}` as Parameters<typeof t>[0])}
               </span>
             </button>
           </li>

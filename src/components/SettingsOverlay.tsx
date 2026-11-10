@@ -6,9 +6,10 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { LoaderCircle } from "lucide-react";
 import { ArtIcon } from "./ArtIcon";
 import { PillToggle } from "../design/primitives/PillToggle";
-import { openContextMenu, type MenuItem } from "../design/primitives/ContextMenu";
 import { springSoft } from "../design/springs";
 import { ipc, type PluginInfo } from "../lib/ipc";
+import { openPluginMenu, openPluginSettings } from "../lib/pluginMenu";
+import { usePluginStore } from "../lib/pluginStore";
 import { refreshPluginMenus } from "../lib/pluginMenuBridge";
 import { toast } from "../design/primitives/Toast";
 import { useFontStore } from "../state/fontStore";
@@ -18,6 +19,7 @@ import { useT } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { LabelResyncDialog } from "./LabelResyncDialog";
 import { RuntimeManager } from "./RuntimeManager";
+import { UpdateSection } from "./UpdateSection";
 import { APP_LICENSE, displayVersion } from "../lib/version";
 import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 
@@ -289,6 +291,8 @@ export function SettingsOverlay() {
     try {
       const next = await ipc.pluginsList();
       setPlugins(next);
+      // 搜索建议共用同一份清单（1.9.0）：设置里刚装的插件，搜索框立刻能搜到
+      usePluginStore.setState({ plugins: next, loaded: true });
       // 右键菜单里那份缓存也要一起刷，不然新装的插件在菜单里看不见
       await refreshPluginMenus();
       return next;
@@ -337,59 +341,15 @@ export function SettingsOverlay() {
   };
 
   /**
-   * 齿轮：让插件**自己**把设置面板弹出来（1.3.7）。
-   *
-   * 插件是独立进程，主程序从不替它画界面 —— 所以这里只能把 `settings.hook`
-   * （默认 `settings`）发过去，面板长什么样由插件决定。插件没声明 `settings`
-   * 就没有这个按钮，免得点了没反应。
-   */
-  const openPluginSettings = async (p: PluginInfo) => {
-    if (!p.running) {
-      toast.error(t("toast.pluginOfflineForSettings", { name: p.name }));
-      return;
-    }
-    try {
-      await ipc.pluginInvoke(p.id, p.settings?.hook ?? "settings", { source: "settings" });
-      toast.success(t("toast.pluginSettingsSent", { name: p.name }));
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
-
-  /**
-   * 插件行右键菜单（1.3.7）。
+   * 插件行右键菜单（1.3.7，1.9.0 起与搜索结果共用 `lib/pluginMenu.ts` 的同一套）。
    *
    * 只有插件在 plugin.json 的 `menus` 里写了 `"on": "plugin"` 的项才出现在这里 ——
    * 那是「不用选字体也能跑」的功能（打开报告目录、清缓存、重新扫描…），
-   * 以前只能凑到某个字族右键里点，很别扭。菜单项传 `hook: "context-menu"`、
+   * 以前只能凑到某个字族右键里点，很别扭。菜单项传 `hook: "context-menu"`，
    * payload 带 `source: "plugin-row"`，插件按 menu 标题分派即可。
    */
   const openPluginRowMenu = (e: ReactMouseEvent, p: PluginInfo) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const rowMenus = p.menus.filter((m) => m.on === "plugin");
-    const items: MenuItem[] = rowMenus.map((m) => ({
-      label: m.title,
-      action: () =>
-        void ipc
-          .pluginInvoke(p.id, "context-menu", { menu: m.title, source: "plugin-row" })
-          .catch((err) => toast.error(String(err))),
-    }));
-    if (rowMenus.length > 0) items.push({ kind: "separator" });
-    if (p.settings) {
-      items.push({
-        label: p.settings.title ?? t("settings.pluginsSettings"),
-        icon: <Settings size={14} strokeWidth={1.5} />,
-        disabled: !p.running,
-        action: () => void openPluginSettings(p),
-      });
-    }
-    items.push({
-      label: t("settings.pluginsOpenDir"),
-      icon: <FolderOpen size={14} strokeWidth={1.5} />,
-      action: () => void ipc.openFolder(p.dir).catch(() => {}),
-    });
-    openContextMenu(e, items);
+    openPluginMenu(e, p, "plugin-row");
   };
 
   useEffect(() => {
@@ -1133,6 +1093,12 @@ export function SettingsOverlay() {
                 {t("settings.plugins")}
                 <SettingHint text={t("settings.pluginsSub")} />
               </div>
+              {/* 权限如实告知（1.9.0 审查 S7）：插件是同权限子进程，不是网页小挂件。
+                  用户有权在装上第一个插件之前就知道这一点。 */}
+              <div className="settings-sub settings-plugins-trust">
+                <Info size={12} strokeWidth={1.5} aria-hidden />
+                {t("settings.pluginsTrust")}
+              </div>
               {/* 清单头 + 每一行插件要贴在一起：间距一大，会被当成两个不同的分区 */}
               <div className="settings-plugin-group">
                 <div className="settings-row settings-plugins-head">
@@ -1564,6 +1530,8 @@ ${t("settings.labelResyncWhy")}`}
                 </div>
               </div>
             </section>
+
+            <UpdateSection />
 
             <footer className="settings-footer tabular">
               <img className="settings-footer-icon" src="/favicon.png" alt="" draggable={false} />

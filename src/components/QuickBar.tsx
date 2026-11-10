@@ -62,6 +62,8 @@ import type { FontFace } from "../lib/ipc";
 import { buildFaceIndexCached, entryFaceIds, faceKey } from "../lib/snapshotKey";
 import { FilterMenu } from "./TopBar";
 import { SearchSuggest, type Suggestion } from "./SearchSuggest";
+import { openPluginSettings } from "../lib/pluginMenu";
+import { usePluginStore } from "../lib/pluginStore";
 import { StarRating } from "./StarRating";
 
 /**
@@ -354,6 +356,11 @@ function QuickItem({
 export function QuickBar() {
   const t = useT();
   const win = getCurrentWindow();
+  // 速览是独立窗口（独立 JS 上下文），插件清单要自己拉一份：搜插件才有东西可搜
+  const loadPlugins = usePluginStore((s) => s.load);
+  useEffect(() => {
+    void loadPlugins();
+  }, [loadPlugins]);
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
   const sessionActivated = useFontStore((s) => s.sessionActivated);
@@ -707,6 +714,13 @@ export function QuickBar() {
                   <SearchSuggest
                     query={query}
                     onPick={(sg: Suggestion) => {
+                      // 插件（1.9.0）：直接把它的设置面板弹出来，速览这边收起建议即可
+                      if (sg.kind === "plugin") {
+                        if (sg.plugin) void openPluginSettings(sg.plugin);
+                        setQuery("");
+                        setQueryFocus(false);
+                        return;
+                      }
                       // 速览里就是把关键词填成选中的名字：标签名本身也在搜索口径里，
                       // 填进去等于「只看这个标签 / 分组 / 快照」
                       setQuery(sg.label);
