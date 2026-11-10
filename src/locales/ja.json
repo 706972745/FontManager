@@ -828,6 +828,7 @@
   "toast.snapshotsImported": "{count} 個のスナップショットを読み込みました",
   "toast.snapshotsImportedAll": "{total} 個のフォントはすべて利用できます",
   "toast.snapshotsImportedPartial": "{total} 個のうち {missing} 個がこの環境にありません（スナップショットは一覧のみで、フォントファイルは含みません）",
+  "toast.snapshotRestoreMissing": "不足分を GitHub から補完",
   "toast.specimenExported": "見本を書き出しました",
   "toast.trashEmptied": "ゴミ箱を空にしました",
   "toast.undo": "元に戻す",

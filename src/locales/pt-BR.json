@@ -860,6 +860,7 @@
   "toast.snapshotsImported": "{count} instantâneo(s) importado(s)",
   "toast.snapshotsImportedAll": "As {total} fontes estão disponíveis aqui",
   "toast.snapshotsImportedPartial": "{missing} de {total} fontes não existem nesta máquina (os snapshots guardam só a lista, não os arquivos)",
+  "toast.snapshotRestoreMissing": "Completar pelo GitHub",
   "toast.specimenExported": "Espécime exportado",
   "toast.trashEmptied": "Lixeira esvaziada",
   "toast.undo": "Desfazer",

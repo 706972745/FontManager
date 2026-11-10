@@ -845,6 +845,7 @@
   "toast.snapshotsImported": "已导入 {count} 个快照",
   "toast.snapshotsImportedAll": "共 {total} 个字体，本机都有",
   "toast.snapshotsImportedPartial": "共 {total} 个字体，其中 {missing} 个本机没有（快照只记清单，不含字体文件）",
+  "toast.snapshotRestoreMissing": "从 GitHub 补全缺失字体",
   "toast.specimenExported": "字体样张已导出",
   "toast.trashEmptied": "回收站已清空",
   "toast.undo": "撤销",

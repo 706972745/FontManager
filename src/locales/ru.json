@@ -878,6 +878,7 @@
   "toast.snapshotsImported": "Импортировано снимков: {count}",
   "toast.snapshotsImportedAll": "Все {total} шрифтов доступны",
   "toast.snapshotsImportedPartial": "{missing} из {total} шрифтов отсутствуют на этом компьютере (снимок хранит только список, без файлов шрифтов)",
+  "toast.snapshotRestoreMissing": "Дополнить из GitHub",
   "toast.specimenExported": "Образец экспортирован",
   "toast.trashEmptied": "Корзина очищена",
   "toast.undo": "Отменить",

@@ -84,6 +84,7 @@ import {
   missingEntries,
   systemBackedEntries,
 } from "../lib/snapshotKey";
+import { askPluginsForMissingFamilies, ensurePluginList, snapshotRestorePlugins } from "../lib/snapshotPlugins";
 import { toast } from "../design/primitives/Toast";
 import { setSoundLevel, type SoundLevel } from "../lib/sound";
 import { applyTheme, type ThemePref } from "../lib/theme";
@@ -3296,16 +3297,38 @@ export const useFontStore = create<FontStore>((set, get) => ({
           const index = buildFaceIndex(get().fonts);
           let total = 0;
           let missing = 0;
+          /** 缺失的字族名（去重）：交给声明了 snapshot-missing 的插件去补（1.8.3） */
+          const goneFamilies = new Set<string>();
           for (const snap of imported) {
             total += snap.entries.length;
-            missing += missingEntries(snap.entries, index).length;
+            const gone = missingEntries(snap.entries, index);
+            missing += gone.length;
+            for (const e of gone) goneFamilies.add(e.family);
           }
-          toast.success(
+          /*
+           * 有缺失、且有插件能补 → 提示上挂一个动作按钮（"从 GitHub 补全"之类，
+           * 具体怎么做由插件决定）。没有插件接就完全不出现按钮，文案同以前。
+           * 这是待办 FS-3：以前只报数字，用户不知道下一步点哪。
+           */
+          if (goneFamilies.size > 0) await ensurePluginList();
+          const canRestore = goneFamilies.size > 0 && snapshotRestorePlugins().length > 0;          toast.success(
             t("toast.snapshotsImported", { count: imported.length }),
             missing > 0
               ? t("toast.snapshotsImportedPartial", { total, missing })
               : t("toast.snapshotsImportedAll", { total }),
             "restore",
+            canRestore
+              ? {
+                  label: t("toast.snapshotRestoreMissing"),
+                  run: () => {
+                    void askPluginsForMissingFamilies([...goneFamilies], {
+                      missing,
+                      total,
+                      snapshots: imported.map((s) => s.name),
+                    });
+                  },
+                }
+              : undefined,
           );
         } else {
           // 合并所有导入快照的条目后应用（切换 / 合并到当前启用）

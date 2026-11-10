@@ -4,6 +4,28 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.3] — 2026-11-11
+
+> 一条联动：快照缺字体时，提示条上多了「从 GitHub 补全缺失字体」。需要配合
+> **font-sync 0.8.18** 才有这个按钮；没装 / 没开插件的用户看到的东西一字不变。
+> **不改数据格式，升级无需迁移。**
+
+### 新增
+
+- **快照缺字体 → 一键交给插件补全**（待办 FS-3 结案）：快照只存清单不存字体文件，
+  在新机器上导入后常有一批条目本机没有，原来只提示「其中 N 个本机没有」就结束了。
+  现在如果装了声明 `snapshot-missing` 钩子的插件（font-sync 0.8.18 起），
+  提示条上会出现动作按钮，点了把**去重后的缺失字族**广播给插件，
+  插件自己开「补缺」页并预演 —— 主程序**不下载、不删任何文件**，也不认识具体是哪个插件。
+  没有插件接这条钩子时按钮不出现，文案与以前完全一致（`src/lib/snapshotPlugins.ts`）。
+- 新增 9 种语言的按钮文案 `toast.snapshotRestoreMissing`。
+
+### 插件协议
+
+- `docs/PLUGINS.md` 补 `snapshot-missing` 钩子的完整字段表与约定：主程序只广播一次、
+  插件应「带到补全界面并预演」而不是直接大批量下载。
+  这条钩子复用 1.3.0 就有的 `plugin_invoke` 通道，**没有新增 Tauri 命令、也没有新增本地 API 端点**。
+
 ## [1.8.2] — 2026-11-11
 
 > 两处体验修正：右键菜单的底色改回暖墨（原先偏紫灰），以及打开设置时那一下卡顿。

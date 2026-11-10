@@ -101,9 +101,33 @@ FontManager 的插件是**进程外程序**：主程序绝不把插件代码加�
 { "type": "invoke", "hook": "context-menu", "payload": { "family": "字族名", "menu": "用户点的菜单项标题" } }
 { "type": "invoke", "hook": "context-menu", "payload": { "menu": "打开导出文件夹", "source": "plugin-row" } }
 { "type": "invoke", "hook": "settings",      "payload": { "source": "settings" } }
+{ "type": "invoke", "hook": "snapshot-missing",
+  "payload": { "families": ["思源宋体", "霞鹜文楷"], "missing": 42, "total": 320, "snapshots": ["全量-2026-11"] } }
 ```
 
-`hooks` 里列出自己会处理的钩子名（`init` / `context-menu` / `settings`），只是给自己做文档，主程序不强制校验。
+`hooks` 里列出自己会处理的钩子名（`init` / `context-menu` / `settings` / `snapshot-missing`），
+只是给自己做文档，主程序不强制校验；但**`snapshot-missing` 是唯一一个由主程序主动挑人发的钩子** ——
+只有声明了它、且正在运行的插件才会收到（见下）。
+
+### `snapshot-missing`：快照缺字体的联动（主程序 1.8.3+）
+
+快照只存字体清单、不存字体文件。用户在新机器上导入快照后，往往有一批条目本机没有。
+主程序不自己下载任何东西，而是在提示条上给一个动作按钮，点击后**广播**给所有声明了
+`"hooks": ["snapshot-missing"]` 的插件：
+
+| 字段 | 含义 |
+|---|---|
+| `families` | 缺失字族名（已去重、已过滤空值），插件可以直接拿去比对远端包 |
+| `missing` | 缺失的**条目**数（同族多字重会算多条，>= `families.length`） |
+| `total` | 这批快照的条目总数 |
+| `snapshots` | 涉及的快照名（用户一次可能导入多个） |
+
+约定：
+
+- **只被调用一次、不保证响应**：插件该做的是把用户带到自己的补全界面并预演（列出会拉哪些），
+  **不要直接开始大批量下载** —— 用户还没确认要补什么；
+- 没有插件声明这条 hook 时按钮不出现，提示文案与以前完全一致（所以老插件不会看到空按钮）；
+- 主程序不认识任何具体插件，别在这里假设「只有 font-sync 会接」。
 
 插件往 **stdout** 写 JSON 行（每行一个，UTF-8）：
 
