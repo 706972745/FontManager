@@ -7,7 +7,7 @@ import { ipc, type UpdateCheck } from "../lib/ipc";
 import { APP_VERSION } from "../lib/version";
 
 /**
- * 设置 → 更新（1.9.0）。
+ * 设置 → 更新（1.8.1）。
  *
  * 用户要求「加入检查更新，检查是否有新版本可用」。三条硬约定：
  *

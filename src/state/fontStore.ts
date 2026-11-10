@@ -1811,7 +1811,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
       watchTimer = setTimeout(() => {
         // 扫描期间的**和导入/导出期间的**文件事件一律忽略：这些操作自己就会把
         // 磁盘读/写一遍，期间的变化已经包含在它们的结果里；watcher 再触发一次
-        // 全量 rescan 只会白扫十几秒，还容易假报「发现 N 个新字体」（1.9.0 P6）。
+        // 全量 rescan 只会白扫十几秒，还容易假报「发现 N 个新字体」（1.8.1 P6）。
         // 后端另有 400ms 事件合并，两层一起用。
         if (get().phase === "scanning") return;
         if (get().packProgress) return;
@@ -4747,7 +4747,7 @@ export function familiesFor(
 }
 
 /**
- * 「字族名 → 全小写名」的检索索引（1.9.0 审查项 P4）。
+ * 「字族名 → 全小写名」的检索索引（1.8.1 审查项 P4）。
  *
  * 搜索建议原来每敲一个键就对 4211 个族名做 `name.toLowerCase()` —— 约 4000 次
  * 字符串分配/键，而字体库在一次扫描之内根本不会变。这里跟着 `familiesFor` 的

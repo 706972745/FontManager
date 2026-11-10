@@ -34,7 +34,7 @@ mod sound;
 #[cfg(target_os = "windows")]
 mod warm;
 mod store;
-// 1.9.0：检查更新（只读版本号，不下载、不执行远端内容）
+// 1.8.1：检查更新（只读版本号，不下载、不执行远端内容）
 mod update;
 mod watcher;
 mod window_dock;
@@ -2297,7 +2297,7 @@ fn api_reset_token() -> Result<String, String> {
     Ok(fresh)
 }
 
-/// 检查更新（1.9.0）。只读版本号与发布说明，**不下载、不解压、不执行**任何远端内容。
+/// 检查更新（1.8.1）。只读版本号与发布说明，**不下载、不解压、不执行**任何远端内容。
 ///
 /// `force = true` 是用户在设置里手点的；`false` 是启动时的静默检查。
 /// 两层节流都别省：后端 10 分钟缓存 + 前端按 `updateLastCheck` 做 24 小时判断，

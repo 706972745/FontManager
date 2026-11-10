@@ -664,7 +664,7 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   /** 从 GitHub release 下载运行时补全；进度监听 `runtime:progress` 事件 */
   runtimeDownload: (kind: string) => invoke<void>("runtime_download", { kind }),
 
-  // ── 1.9.0：检查更新 ──
+  // ── 1.8.1：检查更新 ──
   /**
    * 问 GitHub 要最新版本号。
    * `force = false`（启动时的静默检查）命中后端 10 分钟缓存；

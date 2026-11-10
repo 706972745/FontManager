@@ -291,7 +291,7 @@ export function SettingsOverlay() {
     try {
       const next = await ipc.pluginsList();
       setPlugins(next);
-      // 搜索建议共用同一份清单（1.9.0）：设置里刚装的插件，搜索框立刻能搜到
+      // 搜索建议共用同一份清单（1.8.1）：设置里刚装的插件，搜索框立刻能搜到
       usePluginStore.setState({ plugins: next, loaded: true });
       // 右键菜单里那份缓存也要一起刷，不然新装的插件在菜单里看不见
       await refreshPluginMenus();
@@ -341,7 +341,7 @@ export function SettingsOverlay() {
   };
 
   /**
-   * 插件行右键菜单（1.3.7，1.9.0 起与搜索结果共用 `lib/pluginMenu.ts` 的同一套）。
+   * 插件行右键菜单（1.3.7，1.8.1 起与搜索结果共用 `lib/pluginMenu.ts` 的同一套）。
    *
    * 只有插件在 plugin.json 的 `menus` 里写了 `"on": "plugin"` 的项才出现在这里 ——
    * 那是「不用选字体也能跑」的功能（打开报告目录、清缓存、重新扫描…），
@@ -1093,7 +1093,7 @@ export function SettingsOverlay() {
                 {t("settings.plugins")}
                 <SettingHint text={t("settings.pluginsSub")} />
               </div>
-              {/* 权限如实告知（1.9.0 审查 S7）：插件是同权限子进程，不是网页小挂件。
+              {/* 权限如实告知（1.8.1 审查 S7）：插件是同权限子进程，不是网页小挂件。
                   用户有权在装上第一个插件之前就知道这一点。 */}
               <div className="settings-sub settings-plugins-trust">
                 <Info size={12} strokeWidth={1.5} aria-hidden />

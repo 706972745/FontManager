@@ -218,7 +218,7 @@ fn state_path() -> PathBuf {
         .join("state.json")
 }
 
-/// 偏好的独立小文件（1.9.0 审查项 P3）。
+/// 偏好的独立小文件（1.8.1 审查项 P3）。
 ///
 /// 为什么拆：`state.json` 实测 1.77 MB，其中 1.58 MB 是 `added` / `linked` / `notes`
 /// 这些**字体库数据**，偏好本身只有约 20 KB。改一个「界面音效」开关也要整份重写，
@@ -311,7 +311,7 @@ pub fn load() -> AppState {
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
-    // 偏好以 prefs.json 为准（1.9.0 拆分）。老用户没有这个文件 → 用 state.json 里的
+    // 偏好以 prefs.json 为准（1.8.1 拆分）。老用户没有这个文件 → 用 state.json 里的
     // 那份并当场补写一份，之后纯偏好改动就再也不用重写 1.7 MB 的主文件了。
     let pf = prefs_path();
     match fs::read(&pf)
