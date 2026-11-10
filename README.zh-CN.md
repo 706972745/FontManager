@@ -28,7 +28,7 @@
 **[📝 更新日志](CHANGELOG.md)** ·
 **[🐛 问题反馈](../../issues)** ·
 **[🔌 插件开发](docs/PLUGINS.md)** ·
-**[🎨 界面规范](docs/UI设计交付规格书.md)** ·
+**[🎨 界面规范](docs/UI设计交付规格书.md)** ([HTML](docs/UI设计交付规格书.html)) ·
 **[🧩 图标规范](docs/图标规范.md)** ·
 **[🤖 MCP 接入](mcp/README.md)**
 

@@ -1,0 +1,206 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FontManager · UI 设计交付规格书</title>
+<style>
+@page { size: A4; margin: 22mm 18mm; }
+* { box-sizing: border-box; }
+body { margin:0 auto; max-width: 940px; padding: 0 32px 80px;
+  font-family: "Noto Sans SC","Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  font-size: 14px; line-height: 1.85; color:#262625; background:#fff; }
+.cover { padding: 90px 0 60px; border-bottom: 3px solid #1B4FE0; margin-bottom: 40px; }
+.cover .kicker { font: 600 12px/1.6 "Geist Mono",Consolas,monospace; letter-spacing:.14em;
+  color:#1B4FE0; text-transform:uppercase; margin-bottom:26px; }
+.cover h1 { font-size: 40px; line-height:1.3; margin:0 0 22px; letter-spacing:-.02em; color:#141412; }
+.cover .sub { font-size:16px; color:#6B6B66; margin-bottom:38px; }
+.cover .meta { display:flex; flex-wrap:wrap; gap:10px 28px; font-size:12px; color:#6B6B66;
+  border-top:1px solid #E2E2DD; padding-top:18px; }
+.cover .meta b { color:#141412; font-weight:600; }
+.doc-toc { background:#FAFAF8; border:1px solid #E2E2DD; border-left:3px solid #1B4FE0;
+  padding:22px 28px; margin:0 0 48px; }
+.doc-toc h2 { font-size:15px; margin:0 0 12px; color:#1B4FE0; border:0; padding:0; }
+.doc-toc ul { list-style:none; margin:0; padding:0; columns:2; column-gap:36px; }
+.doc-toc li { font-size:12.5px; line-height:1.9; break-inside:avoid; }
+.doc-toc .toc-l3 { padding-left:16px; color:#6B6B66; }
+.doc-toc .toc-l4 { padding-left:32px; color:#9B9B95; }
+.doc-toc a { color:#262625; text-decoration:none; border-bottom:1px solid #E2E2DD; }
+h2 { font-size:24px; line-height:1.4; margin:56px 0 18px; padding-bottom:10px;
+  border-bottom:1px solid #E2E2DD; color:#141412; letter-spacing:-.01em; }
+h3 { font-size:17px; margin:34px 0 12px; color:#141412; }
+h4 { font-size:14px; margin:24px 0 8px; color:#1B4FE0; }
+p { margin:0 0 13px; }
+strong { font-weight:600; color:#141412; }
+em { font-style:italic; }
+code { font-family:"Geist Mono","Cascadia Mono",Consolas,monospace; font-size:.88em;
+  background:#F1F1ED; padding:2px 5px; border-radius:2px; color:#1B4FE0; }
+pre { background:#1B1B19; color:#F2F2EF; padding:18px 20px; overflow-x:auto;
+  border-radius:4px; font-size:12px; line-height:1.7; margin:16px 0 22px; }
+pre code { background:none; color:inherit; padding:0; font-size:inherit; }
+table { width:100%; border-collapse:collapse; margin:14px 0 24px; font-size:12.5px; }
+th { background:#F1F1ED; text-align:left; font-weight:600; color:#141412; }
+th, td { border:1px solid #E2E2DD; padding:8px 11px; vertical-align:top; line-height:1.65; }
+tr:nth-child(even) td { background:#FCFCFA; }
+ul, ol { margin:0 0 16px; padding-left:24px; }
+li { margin:4px 0; }
+blockquote { margin:16px 0; padding:12px 18px; border-left:3px solid #1B4FE0;
+  background:#FAFAF8; color:#6B6B66; font-size:13px; }
+figure { margin:22px 0 28px; text-align:center; break-inside:avoid; }
+figure img { max-width:100%; max-height:760px; height:auto; border:1px solid #E2E2DD; }
+figcaption { font-size:11.5px; color:#9B9B95; margin-top:8px; }
+hr { border:0; border-top:1px solid #E2E2DD; margin:36px 0; }
+a { color:#1B4FE0; }
+.footer { margin-top:60px; padding-top:16px; border-top:1px solid #E2E2DD;
+  font:11px/1.8 "Geist Mono",Consolas,monospace; color:#9B9B95; }
+</style></head><body>
+<section class="cover">
+  <div class="kicker">DESIGN HANDOFF SPECIFICATION / SOURCE-CALIBRATED</div>
+  <h1>FontManager<br>UI 设计交付规格书</h1>
+  <div class="sub">字体管理软件 · 纸墨两色 + 单一蓝强调 · 本文写的是软件里「实际生效」的规格，不是提案</div>
+  <div class="meta">
+    <span>当前版本 <b>1.7.7</b></span>
+    <span>覆盖 <b>速览 / 主界面 / 设置 / 菜单 / Toast / 在线库 / 插件分区 / 插件面板</b></span>
+    <span>语言 <b>9 种</b></span>
+    <span>来源 <b>docs/UI设计交付规格书.md</b></span>
+  </div>
+</section>
+
+<nav class="doc-toc"><h2>目录</h2><ul>
+<li class=""><a href="#0-速查">0. 速查</a></li>
+<li class=""><a href="#1-设计令牌">1. 设计令牌</a></li>
+<li class="toc-l3"><a href="#1-1-颜色-速览专用---qb">1.1 颜色（速览专用，`--qb-*`）</a></li>
+<li class="toc-l3"><a href="#1-2-字阶与字体">1.2 字阶与字体</a></li>
+<li class="toc-l3"><a href="#1-3-字号档位">1.3 字号档位</a></li>
+<li class=""><a href="#2-速览界面-quickbar">2. 速览界面（QuickBar）</a></li>
+<li class="toc-l3"><a href="#2-1-窗口">2.1 窗口</a></li>
+<li class="toc-l3"><a href="#2-2-顶栏三段-共-120px">2.2 顶栏三段（共 120px）</a></li>
+<li class="toc-l3"><a href="#2-3-列表行">2.3 列表行</a></li>
+<li class="toc-l4"><a href="#2-3-1-行首定位锚点-三态">2.3.1 行首定位锚点（三态）</a></li>
+<li class="toc-l4"><a href="#2-3-2-行状态">2.3.2 行状态</a></li>
+<li class="toc-l3"><a href="#2-4-就地展开字重-n">2.4 就地展开字重（`› N`）</a></li>
+<li class="toc-l3"><a href="#2-5-折叠态-拖回屏幕顶边">2.5 折叠态（拖回屏幕顶边）</a></li>
+<li class="toc-l4"><a href="#2-5-1-提示行-hint-阶段">2.5.1 提示行（`hint` 阶段）</a></li>
+<li class="toc-l3"><a href="#2-6-响应式">2.6 响应式</a></li>
+<li class="toc-l3"><a href="#2-7-交互地图-速览">2.7 交互地图（速览）</a></li>
+<li class="toc-l3"><a href="#2-8-可访问性">2.8 可访问性</a></li>
+<li class=""><a href="#3-完整界面-主窗口-r4-r5-已落地-数值待补全">3. 完整界面（主窗口 · R4/R5 已落地，数值待补全）</a></li>
+<li class="toc-l3"><a href="#3-11-在线字体库-小卡-已落地-1-7-2">3.11 在线字体库 · 小卡（已落地 1.7.2）</a></li>
+<li class="toc-l3"><a href="#3-12-设置弹窗-插件分区-已落地-1-7-4">3.12 设置弹窗 · 插件分区（已落地 1.7.4）</a></li>
+<li class="toc-l3"><a href="#3-13-插件设置面板-独立窗口-已落地-1-7-6-font-sync-0-8-16">3.13 插件设置面板 · 独立窗口（已落地 1.7.6 / font-sync 0.8.16）</a></li>
+<li class="toc-l3"><a href="#3-14-尺度收口-r8-已落地-1-7-7">3.14 尺度收口（R8，已落地 1.7.7）</a></li>
+<li class=""><a href="#4-与早期设计稿的偏离-已实现-本文档为准">4. 与早期设计稿的偏离（已实现，本文档为准）</a></li>
+<li class=""><a href="#5-版本记录-仅-ui-相关">5. 版本记录（仅 UI 相关）</a></li>
+<li class=""><a href="#6-维护约定">6. 维护约定</a></li>
+<li class=""><a href="#7-应用图标-不在界面内-但同属视觉交付">7. 应用图标（不在界面内，但同属视觉交付）</a></li>
+<li class=""><a href="#8-1-7-5-收口-相对上文的增量">8. 1.7.5 收口（相对上文的增量）</a></li>
+</ul></nav>
+
+<blockquote><strong>这份文档写的是软件里「实际生效」的规格，不是设计提案。</strong> 所有数值逐条取自源码（<code>src/design/tokens.css</code>、<code>src/app.css</code>、<code>src/state/fontStore.ts</code>）， 改了代码请同步改这里 —— 否则它会变成一份骗人的文档。<br>- 适用版本：<strong>1.7.7</strong> - 落地进度：速览与主界面<strong>均已落地</strong>；第 3 节 3.1–3.10 的逐项数值<strong>待补全</strong> （已补全的小节：3.11 在线库小卡、3.12 插件分区、3.13 插件面板、3.14 尺度收口） - 界面语言：9 种（<code>src/locales/*.json</code>），本文所有文案键都指这些文件里的 key</blockquote>
+<hr>
+<h2 id="0-速查">0. 速查</h2>
+<table><thead><tr><th>项目</th><th>值</th></tr></thead><tbody><tr><td>速览窗口默认尺寸</td><td><strong>420 × 992</strong> 逻辑像素（1.6.3 起；此前 400）</td></tr><tr><td>速览窗口圆角</td><td>8 物理像素 ÷ DPR（<code>--qb-radius</code>，由运行期计算，CSS 只消费）</td></tr><tr><td>速览窗口描边</td><td>1px <code>--qb-hair</code></td></tr><tr><td>行高</td><td><strong>112px</strong> 基准（32px 字号档恰好撑满），字号越大行越高</td></tr><tr><td>字阶</td><td><strong>9 / 11 / 13 / 32</strong> 四级</td></tr><tr><td>左右内边距</td><td><strong>24px</strong>（<code>--qb-pad</code>），顶栏、行、折叠提示带共用同一条竖线</td></tr><tr><td>折叠态高度</td><td>提示带 34px / 细线 12px（可见线 5px）</td></tr><tr><td>圆角档位（全局）</td><td><strong>0 / 4 / 8 / 12</strong> + 语义值（<code>999</code> 胶囊 / <code>2</code> 轨道 / <code>1</code> 锚点圆头 / <code>3</code> 抓手）</td></tr><tr><td>控件高度档（全局）</td><td><strong>24</strong> 行内图标 / <strong>28</strong> 标准按钮 / <strong>32</strong> 主按钮与输入框</td></tr></tbody></table>
+<hr>
+<h2 id="1-设计令牌">1. 设计令牌</h2>
+<h3 id="1-1-颜色-速览专用---qb">1.1 颜色（速览专用，<code>--qb-*</code>）</h3>
+<p>速览不直接用主界面的 <code>--canvas</code> / <code>--text-*</code>：它是「纸与墨」的极简单列，靠 1px 发丝线分栏， 底色要比完整界面更中性，层级只靠字号与字重。</p>
+<table><thead><tr><th>令牌</th><th>深色（默认）</th><th>浅色</th><th>用途</th></tr></thead><tbody><tr><td><code>--qb-bg</code></td><td><code>#111110</code></td><td><code>#FAFAF8</code></td><td>窗口底色</td></tr><tr><td><code>--qb-fg</code></td><td><code>#F2F2EF</code></td><td><code>#141412</code></td><td>主文字：族名、预览样张、空态标题</td></tr><tr><td><code>--qb-fg-2</code></td><td><code>#9A9A94</code></td><td><code>#6B6B66</code></td><td>次文字：许可、字体数、元信息、键帽、操作引导</td></tr><tr><td><code>--qb-fg-3</code></td><td><code>#666660</code></td><td><code>#9B9B95</code></td><td>弱文字：版权原文、占位符、尺寸标注</td></tr><tr><td><code>--qb-hair</code></td><td><code>#2A2A27</code></td><td><code>#E2E2DD</code></td><td>发丝线、键帽描边</td></tr><tr><td><code>--qb-hair-strong</code></td><td><code>#3A3A36</code></td><td><code>#D2D2CC</code></td><td>只给键帽描边（1x 屏可辨，约 2:1）</td></tr><tr><td><code>--qb-hover</code></td><td><code>#1C1C1A</code></td><td><code>#F1F1ED</code></td><td>悬停底色</td></tr><tr><td><code>--qb-anchor</code></td><td><code>#3A3A36</code></td><td><code>#D2D2CC</code></td><td>行首锚点·静止</td></tr><tr><td><code>--qb-anchor-hover</code></td><td><code>#9A9A94</code></td><td><code>#9B9B95</code></td><td>行首锚点·悬停</td></tr><tr><td><code>--qb-accent</code></td><td><code>#5B8CFF</code></td><td><code>#1B4FE0</code></td><td>唯一强调色：锚点选中、焦点、链接</td></tr></tbody></table>
+<p><strong>用色原则</strong>：整屏只有一个强调色（<code>--qb-accent</code>），且只出现在「当前行」和可点链接上； 其余一切靠中性灰阶 + 字号字重分层。</p>
+<h3 id="1-2-字阶与字体">1.2 字阶与字体</h3>
+<table><thead><tr><th>层级</th><th>字号 / 字重</th><th>用在哪</th></tr></thead><tbody><tr><td>主样张</td><td>8–96px（八档，默认 <strong>32</strong>）</td><td>行内预览文字，唯一主角</td></tr><tr><td>标签</td><td>11px / 600</td><td>族名</td></tr><tr><td>状态</td><td>11px / 500</td><td>「已启用」标签、折叠态「速览已收起」</td></tr><tr><td>说明</td><td>13px</td><td>搜索输入、预览文字输入、启用数、空态</td></tr><tr><td>微字</td><td>9px</td><td>版权、许可、元信息、键帽、折叠态操作引导</td></tr></tbody></table>
+<ul><li>UI 字体：<code>--font-ui</code>（Inter → 系统中文字体）</li><li>等宽字体：<code>--font-mono</code>（JetBrains Mono）—— 只用于<strong>数字</strong>（启用数、字号读数、统计、键帽）</li><li>数字一律 <code>font-variant-numeric: tabular-nums</code>：166 → 165 时右侧控件不横向抖动</li></ul>
+<h3 id="1-3-字号档位">1.3 字号档位</h3>
+<pre><code>SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24）</code></pre>
+<ul><li>卡片 / 列表 / 速览<strong>共用同一个</strong> <code>sizeIndex</code>：拨动任意一处，另一处同步</li><li>「样张」视图另有 <code>specimenSizeIndex</code>，默认 32，可下探到 8</li><li>速览内 <code>Ctrl + 滚轮</code> 调档，不触发 WebView2 页面缩放</li></ul>
+<hr>
+<h2 id="2-速览界面-quickbar">2. 速览界面（QuickBar）</h2>
+<p>按 <code>Alt</code> + &#96;（热键可在设置里改）切换；拖回屏幕顶边则折叠成提示带 → 细线。</p>
+<h3 id="2-1-窗口">2.1 窗口</h3>
+<table><thead><tr><th>项</th><th>规格</th></tr></thead><tbody><tr><td>默认尺寸</td><td>420 × 992（逻辑像素），高度按当前显示器可用高度收敛</td></tr><tr><td>最小尺寸</td><td>由右键菜单尺寸推导：菜单宽 × 1.5，并补 16px 外框余量</td></tr><tr><td>圆角</td><td><code>--qb-radius</code> = 8 物理像素 ÷ DPR；<strong>四个阶段全程常开</strong>，不收角</td></tr><tr><td>描边</td><td>1px <code>--qb-hair</code></td></tr><tr><td>阴影</td><td><strong>无</strong></td></tr><tr><td>底色</td><td><code>--qb-bg</code>；收成细线（<code>bar</code>）时底色与描边一起转透明</td></tr></tbody></table>
+<blockquote>圆角为什么必须常开：展开瞬间 <code>docked</code> 变 false，若只在收起态写圆角，系统圆角要等 IPC 往返才回来，中间几帧窗口是直角 —— 就是「展开时四角闪一下」。</blockquote>
+<h3 id="2-2-顶栏三段-共-120px">2.2 顶栏三段（共 120px）</h3>
+<table><thead><tr><th>段</th><th>高</th><th>内容</th><th>底部</th></tr></thead><tbody><tr><td>第一段</td><td>56px</td><td>「已启用」标签（11px，固定 44px 宽）+ 启用数（13px 等宽）+ 搜索（下划线式）+ 四个窗口动作</td><td>1px 发丝线</td></tr><tr><td>第二段</td><td>40px</td><td>预览文字输入（13px）+ 小 A + 字号滑条 + 大 A + 字号读数 + 筛选</td><td>1px 发丝线</td></tr><tr><td>第三段（元信息）</td><td>24px</td><td>左：<code>已显示 / 总数 · 排序名</code>；右：<code>8–96 PX</code>；9px 等宽，字距 0.08em</td><td>1px 发丝线</td></tr></tbody></table>
+<ul><li>搜索框与预览输入都是<strong>下划线式</strong>（无框、无底色、无圆角）：<code>border-bottom: 1px --qb-hair</code>，</li></ul>
+<p>聚焦时转为 <code>--qb-accent</code> - 搜索框可一直压到 48px：窗口很窄时先让搜索缩，不许把右侧四个窗口动作挤出去 - 窗口动作顺序：图钉（自动收起）/ 完整界面 / 最小化 / 关闭；全部沿用原有图标资源，未重绘</p>
+<h3 id="2-3-列表行">2.3 列表行</h3>
+<p><strong>网格</strong>（<code>display: grid</code>，无 gap，列宽如下）：</p>
+<pre><code>32px | 44px | minmax(0,1fr) | 62px | 18px | 28px
+ 锚点   Aa      族名/预览/版权   许可    ★      › N</code></pre>
+<ul><li>行内边距：<code>14px 24px 10px</code>；基准行高 <strong>112px</strong></li><li>420 宽时浏览器实测列宽：<code>32 / 44 / 166 / 62 / 18 / 28</code></li><li>中间列是唯一的弹性列：窗口变宽只有它伸缩，右侧状态列永远在同一条竖线上</li><li>行底发丝线：左右各内缩 24px，与顶栏三段的分隔线对齐</li><li>屏幕上不可见的行跳过布局与绘制（<code>content-visibility: auto</code>），千级列表滚动才不卡</li></ul>
+<p><strong>各列规格</strong></p>
+<table><thead><tr><th>列</th><th>元素</th><th>规格</th></tr></thead><tbody><tr><td>1</td><td>定位锚点</td><td>见 2.3.1</td></tr><tr><td>2</td><td><code>Aa</code> 字形列</td><td>13px / 400 / <code>--qb-fg-2</code>，不跟随字体本身</td></tr><tr><td>3</td><td>族名</td><td>11px / 600 / <code>--qb-fg</code>，单行省略；<strong>用界面字体，不跟随字体本身</strong></td></tr><tr><td>3</td><td>预览样张</td><td>当前字号档（默认 32px）、行高 1.15、<code>min-height: 46px</code>；右缘 86% 处渐隐</td></tr><tr><td>3</td><td>归属芯片</td><td>标签 / 快照 / 分组，复用主界面 <code>member-chip</code>，最大宽 150px</td></tr><tr><td>3</td><td>版权原文</td><td>9px / <code>--qb-fg-3</code>，单行省略，完整内容走悬停提示</td></tr><tr><td>4</td><td>许可</td><td>9px / <code>--qb-fg-2</code>（不是三级灰：这是要读的状态），过期时加 <code>lic-expired</code></td></tr><tr><td>5</td><td>收藏 ★</td><td>24×24 热区（图标 12px），未收藏为线态 <code>--qb-fg-3</code>，已收藏为填充 + 评级数字</td></tr><tr><td>6</td><td><code>› N</code></td><td>11px，右对齐到距右边缘 24px；<code>N</code> 是可用字重数，窄域显示 <code>1/4</code></td></tr></tbody></table>
+<h4 id="2-3-1-行首定位锚点-三态">2.3.1 行首定位锚点（三态）</h4>
+<table><thead><tr><th>状态</th><th>形态</th><th>颜色</th></tr></thead><tbody><tr><td>静止</td><td>6px 圆点（行首 +24，顶端 17px）</td><td><code>--qb-anchor</code></td></tr><tr><td>悬停</td><td>2 × 80px 竖线</td><td><code>--qb-anchor-hover</code></td></tr><tr><td>点中 / 键盘焦点</td><td>2 × 96px 竖线</td><td><code>--qb-accent</code></td></tr></tbody></table>
+<ul><li>三态共用同一生长起点（x=26，行首 +16），靠 <code>scaleY</code> 生长，走合成器、不重排</li><li>长度与颜色<strong>双重编码</strong>：色觉障碍下靠长度也能区分</li><li><code>prefers-reduced-motion: reduce</code> 或设置里「减弱动态效果」时直接切终态</li></ul>
+<h4 id="2-3-2-行状态">2.3.2 行状态</h4>
+<table><thead><tr><th>状态</th><th>表现</th></tr></thead><tbody><tr><td>静止</td><td>0 卡片、0 边框、0 阴影，只有行底发丝线</td></tr><tr><td>悬停</td><td>锚点长成灰线 + 整行 2% 墨色底（<code>--qb-hover</code>）</td></tr><tr><td>点中 / 焦点</td><td>锚点转为 96px 蓝线；<strong>不叠底色、不加蓝框、不加左侧标条</strong></td></tr><tr><td>按下</td><td>底色再加一档（5% 墨），整行不位移</td></tr><tr><td>复制成功</td><td>族名后就地出现 <code>· 已复制</code>，1.5s 淡出（同时保留原 toast）</td></tr></tbody></table>
+<blockquote>速览<strong>不显示</strong>启用/停用开关：这里只列已启用字重，放个停用等于误触陷阱。 该开关属于完整界面的卡片/列表（见第 3 节）。</blockquote>
+<h3 id="2-4-就地展开字重-n">2.4 就地展开字重（<code>› N</code>）</h3>
+<ul><li>字重列表从<strong>内容列（第三列）</strong>起，铺到右边界，位于行网格的第二行</li><li>与完整界面卡片里的字重行是同一个组件、同一套样式（<code>.face-line*</code>）</li><li>字重名 11px，行高 1.3，单行省略；行尾依次是：归属芯片 → 预览按钮 → 启用开关（睁眼/闭眼）</li><li>窄档（≤400px）时网格变 5 列，字重列表改为从<strong>第二列</strong>起 —— 它与 Aa 列同宽，视觉上仍对齐内容起点</li></ul>
+<h3 id="2-5-折叠态-拖回屏幕顶边">2.5 折叠态（拖回屏幕顶边）</h3>
+<p>三阶段，全部由 <code>src/lib/useQuickbarDock.ts</code> 驱动，CSS 只负责表现：</p>
+<table><thead><tr><th>阶段</th><th>窗口高</th><th>可见内容</th><th>进入方式</th></tr></thead><tbody><tr><td><code>hint</code></td><td><strong>34px</strong></td><td>抓手条 12px + 提示行 20px + 上下描边 2px</td><td>拖到屏幕顶边</td></tr><tr><td><code>retract</code></td><td>过渡</td><td>提示行上滑出屏、底色转透明</td><td><code>hint</code> 停留 <strong>1000ms</strong> 后</td></tr><tr><td><code>bar</code></td><td><strong>12px</strong></td><td>顶部 <strong>5px</strong> 实心横线，其余透明（给指针当靶子）</td><td><code>retract</code> 结束</td></tr></tbody></table>
+<ul><li>顶边感应：<strong>3px</strong>（前端常量与原生 sensor 必须一起改）</li><li>抓手线：静止 46 × 1px，收起后摊成 100% × 5px，颜色 <code>rgba(138,138,143,.62→.85)</code></li></ul>
+<p>—— 用中性灰而非主题墨色，因为它浮在桌面上，跟随主题会隐形</p>
+<h4 id="2-5-1-提示行-hint-阶段">2.5.1 提示行（<code>hint</code> 阶段）</h4>
+<table><thead><tr><th>元素</th><th>规格</th></tr></thead><tbody><tr><td>布局</td><td>两端对齐，左右各 24px</td></tr><tr><td>状态「速览已收起」</td><td>11px / 500 / <code>--qb-fg</code>，起点 x=24</td></tr><tr><td>操作「靠近或按 <code>Alt</code> + &#96; 展开」</td><td>9px / <code>--qb-fg-2</code>，右缘对齐 x=474（498 宽时）</td></tr><tr><td>键帽</td><td><code>Alt</code> 22×16、&#96; 18×16；1px <strong><code>--qb-hair-strong</code></strong> 描边（浅 <code>#D2D2CC</code> / 深 <code>#3A3A36</code>）、3px 圆角、9px 等宽</td></tr><tr><td>「+」</td><td>普通文本，不做成键帽</td></tr><tr><td>文案</td><td><code>quickbar.collapsedHint</code>，<code>{hotkey}</code> 由设置里的快捷键决定，<strong>不写死</strong></td></tr></tbody></table>
+<ul><li>文案按各语言自带的分隔符（<code>·</code> 或 <code>—</code>）在渲染时拆成两段，分隔符本身不显示；</li></ul>
+<p>9 个语言包共用一套逻辑，长文案只收右端并省略，左端状态永远完整 - 键帽用 <code>inline-block</code> + baseline 对齐（<code>inline-flex</code> 会把盒内文字的基线换掉，整体低 3px）</p>
+<h3 id="2-6-响应式">2.6 响应式</h3>
+<table><thead><tr><th>窗口宽</th><th>表现</th></tr></thead><tbody><tr><td>> 400px</td><td>6 列全显示（含 <code>Aa</code> 字形列）</td></tr><tr><td>≤ 400px</td><td>5 列：<code>Aa</code> 列收起，内容起点从 100 左移到 56，字重列表同步改为从第 2 列起</td></tr><tr><td>默认 420px</td><td>落在「6 列」一侧 —— <strong>默认一定看得到 <code>Aa</code> 列</strong></td></tr></tbody></table>
+<blockquote>断点 400 比默认宽度 420 低一档：400 正好压在断点上时（<code>max-width</code> 含等号）， 一打开速览就是窄档，等于默认就看不到 <code>Aa</code>。</blockquote>
+<h3 id="2-7-交互地图-速览">2.7 交互地图（速览）</h3>
+<table><thead><tr><th>操作</th><th>结果</th></tr></thead><tbody><tr><td>点族名 / <code>Enter</code> / <code>Space</code></td><td>复制族名，就地提示「已复制」</td></tr><tr><td><code>› N</code></td><td>就地展开 / 收起字重列表</td></tr><tr><td>悬停字重行</td><td>上方预览临时改用该字重</td></tr><tr><td>★</td><td>收藏；再次点击弹出评分（1–5）</td></tr><tr><td>右键</td><td>上下文菜单（复制 / 收藏 / 标签 / 快照 / 停用 / 定位文件…）</td></tr><tr><td><code>Tab</code></td><td>在「已启用 / 全部」之间切范围</td></tr><tr><td><code>Esc</code></td><td>有输入先清空，再按一次退出速览</td></tr><tr><td><code>Ctrl + 滚轮</code></td><td>调预览字号档</td></tr><tr><td>拖窗口 / 拖回顶边</td><td>移动 / 折叠</td></tr><tr><td>热键</td><td>展开 ↔ 折叠</td></tr></tbody></table>
+<h3 id="2-8-可访问性">2.8 可访问性</h3>
+<ul><li>行是 <code>role="button"</code> + <code>tabIndex=0</code>，<code>Enter</code> / <code>Space</code> 可复制；子控件负责自己的键盘事件</li><li>折叠提示行同样是 <code>role="button"</code>：键盘用户必须能把它叫出来</li><li>焦点态用行首锚点（96px 蓝线）表达，不依赖底色</li><li>许可等<strong>关键状态</strong>用次文字色（≥ 4.5:1），弱文字只给版权原文、占位符这类非关键内容</li><li>所有过渡在 <code>prefers-reduced-motion</code> 与「减弱动态效果」下短路</li></ul>
+<hr>
+<h2 id="3-完整界面-主窗口-r4-r5-已落地-数值待补全">3. 完整界面（主窗口 · R4/R5 已落地，数值待补全）</h2>
+<blockquote>主窗口已按 R4/R5 重做过一轮（1.7.0–1.7.7），纸墨两色底、单一蓝强调、去玻璃模糊、 行首三态锚点、三视图都已落地。<strong>但 3.1–3.10 的逐项数值表还没写进本文</strong>， 下面留的是骨架清单；补数值时请以源码为准，逐条回写。</blockquote>
+<ul><li>3.1 窗口与标题栏</li><li>3.2 顶栏（搜索 / 视图切换 / 排序 / 筛选 / 窗口动作）</li><li>3.3 卡片视图（<code>grid</code>）—— <strong>悬停时显示停用开关</strong>（速览不支持，这里必须有）</li><li>3.4 列表视图（<code>list</code>）</li><li>3.5 样张视图（<code>specimen</code>）</li><li>3.6 右侧详情面板（字形样张 / 字重 / 版权 / 许可 / 标签）</li><li>3.7 设置面板</li><li>3.8 收藏 / 快照 / 分组</li><li>3.9 命令面板</li><li>3.10 空态 / 加载 / 错误 / 引导</li><li>3.11 在线视图 / 插件面板</li></ul>
+<hr>
+<h3 id="3-11-在线字体库-小卡-已落地-1-7-2">3.11 在线字体库 · 小卡（已落地 1.7.2）</h3>
+<p>在线视图第二行为四列小卡（<code>src/components/OnlineView.tsx</code> 的 <code>OnlineCard</code>， 样式在 <code>src/app.css</code> 第三批覆盖段的 <code>.online-card</code> 一节）。它与主列表卡片<strong>共用</strong> <code>.family-card</code> 类， 但几何完全独立，下表是从代码里取的最终值：</p>
+<table><thead><tr><th>元素</th><th>规格</th></tr></thead><tbody><tr><td>卡片</td><td>304 × 96（<code>min-height: 96px</code>）；<code>1px solid var(--ui-line)</code>；<strong>圆角 8px</strong>；透明底、无阴影</td></tr><tr><td>内距</td><td><code>padding: 12px 14px</code></td></tr><tr><td>行首锚点</td><td><code>::before</code> 6px 圆点（<code>--ui-dot</code>），<code>left: 14px</code> / <code>top: 17px</code>；悬停长成 <code>2 × 64px</code> 竖线（<code>--ui-line-hover</code>），<code>--t-quick</code> 过渡</td></tr><tr><td>族名</td><td>12px / 500，<code>margin-left: 22px</code> → 距卡片左缘 <strong>37</strong></td></tr><tr><td>元信息</td><td>9px 等宽、<code>--text-tertiary</code>，<code>margin-left: 22px</code> → 与族名<strong>同左缘 37</strong></td></tr><tr><td><code>VAR</code></td><td>34 × 16 蓝底白字、8px 等宽、0 圆角</td></tr><tr><td><code>已在库</code> / <code>部分在库</code></td><td>1px 描边小标签，文字不靠颜色单独表意</td></tr><tr><td>悬停</td><td>底色 <code>--ui-hover</code> + 边框混 40% 蓝 + <code>--shadow-mass</code> 轻浮起</td></tr><tr><td>分类标签</td><td>76 × 26、0 圆角方片，选中蓝底白字</td></tr><tr><td>网格</td><td><code>repeat(auto-fill, minmax(220px, 1fr))</code>，间距 12px</td></tr></tbody></table>
+<blockquote>与设计稿的差异（0 圆角 / 无锚点）记录在 §4 与本仓库的《UI待定问题清单》A12。</blockquote>
+<hr>
+<h3 id="3-12-设置弹窗-插件分区-已落地-1-7-4">3.12 设置弹窗 · 插件分区（已落地 1.7.4）</h3>
+<p>依据 handoff《FontManager-插件界面UI视觉建议-深色版》(R7·深色定稿)。 实现集中在 <code>src/app.css</code> 的「插件界面 R7」追加段，令牌前缀 <code>--pl-*</code>；删掉整段即可回滚。</p>
+<table><thead><tr><th>元素</th><th>规格</th></tr></thead><tbody><tr><td>分区标题</td><td>13px / 500 / 正体 / 主文字色 + 悬停提示圈（R7 §2）</td></tr><tr><td>清单头</td><td>计数 11px 弱色；右侧按钮组 28 高 / r=4 / 1px 描边 / 10px</td></tr><tr><td>插件行</td><td><code>padding: 13px 14px</code>，行间 1px 发丝线；族名 12/500 → 版本 9px 等宽弱色 → 运行时胶囊（16 高 / 8.5px 等宽 / r=999）→ running 圆点 6px</td></tr><tr><td>缺运行时</td><td>胶囊换警示红：红字 + 红描边 + 红底 10%（<code>#e5484d</code> / <code>#2a1416</code>），副文给出「运行时管理」引导</td></tr><tr><td>行尾动作</td><td>⚙（声明 settings 才有，未运行禁用，透明 0.32）+ 📂，24×24 / r=4</td></tr><tr><td>运行时管理</td><td>组头 11px 弱色 + 重新扫描；行内名称 12 + 版本 9 等宽；下载中显示 3px 圆角进度条，填充 = 强调色</td></tr><tr><td>仓库入口</td><td>1px 描边块 r=4、<code>padding: 13px 14px</code>；标题 11/500 + 悬停副文 + URL 10px 等宽强调色；右侧按钮 28 高</td></tr><tr><td>右键菜单</td><td>容器 r=8 + 1px 描边 + <code>0 6px 18px rgba(0,0,0,.35)</code>（深色）；项 <code>min-height: 32</code> / 11px / r=0；分隔线 1px 发丝线</td></tr><tr><td>Toast</td><td>容器 r=8 + 1px 描边 + 左 2px 竖条；竖条默认强调色、错误态换警示红；标题 11/500 + 副文 10；栈距 14</td></tr><tr><td>深色中性层</td><td>面板 <code>#161619</code> / 浮层 <code>#1e1e22</code> / 控件 <code>#1d1d21</code> / 发丝线 <code>#26262b</code> / 面板描边 <code>#2e2e33</code> / 按钮描边 <code>#3a3a40</code> / 徽标描边 <code>#3c3c42</code>；文字 <code>#e8e8e8</code> / <code>#909095</code> / <code>#5f5f66</code> / <code>#4a4a52</code></td></tr><tr><td>强调色</td><td>走 R7 §1 的<strong>备选口径亮蓝</strong>，实现里直接复用 <code>--ui-accent</code>（#5B8CFF），不引入第二种蓝；切纯灰白只需改 <code>--pl-accent</code> / <code>--pl-knob</code> 两行</td></tr></tbody></table>
+<blockquote>与 R7 的差异：开关本就是 34×19（此前记的 30×16 是旧文案）；Toast 栈距已按 R7 改成 14； 深色遮罩已按 R7 改成 60%；强调色取文档备选亮蓝（<code>--ui-accent</code>）。 圆角 2 → 4 是 R8 收口带来的（见 3.14）。见 §4 与《UI待定问题清单》A13 / B18 / B19。</blockquote>
+<hr>
+<h3 id="3-13-插件设置面板-独立窗口-已落地-1-7-6-font-sync-0-8-16">3.13 插件设置面板 · 独立窗口（已落地 1.7.6 / font-sync 0.8.16）</h3>
+<p>插件自己写的设置页（<code>FontManager-Plugin</code> 仓 <code>font-sync/panel.html</code>）由主程序开一个 独立窗口加载（<code>http://127.0.0.1:<port>/panel.html</code>，见 <code>plugins.rs</code>）。它和主窗口 并排出现在同一块屏幕上，所以<strong>必须共用同一套令牌</strong>：</p>
+<table><thead><tr><th>项</th><th>规格</th></tr></thead><tbody><tr><td>底色</td><td>浅 <code>#fafaf8</code> / 深 <code>#111110</code>（= <code>--qb-bg</code>）</td></tr><tr><td>文字</td><td>主 <code>#141412</code> / <code>#f2f2ef</code>；次 <code>#6b6b66</code> / <code>#9a9a94</code>；弱 <code>#9b9b95</code> / <code>#666660</code></td></tr><tr><td>发丝线</td><td><code>#e2e2dd</code> / <code>#2a2a27</code>；控件描边 <code>#d2d2cc</code> / <code>#3a3a36</code></td></tr><tr><td>强调色</td><td><code>#1b4fe0</code> / <code>#5b8cff</code>（= <code>--qb-accent</code>），只标「当前」与「注意」</td></tr><tr><td>字阶</td><td>13 正文 / 11 段落与次要 / 10 表头与状态 / 9 代码徽标（半像素已并入整档，见 3.14）</td></tr><tr><td>分区</td><td>卡片不是「圆角 + 投影」，是<strong>发丝线分栏</strong>；序号退成等宽小字 + 竖发丝线</td></tr><tr><td>页签</td><td>0 圆角，选中项 <strong>2px 蓝下划线</strong>（与侧栏 2px 蓝竖线同一语言）</td></tr><tr><td>控件</td><td>输入框 / 按钮统一 <strong>32 高、4px 圆角、1px 描边</strong>（R8 的三档口径）；主按钮实心蓝，其余发丝描边</td></tr><tr><td>提示块</td><td>左侧 <strong>2px 竖条</strong>：普通说明不铺底、蓝色=请注意、红色=会出错</td></tr><tr><td>进度</td><td>3px 圆角轨 + 强调色填充（同插件分区里运行时下载那条）</td></tr><tr><td>主题</td><td>跟系统，且支持 <code><html data-theme></code> 强制；主程序打开窗口时按 <code>prefs.themePref</code> 下发</td></tr></tbody></table>
+<blockquote>面板的样式在插件仓里，改它不需要重发主程序；只有「主题下发」这一侧在主程序（1.7.6）。</blockquote>
+<hr>
+<h3 id="3-14-尺度收口-r8-已落地-1-7-7">3.14 尺度收口（R8，已落地 1.7.7）</h3>
+<p>依据 handoff《FontManager · UI 尺度收口与圆角变更清单》R8。实现集中在 <code>src/app.css</code> 末尾的「R8 尺度收口」追加段，删掉整段即可回滚。</p>
+<p><strong>圆角只剩 5 档</strong>（<code>0</code> / <code>4</code> / <code>8</code> / <code>12</code> + 语义值 <code>999</code> <code>2</code> <code>1</code> <code>3</code>）：</p>
+<table><thead><tr><th>档</th><th>用在哪</th></tr></thead><tbody><tr><td><code>0</code></td><td>列表行、卡片、侧栏行、菜单项、徽标（「圆角只属于可点的容器」）</td></tr><tr><td><code>4</code></td><td>控件：按钮、输入框、图标热区、键帽、chip、行内小片</td></tr><tr><td><code>8</code></td><td>浮层：右键菜单、排序菜单、语言菜单、在线库小卡</td></tr><tr><td><code>12</code></td><td>面板：设置 / 命令面板 / 确认弹窗 / 拖放 / 重复项 / 批量标签 / 选择条 / 在线详情与授权块</td></tr><tr><td>语义值（<strong>禁改</strong>）</td><td><code>999</code> 胶囊（25 处）、滑杆与进度轨 <code>2</code>、锚点圆头 <code>1</code>、折叠抓手 <code>3</code>、<code>--qb-radius</code> 窗口链</td></tr></tbody></table>
+<p><strong>字阶：11 处半像素并入整档</strong> —— 菜单搜索 13 / 菜单项 11 / 菜单作用域 11 / 菜单「更多」11 / 详情属性表 11 / Toast 副文 10 / 空态段落 11 / 拖放副文 11 / 插件清单头 11 / 插件行副文 11 / 运行时徽标 9。</p>
+<p><strong>控件高度只有三档</strong>：<code>24</code>（行内图标热区）/ <code>28</code>（标准按钮、插件清单头按钮）/ <code>32</code>（主按钮、输入框、菜单项）。<code>.nav-row</code> 那条 29px 的奇数高度是手误，已归 28。</p>
+<blockquote>三处与 R8 字面不同，理由见《UI 待定问题清单》A14：<code>.nav-row</code> / <code>.nav-pill</code> 保持 <code>0</code> （R4 与 1.7.5 已把它们从圆角收到平底，照 5→4 会把方角倒回去）、 <code>.star-rating-badge</code> 保持 <code>5/6</code>（10–12px 的圆形计数徽标，改 4 会方头）。</blockquote>
+<hr>
+<h2 id="4-与早期设计稿的偏离-已实现-本文档为准">4. 与早期设计稿的偏离（已实现，本文档为准）</h2>
+<p>设计稿是提案，落地时按「实际能不能用」做了几处调整。<strong>本文档这些条目是最终口径。</strong></p>
+<table><thead><tr><th>项</th><th>设计稿</th><th>实际实现</th><th>原因</th></tr></thead><tbody><tr><td>96px 预览档</td><td>固定 46px 高，裁字</td><td>行高随字号增高（96px 档约 120px），全表仍等齐</td><td>裁到 46px 只剩字形中间一条带子，放大就失去意义</td></tr><tr><td>窄档断点</td><td>420px</td><td><strong>400px</strong></td><td>默认宽 420，断点写 420 会把默认宽度也切进窄档</td></tr><tr><td>速览默认宽度</td><td>498 × 1238</td><td><strong>420 × 992</strong></td><td>沿用既有窗口尺寸，只调离窄档边界；高度按屏幕收敛</td></tr><tr><td>行悬停「停用开关显形」</td><td>要求</td><td>速览<strong>不做</strong>，改到完整界面卡片</td><td>速览只列已启用字重，停用是误触陷阱</td></tr><tr><td>折叠细线换色 / 指针转蓝</td><td>建议</td><td><strong>未采纳</strong></td><td>手抓线保持既有中性灰：它浮在桌面上，跟主题或强调色都会破坏辨识</td></tr><tr><td>键帽字体</td><td>Geist Mono</td><td>项目既有等宽（JetBrains Mono）</td><td>不为几枚键帽引入第三套字体</td></tr><tr><td>插件分区开关</td><td>R7：34×19</td><td>代码本就是 34×19（<code>--pill-w/--pill-h</code>）</td><td>之前记的「30×16」是旧文案，实际一直一致</td></tr><tr><td>在线库小卡</td><td>304×96、1px 描边、<strong>0 圆角</strong>、卡内无锚点</td><td><strong>8px 圆角</strong> + 1px 描边 + 行首锚点；族名与小字同为 22 缩进（距左缘 37）</td><td>小卡是网格里的独立卡片而非整行，方角像裁出来的贴片；行首锚点是全软件统一的位置标记，悬停生长反馈也要一致</td></tr></tbody></table>
+<hr>
+<h2 id="5-版本记录-仅-ui-相关">5. 版本记录（仅 UI 相关）</h2>
+<table><thead><tr><th>版本</th><th>内容</th></tr></thead><tbody><tr><td>1.6.0</td><td>速览按规格重排：去卡片容器、112px 六列网格、四级字阶、三态锚点、顶栏三段</td></tr><tr><td>1.6.1</td><td>折叠提示带：两端对齐、状态/操作分层、热键键帽；抓手线与状态机不动</td></tr><tr><td>1.6.2</td><td>默认预览字号 24px → <strong>32px</strong></td></tr><tr><td>1.6.3</td><td>修窄档字重列表被基础规则覆盖（只剩 108px，字重名被截）；默认宽度 400 → <strong>420</strong></td></tr><tr><td>1.7.x</td><td>完整界面按 R4/R5 落地：纸墨两色底、单一蓝强调、去玻璃模糊、行首三态锚点、卡片/列表/样张三视图、设置·命令面板·右键菜单·Toast·空态、关于页</td></tr><tr><td>1.7.2</td><td>在线库小卡：恢复 8px 圆角与行首锚点，族名/元信息同缩进 22 后左缘对齐，悬停补回底色与轻浮起</td></tr><tr><td>1.7.3</td><td>全套应用图标换成「拼贴纸片」终稿（见 <code>docs/图标规范.md</code>）；标题栏品牌标去掉旧蓝色光晕</td></tr><tr><td>1.7.4</td><td>插件分区按 R7 落地：<code>--pl-*</code> 中性层令牌、插件行 / 运行时 / 仓库入口 / 菜单 / Toast 规格；设置分区标题改 13px 正体</td></tr><tr><td>1.7.5</td><td>待定清单收口：侧栏选中态去玻璃壳、键帽描边强化、折叠带 hover/长热键/窄窗/读屏、菜单 32、Toast 栈距 14、深色遮罩 60%、<code>--fs-9</code>、虚拟列表估高随档</td></tr><tr><td>1.7.6</td><td>插件设置面板（独立窗口）对齐同一套令牌；面板窗口主题改为跟随主程序</td></tr><tr><td>1.7.7</td><td>R8 尺度收口：圆角收到 0/4/8/12 + 语义值、字阶 11 处并入整档、控件高度 24/28/32；插件面板同步 32/4</td></tr></tbody></table>
+<hr>
+<h2 id="6-维护约定">6. 维护约定</h2>
+<ol><li><strong>代码是唯一事实来源</strong>，本文档是它的说明书。改样式就改这里，两边不一致以代码为准并补齐文档。</li><li>速览样式集中在 <code>src/app.css</code> 的 <code>/* ─── 速览界面 ─── */</code> 段（<code>.qb-*</code>），</li></ol>
+<p>设计令牌是同文件顶部的 <code>--qb-*</code> 变量；字阶在 <code>src/design/tokens.css</code>； 窗口尺寸与折叠常量在 <code>src/state/fontStore.ts</code>（<code>QUICKBAR_WIDTH</code>）与 <code>src/lib/useQuickbarDock.ts</code>。 3. <strong>媒体查询的顺序是有意义的</strong>：改窄档规则时，必须让它排在对应组件的基础规则<strong>之后</strong>， 否则同优先级下会被覆盖（1.6.3 就栽在这里）。 4. 文案一律走 <code>src/locales/*.json</code>，不要在组件里硬编码；新增 key 要同步 9 种语言。 5. 图标沿用现有 lucide 资源，不重绘、不换线宽。 6. <strong>HTML 版</strong>（<code>docs/UI设计交付规格书.html</code>）由 <code>python docs/make-spec-html.py</code> 从本文生成， 给设计师直接在浏览器里看、也能打印成 PDF。改完本文跑一次脚本即可，<strong>不要手工改 HTML</strong>。</p>
+<hr>
+<h2 id="7-应用图标-不在界面内-但同属视觉交付">7. 应用图标（不在界面内，但同属视觉交付）</h2>
+<p>exe / 任务栏 / 托盘 / 导出文件 / 字体库文件夹用的是<strong>另一套</strong>位图 —— 拼贴纸片风， 与界面里的 lucide 线性图标不冲突（前者表示「某个东西」，后者表示「某个动作」）。</p>
+<ul><li>五套母版与落位表：<a href="图标规范.md"> 0 </a></li><li>设计原稿：<a href="icons/交付板-图标规范.html"> 0 </a></li><li>硬约束：<code>.ico</code> 必须七帧（16/24/32/48/64/128/256），换图标后要通知资源管理器刷新，</li></ul>
+<p>否则用户那边会继续显示旧图（见 <code>src-tauri/src/file_assoc.rs</code>）。</p>
+<hr>
+<h2 id="8-1-7-5-收口-相对上文的增量">8. 1.7.5 收口（相对上文的增量）</h2>
+<p>《UI 待定问题清单》44 条逐条拍板后，下面这些数值与上文不再一致，<strong>以本节为准</strong>：</p>
+<table><thead><tr><th>项</th><th>最新值</th><th>说明</th></tr></thead><tbody><tr><td>菜单项</td><td><code>min-height: 32</code> / 11px / 行内 0 圆角；容器 r=8</td><td>R7 §3；R4 写的 44px 否决（一屏放不下）；R8 把 10.5 并入 11</td></tr><tr><td>Toast 栈距</td><td>14px（<code>.toaster { gap }</code>）</td><td>R7 §3</td></tr><tr><td>遮罩压暗</td><td>深色 60%，浅色 24%</td><td>R4 §4.2 / R7 §2 都写 ~60%；浅色压到 60% 等于关灯</td></tr><tr><td>键帽描边</td><td><code>--qb-hair-strong</code></td><td>见 §1.1 与 §2.5</td></tr><tr><td>折叠带悬停</td><td>3% 墨底 + 操作文案下划线</td><td>让「这条能点」看得出来</td></tr><tr><td>长热键</td><td>>2 枚键帽退回纯文本</td><td><code>Ctrl + Shift + F1</code> 不再把提示带挤爆</td></tr><tr><td>极窄窗口</td><td><340px 隐藏尾句</td><td>保住「状态 + 键位」</td></tr><tr><td>侧栏选中</td><td>平底 <code>--ui-hover</code> + 2px 蓝竖线（0 圆角、无光晕）</td><td><code>.nav-pill</code> 的旧玻璃壳已拆</td></tr><tr><td>9px 字阶</td><td><code>--fs-9</code> 令牌</td><td>24 处字面值已替换</td></tr><tr><td>精简动态</td><td>折叠三阶段过渡 1ms</td><td>与 <code>.qb-content</code> 的处理一致</td></tr><tr><td>虚拟列表估高</td><td><code>max(112, 预览字高 × 1.15 + 8)</code></td><td>96 档约 118，滚动条不再跳</td></tr></tbody></table>
+<hr>
+
+<div class="footer">
+本页由 docs/make-spec-html.py 从 docs/UI设计交付规格书.md 生成，请勿手工修改 HTML。<br>
+数值以源码为准；若两者不一致，以代码为准并补齐 Markdown。
+</div>
+</body></html>
