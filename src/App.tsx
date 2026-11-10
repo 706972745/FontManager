@@ -335,33 +335,68 @@ export default function App() {
   useCtrlWheelZoom(wheelZoomBlocked);
 
   /**
-   * 滚动条「靠近才变粗」（用户 2026-11-10）。
+   * 滚动条「靠近才变粗」（用户 2026-11-10，同日二改：全软件统一）。
    *
-   * 平时是 1px 发丝线（R4 的设计口径），但 1px 的条根本抓不住、拖不动 ——
-   * 用户要的是「像速览那个滚动条一样可以拖」。所以指针进入窗口右侧 14px 内就加
-   * `scrollbar-hot`，CSS 那边把 thumb 的视觉宽度从 1px 放到 6px（槽位不变，不会挤压布局）。
-   * 用 rAF 节流：mousemove 每秒几十次，直接 toggle 会让样式计算一直重跑。
+   * 平时是 1px 发丝线（R4 的设计口径），可 1px 的条根本抓不住、拖不动。第一版只判
+   * **窗口右缘**，于是详情面板、速览列表、设置面板这些不在窗口最右边的滚动条永远不生效 ——
+   * 用户直接指出「软件里所有有滑块的地方都要这样」。现在改成**逐个滚动容器**判：
+   * 指针落在某个能竖向滚动的容器右缘 14px 内，就给该容器自己挂 `.scroll-hot`，
+   * CSS 里把 thumb 的视觉宽度从 1px 放到 6px（槽位不变，不挤压布局）。
+   *
+   * 指针压在滚动条本身上时拿不到 mousemove，class 会保持上一次的结果 —— 这正好是想要的：
+   * 往里挪的那一下已经让它变粗了，手按上去就能拖。用 rAF 节流，避免每次移动都改 class。
    */
   useEffect(() => {
-    if (quickbar) {
-      document.body.classList.remove("scrollbar-hot");
-      return;
-    }
     let raf = 0;
+    let hot: HTMLElement | null = null;
+    const clearHot = () => {
+      hot?.classList.remove("scroll-hot");
+      hot = null;
+    };
     const onMove = (e: MouseEvent) => {
       if (raf) return;
+      const { clientX, clientY, target } = e;
       raf = requestAnimationFrame(() => {
         raf = 0;
-        document.body.classList.toggle("scrollbar-hot", window.innerWidth - e.clientX <= 14);
+        let found: HTMLElement | null = null;
+        for (let n = target as HTMLElement | null; n && n !== document.body; n = n.parentElement) {
+          // 只有真能滚的容器才算（内容比可视区高），否则整页都会被误判
+          if (n.scrollHeight - n.clientHeight <= 2) continue;
+          const r = n.getBoundingClientRect();
+          // 槽位 10px，再留 4px 余量：14px 内且指针确实在这个容器的上下范围里
+          if (
+            clientX >= r.right - 14 &&
+            clientX <= r.right + 1 &&
+            clientY >= r.top &&
+            clientY <= r.bottom
+          ) {
+            found = n;
+            break;
+          }
+        }
+        if (found !== hot) {
+          clearHot();
+          if (found) found.classList.add("scroll-hot");
+          hot = found;
+        }
       });
     };
+    const onLeave = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      clearHot();
+    };
     window.addEventListener("mousemove", onMove, { passive: true });
+    document.addEventListener("mouseleave", onLeave);
+    window.addEventListener("blur", onLeave);
     return () => {
       window.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("blur", onLeave);
       if (raf) cancelAnimationFrame(raf);
-      document.body.classList.remove("scrollbar-hot");
+      clearHot();
     };
-  }, [quickbar]);
+  }, []);
 
 
   useEffect(() => {
