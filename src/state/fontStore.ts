@@ -3660,7 +3660,24 @@ export const useFontStore = create<FontStore>((set, get) => ({
   pollAffinityLink: async () => {
     try {
       const link = await ipc.affinityLink();
-      if (link) set({ affinityConnection: link });
+      if (!link) return;
+      /*
+       * 值没变就不写 store（2026-11-11）：这个轮询每 2 秒跑一次，每次都 set 一个
+       * 新对象 → 所有订阅 affinityConnection 的组件每 2 秒重渲染一遍。
+       * 设置面板开了这个订阅（滚动时正好撞上 = 用户说的「卡一下」），
+       * 而且 IPC 回来的字段每次都是新对象。浅比一遍再决定要不要通知。
+       */
+      const cur = get().affinityConnection;
+      if (
+        cur &&
+        cur.reachable === link.reachable &&
+        cur.version === link.version &&
+        cur.docCount === link.docCount &&
+        cur.error === link.error
+      ) {
+        return;
+      }
+      set({ affinityConnection: link });
     } catch {
       return;
     }

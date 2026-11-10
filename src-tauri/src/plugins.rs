@@ -1110,8 +1110,41 @@ pub fn runtime_status(kind: &str) -> RuntimeStatus {
     }
 }
 
+/// 运行时状态快照缓存（60 秒）。
+///
+/// `runtime_status()` 里有两件慢活：① spawn 内置解释器跑 `--version` 探版本
+/// （Windows 上每次 50–150ms，卡住时最长等到 3s）；② 递归统计运行时目录大小
+/// （Python 那套上万个文件，冷磁盘缓存时 100–500ms）。设置面板每次打开都要问一次，
+/// 而 `runtimes_status` 是同步命令 —— 直接跑在 UI 线程上，就是用户反馈的
+/// 「有时候打开设置会卡一下」。加上缓存后重复打开是零成本；
+/// 下载完成 / 删除之后主动失效，界面拿到的仍是真实值。
+fn status_cache() -> &'static Mutex<Option<(std::time::Instant, Vec<RuntimeStatus>)>> {
+    static C: OnceLock<Mutex<Option<(std::time::Instant, Vec<RuntimeStatus>)>>> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(None))
+}
+
+const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
 pub fn runtimes_status() -> Vec<RuntimeStatus> {
-    vec![runtime_status("python"), runtime_status("node")]
+    if let Ok(c) = status_cache().lock() {
+        if let Some((at, v)) = c.as_ref() {
+            if at.elapsed() < STATUS_TTL {
+                return v.clone();
+            }
+        }
+    }
+    let fresh = vec![runtime_status("python"), runtime_status("node")];
+    if let Ok(mut c) = status_cache().lock() {
+        *c = Some((std::time::Instant::now(), fresh.clone()));
+    }
+    fresh
+}
+
+/// 运行时被装上 / 删掉之后要重算，否则设置里还显示旧的大小与版本。
+pub fn invalidate_runtimes_status() {
+    if let Ok(mut c) = status_cache().lock() {
+        *c = None;
+    }
 }
 
 /// 删除内置运行时。运行中的插件占用 exe 文件（Windows 锁住打开的可执行文件），
@@ -1149,6 +1182,7 @@ pub fn runtime_delete(kind: &str) -> Result<(), String> {
         "[runtime] 已删除 {kind} 运行时（{} 个插件依赖它，启用时会回退系统解释器或提示下载）",
         using.len()
     ));
+    invalidate_runtimes_status(); // 目录没了，大小/版本要重算
     Ok(())
 }
 
@@ -1286,6 +1320,7 @@ fn runtime_download_task(app: &AppHandle, kind: &str) -> Result<(), String> {
     }
     let _ = std::fs::remove_file(&tmp);
     crate::diag::log(&format!("[runtime] {kind} 运行时补全完成（{}）", exe_base.display()));
+    invalidate_runtimes_status(); // 大小/版本变了，下次打开设置要重算
     emit("done", 1, 1, None);
     Ok(())
 }

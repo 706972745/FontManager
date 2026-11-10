@@ -2349,8 +2349,13 @@ async fn check_update(store: State<'_, Store>, force: bool) -> Result<serde_json
     Ok(doc)
 }
 
+/// 插件清单。每个插件都要读 manifest、探一次运行时是否具备（冷缓存时会 spawn 解释器，
+/// 最长 3 秒），所以同样放后台线程，别让 UI 线程等它。
 #[tauri::command]
-fn plugins_list() -> Vec<crate::plugins::PluginInfo> {    crate::plugins::list()
+async fn plugins_list() -> Vec<crate::plugins::PluginInfo> {
+    tauri::async_runtime::spawn_blocking(crate::plugins::list)
+        .await
+        .unwrap_or_default()
 }#[tauri::command]
 fn plugin_set_enabled(store: State<Store>, id: String, enabled: bool) -> Result<(), String> {
     if enabled {
@@ -2406,11 +2411,18 @@ fn plugin_install_zip(path: String) -> Result<serde_json::Value, String> {
 }
 
 /// 插件运行时状态清单（1.4.11）：内置/系统版本、占用、被哪些插件使用
+///
+/// 走 `spawn_blocking`（2026-11-11）：里面要 spawn 解释器探版本、递归统计运行时目录，
+/// 同步命令会直接在 UI 线程上跑 —— 设置面板一打开就"卡一下"就是它。
 #[tauri::command]
-fn runtimes_status() -> Result<serde_json::Value, String> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        serde_json::to_value(crate::plugins::runtimes_status()).map_err(|e| e.to_string())
-    }))
+async fn runtimes_status() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            serde_json::to_value(crate::plugins::runtimes_status()).map_err(|e| e.to_string())
+        }))
+        .unwrap_or_else(|_| Err("运行时状态查询出错了（已拦下，软件继续运行）".into()))
+    })
+    .await
     .unwrap_or_else(|_| Err("运行时状态查询出错了（已拦下，软件继续运行）".into()))
 }
 

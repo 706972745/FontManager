@@ -4,6 +4,44 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.2] — 2026-11-11
+
+> 两处体验修正：右键菜单的底色改回暖墨（原先偏紫灰），以及打开设置时那一下卡顿。
+> **不改数据格式，升级无需迁移。**
+
+### 界面
+
+- **深色浮层底色归暖**：右键菜单 / Toast 的底原来是 R7 设计稿的 `#1e1e22`，
+  B 通道比红绿高 4，是带冷蓝偏移的灰；而主界面的纸墨体系（浮层 `#1c1c1a`、
+  灰阶 `#242422` / `#2a2a28`）全是暖墨。两类浮层并排时能看出"材质"不同，
+  右键菜单压在字体列表上就是一块紫灰补丁。现在统一成 `--ui-menu` `#1c1c1a`，
+  悬停底改用 `color-mix(in srgb, var(--ui-fg) 8%, var(--ui-menu))`（≈ `#2d2d2b`），
+  以后调浮层深浅时 hover 自动跟随。浅色主题不受影响（本来就是纯白）。
+
+### 性能
+
+- **打开设置不再卡一下**（三处一起改）：
+  1. 设置面板有 12 个分区、31 行设置、16 个开关，原先一打开就全部布局 + 光栅化，
+     可视区其实只有最上面一两个分区。`.settings-section` 加 `content-visibility: auto`
+     + `contain-intrinsic-size: auto 240px`，屏外分区交给浏览器按需渲染
+     （Tab 聚焦与页内查找仍会自动渲染，不影响可访问性）。
+  2. 面板入场动画去掉 `scale`（近千像素高的面板做 0.97→1 缩放会让文字每帧重新光栅化），
+     只保留位移 + 透明度。
+  3. 后端 `runtimes_status` / `plugins_list` 原来都是**同步命令**，直接跑在 UI 线程上：
+     前者要 spawn 内置解释器探版本（最长等 3 秒）并递归统计运行时目录大小
+     （Python 那套上万文件），后者冷缓存时也会 spawn 解释器探活。
+     现在两条都改到 `spawn_blocking` 后台线程执行，`runtimes_status` 另加 60 秒进程内缓存
+     （下载完成 / 删除运行时后主动失效）。
+- **设置里滚动不再一顿一顿**：
+  1. 设置面板原来整体订阅了 `scanProgress` 与 `affinityConnection` 两个高频状态：
+     前者每读到一个字体文件就变、后者每 2 秒轮询一次 —— 每次变化都把
+     12 个分区、近千行 JSX 重新渲染一遍。现在把它们各自收进
+     `<ScanProgressLine />` / `<AffinityStatusRow />` 两个小组件，重渲染只发生在那几行文字上。
+  2. `pollAffinityLink` 轮询回来的值没变（可达性 / 版本 / 文档数 / 错误四项都相同）
+     就不再写 store，避免每 2 秒空转一次通知。
+  3. `.settings-scroll` 加 `overscroll-behavior: contain`：滚到底之后滚轮不再传给背后的
+     字体虚拟列表（那一下要重算可见区间并重绘几千行，是"顿一下"的另一个来源）。
+
 ## [1.8.1] — 2026-11-11
 
 > 代码审查轮：把全库过了一遍性能与安全，修掉 15 条问题，并补上「检查更新」和
