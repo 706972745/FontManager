@@ -1,9 +1,9 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { ipc } from "./lib/ipc";
 import { MotionConfig, motion } from "motion/react";
 import { Camera, Clock, FilterX, FolderOpen, History, Monitor, Power, PowerOff, SearchX, Star, Tag as TagIcon, Type } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { DetailPanel } from "./components/DetailPanel";
 import { ResizeGrips } from "./components/ResizeGrips";
 import { Titlebar } from "./components/Titlebar";
@@ -333,6 +333,126 @@ export default function App() {
   // Ctrl + 滚轮调预览字号：完整界面（卡片 / 列表 / 样张）与速览界面同一个手势、
   // 同一个偏好。挂在 App 上而不是各个视图里 —— 光标停在哪都能调，且切视图不用重挂。
   useCtrlWheelZoom(wheelZoomBlocked);
+
+  /**
+   * 右边缘悬停唤出速览（用户 2026-11-10）。
+   *
+   * 完整界面窗口最右侧有一条**隐形热区**：鼠标撞上去 → 进速览并展开面板；
+   * 鼠标离开速览 → 退回完整界面（不是最小化、不是隐藏）。
+   *
+   * 两个必须处理的坑：
+   *  ① 进速览会把窗口从原位置形变到屏幕左上角 400px 处，鼠标此刻必然在窗口外 ——
+   *     所以进入后先「冷却」一段时间，冷却结束再判断鼠标到底有没有进来：
+   *     进来了就继续监听离开，没进来（只是扫过边缘）就自动退回。
+   *  ② 冷却期内的 pointerleave 一律忽略，否则窗口一跳走就会立刻自我关闭，来回抽搐。
+   */
+  const edgeTimer = useRef<number | null>(null);
+  const edgeLeaveTimer = useRef<number | null>(null);
+  /** 本次速览是「悬停唤出」进来的吗？只有这种才自动退出（快捷键进来的要留着） */
+  const edgeEntry = useRef(false);
+  /** 冷却截止时间戳：之前的 pointerleave 不作数 */
+  const edgeGuardUntil = useRef(0);
+
+  const cancelEdgeTimers = () => {
+    if (edgeTimer.current !== null) {
+      window.clearTimeout(edgeTimer.current);
+      edgeTimer.current = null;
+    }
+    if (edgeLeaveTimer.current !== null) {
+      window.clearTimeout(edgeLeaveTimer.current);
+      edgeLeaveTimer.current = null;
+    }
+  };
+
+  /** 指针是否还在本窗口的客户区内（物理像素比较，和 cursorPosition 同一坐标系） */
+  const cursorInsideWindow = async (): Promise<boolean> => {
+    try {
+      const win = getCurrentWindow();
+      const [pos, size, cursor] = await Promise.all([
+        win.outerPosition(),
+        win.innerSize(),
+        cursorPosition(),
+      ]);
+      return (
+        cursor.x >= pos.x &&
+        cursor.x <= pos.x + size.width &&
+        cursor.y >= pos.y &&
+        cursor.y <= pos.y + size.height
+      );
+    } catch {
+      // 读不到几何（权限 / 窗口正在销毁）就当指针不在，让调用方退回完整界面
+      return false;
+    }
+  };
+
+  const onEdgeZoneEnter = () => {
+    if (edgeTimer.current !== null) return;
+    // 160ms 防扫过：鼠标只是从右边缘划过去时不切界面
+    edgeTimer.current = window.setTimeout(() => {
+      edgeTimer.current = null;
+      void (async () => {
+        const st = useFontStore.getState();
+        if (st.quickbar) return;
+        edgeEntry.current = true;
+        edgeGuardUntil.current = Date.now() + 1400;
+        await st.setQuickbar(true);
+        await expandQuickbarPanel().catch(() => {});
+        // 冷却结束再看一眼：鼠标没进来就退回，别把用户卡在速览里
+        window.setTimeout(() => {
+          if (!edgeEntry.current) return;
+          void cursorInsideWindow().then((inside) => {
+            if (!inside && edgeEntry.current) {
+              edgeEntry.current = false;
+              void useFontStore.getState().setQuickbar(false);
+            }
+          });
+        }, 1400);
+      })();
+    }, 160);
+  };
+
+  const onEdgeZoneLeave = () => {
+    if (edgeTimer.current !== null) {
+      window.clearTimeout(edgeTimer.current);
+      edgeTimer.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!quickbar) {
+      // 回到完整界面：清干净所有悬停唤出留下的状态
+      edgeEntry.current = false;
+      edgeGuardUntil.current = 0;
+      cancelEdgeTimers();
+      return;
+    }
+    const root = document.documentElement;
+    const onLeave = () => {
+      if (!edgeEntry.current) return;
+      if (Date.now() < edgeGuardUntil.current) return;
+      if (edgeLeaveTimer.current !== null) return;
+      // 320ms 余量：指针擦过窗口边缘（或去点任务栏）不算离开
+      edgeLeaveTimer.current = window.setTimeout(() => {
+        edgeLeaveTimer.current = null;
+        if (!edgeEntry.current) return;
+        edgeEntry.current = false;
+        void useFontStore.getState().setQuickbar(false);
+      }, 320);
+    };
+    const onEnter = () => {
+      if (edgeLeaveTimer.current !== null) {
+        window.clearTimeout(edgeLeaveTimer.current);
+        edgeLeaveTimer.current = null;
+      }
+    };
+    root.addEventListener("pointerleave", onLeave);
+    root.addEventListener("pointerenter", onEnter);
+    return () => {
+      root.removeEventListener("pointerleave", onLeave);
+      root.removeEventListener("pointerenter", onEnter);
+      cancelEdgeTimers();
+    };
+  }, [quickbar]);
 
   useEffect(() => {
     // 断点查询已收进 fontStore.init()（rescan 之后）：有未完成的批量时
@@ -684,6 +804,15 @@ export default function App() {
           {/* 样张视图是「挑字」界面：详情面板要收起来，否则中间只剩两列，
               四千多款字体翻起来太窄（用户 2026-11-05 明确要求不显示） */}
           {viewMode !== "specimen" && <DetailPanel />}
+          {/* 右边缘隐形热区：鼠标撞上去唤出速览（实现见 onEdgeZoneEnter）。
+              顶栏以下才开始，免得挡住右上角窗口按钮与标题栏拖拽区；
+              z-index 比 .resize-grip（200）低一档，最右 3px 仍然是拉宽的手柄。 */}
+          <div
+            className="edge-hotzone"
+            aria-hidden="true"
+            onMouseEnter={onEdgeZoneEnter}
+            onMouseLeave={onEdgeZoneLeave}
+          />
         </div>
       </motion.div>
       <DropZone />

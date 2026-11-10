@@ -279,10 +279,11 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 控件高度 | `--control-h: 36px`（R8 §3 明确「36px 的特殊块保持不动」） |
 | 搜索框 `.topbar-search` | `flex: 1 1 90px` / `min-width: 0`（窄时先让搜索缩） |
 | 输入框 `.topbar-field` | 高 36；`padding: 0 12px`；1px 描边；**4px 圆角**（R8）；底 `--ui-panel`；聚焦边框转 `--ui-accent` |
+| 右边缘热区 `.edge-hotzone` | 宽 **10px** / `top: 56px` / `z-index: 199`（低于 `.resize-grip` 的 200，最右 3px 仍是拖宽手柄）；悬停 160ms 进速览，离开 320ms 退回；进入后冷却 1.4s 再判断指针是否进来 |
 | 视图切换 `.view-toggle` | 项 **4px 圆角**；当前项 = 主文字色 + 2% 墨底（**不套蓝框**） |
 | 排序 / 筛选按钮 `.sort-btn` | 4px 圆角；生效时 `.filter-live` = 主文字色 + 1px `--accent-glow-soft` 环 |
 | 筛选计数 `.filter-count` | 11px / 600 / 强调色 |
-| 筛选「范围」二级菜单 `.filter-submenu` | **8px 圆角** / 1px `--ui-line` / `--ui-menu` 底 / `position: fixed` **向左弹出**（`.filter-menu` 有 `overflow-y:auto`，子元素不能放在它里面）；入口右侧显示已选条数与 `›`；**标签 / 分组 / 快照有数据才出现** |
+| 筛选「范围」二级菜单 `.filter-submenu` | **8px 圆角** / 1px `--ui-line` / `--ui-menu` 底 / `position: fixed` **向左弹出**（`.filter-menu` 有 `overflow-y:auto`，子元素不能放在它里面）；入口右侧显示已选条数与 `›`；**标签 / 分组 / 快照有数据才出现**；顺序：星级 → 范围（收藏/标签/分组/快照）→ 显示…；入口与子面板都要挂离开计时（160ms） |
 | 排序菜单 `.sort-menu` | **8px 圆角**（R8）；筛选菜单 `.filter-menu` 仍是 **4px** —— 两者同类却不同档，见 §4 |
 | 菜单项 `.sort-item` | `padding: 8px 11px` / 4px 圆角 / 13px；选中 `.sort-active` 主文字色 500 |
 | 菜单分组标题 `.filter-heading` / `.sort-sep` | 等宽 **9px** / 字距 0.08em / 全大写 / 弱色 |
