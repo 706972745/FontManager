@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
@@ -171,12 +171,14 @@ function FilterSubTrigger({
   active,
   onClick,
   onHover,
+  onLeave,
 }: {
   label: string;
   count: number;
   active: boolean;
   onClick: (el: HTMLElement) => void;
   onHover: (el: HTMLElement) => void;
+  onLeave: () => void;
 }) {
   return (
     <button
@@ -185,6 +187,7 @@ function FilterSubTrigger({
       aria-expanded={active}
       onClick={(e) => onClick(e.currentTarget)}
       onMouseEnter={(e) => onHover(e.currentTarget)}
+      onMouseLeave={onLeave}
     >
       <span>{label}</span>
       <span className="filter-sub-meta">
@@ -253,8 +256,35 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
   };
   const tagCounts = useMemo(() => allTags(tags), [tags]);
   const collectionNames = useMemo(() => Object.keys(collections).sort(), [collections]);
+
+  /**
+   * 子菜单的收起时机：鼠标离开入口或子面板后**延迟**收起。
+   * 不能只在子面板上挂 onMouseLeave —— 用户很可能从「标签」按钮直接移开、
+   * 根本没进过子面板，那时子面板永远不会收到 leave 事件，就会一直挂着（用户 2026-11-10 报的 bug）。
+   * 反过来，从按钮移到子面板中间有 6px 空隙，立刻收也会闪，所以留 160ms 余量。
+   */
+  const subTimer = useRef<number | null>(null);
+  const keepSub = () => {
+    if (subTimer.current !== null) {
+      window.clearTimeout(subTimer.current);
+      subTimer.current = null;
+    }
+  };
+  const closeSubSoon = () => {
+    keepSub();
+    subTimer.current = window.setTimeout(() => {
+      subTimer.current = null;
+      setSub(null);
+    }, 160);
+  };
   useEffect(() => {
-    if (!open) setSub(null);
+    if (!open) {
+      setSub(null);
+      if (subTimer.current !== null) {
+        window.clearTimeout(subTimer.current);
+        subTimer.current = null;
+      }
+    }
   }, [open]);
 
   const activeCount =
@@ -300,63 +330,12 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
               role="listbox"
               aria-multiselectable
               onKeyDown={listboxKeys}
+              onScroll={() => setSub(null)}
               initial={{ opacity: 0, y: -6, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.13 } }}
               transition={springSnappy}
             >
-              {(membership || tagCounts.size > 0 || collectionNames.length > 0 || snapshots.length > 0) && (
-                <li className="filter-heading" role="none">
-                  {t("filter.scope")}
-                </li>
-              )}
-              {membership && (
-                <li>
-                  <button
-                    role="option"
-                    aria-selected={favoriteOnly}
-                    className={favoriteOnly ? "sort-item sort-active" : "sort-item"}
-                    onClick={() => setFavoriteOnly(!favoriteOnly)}
-                  >
-                    <span>{t("side.favorites")}</span>
-                    {favoriteOnly && <Check size={13} strokeWidth={2} />}
-                  </button>
-                </li>
-              )}
-              {tagCounts.size > 0 && (
-                <li>
-                  <FilterSubTrigger
-                    label={t("side.tags")}
-                    count={tagFilter.length}
-                    active={sub?.kind === "tag"}
-                    onClick={(el) => openSub("tag", el)}
-                    onHover={(el) => openSub("tag", el)}
-                  />
-                </li>
-              )}
-              {collectionNames.length > 0 && (
-                <li>
-                  <FilterSubTrigger
-                    label={t("side.collections")}
-                    count={collectionFilter.length}
-                    active={sub?.kind === "collection"}
-                    onClick={(el) => openSub("collection", el)}
-                    onHover={(el) => openSub("collection", el)}
-                  />
-                </li>
-              )}
-              {snapshots.length > 0 && (
-                <li>
-                  <FilterSubTrigger
-                    label={t("side.snapshots")}
-                    count={snapshotFilter.length}
-                    active={sub?.kind === "snapshot"}
-                    onClick={(el) => openSub("snapshot", el)}
-                    onHover={(el) => openSub("snapshot", el)}
-                  />
-                </li>
-              )}
-              <li className="sort-sep" role="none" />
               <li className="filter-heading" role="none">
                 {t("filter.rating")}
               </li>
@@ -383,6 +362,61 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   ))}
                 </div>
               </li>
+              <li className="sort-sep" role="none" />
+              {(membership || tagCounts.size > 0 || collectionNames.length > 0 || snapshots.length > 0) && (
+                <li className="filter-heading" role="none">
+                  {t("filter.scope")}
+                </li>
+              )}
+              {membership && (
+                <li>
+                  <button
+                    role="option"
+                    aria-selected={favoriteOnly}
+                    className={favoriteOnly ? "sort-item sort-active" : "sort-item"}
+                    onClick={() => setFavoriteOnly(!favoriteOnly)}
+                  >
+                    <span>{t("side.favorites")}</span>
+                    {favoriteOnly && <Check size={13} strokeWidth={2} />}
+                  </button>
+                </li>
+              )}
+              {tagCounts.size > 0 && (
+                <li>
+                  <FilterSubTrigger
+                    label={t("side.tags")}
+                    count={tagFilter.length}
+                    active={sub?.kind === "tag"}
+                    onClick={(el) => openSub("tag", el)}
+                    onHover={(el) => openSub("tag", el)}
+                    onLeave={closeSubSoon}
+                  />
+                </li>
+              )}
+              {collectionNames.length > 0 && (
+                <li>
+                  <FilterSubTrigger
+                    label={t("side.collections")}
+                    count={collectionFilter.length}
+                    active={sub?.kind === "collection"}
+                    onClick={(el) => openSub("collection", el)}
+                    onHover={(el) => openSub("collection", el)}
+                    onLeave={closeSubSoon}
+                  />
+                </li>
+              )}
+              {snapshots.length > 0 && (
+                <li>
+                  <FilterSubTrigger
+                    label={t("side.snapshots")}
+                    count={snapshotFilter.length}
+                    active={sub?.kind === "snapshot"}
+                    onClick={(el) => openSub("snapshot", el)}
+                    onHover={(el) => openSub("snapshot", el)}
+                    onLeave={closeSubSoon}
+                  />
+                </li>
+              )}
               <li className="sort-sep" role="none" />
               <li className="filter-heading" role="none">
                 {t("filter.show")}
@@ -563,7 +597,8 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
           className="filter-submenu"
           role="menu"
           style={{ top: sub.top, left: sub.left }}
-          onMouseLeave={() => setSub(null)}
+          onMouseEnter={keepSub}
+          onMouseLeave={closeSubSoon}
         >
           {sub.kind === "tag" &&
             [...tagCounts.entries()].map(([tagName, count]) => (

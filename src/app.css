@@ -133,6 +133,24 @@ body,
   min-height: 0;
 }
 
+/**
+ * 右边缘悬停唤出速览（用户 2026-11-10）。
+ *
+ * 完整界面时窗口最右边一条**隐形**热区：鼠标撞上去 → 进速览并展开面板，移开 → 退回完整界面。
+ * 两个刻意的取舍：
+ *  · z-index 比 `.resize-grip`（200）低一档 —— 最右 3px 仍然留给「拖窗口换宽度」，
+ *    热区实际吃的是距边缘 3~10px 那条带；
+ *  · 从 56px 才开始，不盖住右上角的窗口按钮和标题栏拖拽区。
+ */
+.edge-hotzone {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 8px;
+  width: 10px;
+  z-index: 199;
+}
+
 .resize-grip {
   position: fixed;
   z-index: 200;
