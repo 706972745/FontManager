@@ -15,25 +15,67 @@ use std::sync::{Mutex, OnceLock};
 
 // ───────────────────────────── 最近一次扫描结果 ─────────────────────────────
 
-fn cache() -> &'static Mutex<Vec<FontFace>> {
-    static FACES: OnceLock<Mutex<Vec<FontFace>>> = OnceLock::new();
-    FACES.get_or_init(|| Mutex::new(Vec::new()))
+/// 检索键：扫描结束时算一次，查询时直接比。
+///
+/// 为什么不在 `query()` 里现算 `to_lowercase()`：5 千多个字面 × 每次查询 4 个字段
+/// = 单次请求两万多个临时字符串。插件面板一秒钟轮询一次 `/health` 时，
+/// 这些分配全都白扔（2026-11-10 审查发现）。
+struct Keys {
+    family: String,
+    style: String,
+    path: String,
+    postscript: Option<String>,
 }
 
-/// 扫描结束后投喂一次（幂等覆盖）
+/// 内存快照 = 字面 + 检索键 + 去重排序好的字族名。
+#[derive(Default)]
+struct Snapshot {
+    faces: Vec<FontFace>,
+    keys: Vec<Keys>,
+    families: Vec<String>,
+}
+
+fn cache() -> &'static Mutex<Snapshot> {
+    static FACES: OnceLock<Mutex<Snapshot>> = OnceLock::new();
+    FACES.get_or_init(|| Mutex::new(Snapshot::default()))
+}
+
+/// 扫描结束后投喂一次（幂等覆盖）。派生数据（检索键 / 字族名）在这里算，
+/// 只在扫描结束时算一次，别放到每次查询里。
 pub fn publish(faces: Vec<FontFace>) {
+    let keys: Vec<Keys> = faces
+        .iter()
+        .map(|f| Keys {
+            family: norm(&f.family),
+            style: norm(&f.style),
+            path: norm(&f.path),
+            postscript: f.postscript_name.as_deref().map(norm),
+        })
+        .collect();
+    let mut families: Vec<String> = faces.iter().map(|f| f.family.clone()).collect();
+    families.sort();
+    families.dedup();
     if let Ok(mut c) = cache().lock() {
-        *c = faces;
+        *c = Snapshot {
+            faces,
+            keys,
+            families,
+        };
     }
 }
 
 /// 复制一份当前快照（6000 个字面的克隆大约几十毫秒，调用方别在热循环里反复调）
 pub fn snapshot_faces() -> Vec<FontFace> {
-    cache().lock().map(|c| c.clone()).unwrap_or_default()
+    cache().lock().map(|c| c.faces.clone()).unwrap_or_default()
 }
 
 pub fn face_count() -> usize {
-    cache().lock().map(|c| c.len()).unwrap_or(0)
+    cache().lock().map(|c| c.faces.len()).unwrap_or(0)
+}
+
+/// 库里有几个字族。`/health` 每次轮询都要，不能现算（见 [`Snapshot`]）。
+pub fn family_count() -> usize {
+    cache().lock().map(|c| c.families.len()).unwrap_or(0)
 }
 
 fn norm(s: &str) -> String {
@@ -57,30 +99,47 @@ pub fn face_key(f: &FontFace) -> String {
 }
 
 /// 查询：`q` 匹配字族 / 样式 / 文件名（大小写不敏感），`family` 精确匹配字族。
+///
+/// 只复制命中的那一页（`offset..offset+limit`），不再把整个 6000 条快照 clone 一遍。
 pub fn query(q: Option<&str>, family: Option<&str>, limit: Option<usize>, offset: usize) -> Vec<FontFace> {
     let needle = q.map(norm).filter(|s| !s.is_empty());
     let fam = family.map(norm).filter(|s| !s.is_empty());
-    let faces = cache().lock().map(|c| c.clone()).unwrap_or_default();
-    faces
-        .into_iter()
-        .filter(|f| match &fam {
-            Some(want) => norm(&f.family) == *want,
-            None => true,
-        })
-        .filter(|f| match &needle {
-            None => true,
-            Some(want) => {
-                norm(&f.family).contains(want)
-                    || norm(&f.style).contains(want)
-                    || norm(&f.path).contains(want)
-                    || f.postscript_name
-                        .as_deref()
-                        .is_some_and(|p| norm(p).contains(want))
+    let take = limit.unwrap_or(usize::MAX);
+    let Ok(snap) = cache().lock() else {
+        return Vec::new();
+    };
+    let mut out: Vec<FontFace> = Vec::new();
+    if take == 0 {
+        return out;
+    }
+    let mut skipped = 0usize;
+    for (i, k) in snap.keys.iter().enumerate() {
+        if let Some(want) = &fam {
+            if k.family != *want {
+                continue;
             }
-        })
-        .skip(offset)
-        .take(limit.unwrap_or(usize::MAX))
-        .collect()
+        }
+        if let Some(want) = &needle {
+            let hit = k.family.contains(want.as_str())
+                || k.style.contains(want.as_str())
+                || k.path.contains(want.as_str())
+                || k.postscript
+                    .as_deref()
+                    .is_some_and(|p| p.contains(want.as_str()));
+            if !hit {
+                continue;
+            }
+        }
+        if skipped < offset {
+            skipped += 1;
+            continue;
+        }
+        out.push(snap.faces[i].clone());
+        if out.len() >= take {
+            break;
+        }
+    }
+    out
 }
 
 /// 某个字族的所有字面路径（大小写不敏感）
@@ -89,9 +148,11 @@ pub fn paths_of_family(family: &str) -> Vec<String> {
     cache()
         .lock()
         .map(|c| {
-            c.iter()
-                .filter(|f| norm(&f.family) == want)
-                .map(|f| f.path.clone())
+            c.keys
+                .iter()
+                .enumerate()
+                .filter(|(_, k)| k.family == want)
+                .map(|(i, _)| c.faces[i].path.clone())
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect()
@@ -99,14 +160,9 @@ pub fn paths_of_family(family: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// 库里所有字族名（去重、已按 locale 排不动，交给调用方排）
+/// 库里所有字族名（去重、已排序）
 pub fn families() -> Vec<String> {
-    let mut out: Vec<String> = cache()
-        .lock()
-        .map(|c| c.iter().map(|f| f.family.clone()).collect::<HashSet<_>>().into_iter().collect())
-        .unwrap_or_default();
-    out.sort();
-    out
+    cache().lock().map(|c| c.families.clone()).unwrap_or_default()
 }
 
 // ───────────────────────────── 启停 ─────────────────────────────

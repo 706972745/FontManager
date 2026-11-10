@@ -34,6 +34,8 @@ mod sound;
 #[cfg(target_os = "windows")]
 mod warm;
 mod store;
+// 1.9.0：检查更新（只读版本号，不下载、不执行远端内容）
+mod update;
 mod watcher;
 mod window_dock;
 mod window_morph;
@@ -2186,7 +2188,9 @@ fn set_prefs(store: State<Store>, prefs: serde_json::Value) -> Result<(), String
         }
         _ => state.prefs = prefs,
     }
-    store::save(&state)?;
+    // 只动 prefs：这个命令会被 600ms 防抖的偏好同步频繁调用，
+    // 每次重写 1.7 MB 的字体库数据纯属浪费（见 store::save_prefs）
+    store::save_prefs(&state)?;
     drop(state);
     // 本地 API 的开关 / 令牌 / 危险操作授权都存在 prefs 里：存完立刻生效，不必重启
     crate::api::apply_prefs();
@@ -2228,7 +2232,7 @@ fn api_set_enabled(enabled: bool) -> Result<(), String> {
         } else {
             state.prefs = serde_json::json!({ "apiEnabled": enabled });
         }
-        store::save(&state)?;
+        store::save_prefs(&state)?;
     }
     crate::api::apply_prefs();
     Ok(())
@@ -2253,7 +2257,7 @@ fn api_set_port(port: u16) -> Result<u16, String> {
         } else {
             state.prefs = serde_json::json!({ "apiPort": want });
         }
-        store::save(&state)?;
+        store::save_prefs(&state)?;
     }
     crate::api::apply_prefs();
     Ok(crate::api::current_port())
@@ -2269,7 +2273,7 @@ fn api_set_dangerous(on: bool) -> Result<(), String> {
         if let Some(p) = state.prefs.as_object_mut() {
             p.insert("apiDangerous".into(), serde_json::json!(on));
         }
-        store::save(&state)?;
+        store::save_prefs(&state)?;
     }
     crate::api::apply_prefs();
     Ok(())
@@ -2287,17 +2291,67 @@ fn api_reset_token() -> Result<String, String> {
         if let Some(p) = state.prefs.as_object_mut() {
             p.insert("apiToken".into(), serde_json::json!(fresh));
         }
-        store::save(&state)?;
+        store::save_prefs(&state)?;
     }
     crate::api::apply_prefs();
     Ok(fresh)
 }
 
+/// 检查更新（1.9.0）。只读版本号与发布说明，**不下载、不解压、不执行**任何远端内容。
+///
+/// `force = true` 是用户在设置里手点的；`false` 是启动时的静默检查。
+/// 两层节流都别省：后端 10 分钟缓存 + 前端按 `updateLastCheck` 做 24 小时判断，
+/// 因为 GitHub 匿名接口限额是 60 次/小时/IP，多开几个实例很容易撞上。
 #[tauri::command]
-fn plugins_list() -> Vec<crate::plugins::PluginInfo> {    crate::plugins::list()
+async fn check_update(store: State<'_, Store>, force: bool) -> Result<serde_json::Value, String> {
+    let inner = store.0.clone();
+    // 静默检查（force=false）由后端自己再挡一道：前端漏判也不会真的发请求出去。
+    // 用户手点（force=true）不受这个开关影响 —— 明确点了就给他查。
+    if !force {
+        let allowed = inner
+            .lock()
+            .map(|s| {
+                s.prefs
+                    .get("updateCheck")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true)
+            })
+            .unwrap_or(true);
+        if !allowed {
+            return Err("自动检查更新已在设置里关闭".into());
+        }
+    }
+    let info = crate::update::check(force).await?;
+    let mut doc = serde_json::to_value(&info).map_err(|e| e.to_string())?;
+    if let Ok(mut state) = inner.lock() {
+        let skipped = state
+            .prefs
+            .get("updateSkipped")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if let Some(obj) = doc.as_object_mut() {
+            // 「这个版本我不想再被提醒」—— 由前端写 prefs，这里只负责回报是否已跳过
+            obj.insert("skipped".into(), serde_json::json!(skipped == info.latest));
+        }
+        if let Some(prefs) = state.prefs.as_object_mut() {
+            prefs.insert(
+                "updateLastCheck".into(),
+                serde_json::json!(crate::services::now_ms()),
+            );
+            // 老用户的 state.json 里没有这个键：默认开启（只发一次匿名 GET，不带任何本机信息）
+            prefs
+                .entry("updateCheck".to_string())
+                .or_insert(serde_json::json!(true));
+        }
+        let _ = store::save_prefs(&state);
+    }
+    Ok(doc)
 }
 
 #[tauri::command]
+fn plugins_list() -> Vec<crate::plugins::PluginInfo> {    crate::plugins::list()
+}#[tauri::command]
 fn plugin_set_enabled(store: State<Store>, id: String, enabled: bool) -> Result<(), String> {
     if enabled {
         crate::plugins::enable(&id).map(|_| ())?;
@@ -2309,7 +2363,7 @@ fn plugin_set_enabled(store: State<Store>, id: String, enabled: bool) -> Result<
     // 记住这次选择：下次启动照着开回来（不然每次开机都要手动点一遍）
     crate::plugins::remember(store.inner(), &id, enabled);
     let state = store.0.lock().map_err(|e| e.to_string())?;
-    store::save(&state)
+    store::save_prefs(&state)
 }
 
 #[tauri::command]
@@ -2375,30 +2429,23 @@ fn runtime_download(app: tauri::AppHandle, kind: String) -> Result<(), String> {
 /// 界面不再展示解释器（插件自带 runtime/ 或软件静默探测），但 set_runtime /
 /// runtimes_json 保留：prefs `pluginRuntime` 手工指定仍是隐藏的兜底出口。
 
+/// 用系统浏览器打开一个网页链接。
+///
+/// **不要再用 `cmd /C start`**（2026-11-10 审查）：cmd.exe 会把参数再解析一遍命令行，
+/// 一个带 `&` 的 URL（`https://x/&calc.exe`）就等于在用户机器上执行了第二条命令。
+/// 现在统一交给 `opener` 插件走 `ShellExecute`，不经过任何 shell。
 #[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
+fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     if !url.starts_with("https://") && !url.starts_with("http://") {
         return Err(format!("refusing to open non-web URL: {url}"));
     }
-
-    #[cfg(target_os = "linux")]
-    let spawned = std::process::Command::new("xdg-open").arg(&url).spawn();
-
-    #[cfg(target_os = "macos")]
-    let spawned = std::process::Command::new("open").arg(&url).spawn();
-
-    #[cfg(target_os = "windows")]
-    let spawned = {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-    };
-
-    spawned.map(|_| ()).map_err(|e| e.to_string())
+    // 控制字符会让日志和参数传递变得不可预测，直接拒
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err("refusing to open URL with whitespace or control chars".into());
+    }
+    tauri_plugin_opener::OpenerExt::opener(&app)
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2731,6 +2778,7 @@ pub fn run() {
             api_set_dangerous,
             api_set_port,
             api_reset_token,
+            check_update,
             plugins_list,
             plugin_set_enabled,
             plugin_invoke,

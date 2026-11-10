@@ -46,7 +46,7 @@ import { easeTop, spring } from "./design/springs";
 import { INTRO_OFF, useIntro } from "./lib/useIntro";
 import { expandQuickbarPanel } from "./lib/useQuickbarDock";
 import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
-import { useT } from "./lib/i18n";
+import { useT, t as translate } from "./lib/i18n";
 import { DiagHud } from "./components/DiagHud";
 import { experiment } from "./lib/experiment";
 import { ensureThumbIndex } from "./lib/thumb";
@@ -260,7 +260,42 @@ function MainContent() {
    * 没有插件时这一步什么都不改，菜单与之前完全一样。
    */
   useEffect(() => {
+    // 一次 IPC 同时喂两处：右键菜单缓存 + 搜索建议的插件清单（1.9.0）
     void refreshPluginMenus();
+  }, []);
+
+  /**
+   * 启动时静默检查更新（1.9.0）。
+   *
+   * 三层节流一起用，缺一个都会变成骚扰：
+   *   ① `updateCheck === false` → 一次请求都不发（内网机器 / 有出网审计的用户）；
+   *   ② 24 小时内检查过 → 跳过（GitHub 匿名接口 60 次/小时/IP）；
+   *   ③ 用户点过「跳过这个版本」→ 不提示（后端回报 `skipped`）。
+   *
+   * 全程不下载任何东西，只在**确实有新版本**时弹一条带「查看」按钮的提示。
+   * 断网 / 限流 / 仓库没发布都是常态，失败一律静默 —— 一个检查更新不该制造错误弹窗。
+   */
+  useEffect(() => {
+    void (async () => {
+      try {
+        const prefs = await ipc.getPrefs();
+        if (prefs?.updateCheck === false) return;
+        const last = typeof prefs?.updateLastCheck === "number" ? prefs.updateLastCheck : 0;
+        if (Date.now() - last < 24 * 60 * 60 * 1000) return;
+        const info = await ipc.checkUpdate(false);
+        if (!info.hasUpdate || info.skipped) return;
+        toast.success(
+          translate("update.availableTitle", { version: info.latest }),
+          translate("update.availableDetail"),
+          undefined,
+          { label: translate("update.openRelease"), run: () => void ipc.openUrl(info.url) },
+        );
+      } catch {
+        /* 静默：见上面的注释 */
+      }
+    })();
+    // 只在启动时跑一次：t 变化（切语言）不该重新发起检查
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (nav.kind === "trash") return <TrashView />;

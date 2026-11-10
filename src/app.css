@@ -9120,3 +9120,39 @@ body.ui-fade-out .app-frame {
 .settings-plugins-more .settings-data-btn {
   border-radius: 4px;
 }
+
+/* ─── 设置 → 更新（1.9.0） ─────────────────────────────────────────────
+   这一块只借用既有控件（settings-row / settings-data-btn），新增的只有两行文字
+   和发布说明的滚动框：检查结果要能和按钮并排看清，发布说明几万字不能把设置页撑爆。
+   尺寸全部落回 R8 三档 —— 字号 11/13，圆角 4（控件）/ 8（唯一一个浮层式滚动框）。 */
+.settings-update-line {
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.settings-update-notes {
+  margin: 8px 0 0;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--e2, rgba(0, 0, 0, 0.08));
+  background: var(--e1);
+  color: var(--text-secondary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--fs-11);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overscroll-behavior: contain;
+}
+.settings-update-actions {
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+/* 插件权限提示（1.9.0 S7）：一行小字，别盖过清单，但必须看得见 */
+.settings-plugins-trust {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 8px;
+}

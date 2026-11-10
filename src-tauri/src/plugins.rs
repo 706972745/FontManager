@@ -524,7 +524,10 @@ pub fn install_zip_into(zip_path: &Path, base: &Path) -> Result<(String, String,
         if let Some(p) = out.parent() {
             std::fs::create_dir_all(p).map_err(|e| format!("建目录失败：{e}"))?;
         }
-        let mut buf = Vec::with_capacity(entry.size() as usize);
+        // 容量按条目头声明的 size 预留，但**不能信它**：一个手工构造的 zip 可以声明
+        // 4 GiB 而实际只有几字节，直接 `with_capacity` 会把进程 OOM 掉（2026-11-10 审查）。
+        // 封顶 8 MiB 起步，read_to_end 自己会继续扩容 —— 正常插件包里单个文件远小于这个数。
+        let mut buf = Vec::with_capacity((entry.size() as usize).min(8 * 1024 * 1024));
         std::io::Read::read_to_end(&mut entry, &mut buf).map_err(|e| format!("读 zip 条目失败：{e}"))?;
         std::fs::write(&out, &buf).map_err(|e| format!("写 {} 失败：{e}", out.display()))?;
     }
