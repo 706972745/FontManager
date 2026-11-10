@@ -1,4 +1,5 @@
 import { ipc, type PluginInfo } from "./ipc";
+import { usePluginStore } from "./pluginStore";
 
 /**
  * 插件右键菜单的本地缓存（1.3.0）。
@@ -16,7 +17,12 @@ export function pluginMenuItems(): PluginInfo[] {
 export async function refreshPluginMenus(): Promise<void> {
   try {
     cache = await ipc.pluginsList();
+    // 顺手把同一份清单喂给搜索建议（1.8.1）：两处用同一份数据，启动时只发一次 IPC。
+    // `plugins_list` 每个插件都要做一次运行时探活，没必要为了「菜单」和「搜索」各跑一遍。
+    usePluginStore.setState({ plugins: cache, loaded: true });
   } catch {
     cache = [];
+    // 失败时不要标成「已加载」：搜索建议那边还有机会自己再拉一次
+    usePluginStore.setState({ loaded: false });
   }
 }

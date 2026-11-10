@@ -165,7 +165,8 @@ pub fn apply_prefs() {
             if let Some(p) = state.prefs.as_object_mut() {
                 p.insert("apiToken".into(), json!(fresh));
             }
-            let _ = store::save(&state);
+            // 只动 prefs：别为了一个令牌把 1.7 MB 的字体库数据重写一遍
+            let _ = store::save_prefs(&state);
         }
         fresh
     } else {
@@ -243,14 +244,25 @@ pub fn is_running() -> bool {
         .unwrap_or(false)
 }
 
-/// 随机令牌：不引 rand，用时间 + 进程 + 地址 + 计数器打散，本地回环够用
+/// 随机令牌。
+///
+/// **不要用 `DefaultHasher`**：它的 key 是编译期固定的，同样的输入永远得到同样的输出，
+/// 攻击者只要知道进程 id 和大致启动时间就能枚举出令牌（2026-11-10 审查发现）。
+/// `RandomState` 的 key 由操作系统在进程启动时随机播种（Windows 走 `ProcessPrng`），
+/// 拿它做两轮哈希、各取 64 位，本地回环鉴权够用，也不必为此引入 rand。
 fn random_hex() -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    services::now_ms().hash(&mut h);
-    std::process::id().hash(&mut h);
-    (&h as *const _ as usize).hash(&mut h);
-    format!("{:016x}{:016x}", h.finish(), services::now_ms().rotate_left(7))
+    use std::hash::{BuildHasher, Hash, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let mut out = String::with_capacity(32);
+    for _ in 0..2 {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        services::now_ms().hash(&mut h);
+        std::process::id().hash(&mut h);
+        COUNTER.fetch_add(1, Ordering::Relaxed).hash(&mut h);
+        out.push_str(&format!("{:016x}", h.finish()));
+    }
+    out
 }
 
 fn new_token() -> String {
@@ -434,7 +446,38 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
+/// Host 头白名单：只认回环写法。
+///
+/// 挡的是 **DNS rebinding**：恶意网页把自己的域名解析到 127.0.0.1，然后
+/// `fetch("http://evil.example:端口/api/v1/...")` —— 请求真的会打到本机服务上。
+/// 令牌挡住了绝大部分，但「Host 不是本地」这条本来就该先拒掉，不该只靠令牌一道闸。
+fn host_allowed(headers: &HeaderMap) -> bool {
+    let Some(raw) = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+    else {
+        // HTTP/1.0 或手写 socket 的本地客户端可能不带 Host：放行（回环 + 令牌仍是硬门槛）
+        return true;
+    };
+    let host = raw.trim().to_ascii_lowercase();
+    // 去掉端口：`127.0.0.1:51482` → `127.0.0.1`，`[::1]:51482` → `[::1]`
+    let name = if let Some(end) = host.find(']') {
+        host[..=end].to_string()
+    } else {
+        host.rsplit_once(':')
+            .map(|(h, _)| h.to_string())
+            .unwrap_or_else(|| host.clone())
+    };
+    matches!(name.as_str(), "127.0.0.1" | "localhost" | "[::1]")
+}
+
 async fn auth(State(hub): State<Arc<Hub>>, mut req: Request, next: Next) -> Response {
+    if !host_allowed(req.headers()) {
+        return fail(
+            StatusCode::FORBIDDEN,
+            "只接受来自本机的请求（Host 必须是 127.0.0.1 / localhost）",
+        );
+    }
     let Some(token) = bearer(req.headers()) else {
         return fail(StatusCode::UNAUTHORIZED, "缺少 Authorization: Bearer <token>；令牌在设置 → 本地 API 里看（或读 %APPDATA%\\FontManager\\api.json）");
     };
@@ -453,6 +496,49 @@ async fn auth(State(hub): State<Arc<Hub>>, mut req: Request, next: Next) -> Resp
 
 fn fail(code: StatusCode, msg: impl Into<String>) -> Response {
     (code, Json(json!({ "error": msg.into() }))).into_response()
+}
+
+/// 这个路径算不算「我们认识的字体」—— 启用/停用只认这一类。
+///
+/// 三条判据，任一成立即可：
+///   ① 落在某个字体库目录（`library_dir` / `library_dirs`）下面；
+///   ② 在 `state.linked` 里登记过（链接字体本来就允许放在库外）；
+///   ③ 落在系统字体目录里（这些之后会被下游按「系统字体不可改」跳过，不会真的被动手）。
+///
+/// 比较前一律 `canonicalize`：`..`、符号链接、Windows 8.3 短名都能绕开朴素的前缀判断。
+fn path_in_library(store: &Store, path: &str) -> bool {
+    let Ok(real) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    let Ok(state) = store.0.lock() else {
+        return false;
+    };
+    if state.linked.iter().any(|l| {
+        let lp = std::path::Path::new(l);
+        // Windows 的 canonicalize 会加 `\\?\` 前缀，而 state.linked 里存的是普通路径：
+        // 两边都 canonicalize 再比，光比字符串会漏掉所有链接字体。
+        std::fs::canonicalize(lp).map(|c| c == real).unwrap_or(false)
+            || lp == real.as_path()
+            || lp
+                .to_string_lossy()
+                .eq_ignore_ascii_case(real.to_string_lossy().as_ref())
+    }) {
+        return true;
+    }
+    let mut roots: Vec<std::path::PathBuf> = state
+        .library_dirs
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    if let Some(d) = state.library_dir.as_deref() {
+        roots.push(std::path::PathBuf::from(d));
+    }
+    roots.extend(crate::scanner::system_font_dirs());
+    roots.into_iter().any(|root| {
+        std::fs::canonicalize(root)
+            .map(|r| real.starts_with(&r))
+            .unwrap_or(false)
+    })
 }
 
 fn need(scope: &Scope, perm: &str) -> Result<(), Response> {
@@ -481,7 +567,8 @@ async fn health(State(hub): State<Arc<Hub>>, Extension(scope): Extension<Scope>)
         "port": cfg.port,
         "dangerous": cfg.dangerous,
         "faces": fonts::face_count(),
-        "families": fonts::families().len(),
+        // 用缓存的字族数：这个接口会被插件面板高频轮询，现算一次要克隆五千多个字符串
+        "families": fonts::family_count(),
         // 当前**这枚令牌**的权限（不是全局清单）：插件据此就知道自己能干什么
         "permissions": scope.perms,
         "tokenName": scope.name,
@@ -556,6 +643,26 @@ async fn deactivate(
 
 async fn set_active(hub: Arc<Hub>, body: ActivateBody, active: bool) -> Response {
     let store = hub.store.clone();
+    // paths 来自请求体（插件写的），不能想激活什么就激活什么（2026-11-10 审查）：
+    // 只允许「字体库目录里的文件」和「已登记的链接字体」，其余一律拒绝。
+    // 否则持有 write:fonts 的插件能把任意路径的文件注册进系统字体表。
+    if !body.paths.is_empty() {
+        let bad: Vec<String> = body
+            .paths
+            .iter()
+            .filter(|p| !path_in_library(&store, p))
+            .cloned()
+            .collect();
+        if !bad.is_empty() {
+            return fail(
+                StatusCode::FORBIDDEN,
+                format!(
+                    "这些路径不在字体库里，不允许启用/停用：{}。字体库之外的字体请走「链接字体」",
+                    bad.iter().take(3).cloned().collect::<Vec<_>>().join("、")
+                ),
+            );
+        }
+    }
     let work = tokio::task::spawn_blocking(move || {
         if !body.paths.is_empty() {
             return fonts::set_paths_active(&store, &body.paths, active);
@@ -584,9 +691,36 @@ async fn set_active(hub: Arc<Hub>, body: ActivateBody, active: bool) -> Response
     }
 }
 
+/// `/fonts/scan` 的最小间隔（2026-11-10 审查）。
+///
+/// 全盘扫描要几秒到几十秒、吃满一个核。本机任何进程拿到令牌后都能循环调它 ——
+/// 界面上的「刷新」按钮本来就有一层防抖，API 这边也该有。
+const SCAN_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn scan_clock() -> &'static Mutex<Option<std::time::Instant>> {
+    static T: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
+    T.get_or_init(|| Mutex::new(None))
+}
+
 async fn scan(State(hub): State<Arc<Hub>>, Extension(scope): Extension<Scope>) -> Response {
     if let Err(r) = need(&scope, "write:fonts") {
         return r;
+    }
+    {
+        // 先看节流，再看「有没有在跑」：两条都过才真的扫
+        let Ok(last) = scan_clock().lock() else {
+            return fail(StatusCode::INTERNAL_SERVER_ERROR, "扫描计时器坏了，重启软件");
+        };
+        if let Some(at) = *last {
+            let elapsed = at.elapsed();
+            if elapsed < SCAN_MIN_INTERVAL {
+                let wait = (SCAN_MIN_INTERVAL - elapsed).as_secs() + 1;
+                return fail(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    format!("扫描太频繁了，{wait} 秒后再试（全盘扫描开销很大）"),
+                );
+            }
+        }
     }
     {
         let Ok(mut busy) = hub.scan_lock.lock() else {
@@ -596,6 +730,10 @@ async fn scan(State(hub): State<Arc<Hub>>, Extension(scope): Extension<Scope>) -
             return fail(StatusCode::CONFLICT, "已经有一次扫描在跑，等它结束（或用 GET /health 看 faces 数）");
         }
         *busy = true;
+    }
+    // 计时从「真的开始扫」算起：上面被 409 挡回来的重试不该把节流窗口一起吃掉
+    if let Ok(mut last) = scan_clock().lock() {
+        *last = Some(std::time::Instant::now());
     }
     struct NullSink;
     impl services::scan::ScanSink for NullSink {
@@ -906,5 +1044,44 @@ mod tests {
         assert_eq!(normalize_port(Some(65535)), 65535);
         assert_eq!(normalize_port(Some(65536)), 0);
         assert_eq!(normalize_port(Some(-1)), 0);
+    }
+
+    /// 激活接口的路径闸门：库内放行、库外拒绝、显式登记的链接字体放行（S8）
+    #[test]
+    fn activation_path_gate() {
+        let root = std::env::temp_dir().join(format!("zfm-api-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("lib")).unwrap();
+        let inside = root.join("lib").join("A.ttf");
+        let outside = root.join("B.ttf");
+        let linked = root.join("C.ttf");
+        for p in [&inside, &outside, &linked] {
+            std::fs::write(p, b"x").unwrap();
+        }
+        let mut st = crate::store::AppState::default();
+        st.library_dir = Some(root.join("lib").to_string_lossy().into_owned());
+        st.linked.insert(linked.to_string_lossy().into_owned());
+        let store = Store(std::sync::Arc::new(std::sync::Mutex::new(st)));
+
+        let p = |x: &std::path::Path| x.to_string_lossy().into_owned();
+        assert!(path_in_library(&store, &p(&inside)), "库内字体必须放行");
+        assert!(!path_in_library(&store, &p(&outside)), "库外任意文件必须拒绝");
+        assert!(path_in_library(&store, &p(&linked)), "链接字体在库外也要放行");
+        assert!(!path_in_library(&store, &p(&root.join("missing.ttf"))), "不存在的路径拒绝");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Host 白名单：只认回环写法，挡住 DNS rebinding（S3）
+    #[test]
+    fn host_gate_rejects_remote_hosts() {
+        let mut h = HeaderMap::new();
+        h.insert(axum::http::header::HOST, "127.0.0.1:51482".parse().unwrap());
+        assert!(host_allowed(&h));
+        h.insert(axum::http::header::HOST, "localhost".parse().unwrap());
+        assert!(host_allowed(&h));
+        h.insert(axum::http::header::HOST, "[::1]:8080".parse().unwrap());
+        assert!(host_allowed(&h));
+        h.insert(axum::http::header::HOST, "evil.example:51482".parse().unwrap());
+        assert!(!host_allowed(&h));
     }
 }

@@ -22,6 +22,7 @@ import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
 import { familiesFor, MIN_PREVIEW_SIZE_INDEX, SIZES, allTags, useFontStore, type SortMode } from "../state/fontStore";
 import { SearchSuggest, type Suggestion } from "./SearchSuggest";
+import { openPluginSettings } from "../lib/pluginMenu";
 import { useFontCss } from "../lib/fontLoader";
 import type { Classification, FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
@@ -816,6 +817,12 @@ export function TopBar() {
     setSearch("");
     setSearchFocus(false);
     const st = useFontStore.getState();
+    // 插件（1.8.1）：不跳界面，直接让插件把自己的设置面板弹出来 ——
+    // 「搜到插件」的下一个动作几乎总是「打开它」，而不是「跳到设置页里那一行」
+    if (sg.kind === "plugin") {
+      if (sg.plugin) void openPluginSettings(sg.plugin);
+      return;
+    }
     // 选中即可：三个列表视图（列表 / 网格 / 样张）都监听 selectedFamily 自动
     // scrollIntoView + 蓝竖线，详情面板同时打开（用户 2026-11-10 要求的效果）
     if (sg.kind === "family") useFontStore.setState({ selectedFamily: sg.label });

@@ -218,6 +218,31 @@ fn state_path() -> PathBuf {
         .join("state.json")
 }
 
+/// 偏好的独立小文件（1.8.1 审查项 P3）。
+///
+/// 为什么拆：`state.json` 实测 1.77 MB，其中 1.58 MB 是 `added` / `linked` / `notes`
+/// 这些**字体库数据**，偏好本身只有约 20 KB。改一个「界面音效」开关也要整份重写，
+/// 磁盘写放大近 90 倍。纯偏好写入改走 [`save_prefs`]，只碰这个小文件。
+fn prefs_path() -> PathBuf {
+    state_path().with_file_name("prefs.json")
+}
+
+/// 原子写一个 JSON 文件：先写 .tmp 再 rename，写一半断电也不会留下半份文件。
+fn write_json_atomic<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let json = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+/// **只**保存偏好（约 20 KB）。调用前提：这次改动确实只动了 `state.prefs`。
+pub fn save_prefs(state: &AppState) -> Result<(), String> {
+    write_json_atomic(&prefs_path(), &state.prefs)
+}
+
 pub fn app_data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -286,6 +311,20 @@ pub fn load() -> AppState {
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
+    // 偏好以 prefs.json 为准（1.8.1 拆分）。老用户没有这个文件 → 用 state.json 里的
+    // 那份并当场补写一份，之后纯偏好改动就再也不用重写 1.7 MB 的主文件了。
+    let pf = prefs_path();
+    match fs::read(&pf)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+    {
+        Some(v) if v.is_object() => state.prefs = v,
+        _ => {
+            if let Err(e) = write_json_atomic(&pf, &state.prefs) {
+                crate::diag::log(&format!("store: 生成 prefs.json 失败，继续用 state.json：{e}"));
+            }
+        }
+    }
     // 历史遗留清理（C4）：早期版本把系统字体也记进了 deactivated，那些条目永远改不动，
     // 每次 reconcile 都重试一遍、失败一遍，右上角反复弹「无法卸载系统字体」。
     // 只可能是我们自己写进去的（用户无从手动编辑 state.json），直接剔掉并立刻落盘。
@@ -347,14 +386,13 @@ fn pin_legacy_library(_state: &mut AppState) -> bool {
 }
 
 pub fn save(state: &AppState) -> Result<(), String> {
-    let path = state_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    write_json_atomic(&state_path(), state)?;
+    // 两份必须同步：万一 prefs.json 被删/损坏，load() 回退到 state.json 时
+    // 不能读到一个几周前的旧偏好。写失败只记日志，主文件已经落盘了。
+    if let Err(e) = save_prefs(state) {
+        crate::diag::log(&format!("store: prefs.json 同步失败（不影响 state.json）：{e}"));
     }
-    let tmp = path.with_extension("json.tmp");
-    let json = serde_json::to_vec_pretty(state).map_err(|e| e.to_string())?;
-    fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    Ok(())
 }
 
 #[cfg(test)]
@@ -446,5 +484,24 @@ mod tests {
         custom.added.insert(inside, 0);
         assert!(!pin_legacy_library(&mut custom));
         assert_eq!(custom.library_dir.as_deref(), Some(r"E:\Fonts"));
+    }
+
+    /// 偏好快路径写的是独立小文件，而且必须是原子替换（不能读出半份 JSON）
+    #[test]
+    fn prefs_file_is_atomic_and_independent() {
+        let dir = std::env::temp_dir().join(format!("zfm-prefs-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("prefs.json");
+        write_json_atomic(&path, &serde_json::json!({ "soundPref": "off" })).unwrap();
+        let first: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(first["soundPref"], "off");
+        // 重复写不留下 .tmp；内容完整覆盖而不是追加
+        write_json_atomic(&path, &serde_json::json!({ "soundPref": "on" })).unwrap();
+        let second: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(second["soundPref"], "on");
+        assert!(!path.with_extension("json.tmp").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -6,9 +6,10 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { LoaderCircle } from "lucide-react";
 import { ArtIcon } from "./ArtIcon";
 import { PillToggle } from "../design/primitives/PillToggle";
-import { openContextMenu, type MenuItem } from "../design/primitives/ContextMenu";
 import { springSoft } from "../design/springs";
 import { ipc, type PluginInfo } from "../lib/ipc";
+import { openPluginMenu, openPluginSettings } from "../lib/pluginMenu";
+import { usePluginStore } from "../lib/pluginStore";
 import { refreshPluginMenus } from "../lib/pluginMenuBridge";
 import { toast } from "../design/primitives/Toast";
 import { useFontStore } from "../state/fontStore";
@@ -18,6 +19,7 @@ import { useT } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { LabelResyncDialog } from "./LabelResyncDialog";
 import { RuntimeManager } from "./RuntimeManager";
+import { UpdateSection } from "./UpdateSection";
 import { APP_LICENSE, displayVersion } from "../lib/version";
 import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
 
@@ -84,6 +86,59 @@ function SettingHint({ text }: { text: string }) {
 }
 
 /**
+ * 「扫描中」那一行（2026-11-11，用户反馈「设置滚动会卡一下」）。
+ *
+ * `scanProgress` 每读到一个文件就可能变一次。原来设置面板整体订阅它 ——
+ * 扫描进行中打开设置，整个面板（12 个分区、近千行 JSX、16 个 motion 开关）
+ * 会跟着每次进度回调重渲染一遍，滚动时的观感就是「一顿一顿」。
+ * 抽成独立小组件后，重渲染只发生在这三行文字上。
+ */
+function ScanProgressLine() {
+  const t = useT();
+  const scanning = useFontStore((s) => s.phase === "scanning");
+  const progress = useFontStore((s) => s.scanProgress);
+  if (!scanning) return null;
+  return (
+    <div className="settings-scanning tabular" role="status" aria-live="polite">
+      <LoaderCircle size={13} strokeWidth={1.5} className="settings-scanning-icon" />
+      {progress.total > 0
+        ? t("scan.reading", { done: progress.done, total: progress.total })
+        : t("settings.scanningFolders")}
+    </div>
+  );
+}
+
+/**
+ * 「与系统的关联」状态行。同样是高频源：`pollAffinityLink` 每 2 秒把
+ * `affinityConnection` 写回 store，面板整体订阅它等于每 2 秒全量重渲染一次 ——
+ * 用户滚动时正好撞上，就是那一下卡顿。
+ */
+function AffinityStatusRow() {
+  const t = useT();
+  const enabled = useFontStore((s) => s.settings.affinityEnabled);
+  const conn = useFontStore((s) => s.affinityConnection);
+  const detail = !enabled
+    ? t("settings.affinityDisabled")
+    : !conn
+      ? t("settings.affinityChecking")
+      : conn.reachable
+        ? `${t("settings.affinityOnline")}${conn.version ? ` · ${conn.version}` : ""} · ${t("settings.affinityDocs", { count: conn.docCount })}`
+        : conn.error
+          ? `${t("settings.affinityOffline")} · ${conn.error}`
+          : t("settings.affinityOffline");
+  const dot = !enabled ? "affinity-dot-off" : !conn ? "" : conn.reachable ? "affinity-dot-on" : "affinity-dot-off";
+  return (
+    <div className="settings-row">
+      <div>
+        <div className="settings-label">{t("settings.affinityConnection")}</div>
+        <div className="settings-sub">{detail}</div>
+      </div>
+      <span className={`affinity-dot ${dot}`} aria-hidden />
+    </div>
+  );
+}
+
+/**
  * radiogroup 的方向键 + roving tabindex（§5 第 30 条残留）。
  * 全局方向键是「换选中字族」的，不拦住的话在设置里按 ←/→ 动的是背后看不见的列表。
  * 焦点移动即选中（原生 radio 语义），Tab 只在当前选项上停一次。
@@ -134,7 +189,7 @@ export function SettingsOverlay() {
   const themePref = useFontStore((s) => s.themePref);
   const setThemePref = useFontStore((s) => s.setThemePref);
   const scanning = useFontStore((s) => s.phase === "scanning");
-  const scanProgress = useFontStore((s) => s.scanProgress);
+  // `scanProgress` 不在这一层订阅：它是每个文件都可能变的，见 <ScanProgressLine />
   const trapRef = useFocusTrap<HTMLDivElement>(openState);
   const [defaultLibDir, setDefaultLibDir] = useState("");
   const closeToTray = useFontStore((s) => s.closeToTray);
@@ -156,9 +211,9 @@ export function SettingsOverlay() {
   const autostartSaveGen = useRef(0);
   /** 保存串行链：连点两下时落盘顺序必须跟点击顺序一致（§5 第 25 条残留） */
   const autostartSaveChain = useRef<Promise<void>>(Promise.resolve());
-  const affinityConnection = useFontStore((s) => s.affinityConnection);
   const refreshAffinityConnection = useFontStore((s) => s.refreshAffinityConnection);
   const pollAffinityLink = useFontStore((s) => s.pollAffinityLink);
+  // `affinityConnection` 不在这一层订阅：每 2 秒轮询一次，见 <AffinityStatusRow />
   /** 目录名重算对话框（版权判定 v7 的迁移入口，默认只预演） */
   const [resyncOpen, setResyncOpen] = useState(false);
   /**
@@ -289,6 +344,8 @@ export function SettingsOverlay() {
     try {
       const next = await ipc.pluginsList();
       setPlugins(next);
+      // 搜索建议共用同一份清单（1.8.1）：设置里刚装的插件，搜索框立刻能搜到
+      usePluginStore.setState({ plugins: next, loaded: true });
       // 右键菜单里那份缓存也要一起刷，不然新装的插件在菜单里看不见
       await refreshPluginMenus();
       return next;
@@ -337,59 +394,15 @@ export function SettingsOverlay() {
   };
 
   /**
-   * 齿轮：让插件**自己**把设置面板弹出来（1.3.7）。
-   *
-   * 插件是独立进程，主程序从不替它画界面 —— 所以这里只能把 `settings.hook`
-   * （默认 `settings`）发过去，面板长什么样由插件决定。插件没声明 `settings`
-   * 就没有这个按钮，免得点了没反应。
-   */
-  const openPluginSettings = async (p: PluginInfo) => {
-    if (!p.running) {
-      toast.error(t("toast.pluginOfflineForSettings", { name: p.name }));
-      return;
-    }
-    try {
-      await ipc.pluginInvoke(p.id, p.settings?.hook ?? "settings", { source: "settings" });
-      toast.success(t("toast.pluginSettingsSent", { name: p.name }));
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
-
-  /**
-   * 插件行右键菜单（1.3.7）。
+   * 插件行右键菜单（1.3.7，1.8.1 起与搜索结果共用 `lib/pluginMenu.ts` 的同一套）。
    *
    * 只有插件在 plugin.json 的 `menus` 里写了 `"on": "plugin"` 的项才出现在这里 ——
    * 那是「不用选字体也能跑」的功能（打开报告目录、清缓存、重新扫描…），
-   * 以前只能凑到某个字族右键里点，很别扭。菜单项传 `hook: "context-menu"`、
+   * 以前只能凑到某个字族右键里点，很别扭。菜单项传 `hook: "context-menu"`，
    * payload 带 `source: "plugin-row"`，插件按 menu 标题分派即可。
    */
   const openPluginRowMenu = (e: ReactMouseEvent, p: PluginInfo) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const rowMenus = p.menus.filter((m) => m.on === "plugin");
-    const items: MenuItem[] = rowMenus.map((m) => ({
-      label: m.title,
-      action: () =>
-        void ipc
-          .pluginInvoke(p.id, "context-menu", { menu: m.title, source: "plugin-row" })
-          .catch((err) => toast.error(String(err))),
-    }));
-    if (rowMenus.length > 0) items.push({ kind: "separator" });
-    if (p.settings) {
-      items.push({
-        label: p.settings.title ?? t("settings.pluginsSettings"),
-        icon: <Settings size={14} strokeWidth={1.5} />,
-        disabled: !p.running,
-        action: () => void openPluginSettings(p),
-      });
-    }
-    items.push({
-      label: t("settings.pluginsOpenDir"),
-      icon: <FolderOpen size={14} strokeWidth={1.5} />,
-      action: () => void ipc.openFolder(p.dir).catch(() => {}),
-    });
-    openContextMenu(e, items);
+    openPluginMenu(e, p, "plugin-row");
   };
 
   useEffect(() => {
@@ -557,23 +570,6 @@ export function SettingsOverlay() {
 
   const customDirActive = settings.libraryDirEnabled && settings.libraryDir != null;
 
-  const affinityDetail = !settings.affinityEnabled
-    ? t("settings.affinityDisabled")
-    : !affinityConnection
-    ? t("settings.affinityChecking")
-    : affinityConnection.reachable
-      ? `${t("settings.affinityOnline")}${affinityConnection.version ? ` · ${affinityConnection.version}` : ""} · ${t("settings.affinityDocs", { count: affinityConnection.docCount })}`
-      : (affinityConnection.error
-          ? `${t("settings.affinityOffline")} · ${affinityConnection.error}`
-          : t("settings.affinityOffline"));
-  const affinityDot = !settings.affinityEnabled
-    ? "affinity-dot-off"
-    : !affinityConnection
-    ? ""
-    : affinityConnection.reachable
-      ? "affinity-dot-on"
-      : "affinity-dot-off";
-
   /**
    * 归置「与系统重复」的库内字体：先干跑拿到数量，用户确认后再真移。
    * dryRun 只统计不动文件；真移动后必须重扫一次，把已挪走的条目从库里剔掉。
@@ -683,9 +679,12 @@ export function SettingsOverlay() {
           <motion.div
             ref={trapRef}
             className="settings-panel"
-            initial={{ y: 32, scale: 0.97, opacity: 0 }}
-            animate={{ y: 0, scale: 1, opacity: 1 }}
-            exit={{ y: 20, scale: 0.98, opacity: 0 }}
+            /* 入场不再做 scale（2026-11-11）：面板展开后近千像素高，0.97→1 的缩放
+               会让整块文字每一帧重新光栅化，配合首帧挂载就是用户说的「卡一下」。
+               位移 + 透明度已经足够表达「从下方弹起」，观感差异几乎看不出。 */
+            initial={{ y: 32, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 20, opacity: 0 }}
             transition={springSoft}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
@@ -914,14 +913,8 @@ export function SettingsOverlay() {
                     <ArtIcon name="folder" size={14} />
                     {t("settings.addFolder")}
                   </button>
-                  {scanning && (
-                    <div className="settings-scanning tabular" role="status" aria-live="polite">
-                      <LoaderCircle size={13} strokeWidth={1.5} className="settings-scanning-icon" />
-                      {scanProgress.total > 0
-                        ? t("scan.reading", { done: scanProgress.done, total: scanProgress.total })
-                        : t("settings.scanningFolders")}
-                    </div>
-                  )}
+                  {/* 进度文案在子组件里订阅，别让整个面板跟着每个文件重渲染 */}
+                  <ScanProgressLine />
                 </div>
               </div>
             </section>
@@ -1133,6 +1126,12 @@ export function SettingsOverlay() {
                 {t("settings.plugins")}
                 <SettingHint text={t("settings.pluginsSub")} />
               </div>
+              {/* 权限如实告知（1.8.1 审查 S7）：插件是同权限子进程，不是网页小挂件。
+                  用户有权在装上第一个插件之前就知道这一点。 */}
+              <div className="settings-sub settings-plugins-trust">
+                <Info size={12} strokeWidth={1.5} aria-hidden />
+                {t("settings.pluginsTrust")}
+              </div>
               {/* 清单头 + 每一行插件要贴在一起：间距一大，会被当成两个不同的分区 */}
               <div className="settings-plugin-group">
                 <div className="settings-row settings-plugins-head">
@@ -1294,13 +1293,8 @@ export function SettingsOverlay() {
                 {t("settings.affinity")}
                 <SettingHint text={t("settings.affinityHelp")} />
               </div>
-                <div className="settings-row">
-                  <div>
-                    <div className="settings-label">{t("settings.affinityConnection")}</div>
-                    <div className="settings-sub">{affinityDetail}</div>
-                  </div>
-                  <span className={`affinity-dot ${affinityDot}`} aria-hidden />
-                </div>
+                {/* 状态行自己订阅 affinityConnection（每 2 秒轮询一次） */}
+                <AffinityStatusRow />
                 <div className="settings-row" data-relation="enable-below">
                   <div>
                     <div className="settings-label">{t("settings.affinityEnable")}<SettingHint text={t("settings.affinityEnableSub")} /></div>
@@ -1564,6 +1558,8 @@ ${t("settings.labelResyncWhy")}`}
                 </div>
               </div>
             </section>
+
+            <UpdateSection />
 
             <footer className="settings-footer tabular">
               <img className="settings-footer-icon" src="/favicon.png" alt="" draggable={false} />

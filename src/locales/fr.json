@@ -860,6 +860,7 @@
   "toast.snapshotsImported": "{count} instantané(s) importé(s)",
   "toast.snapshotsImportedAll": "Les {total} polices sont disponibles ici",
   "toast.snapshotsImportedPartial": "{missing} polices sur {total} sont absentes de cette machine (les instantanés ne contiennent que la liste, pas les fichiers)",
+  "toast.snapshotRestoreMissing": "Compléter depuis GitHub",
   "toast.specimenExported": "Spécimen exporté",
   "toast.trashEmptied": "Corbeille vidée",
   "toast.undo": "Annuler",

@@ -624,6 +624,8 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   getAutostart: () => invoke<boolean>("get_autostart"),
   getPrefs: () => invoke<Record<string, unknown> | null>("get_prefs"),
   setPrefs: (prefs: Record<string, unknown>) => invoke<void>("set_prefs", { prefs }),
+  /** 用系统浏览器打开网页（后端只放行 http/https，且不经过 shell） */
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
   fontsWithChar: (paths: string[], codepoint: number) =>
     invoke<string[]>("fonts_with_char", { paths, codepoint }),
   setUiScale: (scale: number | null) => invoke<number>("set_ui_scale", { scale }),
@@ -661,7 +663,31 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   runtimeDelete: (kind: string) => invoke<void>("runtime_delete", { kind }),
   /** 从 GitHub release 下载运行时补全；进度监听 `runtime:progress` 事件 */
   runtimeDownload: (kind: string) => invoke<void>("runtime_download", { kind }),
+
+  // ── 1.8.1：检查更新 ──
+  /**
+   * 问 GitHub 要最新版本号。
+   * `force = false`（启动时的静默检查）命中后端 10 分钟缓存；
+   * 用户在设置里手点传 true。只读版本号与发布说明，不下载任何文件。
+   */
+  checkUpdate: (force = false) => invoke<UpdateCheck>("check_update", { force }),
 };
+
+/** `check_update` 的结果 */
+export interface UpdateCheck {
+  current: string;
+  latest: string;
+  hasUpdate: boolean;
+  /** 发布页地址（用系统浏览器打开） */
+  url: string;
+  /** 发布说明原文（Markdown，界面按纯文本展示） */
+  notes: string;
+  publishedAt: string;
+  /** github = Releases API；raw / cdn = 只读到版本号的兜底 */
+  source: "github" | "raw" | "cdn";
+  /** 用户点过「跳过这个版本」 */
+  skipped: boolean;
+}
 
 /** 一个插件运行时（Python / Node）的状态（`runtimes_status`） */
 export interface RuntimeStatus {

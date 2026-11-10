@@ -140,6 +140,18 @@ fn classify(path: &std::path::Path, base_source: FontSource, managed: &Path) -> 
     }
 }
 
+/// 系统字体目录（只读，软件永远不会往里写）。
+///
+/// 目前只有一个用处：本地 API 判断「这个路径算不算认识的字体」时，系统字体要放行 ——
+/// 它们在启停流程里会被 `skipped_system` 挡住，不会真的被改。
+pub fn system_font_dirs() -> Vec<PathBuf> {
+    font_dirs()
+        .into_iter()
+        .filter(|(_, src)| *src == FontSource::System)
+        .map(|(p, _)| p)
+        .collect()
+}
+
 /// 字库目录里「直接放进去、没走导入流程」的字体文件。
 ///
 /// 用户会手动往字库文件夹丢字体，点刷新就该看见——但扫描链只认系统目录、额外目录和
@@ -153,7 +165,10 @@ pub fn discover_managed(dir: &std::path::Path, known: &std::collections::HashSet
         known.iter().map(|s| s.to_lowercase()).collect();
     let mut out: Vec<String> = Vec::new();
     for e in WalkDir::new(dir)
-        .follow_links(true)
+        // 不跟符号链接 / junction（1.8.1 审查项 P5）：字体库是「我们自己的地盘」，
+        // 里面一个指向别处的 junction 不该被当成库内字体收编，更不该一路跟进
+        // C:\Windows\Fonts 之类的大目录。真要用库外的字体，走「添加文件夹」显式登记。
+        .follow_links(false)
         .into_iter()
         // 归置过的重复字体不再收编回来，否则用户挪了等于没挪
         .filter_entry(|e| !in_dup_dir(e))
@@ -543,7 +558,8 @@ pub fn dedupe_library(library: &Path, dry_run: bool) -> DedupeReport {
     let mut skipped_different = 0usize;
     let mut skipped_partial = 0usize;
     for e in WalkDir::new(library)
-        .follow_links(true)
+        // 同 discover_managed：库内遍历不跟链接，避免把库外文件判成重复字体
+        .follow_links(false)
         .into_iter()
         .filter_entry(|e| !in_dup_dir(e))
         .filter_map(|e| e.ok())

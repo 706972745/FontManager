@@ -84,6 +84,7 @@ import {
   missingEntries,
   systemBackedEntries,
 } from "../lib/snapshotKey";
+import { askPluginsForMissingFamilies, ensurePluginList, snapshotRestorePlugins } from "../lib/snapshotPlugins";
 import { toast } from "../design/primitives/Toast";
 import { setSoundLevel, type SoundLevel } from "../lib/sound";
 import { applyTheme, type ThemePref } from "../lib/theme";
@@ -1809,11 +1810,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
     await listen("fonts:changed", () => {
       clearTimeout(watchTimer);
       watchTimer = setTimeout(() => {
-        // 扫描期间的文件事件直接忽略：这一次扫描刚把磁盘读了一遍，期间的变化
-        // 已经包含在这份结果里（watcher 在扫描期间本来就会因为自身读取而触发）。
-        // 之前改成"排队补扫"实测代价很大：每次启动白扫一整遍（十几秒）+ 假报
-        // 「发现 N 个新字体」。要补扫的是用户主动改目录这类显式请求（走 rescan）。
+        // 扫描期间的**和导入/导出期间的**文件事件一律忽略：这些操作自己就会把
+        // 磁盘读/写一遍，期间的变化已经包含在它们的结果里；watcher 再触发一次
+        // 全量 rescan 只会白扫十几秒，还容易假报「发现 N 个新字体」（1.8.1 P6）。
+        // 后端另有 400ms 事件合并，两层一起用。
         if (get().phase === "scanning") return;
+        if (get().packProgress) return;
         const before = get().fonts.length;
         void get()
           .rescan()
@@ -3295,16 +3297,38 @@ export const useFontStore = create<FontStore>((set, get) => ({
           const index = buildFaceIndex(get().fonts);
           let total = 0;
           let missing = 0;
+          /** 缺失的字族名（去重）：交给声明了 snapshot-missing 的插件去补（1.8.3） */
+          const goneFamilies = new Set<string>();
           for (const snap of imported) {
             total += snap.entries.length;
-            missing += missingEntries(snap.entries, index).length;
+            const gone = missingEntries(snap.entries, index);
+            missing += gone.length;
+            for (const e of gone) goneFamilies.add(e.family);
           }
-          toast.success(
+          /*
+           * 有缺失、且有插件能补 → 提示上挂一个动作按钮（"从 GitHub 补全"之类，
+           * 具体怎么做由插件决定）。没有插件接就完全不出现按钮，文案同以前。
+           * 这是待办 FS-3：以前只报数字，用户不知道下一步点哪。
+           */
+          if (goneFamilies.size > 0) await ensurePluginList();
+          const canRestore = goneFamilies.size > 0 && snapshotRestorePlugins().length > 0;          toast.success(
             t("toast.snapshotsImported", { count: imported.length }),
             missing > 0
               ? t("toast.snapshotsImportedPartial", { total, missing })
               : t("toast.snapshotsImportedAll", { total }),
             "restore",
+            canRestore
+              ? {
+                  label: t("toast.snapshotRestoreMissing"),
+                  run: () => {
+                    void askPluginsForMissingFamilies([...goneFamilies], {
+                      missing,
+                      total,
+                      snapshots: imported.map((s) => s.name),
+                    });
+                  },
+                }
+              : undefined,
           );
         } else {
           // 合并所有导入快照的条目后应用（切换 / 合并到当前启用）
@@ -3659,7 +3683,24 @@ export const useFontStore = create<FontStore>((set, get) => ({
   pollAffinityLink: async () => {
     try {
       const link = await ipc.affinityLink();
-      if (link) set({ affinityConnection: link });
+      if (!link) return;
+      /*
+       * 值没变就不写 store（2026-11-11）：这个轮询每 2 秒跑一次，每次都 set 一个
+       * 新对象 → 所有订阅 affinityConnection 的组件每 2 秒重渲染一遍。
+       * 设置面板开了这个订阅（滚动时正好撞上 = 用户说的「卡一下」），
+       * 而且 IPC 回来的字段每次都是新对象。浅比一遍再决定要不要通知。
+       */
+      const cur = get().affinityConnection;
+      if (
+        cur &&
+        cur.reachable === link.reachable &&
+        cur.version === link.version &&
+        cur.docCount === link.docCount &&
+        cur.error === link.error
+      ) {
+        return;
+      }
+      set({ affinityConnection: link });
     } catch {
       return;
     }
@@ -4743,6 +4784,27 @@ export function familiesFor(
     byTags.set(tags, result);
   }
   return result;
+}
+
+/**
+ * 「字族名 → 全小写名」的检索索引（1.8.1 审查项 P4）。
+ *
+ * 搜索建议原来每敲一个键就对 4211 个族名做 `name.toLowerCase()` —— 约 4000 次
+ * 字符串分配/键，而字体库在一次扫描之内根本不会变。这里跟着 `familiesFor` 的
+ * Map 一起缓存（Map 本身是 WeakMap 的合法键，扫描结束换成新 Map 时自动失效）。
+ */
+const familyLowerCache = new WeakMap<
+  Map<string, Family>,
+  ReadonlyArray<readonly [string, string]>
+>();
+
+export function familyLowerNames(families: Map<string, Family>): ReadonlyArray<readonly [string, string]> {
+  let list = familyLowerCache.get(families);
+  if (!list) {
+    list = Array.from(families.keys(), (name) => [name.toLowerCase(), name] as const);
+    familyLowerCache.set(families, list);
+  }
+  return list;
 }
 
 const conflictCache = new WeakMap<FontFace[], Map<string, FontConflict[]>>();
