@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Lock } from "lucide-react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { formatBytes } from "../lib/fontLoader";
@@ -8,7 +8,7 @@ import { FormatBadge } from "./FamilyCard";
 import { MemberChip } from "./MemberChip";
 import { buildMembership, type FamilyMembership } from "../lib/familyMembership";
 import { faceKey } from "../lib/snapshotKey";
-import { buildFamilyMenu, copyText } from "../lib/menus";
+import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useT } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
@@ -82,11 +82,9 @@ export function FontList({ families }: { families: Family[] }) {
 /**
  * 一行 = 一个族。
  *
- * 拆成组件是为了「已复制」这 1.5s 的状态：放在 FontList 里会让每次复制都重渲染
- * 整个虚拟列表（几百行），放行内只重渲染自己。
- *
- * 交互与样张视图同一套（用户 2026-11-11：「列表视图也加入这个效果，只不过那个圆点
- * 不需要显示」）：悬停行首长出灰线 → 点一下复制族名 +「已复制」+ 蓝线，1.5s 后收回。
+ * 行首锚点（`.list-row::after`）的语义照**卡片视图**：悬停长灰线、选中是常驻蓝线；
+ * 不复制族名、也不做「已复制」的 1.5s 闪现（那是速览 / 样张的交互，
+ * 用户 2026-11-11：「交互效果和卡片视图一样，不需要和速览界面/样张视图一样」）。
  */
 function ListRow({
   fam,
@@ -106,21 +104,8 @@ function ListRow({
   const t = useT();
   const displayName = useDisplayName();
 
-  const [copied, setCopied] = useState(false);
-  const copiedTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
-  const copyName = () => {
-    copyText(fam.name, t("copy.familyName"));
-    setCopied(true);
-    window.clearTimeout(copiedTimer.current);
-    copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
-  };
-
   const handlePick = (mode: "single" | "toggle" | "range") => {
-    const st = useFontStore.getState();
-    onSelect(fam.name, mode, st.visibleOrder);
-    // 只有「纯点击」才复制：Ctrl / Shift + 点击是选择手势，那两下不该往剪贴板里塞东西
-    if (mode === "single") copyName();
+    onSelect(fam.name, mode, useFontStore.getState().visibleOrder);
   };
 
   return (
@@ -129,7 +114,7 @@ function ListRow({
       role="button"
       tabIndex={0}
       aria-pressed={selected}
-      className={`list-row ${selected ? "row-selected" : ""} ${copied ? "is-copied" : ""}`}
+      className={`list-row ${selected ? "row-selected" : ""}`}
       style={{
         position: "absolute",
         top: 0,
@@ -169,10 +154,6 @@ function ListRow({
     >
       <span className="row-name">
         <span className="row-name-text">{displayName(fam)}</span>
-        {/* 「已复制」放在截断容器外面：族名很长时不会被 ellipsis 一起裁掉 */}
-        <span className={`row-copied ${copied ? "is-shown" : ""}`} aria-hidden={!copied}>
-          {t("copy.done")}
-        </span>
         {hasMem && (
           <span className="row-members">
             {mem!.snaps.map((b) => (

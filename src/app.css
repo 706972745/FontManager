@@ -5763,25 +5763,7 @@ h2.detail-title.copy-name {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 「已复制」：与样张 /.specimen-copied 同一套。不常驻占位 —— 列表行很密，
-   每行都空出三十来像素去等一个 1.5s 的提示不划算，所以平时宽 0 + 抵消 gap。 */
-.row-copied {
-  flex: none;
-  width: 0;
-  margin-right: -6px;
-  overflow: hidden;
-  font-size: var(--fs-9);
-  font-weight: 400;
-  color: var(--accent-a);
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.2s linear;
-}
-.row-copied.is-shown {
-  width: auto;
-  margin-right: 0;
-  opacity: 1;
-}
+
 .row-members {
   display: inline-flex;
   align-items: center;
@@ -7864,12 +7846,15 @@ body.ui-fade-out .app-frame {
 .list-row.row-selected,
 .list-row[aria-selected="true"] {
   background: transparent;
-  box-shadow: inset 2px 0 0 var(--ui-accent);
+  /* 选中不再画 inset 左条：锚点 ::after 就是那条线（1.8.6）。
+     两套并存会在行首 0 和 8 并排出现两条线（用户 2026-11-11：「这里多了一个」）。 */
+  box-shadow: none;
 }
-/* 行首锚点（1.8.6，用户：「列表视图也加入样张那个效果，只不过那个圆点不需要显示」）：
-   静止什么都不画 → 悬停从 top:6 长出 2px 灰线（顶端钉死 = 只向下长）→
-   点一下复制族名时整行高变蓝，1.5s 后随「已复制」一起消失。
-   左缘 8、行内距 24 → 线到文字 14px（行才 32 高，不用样张那 30）。 */
+/* 行首锚点（1.8.6）：语义照**卡片视图**，不照速览 / 样张。
+   —— 卡片是「悬停灰线、选中蓝线」，选中状态常驻；速览 / 样张那套是
+   「点一下复制族名 → 蓝线跟着『已复制』一起 1.5s 后消失」，列表不这么做
+   （用户 2026-11-11：「交互效果和卡片视图一样，不需要和速览界面/样张视图一样」）。
+   静止什么都不画（不显示圆点）；左缘 8、行内距 24 → 线到文字 14px（行才 32 高）。 */
 .list-row {
   position: relative;
 }
@@ -7893,8 +7878,9 @@ body.ui-fade-out .app-frame {
 .list-row:hover::after {
   transform: scaleY(1);
 }
-.list-row.is-copied::after,
-.list-row.is-copied:hover::after {
+/* 选中 = 占满行高的蓝线（常驻，和卡片 .card-selected 的 96px 蓝线同一语义） */
+.list-row.row-selected::after,
+.list-row[aria-selected="true"]::after {
   top: 0;
   bottom: 0;
   background: var(--ui-accent);
