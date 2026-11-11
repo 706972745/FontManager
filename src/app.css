@@ -3353,16 +3353,20 @@ h2.detail-title.copy-name {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-a) 32%, transparent);
 }
 
-/* ─── 样张格子的行首锚点（2026-11-11 用户要求） ────────────────────────
-   卡片 / 列表行 / 在线列表 / 速览行都有这套「静止 6px 圆点 → 悬停长成 2px 灰线 →
-   选中是 2px 蓝线」，只有样张格子没有。这里补齐，尺寸取整条的中间档：
-   格子高度随字号档变（约 120~190px），线取 64（悬停）/ 76（选中）——
-   比卡片矮就不照抄 80/96，也不会像百分比那样在过渡里跳。
+/* ─── 样张格子的行首锚点（2026-11-11 用户要求，1.8.5 二次调整） ──────────
+   卡片浏览界面那套固定 80/96 不跟卡片高度；样张格子反过来 —— 线要占满格子高度，
+   而且**只向下长**（从圆点往下延伸，顶端永远钉在 top:11）。
+   所以拆成两个伪元素：::before 是 6px 圆点，::after 是 2px 竖线，
+   线用 top/bottom 定位 + `transform: scaleY()` 生长，`transform-origin: 50% 0` 保证
+   只向下的方向感；不直接过渡 height（百分比与 px 混在一条 transition 里
+   Chromium 不保证逐帧插值，会「宽度在动、高度突然跳到底」）。
+   三态：静止圆点 → 悬停长到底部留 16px 的灰线 → 复制成功那 1.5s 一路长到格子底边的蓝线。
    锚点左缘 5px、头部左内距 13px，两者不重叠，所以不用像卡片那样给头部让位。 */
 .specimen-tile {
   position: relative;
 }
 .specimen-tile::before {
+  /* 圆点：静止时的形态 */
   content: "";
   position: absolute;
   left: 5px;
@@ -3372,16 +3376,33 @@ h2.detail-title.copy-name {
   border-radius: 3px;
   background: var(--ui-dot);
   transition:
-    width var(--t-quick) ease-out,
-    height var(--t-quick) ease-out,
-    border-radius var(--t-quick) ease-out,
+    transform var(--t-quick) ease-out,
+    opacity var(--t-quick) ease-out;
+}
+.specimen-tile::after {
+  /* 竖线：与圆点同心（5 + 3 - 1 = 7），默认缩成 0 高 */
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 11px;
+  bottom: 16px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--ui-line-hover);
+  transform: scaleY(0);
+  transform-origin: 50% 0;
+  transition:
+    transform var(--t-quick) ease-out,
+    bottom var(--t-quick) ease-out,
     background-color var(--t-quick) ease-out;
 }
 .specimen-tile:hover::before {
-  width: 2px;
-  height: 64px;
-  border-radius: 1px;
-  background: var(--ui-line-hover);
+  transform: scale(0);
+  opacity: 0;
+}
+/* 悬停：2px 灰线，底边留 16px —— 留给点击后继续往下长的那一段 */
+.specimen-tile:hover::after {
+  transform: scaleY(1);
 }
 
 /* 点一下就复制族名：族名后就地出现「已复制」，1.5s 淡出（与速览同一套）。
@@ -3398,14 +3419,20 @@ h2.detail-title.copy-name {
 .specimen-copied.is-shown {
   opacity: 1;
 }
-/* 复制成功的那 1.5s 里锚点长成蓝线，和「已复制」一起出现、一起退回圆点
-   （用户 2026-11-11：这个效果要随「已复制」一起消失，不要常驻）。
+/* 复制成功的那 1.5s 里锚点长到格子底边（bottom: 0），和「已复制」一起出现、
+   一起退回圆点（用户 2026-11-11：这个效果要随「已复制」一起消失，不要常驻）。
+   `bottom` 变小只会让线继续往下长，顶端不动 —— 方向永远是向下的。
    选中态不画线 —— 选中本来就是持久状态，靠格子的蓝色描边表达就够了。 */
-.specimen-tile.is-copied::before {
-  width: 2px;
-  height: 76px;
-  border-radius: 1px;
+.specimen-tile.is-copied::before,
+.specimen-tile.is-copied:hover::before {
+  transform: scale(0);
+  opacity: 0;
+}
+.specimen-tile.is-copied::after,
+.specimen-tile.is-copied:hover::after {
+  bottom: 0;
   background: var(--ui-accent);
+  transform: scaleY(1);
 }
 /* 补足最后一行的空格子：只占位，不画也不响应 */
 .specimen-tile-empty {
@@ -7693,20 +7720,10 @@ body.ui-fade-out .app-frame {
   border-color: var(--ui-line);
   box-shadow: none;
 }
-/* ─── 行首三态锚点（2026-11-11 改） ─────────────────────────────────────
-   点 → 灰线（悬停，上下各留 24px）→ 蓝线（选中，占满整卡）。
-   线长要跟着卡片高度走（网格卡片随字号档变高、列表卡片是 min-height），
-   所以用 top/bottom 定位而不是写死 px。
-
-   为什么拆成两个伪元素、为什么用 scaleY 而不是过渡 height：
-   `height: 6px → calc(100% - 48px)` 在容器高度确定时能算对终值，
-   但百分比与 px 混在一条 transition 里，Chromium 不保证逐帧插值 ——
-   一旦不插值就是「宽度在动、高度突然跳到底」，比不做动画更难看。
-   `transform` 是合成器属性，一定可插值，而且不触发布局（卡片里这类锚点一多，
-   每帧改 height 会连带重排）。圆点用 scale(0) 收掉，观感与「长成一条线」一致。
-   ──────────────────────────────────────────────────────────────────── */
+/* 行首三态锚点（2026-11-11 复原）：与速览同一套（点 → 80 灰线 → 96 蓝线），生长起点固定。
+   卡片浏览界面按用户要求回到这个固定长度版本 —— 「随卡片高度长满」那套只给样张格子用，
+   见 §3.5 的 .specimen-tile 锚点。 */
 .family-card::before {
-  /* 圆点：静止时的形态 */
   content: "";
   position: absolute;
   left: 26px;
@@ -7715,47 +7732,24 @@ body.ui-fade-out .app-frame {
   height: 6px;
   border-radius: 3px;
   background: var(--ui-dot);
-  transform-origin: 50% 50%;
   transition:
-    transform var(--t-quick) ease-out,
-    opacity var(--t-quick) ease-out;
-}
-.family-card::after {
-  /* 竖线：与圆点同心（26 + 3 - 1 = 28），默认缩成 0 高 */
-  content: "";
-  position: absolute;
-  left: 28px;
-  top: 24px;
-  bottom: 24px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--ui-line-hover);
-  transform: scaleY(0);
-  transform-origin: 50% 0;
-  transition:
-    transform var(--t-quick) ease-out,
-    top var(--t-quick) ease-out,
-    bottom var(--t-quick) ease-out,
+    width var(--t-quick) ease-out,
+    height var(--t-quick) ease-out,
+    border-radius var(--t-quick) ease-out,
     background-color var(--t-quick) ease-out;
 }
 .family-card:hover::before {
-  transform: scale(0);
-  opacity: 0;
-}
-.family-card:hover::after {
-  transform: scaleY(1);
+  width: 2px;
+  height: 80px;
+  border-radius: 1px;
+  background: var(--ui-line-hover);
 }
 .family-card.card-selected::before,
 .family-card.card-selected:hover::before {
-  transform: scale(0);
-  opacity: 0;
-}
-.family-card.card-selected::after,
-.family-card.card-selected:hover::after {
-  top: 0;
-  bottom: 0;
+  width: 2px;
+  height: 96px;
+  border-radius: 1px;
   background: var(--ui-accent);
-  transform: scaleY(1);
 }
 /* 头部：格式徽标 → 族名 → 样式数 …… 右端 许可 / ☆ / 开关 */
 .card-head {
@@ -8491,21 +8485,6 @@ body.ui-fade-out .app-frame {
   height: 64px;
   border-radius: 1px;
   background: var(--ui-line-hover);
-}
-/* 主卡片的竖线已改成 ::after + scaleY（2026-11-11）。在线小卡是 `.family-card
-   online-card`，会继承那条 ::after —— 但它在下面有自己的 ::before 锚点（矮卡取 64px），
-   不显式让掉的话悬停时会同时出现两条线。 */
-.online-card::after {
-  content: none;
-}
-/* 同理，主卡片那两条「圆点收掉」的规则（`:hover` 与 `.card-selected`）也会命中
-   在线小卡，把它的圆点 scale(0) 掉、而它自己的 `:hover::before` 只改宽高不恢复。
-   这里显式压回去 —— 在线小卡保持原来的 ::before 机制不变。 */
-.online-card::before,
-.online-card:hover::before,
-.online-card.card-selected::before {
-  transform: none;
-  opacity: 1;
 }
 /* 族名给锚点让位 22；下面的小字跟族名同一个左缘（用户要的就是这两行对齐） */
 .online-card .card-head {

@@ -27,6 +27,7 @@ import { dockKeysFor, splitDockHint } from "../lib/dockHint";
 import { useDisplayName } from "../lib/displayName";
 import { copyrightExpired } from "../lib/license";
 import { familyCopyrightClass } from "../lib/license";
+import { isEnabledNow } from "../lib/familyState";
 import { useFamilyMembership } from "../lib/membership";
 import { buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
@@ -464,15 +465,17 @@ export function QuickBar() {
   // 否则勾一个筛选条件就会显示「已启用 0」，看起来像字体全被停用了。
   const enabledCount = useMemo(
     () =>
-      [...familiesFor(fonts, tags).values()].filter(
-        (f) => f.active || f.partial || sessionActivated.includes(f.name),
+      [...familiesFor(fonts, tags).values()].filter((f) =>
+        isEnabledNow(f, sessionActivated),
       ).length,
     [fonts, tags, sessionActivated],
   );
 
   const families = useMemo(() => {
-    const enabled = [...familiesFor(fonts, tags).values()].filter(
-      (f) => f.active || f.partial || sessionActivated.includes(f.name),
+    // 判定与 SearchSuggest 的 onlyActive 共用一个口径（lib/familyState.ts::isEnabledNow），
+    // 否则「建议里搜得到、列表里没有」的老问题会在两处各写一遍后再次分叉。
+    const enabled = [...familiesFor(fonts, tags).values()].filter((f) =>
+      isEnabledNow(f, sessionActivated),
     );
     const filtered = applyFamilyFilters(enabled, {
       classFilter,
@@ -698,6 +701,7 @@ export function QuickBar() {
                 {queryFocus && query.trim().length > 0 && (
                   <SearchSuggest
                     query={query}
+                    onlyActive
                     onPick={(sg: Suggestion) => {
                       // 插件（1.8.1）：直接把它的设置面板弹出来，速览这边收起建议即可
                       if (sg.kind === "plugin") {

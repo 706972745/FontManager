@@ -294,6 +294,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 排序 / 筛选按钮 `.sort-btn` | 4px 圆角；生效时 `.filter-live` = 主文字色 + 1px `--accent-glow-soft` 环 |
 | 筛选计数 `.filter-count` | 11px / 600 / 强调色 |
 | 搜索建议 `.suggest-list` | 8px 圆角 / 1px `--ui-line` / `--ui-menu` 底 / 顶部 `calc(100% + 6px)` / z 70；行 11px（图标 12 + 名称 + 「条数 · 类型」9px 弱色）；**每类必须带图标**（字体 Type / 标签 Tag / 分组 FolderOpen / 快照 Camera），顺序：标签 → 分组 → 快照 → 字体 |
+| 搜索建议的字体范围 | **完整界面搜全库；速览只搜已启用**（`onlyActive`）。速览的列表本来就只列已启用字体，建议下拉也必须同一口径，否则会出现「建议里有 Arial、点下去列表是空的」。口径 = 整族启用 / 部分字重启用 / 本次会话临时启用（`lib/familyState.ts::isEnabledNow`），与速览列表和「已启用 N」共用同一个判定。标签 / 分组 / 快照三类不受影响 —— 它们不是字体，点下去是「用这个条件过滤当前列表」。 |
 | 筛选「范围」二级菜单 `.filter-submenu` | **8px 圆角** / 1px `--ui-line` / `--ui-menu` 底 / `position: fixed` **向左弹出**（`.filter-menu` 有 `overflow-y:auto`，子元素不能放在它里面）；入口右侧显示已选条数与 `›`；**标签 / 分组 / 快照有数据才出现**；顺序：星级 → 范围（收藏/标签/分组/快照）→ 显示…；入口与子面板都要挂离开计时（160ms） |
 | 排序菜单 `.sort-menu` | **8px 圆角**（R8）；筛选菜单 `.filter-menu` 仍是 **4px** —— 两者同类却不同档，见 §4 |
 | 菜单项 `.sort-item` | `padding: 8px 11px` / 4px 圆角 / 13px；选中 `.sort-active` 主文字色 500 |
@@ -311,7 +312,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 元素 | 规格 |
 |---|---|
 | 卡片 `.family-card` | `padding: 20px 24px 22px 26px`；`min-height: 196px`（按 96px 档预留）；0 圆角 / 0 描边 / 透明底 / 无阴影 |
-| 行首锚点 | 拆两个伪元素（1.8.5）：`::before` = 6px 圆点 @ `left: 26 / top: 24`；`::after` = 2px 竖线 @ `left: 28`（与圆点同心）、`top: 24` / `bottom: 24` 定位、`transform: scaleY(0)` 收起、`--t-quick` 生长。**悬停 = 卡片高 − 48px**（上下各留 24），**选中 = `top/bottom: 0` 占满整卡**，随卡片高度自适应。不过渡 `height`：`calc(100% - 48px)` 与 px 混在一条 transition 里 Chromium 不保证逐帧插值；`transform` 走合成器，一定可插值且不触发布局 |
+| 行首锚点 | **固定长度三态**（与速览同一套）：单个 `::before` 伪元素，静止 6px 圆点 @ `left: 26 / top: 24` → 悬停 `2 × 80` 灰线（`--ui-line-hover`）→ 选中 `2 × 96` 蓝线（`--ui-accent`），`--t-quick` 过渡 `width / height / border-radius / background-color`。线从圆点往下长（`top` 固定）。**不跟随卡片高度** —— 1.8.5 曾做过「悬停 = 卡片高 − 48 / 选中占满整卡」，用户看过真机后要求卡片浏览界面回到原来的固定长度，「占满高度」那套只留给样张格子（§3.5） |
 | 卡头 `.card-head` | `margin-left: 22`（给锚点让位）/ gap 10 / `min-height: 16` |
 | 族名 `.card-name` | 11px / 500 / `line-height: 16` / 主文字色 |
 | 格式徽标 `.badge` | 等宽 **9px** / `line-height: 14` / `padding: 0 4px` / 1px 描边 / **0 圆角** / 次文字色 / 字距 0.04em |
@@ -349,7 +350,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 工具行 `.specimen-tools` | 高 20 / flex / gap 5 |
 | 字重胶囊 `.specimen-weight` | **999px 胶囊**（语义值）/ `padding: 2px 4px 2px 7px` / `max-width: 132` / 10px |
 | 样张文字 `.specimen-text` | `line-height: 1.12` / 居中 / `nowrap` / `text-overflow: clip`（直接裁，不出省略号） |
-| 样张格子 `.specimen-tile` 行首锚点 | 与卡片 / 列表 / 在线列表同一套三态：静止 **6px 圆点**（`--ui-dot`，`left:5 / top:11`）→ 悬停 **2 × 64 灰线**（`--ui-line-hover`）→ 复制成功那 1.5s **2 × 76 蓝线**（`--ui-accent`），`--t-quick` 过渡。样张格子比卡片矮得多，仍用固定 64/76（**未**跟随卡片改成百分比，见清单 B43） |
+| 样张格子 `.specimen-tile` 行首锚点 | **占满格子高度、只向下长**：拆两个伪元素 —— `::before` = 6px 圆点 @ `left: 5 / top: 11`；`::after` = 2px 竖线 @ `left: 7`（与圆点同心）、`top: 11` 固定、`bottom` 16 → 0 定位、`transform: scaleY(0)` 收起、`transform-origin: 50% 0`（所以生长方向只有向下）、`--t-quick` 过渡。**悬停**长到距格子底边 16px 的灰线（`--ui-line-hover`），**复制成功那 1.5s** 继续长到底边（`bottom: 0`）并转蓝（`--ui-accent`），与「已复制」同时出现同时消失。线长跟着格子高度走（格子随字号档 120~190px），不过渡 `height`（百分比与 px 混在 transition 里 Chromium 不保证逐帧插值） |
 | 样张格子 · 复制反馈 | 点一下把族名写进剪贴板：名字后出现 `.specimen-copied`（9px / `--accent-a` / `margin: 6px` 由 `.specimen-head` 的 gap 提供），**1.5s 淡出**（0.2s linear）；与锚点蓝线同时出现、同时消失。它常驻 DOM 只切 opacity，出现时不推走右侧徽章。Ctrl / Shift + 点击不复制 |
 | 样张侧栏 | 62px 只留图标；**分组 / 快照行保留序号**（`gap: 2px`，图标右紧跟数字），文字与计数照旧隐藏。**行内容左对齐 + `padding-left: 16`**（1.8.4 起）：所有图标落在同一条竖线上（x=23），序号挂在图标右侧；原来是 `justify-content: center`，带序号的行图标左移 7px、不带序号的行居中，一栏图标是锯齿状。`padding-left` 参与 `--t-state` 过渡，切视图时图标平移而不是跳位 |
 
