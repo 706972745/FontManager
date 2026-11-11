@@ -34,7 +34,7 @@ and MCP when you want your tools to join in.
 
 <br>
 
-<img src="main.png" alt="FontManager — library view with live font previews, activation toggles and the detail panel" width="920" />
+<img src="main.png?v=1.9.3" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -113,7 +113,7 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: sidebar, toolbar, font cards with live previews](main.png)
+![Main window: sidebar, toolbar, font cards with live previews](main.png?v=1.9.3)
 
 **Find your way first: the window has five regions**
 
@@ -171,18 +171,18 @@ The three icons at the toolbar's right edge:
 - **List**: a compact table — family / styles / format / size / toggle — best for
   sweeping a big library
 
-![List view: the whole library in one table](view-list.png)
+![List view: the whole library in one table](view-list.png?v=1.9.3)
 
 - **Specimen**: a **multi-column specimen wall** — every cell keeps the full card
   header (format / name / license / ★ / toggle) and spreads the sample text **large**
   underneath; pick a face per cell (remembered); its own size control — best for
   judging a typeface's character
 
-![Specimen view: multi-column specimen wall with large sample text](view-specimen.png)
+![Specimen view: multi-column specimen wall with large sample text](view-specimen.png?v=1.9.3)
 
 ### 5. The detail panel: everything about one family
 
-![Detail panel: multi-size specimen and metadata](detail.png)
+![Detail panel: multi-size specimen and metadata](detail.png?v=1.9.3)
 
 Click any card and the right panel opens:
 
@@ -231,7 +231,7 @@ Click any card and the right panel opens:
 | Online panel | see below: filter by category / license, one-click add |
 | Local API / MCP | automated imports (see [Plugins, local API & MCP](#-plugins-local-api--mcp)) |
 
-![Online panel: category and license filters on the left, font cards with one-click add](online.png)
+![Online panel: category and license filters on the left, font cards with one-click add](online.png?v=1.9.3)
 
 How to use it: sidebar "Online" → filter by **category** (sans / serif / display /
 handwriting / mono / icons) and **license** (OFL / Apache / UFL), or just search;
@@ -260,7 +260,7 @@ a handwritten caption), easy to spot in Explorer: the app icon (a **TYPE
 FontManager** wordmark) · snapshot export **.S** · pack-with-fonts **.P** ·
 data-only export **.L** · library folder **.F**:
 
-![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png)
+![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png?v=1.9.3)
 
 ### 11. Trash: regret is allowed
 
@@ -269,7 +269,7 @@ data-only export **.L** · library folder **.F**:
 2. Sidebar "Trash" → **restore** (back exactly as it was) or **delete forever**
    (double confirmation)
 
-![Trash: removed fonts land here first — nothing disappears silently](trash.png)
+![Trash: removed fonts land here first — nothing disappears silently](trash.png?v=1.9.3)
 
 ### 12. Licenses & duplicates: no browser needed
 
@@ -297,7 +297,7 @@ Right-click a family → "Apply in {app}…":
 
 ### 14. ⚡ The QuickBar: switch fonts in 1 second, anywhere
 
-![QuickBar: the docked panel of activated fonts](quickbar.png)
+![QuickBar: the docked panel of activated fonts](quickbar.png?v=1.9.3)
 
 1. Press <kbd>Alt</kbd>+<kbd>`</kbd> anywhere — the main window collapses into the
    **docked QuickBar** (change the hotkey under Settings → System → "QuickBar
@@ -322,7 +322,7 @@ Right-click a family → "Apply in {app}…":
 - <kbd>Ctrl</kbd>+<kbd>K</kbd>: the command palette — type to jump (views, toggles,
   compare, apply-in-app, snapshots…)
 
-![Command palette](palette.png)
+![Command palette](palette.png?v=1.9.3)
 
 - **Type-to-search in any context menu**: with any right-click menu open
   (cards / list / specimens / QuickBar / detail panel), just **start typing** —
@@ -338,11 +338,11 @@ Right-click a family → "Apply in {app}…":
 - <kbd>?</kbd> (or the sidebar "Shortcuts" entry): the full shortcut list —
   navigation / selection / actions on selection / snapshots
 
-![Shortcut list](shortcuts.png)
+![Shortcut list](shortcuts.png?v=1.9.3)
 
 ### 17. Multiple libraries: up to 3 folders, one-click switching
 
-![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png)
+![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png?v=1.9.3)
 
 Fonts scattered across folders? **Settings → Library folders**:
 
@@ -357,7 +357,7 @@ Fonts scattered across folders? **Settings → Library folders**:
 
 ### 18. Look & language
 
-![Settings: language / system / library — every toggle in one column](settings.png)
+![Settings: language / system / library — every toggle in one column](settings.png?v=1.9.3)
 
 In settings: light / dark theme · interface sounds on/off · **reduced motion**
 (calmer animation, less transparency) · nine interface languages
