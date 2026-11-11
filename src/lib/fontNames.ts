@@ -86,8 +86,17 @@ export function languagePriority(locale: string): string[] {
   return [l, base];
 }
 
+/**
+ * 「有全名字段的字族形状」：真实 `Family` 满足它，右键菜单那种只有一堆 `FontFace`
+ * 的地方也能凑一个（不必为了取个显示名去建整个 Family）。
+ */
+export interface NamedFaces {
+  name: string;
+  faces: readonly FontFace[];
+}
+
 /** Regular 字面优先（它的 name 表通常最全） */
-function facesWithRegularFirst(family: Family): FontFace[] {
+function facesWithRegularFirst(family: NamedFaces): FontFace[] {
   return [...family.faces].sort((a, b) => {
     const ar = a.style.toLowerCase() === "regular" ? 0 : 1;
     const br = b.style.toLowerCase() === "regular" ? 0 : 1;
@@ -101,7 +110,7 @@ function facesWithRegularFirst(family: Family): FontFace[] {
  * 只影响显示，不改 `family.name`——收藏 / 标签 / 集合 / 快照都按 `name` 存，
  * 换语言不能让用户的数据全对不上。
  */
-export function displayFamilyName(family: Family, locale: string): string {
+export function displayFamilyName(family: NamedFaces, locale: string): string {
   const wanted = languagePriority(locale);
   for (const want of wanted) {
     for (const face of facesWithRegularFirst(family)) {
@@ -116,4 +125,49 @@ export function displayFamilyName(family: Family, locale: string): string {
     }
   }
   return family.name;
+}
+
+/** 一个字面能拿来搜的名字：族名 + name 表里每种语言的字族名 */
+export function faceNameVariants(face: {
+  family?: string;
+  localizedNames?: { name: string }[] | null;
+}): string[] {
+  const out: string[] = [];
+  const push = (value: string | undefined | null) => {
+    const name = (value ?? "").trim();
+    if (name) out.push(name);
+  };
+  push(face.family);
+  for (const entry of face.localizedNames ?? []) push(entry.name);
+  return out;
+}
+
+/**
+ * 一个族**所有能被搜到的名字**：族名 + 每个字面的每种语言名（中文 / 英文 / 日文…）。
+ *
+ * 为什么必须收全：软件在「名称」列显示的是本地化名（比如 `微软雅黑`），而族名键可能是
+ * `Microsoft YaHei`；只按族名搜就会出现「看得见、搜不到」。用户 2026-11-11 的原话是
+ * 「不管是中文还是拉丁文还是其他语言的都应该可以搜索到」。
+ *
+ * 返回值保持出现顺序、按小写去重（同一串重复出现没有意义，匹配本身大小写不敏感）。
+ */
+export function familyNameVariants(family: {
+  name: string;
+  faces: readonly { family?: string; localizedNames?: { name: string }[] | null }[];
+}): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (value: string | undefined | null) => {
+    const name = (value ?? "").trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(name);
+  };
+  push(family.name);
+  for (const face of family.faces) {
+    for (const name of faceNameVariants(face)) push(name);
+  }
+  return out;
 }

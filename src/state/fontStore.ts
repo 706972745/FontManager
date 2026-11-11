@@ -103,7 +103,7 @@ import {
   type LocalePref,
   type TKey,
 } from "../lib/i18n";
-import { familyMatches, searchTokens, type LabelMaps } from "../lib/familySearch";
+import { familyMatches, searchTokens, type LabelMaps, type SearchableFamily } from "../lib/familySearch";
 
 export const SIZES = [8, 14, 18, 24, 32, 48, 64, 96] as const;
 
@@ -4707,25 +4707,7 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
     // 只存在于 i18n 文案里的中文标签。规则与单测都在 `lib/familySearch.ts`。
     const tokens = searchTokens(q);
     const labels = searchLabelMaps();
-    out = out.filter((f) =>
-      familyMatches(
-        {
-          name: f.name,
-          tags: f.tags,
-          formats: f.formats,
-          foundry: f.foundry,
-          license: f.license,
-          copyright: f.copyright,
-          scripts: f.scripts,
-          features: f.features,
-          classification: f.classification,
-          faces: f.faces,
-          note: s.notes[f.name] ?? null,
-        },
-        tokens,
-        labels,
-      ),
-    );
+    out = out.filter((f) => familyMatches(searchableFamily(f, s.notes[f.name] ?? null), tokens, labels));
   }
   return sortFamilies(out, s.sort, s.activatedAt);
 }
@@ -4750,7 +4732,7 @@ const FEATURE_CODES = [
   "tnum", "zero",
 ];
 
-function searchLabelMaps(): LabelMaps {
+export function searchLabelMaps(): LabelMaps {
   const locale = activeLocale();
   if (labelMapsCache?.locale === locale) return labelMapsCache.maps;
   const build = (prefix: string, codes: string[]) => {
@@ -4814,6 +4796,30 @@ const familyLowerCache = new WeakMap<
   Map<string, Family>,
   ReadonlyArray<readonly [string, string]>
 >();
+
+/**
+ * 把字族摊成搜索口径的入参（`lib/familySearch.ts::SearchableFamily`）。
+ *
+ * 抽出来是为了让**所有搜索框**共用一条匹配链：族名、标签、格式、厂商、备注、授权、
+ * 语言 / 分类 / 特性，以及每个字面的样式名、PostScript 名、**文件名**和
+ * **所有语言的本地化名**。以前速览与命令面板各自只比族名，
+ * 于是「名称列写着微软雅黑、搜微软雅黑却搜不到」（用户 2026-11-11）。
+ */
+export function searchableFamily(f: Family, note: string | null): SearchableFamily {
+  return {
+    name: f.name,
+    tags: f.tags,
+    formats: f.formats,
+    foundry: f.foundry,
+    license: f.license,
+    copyright: f.copyright,
+    scripts: f.scripts,
+    features: f.features,
+    classification: f.classification,
+    faces: f.faces,
+    note,
+  };
+}
 
 export function familyLowerNames(families: Map<string, Family>): ReadonlyArray<readonly [string, string]> {
   let list = familyLowerCache.get(families);

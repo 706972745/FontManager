@@ -5,8 +5,10 @@ import { createPortal } from "react-dom";
 import type { ReactNode, MouseEvent as ReactMouseEvent, UIEvent as ReactUIEvent } from "react";
 import { create } from "zustand";
 import { recordContextMenuSize } from "../../lib/menuMetrics";
-import { useT } from "../../lib/i18n";
+import { activeLocale, useT } from "../../lib/i18n";
+import { displayFamilyName, familyNameVariants } from "../../lib/fontNames";
 import { useFontStore, type Nav } from "../../state/fontStore";
+import type { FontFace } from "../../lib/ipc";
 import { springSnappy } from "../springs";
 
 export type MenuItem =
@@ -354,19 +356,31 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
   const [inQuickbar] = useState(() => document.querySelector(".qb-frame") !== null);
   const [scope, setScope] = useState<"enabled" | "all">(inQuickbar ? "enabled" : "all");
 
-  const familyNames = useMemo(() => {
-    const seen = new Set<string>();
-    if (scope === "enabled") {
+  /**
+   * 菜单里的「打字即搜」候选（用户 2026-11-11：软件里显示的名字都必须能搜到）。
+   *
+   * 以前只收 `face.family`（族名键），而列表里显示的是**本地化名** —— 名称列写着
+   * 「微软雅黑」，菜单里搜「微软雅黑」一条都没有。现在每个族带上它的所有语言名
+   * （`familyNameVariants`），命中任意一个都算；显示的是当前语言的显示名，
+   * 但 pick() 用的仍是族名键（收藏 / 分组 / 快照都按它存）。
+   */
+  const familyEntries = useMemo(() => {
+    const byFamily = new Map<string, FontFace[]>();
+    for (const f of fonts) {
       // 与速览「已启用」同口径：任一面启用、或会话级临时启用。
       // 系统字体**包含在内**（用户 2026-11-06 明确口径）：它们已安装可用，
       // 速览列表本来就有它们 —— 这里排除反而会让「已启用」和速览对不上。
-      for (const f of fonts) {
-        if (f.active || sessionActivated.includes(f.family)) seen.add(f.family);
-      }
-    } else {
-      for (const f of fonts) seen.add(f.family);
+      if (scope === "enabled" && !(f.active || sessionActivated.includes(f.family))) continue;
+      const list = byFamily.get(f.family);
+      if (list) list.push(f);
+      else byFamily.set(f.family, [f]);
     }
-    return [...seen];
+    const locale = activeLocale();
+    return [...byFamily.entries()].map(([family, faces]) => ({
+      family,
+      label: displayFamilyName({ name: family, faces }, locale),
+      variants: familyNameVariants({ name: family, faces }).map((n) => n.toLowerCase()),
+    }));
   }, [fonts, scope, sessionActivated]);
 
   const hits = useMemo(() => {
@@ -375,14 +389,12 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
     if (!q) return [];
     // 不截断：全量匹配交给渲染层分页（前 30 条 + 「还有 N 个」提示），
     // 名字以关键词**开头**的排前面，目标字体更容易直接出现在第一屏
-    const matched = familyNames.filter((n) => n.toLowerCase().includes(q));
-    matched.sort((a, b) => {
-      const aa = a.toLowerCase().startsWith(q) ? 0 : 1;
-      const bb = b.toLowerCase().startsWith(q) ? 0 : 1;
-      return aa - bb;
-    });
+    const matched = familyEntries.filter((e) => e.variants.some((v) => v.includes(q)));
+    const rank = (e: (typeof matched)[number]) =>
+      e.label.toLowerCase().startsWith(q) ? 0 : e.variants.some((v) => v.startsWith(q)) ? 1 : 2;
+    matched.sort((a, b) => rank(a) - rank(b));
     return matched;
-  }, [search, familyNames]);
+  }, [search, familyEntries]);
 
   const searching = search !== null && search.trim() !== "";
 
@@ -592,14 +604,14 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
         ) : (
           <>
             <div className="ctx-hits" onScroll={onHitsScroll}>
-              {hits.slice(0, hitLimit).map((name) => (
+              {hits.slice(0, hitLimit).map((hit) => (
                 <button
-                  key={name}
+                  key={hit.family}
                   role="menuitem"
                   className="ctx-item ctx-hit"
-                  onClick={() => pick(name)}
+                  onClick={() => pick(hit.family)}
                 >
-                  <span className="ctx-label">{name}</span>
+                  <span className="ctx-label">{hit.label}</span>
                 </button>
               ))}
             </div>
