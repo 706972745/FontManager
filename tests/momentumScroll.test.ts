@@ -107,7 +107,7 @@ test("追赶系数：差得越少追得越紧（触控板碎步不加延迟）",
 
 test("单帧位移有上限：连甩多格也不会一帧跳一大段", () => {
   const dt = 1 / 60;
-  const cap = 2000 * dt; // MAX_RENDER_SPEED / 帧
+  const cap = 1400 * dt; // MAX_RENDER_SPEED / 帧
   for (const diff of [200, 600, 1200, 5000]) {
     const step = renderStep(diff, dt);
     assert.ok(Math.abs(step) <= cap + 1e-9, `diff=${diff} step=${step} 超过 ${cap}`);
@@ -120,16 +120,18 @@ test("单帧位移有上限：连甩多格也不会一帧跳一大段", () => {
 test("一格的位移被铺开：首帧不吞掉大半，约 100ms 走完", () => {
   const dt = 1 / 60;
   const first = renderStep(100, dt);
-  assert.ok(first > 10 && first < 30, `首帧 ${first.toFixed(1)}px`);
+  // 首帧就是最大的一步（惯性冲量），但要远小于一格 100px
+  assert.ok(first > 15 && first < 28, `首帧 ${first.toFixed(1)}px`);
 
-  // 60fps 连续追，7 帧内走到 95%（≈117ms）—— 太快就是「跳」，太慢就是「拖」
+  // 60fps 连续追，走到 95% 的帧数要在 5~10 之间：
+  // 太少 = 步子太大（跳），太多 = 拖沓
   let pos = 0;
   let frames = 0;
   while (100 - pos > 5 && frames < 60) {
     pos += renderStep(100 - pos, dt);
     frames++;
   }
-  assert.ok(frames >= 4 && frames <= 8, `用了 ${frames} 帧`);
+  assert.ok(frames >= 5 && frames <= 10, `用了 ${frames} 帧`);
 });
 
 test("触控板碎步三帧内到位（不加可感知的延迟）", () => {

@@ -17,14 +17,17 @@
  * 手感就是「跳、跳、跳」。现在单格 100px 会被铺成约 100ms 的连续位移，
  * 连续多格则自然叠成一段匀速滑行再减速。
  *
- * 三条保证「顺滑但不拖沓」的约束：
+ * 两条保证「顺滑但不拖沓」的约束：
  *
  *   1. **追赶系数随距离自适应**：差 8px（触控板碎步）时系数 50/s，两帧到位，
  *      几乎不加延迟；差 100px 以上时降到 18/s，铺开成平滑运动。
  *   2. **单帧位移上限** `MAX_RENDER_SPEED`：连甩十几格时目标可能领先上千像素，
- *      不设上限第一帧就会跳一大段。现在一帧最多走 2000·dt（60fps 下约 33px）。
- *   3. **起步渐入** `RAMP_SECONDS`：从静止接上滚轮时不直接给满速，
- *      80ms 内线性升到全速 —— 挡掉「第一帧就跳满」的观感。
+ *      不设上限第一帧就会跳一大段。现在一帧最多走 1400·dt（60fps 下约 23px）。
+ *
+ * 一个**刻意不加**的东西：起步渐入。第一版试过「80ms 内从零升到全速」，
+ * 结果第一帧只走 6px、随后一路冲到 21px —— 用户感知到的正是那个「先顿一下再冲出去」
+ * 的加速段（第一轮反馈「一跳一跳」的原话）。滚轮给的是一个冲量，
+ * 视觉上就该第一帧最快然后一路减速，所以这里没有 ramp：`renderStep` 从满速开始。
  *
  * 帧率无关：全部用 `e^(-λ·dt)` 而不是「每帧乘 0.95」，120Hz 屏上不会滑得更远。
  *
@@ -86,15 +89,12 @@ const SMOOTH_RANGE = 80;
 /**
  * 单帧位移上限（px/s）。连甩十几格时目标位置可能领先上千像素，
  * 不设上限第一帧就跳一大段 —— 这是「看着卡」的另一个来源。
- * 2000 在 60fps 下约 33px/帧，已经比一格滚轮小，肉眼是连续滚动而非跳。
+ *
+ * 1400 在 60fps 下约 **23px/帧**。这个值直接决定「最粗的一步有多粗」：
+ * 60Hz 屏上一帧 23px，肉眼是连续运动；掉一帧也只多走 23px，不会跳。
+ * 想更顺就往 1100 调，代价是连甩时到得慢一点。
  */
-const MAX_RENDER_SPEED = 2000;
-
-/**
- * 起步渐入（秒）：从静止接上滚轮时不直接给满速，这段时间内线性升到全速。
- * 挡掉「第一帧就把第一格的分位移完」的观感。
- */
-const RAMP_SECONDS = 0.08;
+const MAX_RENDER_SPEED = 1400;
 
 /**
  * 剩余差距小于这个值（px）就直接到位，不再逐帧逼近。
@@ -264,8 +264,6 @@ export function installMomentumScroll(): () => void {
   /** 视觉位置：实际写进 scrollTop 的值，每帧向 goal 逼近 */
   let pos = 0;
   let velocity = 0;
-  /** 起步渐入进度 0→1 */
-  let ramp = 0;
   /** 容器可滚动的最大距离（缓存：每帧读 scrollHeight 会强制同步布局） */
   let maxScroll = 0;
   let raf = 0;
@@ -281,7 +279,6 @@ export function installMomentumScroll(): () => void {
     raf = 0;
     el = null;
     velocity = 0;
-    ramp = 0;
   };
 
   const tick = (now: number) => {
@@ -300,7 +297,6 @@ export function installMomentumScroll(): () => void {
 
     const dt = clamp((now - lastFrame) / 1000, 0.001, 0.05);
     lastFrame = now;
-    ramp = Math.min(1, ramp + dt / RAMP_SECONDS);
 
     // ① 惯性推进「目标位置」：这一段决定滑多远（越快越远）
     if (Math.abs(velocity) >= MIN_VELOCITY) {
@@ -328,7 +324,7 @@ export function installMomentumScroll(): () => void {
       return;
     }
 
-    pos += renderStep(diff, dt, MAX_RENDER_SPEED * ramp);
+    pos += renderStep(diff, dt);
     target.scrollTop = pos;
     // 记读回来的值而不是 pos：Chromium 在 100% 缩放下会把 scrollTop 量化成整数，
     // 用精确值当基准会让下一帧的「外部改动」检测偏 0.x 像素。
@@ -341,7 +337,6 @@ export function installMomentumScroll(): () => void {
     if (el !== target) {
       el = target;
       velocity = 0;
-      ramp = 0;
       pos = target.scrollTop;
       goal = pos;
       written = pos;
@@ -358,7 +353,6 @@ export function installMomentumScroll(): () => void {
         goal = pos;
         written = pos;
         velocity = 0;
-        ramp = 0;
       }
     }
 
