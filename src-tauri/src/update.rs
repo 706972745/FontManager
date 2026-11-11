@@ -135,8 +135,27 @@ async fn get_json(url: &str) -> Result<serde_json::Value, String> {
     get_json_inner(url, true).await
 }
 
+/// 环回地址判定（127.0.0.1 / localhost / [::1]）。
+/// 命中时客户端要 `.no_proxy()`：用户环境里常有 HTTP_PROXY（还往往没配 no_proxy），
+/// 代理进程对「连回本机」这种目标大多直接拒绝 —— 下载会莫名失败，UI 只看到一句报错。
+fn is_loopback_url(url: &str) -> bool {
+    url.contains("://127.0.0.1:")
+        || url.contains("://localhost:")
+        || url.contains("://[::1]:")
+        || url.contains("://[0:0:0:0:0:0:0:1]:")
+}
+
 async fn get_json_inner(url: &str, strict_host: bool) -> Result<serde_json::Value, String> {
-    let client = client()?;
+    let client = {
+        let mut b = reqwest::Client::builder()
+            .user_agent(UA)
+            .redirect(reqwest::redirect::Policy::limited(3))
+            .timeout(TIMEOUT);
+        if !strict_host && is_loopback_url(url) {
+            b = b.no_proxy();
+        }
+        b.build().map_err(|e| format!("网络客户端初始化失败：{e}"))?
+    };
     let res = client
         .get(url)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
@@ -358,10 +377,8 @@ const DOWNLOAD_HOSTS: [&str; 3] = [
 ];
 
 fn download_url_ok(url: &str) -> bool {
-    // 测试端点配套：`FM_UPDATE_ENDPOINT` 设着的时候放行本机回环直链
-    if endpoint_override().is_some()
-        && (url.starts_with("http://127.0.0.1/") || url.starts_with("http://localhost/"))
-    {
+    // 测试端点配套：`FM_UPDATE_ENDPOINT` 设着的时候放行本机回环直链（带不带端口都算）
+    if endpoint_override().is_some() && is_loopback_url(url) {
         return true;
     }
     let Some(rest) = url.strip_prefix("https://") else {
@@ -425,6 +442,7 @@ fn update_dir() -> std::path::PathBuf {
 pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) -> Result<String, String> {
     use std::io::{Read as _, Write as _};
 
+    crate::diag::log(&format!("[update] download start {name} <- {url}"));
     if !download_url_ok(url) {
         return Err(format!("下载地址不在允许的站点内：{url}"));
     }
@@ -451,12 +469,19 @@ pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) ->
     }
 
     emit_progress(app, "download", 0, 0, None);
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(UA)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .timeout(Duration::from_secs(600))
-        .build()
-        .map_err(|e| format!("网络客户端初始化失败：{e}"))?;
+    let client = {
+        let mut b = reqwest::blocking::Client::builder()
+            .user_agent(UA)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .timeout(Duration::from_secs(600));
+        // 环回目标（FM_UPDATE_ENDPOINT 的本机假服务）绝不走代理：
+        // 用户的 HTTP_PROXY 常常没配 no_proxy，代理进程会拒收「连回本机」的请求。
+        if is_loopback_url(url) {
+            b = b.no_proxy();
+        }
+        b.build()
+            .map_err(|e| format!("网络客户端初始化失败：{e}"))?
+    };
     let mut resp = client
         .get(url)
         .send()
@@ -501,6 +526,7 @@ pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) ->
     }
     std::fs::rename(&partial, &dest).map_err(|e| format!("保存安装包失败：{e}"))?;
     emit_progress(app, "ready", 1, 1, None);
+    crate::diag::log(&format!("[update] download done {name} (sha ok)"));
     Ok(dest.to_string_lossy().into_owned())
 }
 
@@ -519,6 +545,17 @@ fn ps1_script(pid: u32, setup: &std::path::Path, exe: &std::path::Path) -> Strin
     s.push_str("  Start-Sleep -Milliseconds 250\r\n");
     s.push_str("}\r\n");
     s.push_str("Start-Sleep -Milliseconds 800\r\n");
+    // WebView2 子进程（msedgewebview2）可能比宿主多活几秒，还握着 exe 的句柄；
+    // 不等它们退出，NSIS /S 会「覆盖失败、静默中止」，看起来像装好了其实没装。
+    // 这里等「命令行里带本程序名字的 msedgewebview2」全部退出，最多再等 30 秒。
+    s.push_str(&format!("$exeName = (Split-Path -Leaf {})\r\n", q(exe)));
+    s.push_str("for ($i = 0; $i -lt 120; $i++) {\r\n");
+    s.push_str("  $left = Get-CimInstance Win32_Process -Filter \"Name = 'msedgewebview2.exe'\" |\r\n");
+    s.push_str("    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($exeName) }\r\n");
+    s.push_str("  if (-not $left) { break }\r\n");
+    s.push_str("  Start-Sleep -Milliseconds 250\r\n");
+    s.push_str("}\r\n");
+    s.push_str("Start-Sleep -Milliseconds 500\r\n");
     s.push_str(&format!(
         "Start-Process -FilePath {} -ArgumentList '/S' -Wait\r\n",
         q(setup)
@@ -534,6 +571,7 @@ fn ps1_script(pid: u32, setup: &std::path::Path, exe: &std::path::Path) -> Strin
 
 /// 校验通过后启动安装脚本，并在 1.2 秒后退出本进程。
 pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str) -> Result<(), String> {
+    crate::diag::log(&format!("[update] install start {path}"));
     let dir = update_dir();
     let canon_dir = dir
         .canonicalize()
@@ -559,8 +597,21 @@ pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str) -> Result<(), 
     }
 
     let exe = std::env::current_exe().map_err(|e| format!("找不到当前程序路径：{e}"))?;
+    // canonicalize 返回 `\\?\C:\...`（扩展长度路径）。Start-Process 不认这种前缀，
+    // 会「找不到路径」—— 而脚本顶部就是 SilentlyContinue，于是 NSIS 静默没跑、
+    // 应用却照常重启，看起来像升级成功实际什么都没换（2026-11-11 端到端抓到）。
+    // 这里剥掉前缀再交给脚本；UNC 的 `\\?\UNC\server\share` 归一成 `\\server\share`。
+    let canon_display = canon.to_string_lossy().into_owned();
+    let setup_for_script = if let Some(rest) = canon_display.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else {
+        canon_display
+            .strip_prefix(r"\\?\")
+            .map(str::to_string)
+            .unwrap_or(canon_display)
+    };
     let script = dir.join("apply-update.ps1");
-    std::fs::write(&script, ps1_script(std::process::id(), &canon, &exe))
+    std::fs::write(&script, ps1_script(std::process::id(), std::path::Path::new(&setup_for_script), &exe))
         .map_err(|e| format!("写安装脚本失败：{e}"))?;
 
     use std::os::windows::process::CommandExt;
@@ -571,7 +622,11 @@ pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str) -> Result<(), 
         .arg(&script)
         .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
         .spawn()
-        .map_err(|e| format!("启动安装脚本失败：{e}"))?;
+        .map_err(|e| {
+            crate::diag::log(&format!("[update] ps1 spawn failed: {e}"));
+            format!("启动安装脚本失败：{e}")
+        })?;
+    crate::diag::log("[update] ps1 spawned (host exit -> webview exit -> /S -> relaunch)");
 
     // 留一点时间让前端把「正在安装」画完、把 IPC 收掉，然后自己退出
     let app = app.clone();

@@ -15,6 +15,18 @@
 
 !include "LogicLib.nsh"
 
+; ── 静默升级的 WebView2 等待（1.8.8）─────────────────────────────────────
+; 覆盖安装时宿主刚退、msedgewebview2 子进程还握着 fontmanager.exe 的映像句柄；
+; 不等它们退出，NSIS 的 File 覆盖失败会在 /S 下静默中止 —— 看起来升级成功，
+; 实际文件没换。这里等「命令行带本程序名的 msedgewebview2」全部退出（最多 30s）。
+; 用 -EncodedCommand 是因为 NSIS 单引号字符串里塞脚本引号太难写对；
+; 这段 base64 解出来就是上面那行等待循环（UTF-16LE）。
+!macro NSIS_HOOK_PREINSTALL
+  DetailPrint "正在等待 FontManager 的 WebView2 进程退出…"
+  nsExec::ExecToLog 'powershell.exe -NoProfile -EncodedCommand ZgBvAHIAKAAkAGkAPQAwADsAJABpACAALQBsAHQAIAAxADIAMAA7ACQAaQArACsAKQB7ACQAbAA9AEcAZQB0AC0AQwBpAG0ASQBuAHMAdABhAG4AYwBlACAAVwBpAG4AMwAyAF8AUAByAG8AYwBlAHMAcwAgAC0ARgBpAGwAdABlAHIAIAAiAE4AYQBtAGUAPQAnAG0AcwBlAGQAZwBlAHcAZQBiAHYAaQBlAHcAMgAuAGUAeABlACcAIgAgAHwAIABXAGgAZQByAGUALQBPAGIAagBlAGMAdAB7ACQAXwAuAEMAbwBtAG0AYQBuAGQATABpAG4AZQAgAC0AYQBuAGQAIAAkAF8ALgBDAG8AbQBtAGEAbgBkAEwAaQBuAGUALgBDAG8AbgB0AGEAaQBuAHMAKAAnAGYAbwBuAHQAbQBhAG4AYQBnAGUAcgAuAGUAeABlACcAKQB9ADsAIABpAGYAKAAtAG4AbwB0ACAAJABsACkAewBiAHIAZQBhAGsAfQA7ACAAUwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBNAGkAbABsAGkAcwBlAGMAbwBuAGQAcwAgADIANQAwAH0A'
+  Pop $R9
+!macroend
+
 ; 判断 $R2（HKCU Fonts 值的数据 = 字体文件绝对路径）是否落在指定前缀内。
 ; 命中时把 $R6 置 1。只比较前缀，绝不按值名删除（值名与系统字体同格式）。
 !macro ZFM_MATCH_FONT_PREFIX PREFIX

@@ -4,6 +4,42 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.8] — 2026-11-11
+
+> 端到端测试一键更新时揪出并修掉了 **3 个会让「下载并安装」从未真正生效**的 bug，
+> 顺带把整条更新链路装上诊断日志和两级等待护栏。本版本全部内容都在后端 / 构建层，
+> 界面无变化。
+
+### 修复（端到端实测抓到的）
+
+- **静默安装从未真正执行**（致命）：`install_setup` 把 `canonicalize()` 产生的
+  `\\?\C:\...` 扩展长度路径原样交给 `Start-Process` —— 它不认这种前缀，
+  报错又被脚本顶部的 `SilentlyContinue` 吞掉 → NSIS 没跑、应用照常重启，
+  看起来升级成功实际文件没换。现在剥掉前缀再交给脚本（UNC 归一为 `\\server\share`）。
+- **代理环境下载失败**：用户环境常有 `HTTP_PROXY` 且没配 `no_proxy`，
+  环回目标会被代理拒收。命中 `127.0.0.1 / localhost / [::1]` 的下载与检查请求自动
+  `no_proxy()` 直连；GitHub 下载照常走系统代理。
+- **回环判断带端口失效**：`download_url_ok` 只匹配不带端口的 `http://127.0.0.1/`，
+  带端口（`http://127.0.0.1:8799/...`）一律拒绝。统一改用 `is_loopback_url`。
+
+### 加固
+
+- **apply-update.ps1**：NSIS 启动前等待 WebView2 子进程（msedgewebview2）退出 ——
+  宿主刚退时它们还握着 exe 的映像句柄，覆盖会静默失败。
+- **NSIS PREINSTALL 钩子**（安装器内再兜一道底，老版本 ps1 + 新安装包的组合也安全）。
+- **全链诊断日志**：`download start / done (sha ok) / install start / ps1 spawned`，
+  排障时 `activation.log` 一眼看到断在哪。
+
+### 其他
+
+- **无障碍树常开**：`--force-renderer-accessibility` 进 `additionalBrowserArgs` ——
+  读屏器与 UIA 自动化从此可用（此前渲染进程按需才建树，自动化点不到按钮）。
+- **测试钩子**：`FM_UPDATE_ENDPOINT` 环境变量可把检查端点指到本机假服务
+  （回环直链同步放行），用于发布前完整演练；不设时行为不变，白名单 / 校验 / 目录限定一道没少。
+- **端到端验证**：本机静默装 1.8.8 → 假端点发 1.8.9 → 点「下载并安装」→
+  进度条到 100% → SHA-256 校验 → 静默安装 → 自动重启，「关于」显示 1.8.9
+  （诊断日志与截图俱在）。Rust 159 测试通过。
+
 ## [1.8.7] — 2026-11-11
 
 > 更新区按钮重排（用户要求）：「打开发布页」退居兜底，**「下载并安装」常驻** ——
