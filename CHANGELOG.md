@@ -4,6 +4,28 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] — 2026-11-11
+
+> 修复「下载并安装」在国内网络下必然失败的问题（真机端到端抓到）。
+
+### 修复
+
+- **软件内更新下载改多通道接力**：1.9.0 及之前只试 `github.com` 直链，
+  国内网络下 `api.github.com` 可用（所以检查更新能看到新版）而
+  `github.com` 下载域常被干扰（连接重置），表现为点了「下载并安装」
+  后报「下载失败：error sending request」。现在依次尝试：
+  ① 直连安装包直链 → ② gh-proxy.com 镜像 → ③ ghfast.top 镜像 →
+  ④ `api.github.com` asset 直取（与检查更新同一条命，慢但最难挂），
+  全部失败才报错，错误信息里带每条通道的失败原因。
+- **SHA-256 校验贯穿所有通道**：校验值取自 GitHub 官方 asset digest，
+  任何通道返回的内容对不上就删除重试下一条 —— 镜像被投毒也装不进来。
+- 下载白名单相应扩展（镜像域 + `api.github.com`），重定向落点同样校验。
+- **修复安装脚本启动即死（一键安装的真正病根之一）**：安装脚本此前用
+  `DETACHED_PROCESS` 标志启动 powershell —— 控制台程序在 DETACHED 下拿不到
+  控制台又不新建，`-NonInteractive` 模式下**启动即退**，NSIS 静默安装从未运行，
+  表现为应用退出重启但版本没变。真机实验实锤（同一段脚本普通 spawn 全程正常，
+  加 DETACHED 后 3 秒内进程消失）；现在只用 `CREATE_NO_WINDOW`（本就不弹窗）。
+
 ## [1.9.0] — 2026-11-11
 
 > 界面打磨 + 导览扩充 + 一轮性能排查。功能、动画、交互动画全部不变。

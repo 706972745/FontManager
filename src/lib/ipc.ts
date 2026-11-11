@@ -672,11 +672,13 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    */
   checkUpdate: (force = false) => invoke<UpdateCheck>("check_update", { force }),
   /**
-   * 下载新版本安装包（1.8.4）。下完核对 SHA-256，对不上后端会自己删掉并抛错。
-   * `sha256` 必须是发布页给的那个值，别在别处拼。
+   * 下载新版本安装包（1.8.4；1.9.1 起后端多通道接力：直连 → 镜像 → asset API）。
+   * 下完核对 SHA-256，对不上后端会自己删掉并抛错。
+   * `sha256` 必须是发布页给的那个值，别在别处拼；
+   * `assetId` 给 api.github.com 兜底通道用（0 = 没有）。
    */
-  updateDownload: (url: string, name: string, sha256: string) =>
-    invoke<string>("update_download", { url, name, sha256 }),
+  updateDownload: (url: string, name: string, sha256: string, assetId: number) =>
+    invoke<string>("update_download", { url, name, sha256, assetId }),
   /** 静默安装：再校验一次 → 起等待脚本 → 本进程约 1.2 秒后退出并重启新版 */
   updateInstall: (path: string, sha256: string) =>
     invoke<void>("update_install", { path, sha256 }),
@@ -702,6 +704,8 @@ export interface UpdateCheck {
   setupName: string;
   /** 安装包 SHA-256（小写十六进制；空 = 没有校验值，不允许一键安装） */
   sha256: string;
+  /** 安装包 Asset 的数字 id（api.github.com 兜底下载通道用；0 = 没有） */
+  setupAssetId: number;
   /**
    * 能不能一键下载安装。
    * 三个条件同时满足才为 true：有直链、有校验值、当前是「按用户安装」的 NSIS 版。
