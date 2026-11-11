@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { motion } from "motion/react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
   ChevronRight,
   Minimize2,
@@ -14,7 +14,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } fr
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useMarquee } from "../design/primitives/useMarquee";
-import { easeTop, staggerDelay, spring } from "../design/springs";
+import { easeTop, spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
 import { MemberChip } from "./MemberChip";
 import { useListFontCss } from "../lib/fontLoader";
 import { listChars } from "../lib/listChars";
@@ -162,6 +162,14 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   // 窗口形变期间一律不动：此时只有窗口自己在变大变小，内容再逐个入场会显得抖
   const intro = useIntro();
   const animated = intro && index < ANIMATED_ITEMS;
+  /**
+   * 展开字重用的是 `height: 0 → auto` 动画，而 `MotionConfig reducedMotion`
+   * 管不到 height —— 所以这里显式接管开关（与完整界面 FamilyCard.tsx:78-80 同口径）：
+   * 系统开了减弱动效、或用户在软件里开了，就直接给终态，不做逐帧过渡。
+   */
+  const motionPref = useFontStore((s) => s.motionPref);
+  const systemReduce = useReducedMotion();
+  const noMotion = systemReduce || motionPref === "reduced";
   /** 展开这一族的字重列表（默认只显示字族，和完整界面一个思路） */
   const [expanded, setExpanded] = useState(false);
   /** 点名字复制后就地给一个「已复制」，1.5s 消退（设计 R2 状态 4） */
@@ -310,36 +318,47 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
             setExpanded((v) => !v);
           }}
         >
-          <ChevronRight
-            size={11}
-            strokeWidth={2}
-            style={{
-              transform: expanded ? "rotate(90deg)" : undefined,
-              transition: "transform 140ms ease",
-            }}
-          />
+          <motion.span
+            className="chevron"
+            animate={{ rotate: expanded ? 90 : 0 }}
+            transition={springSnappy}
+          >
+            <ChevronRight size={11} strokeWidth={2} />
+          </motion.span>
           {scope.narrowed ? `${scope.shown}/${scope.total}` : scope.shown}
         </button>
       )}
 
-      {expanded && visibleFaces.length > 0 && (
-        <div
-          className="qb-faces"
-          /* 字重名的大小跟着上面的示例字号走（速览面板只有卡片一半宽，取 1/8） */
-          style={{ "--face-line-size": faceLineFontSize(size, 8) } as CSSProperties}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {visibleFaces.map((face) => (
-            <QuickFaceRow
-              key={face.id}
-              family={family}
-              face={face}
-              probeText={probeText}
-              onHover={setHoverFaceId}
-            />
-          ))}
-        </div>
-      )}
+      {/* 展开字重：与完整界面卡片同一套动作（AnimatePresence + height 0↔auto +
+          opacity，springSoft；减少动效下直接给终态）。以前这里是挂载/卸载硬跳，
+          同一个操作在完整界面有 0.3s 展开、在速览里却是「啪」地出现（审计 P0-1）。
+          注意 `.qb-faces` 必须 overflow:hidden，否则 height 动画期间字重行会溢出行外；
+          `.qb-list` 另加了 overflow-anchor:none —— 这一行是虚拟列表实测行高，
+          高度动画每帧都会改 row 尺寸，不做锚定才不会把滚动位置拽走。 */}
+      <AnimatePresence initial={false}>
+        {expanded && visibleFaces.length > 0 && (
+          <motion.div
+            className="qb-faces"
+            /* 字重名的大小跟着上面的示例字号走（速览面板只有卡片一半宽，取 1/8） */
+            style={{ "--face-line-size": faceLineFontSize(size, 8) } as CSSProperties}
+            onClick={(e) => e.stopPropagation()}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0, transition: { ...springSnappy } }}
+            transition={noMotion ? { duration: 0 } : springSoft}
+          >
+            {visibleFaces.map((face) => (
+              <QuickFaceRow
+                key={face.id}
+                family={family}
+                face={face}
+                probeText={probeText}
+                onHover={setHoverFaceId}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Item>
   );
 }
@@ -714,26 +733,31 @@ export function QuickBar() {
                   aria-label={t("quickbar.search")}
                   spellCheck={false}
                 />
-                {/* 搜索建议（用户 2026-11-10）：与完整界面同一套，每类带自己的图标 */}
-                {queryFocus && query.trim().length > 0 && (
-                  <SearchSuggest
-                    query={query}
-                    onlyActive
-                    onPick={(sg: Suggestion) => {
-                      // 插件（1.8.1）：直接把它的设置面板弹出来，速览这边收起建议即可
-                      if (sg.kind === "plugin") {
-                        if (sg.plugin) void openPluginSettings(sg.plugin);
-                        setQuery("");
+                {/* 搜索建议（用户 2026-11-10）：与完整界面同一套，每类带自己的图标。
+                    外层 AnimatePresence 是给它 0.13s 的出场动画兜底的（审计 P1-9）——
+                    组件自身是条件挂载的，自己包一层收不到卸载。 */}
+                <AnimatePresence>
+                  {queryFocus && query.trim().length > 0 && (
+                    <SearchSuggest
+                      key="suggest"
+                      query={query}
+                      onlyActive
+                      onPick={(sg: Suggestion) => {
+                        // 插件（1.8.1）：直接把它的设置面板弹出来，速览这边收起建议即可
+                        if (sg.kind === "plugin") {
+                          if (sg.plugin) void openPluginSettings(sg.plugin);
+                          setQuery("");
+                          setQueryFocus(false);
+                          return;
+                        }
+                        // 速览里就是把关键词填成选中的名字：标签名本身也在搜索口径里，
+                        // 填进去等于「只看这个标签 / 分组 / 快照」
+                        setQuery(sg.label);
                         setQueryFocus(false);
-                        return;
-                      }
-                      // 速览里就是把关键词填成选中的名字：标签名本身也在搜索口径里，
-                      // 填进去等于「只看这个标签 / 分组 / 快照」
-                      setQuery(sg.label);
-                      setQueryFocus(false);
-                    }}
-                  />
-                )}
+                      }}
+                    />
+                  )}
+                </AnimatePresence>
                 {query && (
                   <button
                     className="search-clear"

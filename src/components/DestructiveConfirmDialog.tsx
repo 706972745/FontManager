@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { springSnappy, springSoft } from "../design/springs";
+import { scrimFade, spring, springSnappy, springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
 import { useFocusTrap } from "../lib/useFocusTrap";
@@ -66,7 +66,7 @@ export function DestructiveConfirmDialog() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          transition={scrimFade}
         >
           <motion.div
             ref={panelRef}
@@ -99,7 +99,7 @@ export function DestructiveConfirmDialog() {
                 className="trashconfirm-cancel"
                 onClick={cancel}
                 disabled={busy}
-                whileTap={busy ? undefined : { scale: 0.97 }}
+                whileTap={busy ? undefined : { scale: 0.97, transition: springSnappy }}
                 transition={springSoft}
               >
                 {t("confirmDestructive.cancel")}
@@ -108,8 +108,8 @@ export function DestructiveConfirmDialog() {
                 className="trashconfirm-run"
                 onClick={run}
                 disabled={busy}
-                whileHover={busy ? undefined : { y: -1 }}
-                whileTap={busy ? undefined : { scale: 0.97 }}
+                whileHover={busy ? undefined : { y: -1, transition: spring }}
+                whileTap={busy ? undefined : { scale: 0.97, transition: springSnappy }}
                 transition={springSoft}
               >
                 {isCollection

@@ -1,4 +1,4 @@
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { overlayOpen } from "../../lib/overlayRegistry";
 import { t, type TKey } from "../../lib/i18n";
@@ -214,6 +214,15 @@ export function HoverHintHost() {
     };
   }, []);
 
-  if (!shown) return null;
-  return <HintBubble shown={shown} />;
+  /**
+   * `AnimatePresence` 必须有：`HintBubble` 里的 `exit` 靠它才会被执行。
+   * 少了这一层，气泡是「啪」地消失（全项目唯一没有退出动画的浮层，审计 P0-4）。
+   * 退出期间 AnimatePresence 会保留最后一次的 `shown` 快照，
+   * 所以 `pos` 不会被重置成 -9999，气泡不会在消失途中闪到左上角。
+   */
+  return (
+    <AnimatePresence>
+      {shown && <HintBubble key="hover-hint" shown={shown} />}
+    </AnimatePresence>
+  );
 }

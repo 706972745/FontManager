@@ -882,7 +882,7 @@
   "tour.last.title": "Noch eine Sache",
   "tour.next": "Weiter",
   "tour.quickbar.title": "Die Schnellleiste",
-  "tour.quickbar.body": "Klick auf diese Schaltfläche (oder Alt + `) und das ganze Fenster schrumpft zu einer schmalen Schnellansicht am oberen Bildschirmrand: nur aktivierte Schriften. Ein Klick auf den Familiennamen kopiert ihn; die Zeile klappt Schnitte und Lizenz auf; nochmal Klick und Sie sind zurück im vollen Fenster.",
+  "tour.quickbar.body": "Dieser schmale Streifen am oberen Bildschirmrand ist die Schnellleiste: Sie zeigt nur aktivierte Schriften. Ein Klick auf den Familiennamen kopiert ihn; die Zeile klappt Schnitte und Lizenz auf. Beim Weitergehen kehren wir automatisch ins volle Fenster zurück – später geht es mit Alt + ` oder über die Schaltfläche rechts in der Titelleiste wieder hinein.",
   "tour.plugins.title": "Plugins",
   "tour.plugins.body": "Der Plugin-Bereich in den Einstellungen erweitert die App: Aus ZIP installieren, Hauptschalter, einzeln aktivieren. Ein Plugin ist ein eigener Prozess — stürzt es ab, läuft die App weiter. Aktivierte Plugins hängen ihre Einträge ins Kontextmenü (font-sync z. B. synchronisiert Ihre Bibliothek inkrementell in Ihr privates GitHub-Repo).",
   "tour.sample.body": "Tipp hier irgendetwas ein und die ganze Bibliothek zeigt es an. Probier deinen Markennamen oder die Schlagzeile, an der du gerade sitzt.",

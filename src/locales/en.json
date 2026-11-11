@@ -917,7 +917,7 @@
   "tour.last.title": "One last thing",
   "tour.next": "Next",
   "tour.quickbar.title": "The quick bar",
-  "tour.quickbar.body": "Click this button (or press Alt + `) and the whole window collapses into a slim quick-view bar pinned to the top of the screen: enabled fonts only. Click a family to copy its name; expand a row to unfold weights and license; press the button once more to return to the full window.",
+  "tour.quickbar.body": "This slim strip at the top of the screen is the quick bar: it lists only the fonts you have enabled. Click a family name to copy it; expand a row to unfold its weights and license. Carry on and we will switch back to the full window automatically — to come back here later, press Alt + ` or click the button at the top right of the title bar.",
   "tour.plugins.title": "Plugins",
   "tour.plugins.body": "The Plugins section in Settings extends the app: install from a ZIP, a master switch, enable each one separately. A plugin is its own process — if it crashes, the app keeps running. Enabled plugins add their entries to the right-click menu (font-sync, for instance, incrementally syncs your library to your own private GitHub repo).",
   "tour.sample.body": "Type anything here and the whole library re-renders in it. Try your brand name or that headline you're setting.",

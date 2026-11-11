@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.2-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.9.3-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -113,7 +113,17 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: the library, live previews and the detail panel](main.png)
+![Main window: sidebar, toolbar, font cards with live previews](main.png)
+
+**Find your way first: the window has five regions**
+
+| Region | Where | What you can do there |
+|---|---|---|
+| **Title bar** | the thin strip on top | drag the window · minimize / maximize / close · **Settings** · **send it to the QuickBar** (<kbd>Alt</kbd>+<kbd>`</kbd>) |
+| **Sidebar** | the left column | switch views: Library / Favorites / Recent imports / Activated / Activate-until-quit / Deactivated / System fonts / Collections / Snapshots; at the bottom: Online · Trash · About · Shortcuts |
+| **Toolbar** | above the content | search · preview text · size slider · filter · sort · compare · rescan · **three view switches** |
+| **Content** | the middle | cards / list / specimen views; click a card to select, right-click for the full menu, drag into a collection |
+| **Detail panel** | slides in from the right when a card is clicked | multi-size specimen · metadata · license · notes & tags · export · drag its left edge to resize |
 
 **Sidebar** (top to bottom):
 
@@ -158,17 +168,17 @@ The three icons at the toolbar's right edge:
 
 - **Cards** (default): one card per family, live previews
 
-![List view: the whole library in one table](view-list.png)
-
 - **List**: a compact table — family / styles / format / size / toggle — best for
   sweeping a big library
 
-![Specimen view: multi-column specimen wall with large sample text](view-specimen.png)
+![List view: the whole library in one table](view-list.png)
 
 - **Specimen**: a **multi-column specimen wall** — every cell keeps the full card
   header (format / name / license / ★ / toggle) and spreads the sample text **large**
   underneath; pick a face per cell (remembered); its own size control — best for
   judging a typeface's character
+
+![Specimen view: multi-column specimen wall with large sample text](view-specimen.png)
 
 ### 5. The detail panel: everything about one family
 
@@ -218,9 +228,10 @@ Click any card and the right panel opens:
 |---|---|
 | Drag a ZIP | drop it on the window; it unpacks and imports |
 | Double-click | double-click a `.S-FontManager / .P-FontManager / .L-FontManager` file — the app opens and imports it (file associations registered at install) |
-| Online panel | see below |
+| Online panel | see below: filter by category / license, one-click add |
+| Local API / MCP | automated imports (see [Plugins, local API & MCP](#-plugins-local-api--mcp)) |
 
-![Online panel: categories, license filters, one-click add](online.png)
+![Online panel: category and license filters on the left, font cards with one-click add](online.png)
 
 How to use it: sidebar "Online" → filter by **category** (sans / serif / display /
 handwriting / mono / icons) and **license** (OFL / Apache / UFL), or just search;
@@ -228,7 +239,6 @@ cards show style · styles count · license (VAR badge = variable font); click a
 for details and **add to library** downloads it — the license text sits right next
 to the download button and license files come along. Data: the Google Fonts
 catalogue, 1,984 families.
-| Local API / MCP | automated imports (next section) |
 
 ### 10. Export: every way out
 

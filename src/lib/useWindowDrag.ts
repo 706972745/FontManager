@@ -22,6 +22,14 @@ const INTERACTIVE = "input, textarea, select, button, a, [data-no-drag]";
  * 移动用 requestAnimationFrame 合并到每帧一次，避免拖动时堆积 IPC 消息。
  * 只用于速览界面，完整界面仍用系统标题栏拖动。
  */
+/**
+ * 按下后移动多少（CSS 像素，屏幕坐标）才算「拖动」。
+ *
+ * 低于这个距离的按下—抬起只是**点了一下**：不能当成拖动去通知吸顶状态机，
+ * 否则「点顶栏空白处」会被当成拖到顶边，100ms 后窗口自己收起（2026-11-11 用户反馈）。
+ */
+const DRAG_DEAD_PX = 3;
+
 export function useWindowDrag() {
   const cleanupRef = useRef<(() => void) | null>(null);
   /** 组件卸载时必须摘掉监听：否则残留的 pointermove 会继续写窗口位置 */
@@ -45,6 +53,8 @@ export function useWindowDrag() {
     let baseY = 0;
     let ready = false;
     let done = false;
+    /** 是否已越过死区、真的在拖（决定要不要通知吸顶状态机） */
+    let moved = false;
     let pending: [number, number] | null = null;
     let raf: number | undefined;
 
@@ -68,8 +78,16 @@ export function useWindowDrag() {
 
     const onMove = (ev: PointerEvent) => {
       if (!ready || done) return;
-      const nx = baseX + (ev.screenX - startX) * dpr;
-      const rawY = baseY + (ev.screenY - startY) * dpr;
+      const dx = ev.screenX - startX;
+      const dy = ev.screenY - startY;
+      // 死区：指针没真正移动就是「点了一下」，什么都不做（见 DRAG_DEAD_PX）
+      if (!moved) {
+        if (Math.hypot(dx, dy) < DRAG_DEAD_PX) return;
+        moved = true;
+        document.body.classList.add("is-dragging");
+      }
+      const nx = baseX + dx * dpr;
+      const rawY = baseY + dy * dpr;
       // DPR 实时取：拖到另一块不同缩放的屏幕上时，吸附距离也跟着那块屏幕换算。
       // 距顶边不足吸附距离 → 直接贴到 y=0（含越过顶边的情况），松手后吸顶状态机
       // 会照常判定收起；离开吸附区才回到自由拖动，保留原有越顶余量。
@@ -95,13 +113,16 @@ export function useWindowDrag() {
       window.removeEventListener("blur", stop);
       document.body.classList.remove("is-dragging");
       if (cleanupRef.current === stop) cleanupRef.current = null;
-      // 松手后没有新的 move 事件了，通知吸顶状态机再判定一次：
-      // 被拖离顶边要解除吸顶、拖回顶边要重新吸住，都靠这一下。
-      window.dispatchEvent(new Event("zfm:window-drag-end"));
+      /*
+       * 真正拖过才通知吸顶状态机：没移动的按下—抬起只是「点了一下空白处」，
+       * 通知过去会被 evaluate() 判成「贴在顶边」→ 100ms 后自己收起。
+       * 这也是「点顶栏/抓手空白处，速览莫名其妙收起来」的根因（2026-11-11）。
+       */
+      if (moved) window.dispatchEvent(new Event("zfm:window-drag-end"));
     };
 
     e.preventDefault();
-    document.body.classList.add("is-dragging");
+    // is-dragging 由 onMove 在越过死区后才加：只是一个点击时不该告诉全站「正在拖」
     document.addEventListener("pointermove", onMove, true);
     document.addEventListener("pointerup", stop, true);
     document.addEventListener("pointercancel", stop, true);

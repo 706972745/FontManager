@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.2-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.9.3-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -105,7 +105,17 @@ TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还�
 
 ### 2. 认识主界面
 
-![主界面：字体库、实时预览与详情面板](main.png)
+![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png)
+
+**先认路：主界面分五个区**
+
+| 区域 | 位置 | 你能做什么 |
+|---|---|---|
+| **标题栏** | 最上面一条 | 拖窗口 · 最小化 / 最大化 / 关闭 · **设置** · **收进速览**（<kbd>Alt</kbd>+<kbd>`</kbd>） |
+| **侧栏** | 左侧竖列 | 切视图：字体库 / 收藏 / 最近导入 / 已启用 / 启用至关闭 / 已停用 / 系统字体 / 分组 / 快照；底部是 在线 · 回收站 · 关于 · 快捷键 |
+| **顶栏** | 内容区上方 | 搜索 · 改预览文字 · 字号滑杆 · 筛选 · 排序 · 对比 · 重新扫描 · **三种视图切换** |
+| **内容区** | 中间 | 卡片 / 列表 / 样张三种视图；点卡片选中、右键出全套菜单、拖拽进分组 |
+| **详情面板** | 点卡片后从右侧滑出 | 多字号样张 · 元数据 · 版权 · 备注与标签 · 导出 · 拖左边缘调宽 |
 
 **左侧栏**（从上到下）：
 
@@ -143,14 +153,14 @@ TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还�
 
 - **卡片**（默认）：每族一张卡，实时预览
 
-![列表视图：一列看全库](view-list.png)
-
 - **列表**：紧凑表格，一列看全库——字族 / 样式数 / 格式 / 大小 / 开关，适合大批量浏览
 
-![样张视图：多列样张墙，大字铺开](view-specimen.png)
+![列表视图：一列看全库](view-list.png)
 
 - **样张**：整库**多列样张墙**——每格保留卡片头部全部信息（格式 / 族名 / 版权 / 收藏 / 开关），
   下面用当前字号把示例文字**大字铺开**；每格可单独选字重（记住选择）；字号独立可调——挑字体气质时最好用
+
+![样张视图：多列样张墙，大字铺开](view-specimen.png)
 
 ### 5. 详情面板：点开一个字族看全部
 
@@ -190,15 +200,15 @@ TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还�
 |---|---|
 | 拖 ZIP | 把 ZIP 拖进窗口，自动解包导入 |
 | 双击安装 | 双击 `.S-FontManager / .P-FontManager / .L-FontManager` 文件，自动打开软件并导入（安装时已注册文件关联） |
-| 在线面板 | 见下图 |
+| 在线面板 | 见下图：按分类 / 许可筛选，一键入库 |
+| 本地 API / MCP | 自动化导入（见 [插件、本地 API 与 MCP](#-插件本地-api-与-mcp)） |
 
-![在线面板：分类 / 许可筛选 / 一键入库](online.png)
+![在线面板：左侧分类与许可筛选，右侧字体卡片与一键入库](online.png)
 
 在线面板怎么用：侧栏「在线」→ 顶部按**分类**（无衬线 / 衬线 / 展示 / 手写 / 等宽 / 图标）
 和**许可**（OFL / Apache / UFL）筛选，或直接搜；卡片上写明风格 · 样式数 · 许可证
 （VAR 徽标 = 变量字体）；点卡片进详情，**添加到字体库**一键下载——授权文本就在
 下载按钮旁边，版权文件一起带下来。数据来自 Google Fonts 目录，1984 个家族。
-| 本地 API / MCP | 自动化导入（见下节） |
 
 ### 10. 导出：所有出口都在这
 

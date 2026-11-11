@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { formatBytes, setUnpreviewableHook } from "../lib/fontLoader";
 import { pickRemovedFamilyNames, withoutFamilies } from "../lib/containerRemove";
+import { motionReduced } from "../lib/motion";
 
 /** 快照数量上限（与后端 MAX_SNAPSHOTS 一致）：超过就拒绝，不再悄悄淘汰最旧的 */
 export const SNAPSHOT_LIMIT = 5;
@@ -20,6 +21,7 @@ import {
   currentMonitor,
   getCurrentWindow,
   LogicalSize,
+  monitorFromPoint,
   PhysicalPosition,
   PhysicalSize,
 } from "@tauri-apps/api/window";
@@ -737,12 +739,58 @@ let settingsSaveChain: Promise<void> = Promise.resolve();
  */
 let onlineDetailGen = 0;
 
-/** 用户关了动效就直接切，不做窗口形变 */
+/**
+ * 用户关了动效就直接切，不做窗口形变。
+ * 判定口径收敛到 lib/motion.ts —— dock 的收起/展开、细线滑出用的也是它，
+ * 免得「界面动效关了、窗口还在滑」这种半截状态（审计 P0-2）。
+ */
 function morphDuration(): number {
-  return useFontStore.getState().motionPref === "reduced" ? 0 : MORPH_MS;
+  return motionReduced() ? 0 : MORPH_MS;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * 兜底：把窗口拽回可见区（审计 P0-5 风险 ②）。
+ *
+ * 形变的两段都会把**整个窗口**推到显示器上沿之外。只要有一段落空 —— 系统吞掉某几帧
+ * `setPosition`、或者 `morph_window` 原生命令不可用后连降级写入也失败 —— 窗口就停在
+ * 屏幕外，用户看到的是「点了速览 / 点回完整界面，软件消失了」。
+ *
+ * 进入与退出两条路径共用这一份：以前两边各写一段几乎一样的代码，改一处忘另一处就会
+ * 留下「进得去出不来」。宁可位置不完美，也不能让窗口没了。
+ */
+async function ensureWindowVisible(target?: {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+}): Promise<void> {
+  const win = getCurrentWindow();
+  try {
+    const [cur, monitor] = await Promise.all([
+      win.innerSize().catch(() => null),
+      target?.x != null && target?.y != null
+        ? Promise.resolve(null)
+        : currentMonitor().catch(() => null),
+    ]);
+    const area = monitor?.workArea ?? monitor;
+    const width = Math.round(target?.width ?? cur?.width ?? QUICKBAR_WIDTH);
+    const height = Math.round(target?.height ?? cur?.height ?? DOCK_HEIGHT_HINT);
+    await win.setSize(new PhysicalSize(width, height)).catch(() => {});
+    await win
+      .setPosition(
+        new PhysicalPosition(
+          Math.round(target?.x ?? area?.position?.x ?? 80),
+          Math.round(target?.y ?? area?.position?.y ?? 80),
+        ),
+      )
+      .catch(() => {});
+    await win.show().catch(() => {});
+  } catch {
+    /* 连兜底都失败就只能靠用户重新点热键 */
+  }
+}
 
 /**
  * 旧版本写进 prefs 的默认示例文本：升级后一律换成当前默认句。
@@ -750,9 +798,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  */
 const LEGACY_SAMPLE_TEXTS = new Set(["The quick brown fox jumps over the lazy dog"]);
 
-/** 退出速览时「窗口收走 → 换界面」之间留的一小段时间：让消失这一下先完成 */
-const HIDE_SETTLE_MS = 140;
-/** 换好界面后到「展开显示」之间留的一小段时间：给主界面渲染一帧 */
+/** 换好界面后到「落回原位」之间留的一小段时间：给主界面渲染一帧 */
 const SHOW_SETTLE_MS = 150;
 async function enterQuickbar() {
   const win = getCurrentWindow();
@@ -874,24 +920,12 @@ async function enterQuickbar() {
      * 兜底落位：新动画的第一段会把**整个主窗口**推到工作区上沿之外，
      * 万一第二段落回失败（系统吞掉 setPosition / monitor 信息拿不到），
      * 窗口就停在屏幕外 —— 用户看到的是「点了速览，软件消失了」。
-     * 这里必须把它拽回可见区域，宁可位置不完美也不能让窗口没了。
      */
-    try {
-      const m = await currentMonitor();
-      const a = m?.workArea ?? m;
-      const s = await win.scaleFactor();
-      await win.setSize(
-        new PhysicalSize(Math.round(QUICKBAR_WIDTH * s), Math.round(DOCK_HEIGHT_HINT * s)),
-      );
-      await win.setPosition(
-        new PhysicalPosition(
-          Math.round(a?.position?.x ?? 80),
-          Math.round(a?.position?.y ?? 80),
-        ),
-      );
-    } catch {
-      /* 连兜底都失败就只能靠用户重新点热键 */
-    }
+    const s = await win.scaleFactor().catch(() => 1);
+    await ensureWindowVisible({
+      width: Math.round(QUICKBAR_WIDTH * s),
+      height: Math.round(DOCK_HEIGHT_HINT * s),
+    });
   } finally {
     // 渐隐类只在「完整界面还在场上」时有意义，速览挂载后规则命中不到任何元素；
     // 但必须摘掉，否则下次回到完整界面会被它瞬间隐身
@@ -923,57 +957,105 @@ export async function syncQuickbarMinSize(): Promise<void> {
 }
 
 /**
- * 退出速览：先把窗口收走，藏起来之后再换界面、还原几何，最后再展开显示出来
- * ——来回切换时的大跨度变化不需要暴露给用户。
+ * 退出速览：**进入方向的反向动画**（审计 P0-5，用户 2026-11-11 定稿）。
+ *
+ * 进入是「整块滑出屏幕 → 屏幕外换装 → 从外面落回顶部」；退出原来是
+ * hide()（瞬间消失）→ 等 140ms → 换界面 → 等 150ms → show() → 原地淡入，
+ * 屏幕上有约 290ms「什么都没有」，方向感也丢了（进是滑上去，出是没了再冒出来）。
+ *
+ * 现在按同一组常量和反方向倒着走：抬出屏幕顶 → 屏幕外换装、把几何摆到
+ * 原位置所在显示器的正上方 → 落回原位。窗口全程可见，不再有空白帧。
  */
 async function exitQuickbar() {
   const win = getCurrentWindow();
   const geometry = quickbarGeometry;
   quickbarGeometry = null;
+  const ms = morphDuration();
   try {
-    // 先把窗口收走（用 hide 而不是 minimize：最小化状态下改窗口几何会被系统记在
-    // 「还原位置」之外，一显示又变回速览的大小），藏起来之后换界面、还原几何，
-    // 最后再显示出来——来回切换的大跨度变化用户全程看不到。
-    await win.hide().catch(() => {});
-    await sleep(HIDE_SETTLE_MS);
-
-    // 收起着就先还原展开尺寸，否则 dock 状态残留
+    // ① 先解除收起态（细线 / 提示条）。必须先做：dock 的位移监听一旦发现窗口
+    //    「离开顶边」，会把窗口拽回展开尺寸，和下面这趟形变抢几何。
+    //    代价是收起态会在原地瞬时长到全高 —— 比原来「先 hide 再长」少一次整屏空白。
     await restoreQuickbarDock();
     await ipc.setQuickbarMode(false).catch((e) => console.warn("[quickbar] 还原速览模式失败", e));
-    const scale = await win.scaleFactor().catch(() => 1);
-    if (geometry) {
-      // 窗口此刻是隐藏的，几何直接落位，不做形变
-      await win.setSize(new PhysicalSize(geometry.width, geometry.height)).catch(() => {});
-      await win.setPosition(new PhysicalPosition(geometry.x, geometry.y)).catch(() => {});
-    }
-    // 还原主界面的最小尺寸限制（提前设会被系统直接夹成 900x600）
-    await win.setMinSize(new LogicalSize(MAIN_MIN_WIDTH, MAIN_MIN_HEIGHT));
     await win.setAlwaysOnTop(false).catch(() => {});
-    // 切回主界面：内容钉在还原后的尺寸上并淡入，显示出来的就是最终布局
-    useFontStore.setState({
-      quickbar: false,
-      morph: geometry
-        ? { width: geometry.width / scale, height: geometry.height / scale }
-        : null,
-    });
-    if (geometry?.maximized) await win.maximize().catch(() => {});
-    // 给主界面渲染一帧的时间，再把它展开显示出来
-    await sleep(SHOW_SETTLE_MS);
+
+    const [pos, size, scale, monitor] = await Promise.all([
+      win.outerPosition(),
+      win.innerSize(),
+      win.scaleFactor().catch(() => 1),
+      currentMonitor(),
+    ]);
+    // 内容钉住的逻辑尺寸：主界面按还原后的尺寸排版，窗口只是把它露出来
+    const logicalW = geometry ? geometry.width / scale : size.width / scale;
+    const logicalH = geometry ? geometry.height / scale : size.height / scale;
+
+    // ② 整块抬出屏幕顶（与进入的第一段同方向、同常量）；屏幕外落点用显示器坐标，
+    //    任务栏置顶时工作区顶不在 0，按工作区算会露半截
+    const upY = (monitor ? monitor.position.y : 0) - size.height - OFFSCREEN_PAD;
+    /**
+     * 速览可能正收在「细线」（12px）/「提示条」（34px）上。
+     *
+     * `restoreQuickbarDock()` 里的 `setSize` 是「发出即忘」（不 await），这一帧读回来
+     * 的几何有可能还是细线尺寸。把一根 12px 的细线滑出屏幕 = 「细线飞走」，
+     * 比直接消失更怪 —— 这种状态退回旧做法：直接藏窗，屏幕外换装后再出现
+     * （审计 P0-5 风险 ①）。
+     */
+    const tooThin = size.height <= Math.round(DOCK_HEIGHT_HINT * scale);
+    if (tooThin) {
+      await win.hide().catch(() => {});
+    } else if (ms > 0) {
+      await morphWindow(
+        { x: pos.x, y: pos.y, width: size.width, height: size.height },
+        { x: pos.x, y: upY, width: size.width, height: size.height },
+        RETRACT_OUT_MS,
+      );
+    }
+
+    // ③ 屏幕外换装：切回完整界面，并把窗口摆到「原位置所在显示器的正上方」
+    //    多屏时原窗口可能在另一块屏上，用原位置反查显示器，别用当前那块
+    let dropY = upY;
+    if (geometry) {
+      const tm = await monitorFromPoint(geometry.x + 8, geometry.y + 8).catch(() => null);
+      const top = (tm ?? monitor)?.position.y ?? 0;
+      dropY = top - geometry.height - OFFSCREEN_PAD;
+      await win.setSize(new PhysicalSize(geometry.width, geometry.height)).catch(() => {});
+      await win.setPosition(new PhysicalPosition(geometry.x, dropY)).catch(() => {});
+    }
+    // 还原主界面的最小尺寸限制（提前设会被系统夹成 900x600）
+    await win.setMinSize(new LogicalSize(MAIN_MIN_WIDTH, MAIN_MIN_HEIGHT));
+    useFontStore.setState({ quickbar: false, morph: { width: logicalW, height: logicalH } });
+    // 主界面要重新渲染几千张卡片：给它一帧再露出来，否则落下来的是一块空白
+    await sleep(ms > 0 ? SHOW_SETTLE_MS : 60);
+
+    // ④ 从屏幕外落回原位（进入的第三段，反向）
+    if (geometry) {
+      if (ms > 0 && !tooThin && !geometry.maximized) {
+        await morphWindow(
+          { x: geometry.x, y: dropY, width: geometry.width, height: geometry.height },
+          { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height },
+          RETRACT_IN_MS,
+        );
+      } else {
+        // 细线态（窗口已藏）/ 最大化：没法「滑进来」（系统会按最大化重新摆一遍），直接落位
+        await win.setPosition(new PhysicalPosition(geometry.x, geometry.y)).catch(() => {});
+      }
+      if (geometry.maximized) await win.maximize().catch(() => {});
+    }
     await win.show().catch(() => {});
     await win.setFocus().catch(() => {});
     // 淡入走完再解除内容钉住
     await sleep(MORPH_MS);
     useFontStore.setState({ morph: null });
-    // 显示之后读回一次几何：窗口隐藏期间的 setSize/setPosition 有可能被系统吞掉，
-    // 结果就是「人已经回到完整界面了，窗口还留着速览的尺寸」——快速来回切换时最容易撞上。
-    // 这里做一次读回校验，不对就补写。
+    // 落位后读回一次几何：逐帧写几何时个别帧会被系统吞掉，结果就是
+    // 「人已经回到完整界面了，窗口还停在半路」——快速来回切换最容易撞上
     if (geometry && !geometry.maximized) {
       try {
-        const [size, pos] = await Promise.all([win.innerSize(), win.outerPosition()]);
+        const [nowSize, nowPos] = await Promise.all([win.innerSize(), win.outerPosition()]);
         const off =
-          (pos.x !== geometry.x || pos.y !== geometry.y) ||
-          Math.abs(size.width - geometry.width) > 8 ||
-          Math.abs(size.height - geometry.height) > 8;
+          nowPos.x !== geometry.x ||
+          nowPos.y !== geometry.y ||
+          Math.abs(nowSize.width - geometry.width) > 8 ||
+          Math.abs(nowSize.height - geometry.height) > 8;
         if (off) {
           await win.setSize(new PhysicalSize(geometry.width, geometry.height)).catch(() => {});
           await win.setPosition(new PhysicalPosition(geometry.x, geometry.y)).catch(() => {});
@@ -986,7 +1068,14 @@ async function exitQuickbar() {
   } catch (e) {
     console.warn("[quickbar] 还原窗口几何失败", e);
     useFontStore.setState({ quickbar: false, morph: null });
-    await win.show().catch(() => {});
+    // 新动画会把窗口推到屏幕外，兜底必须把它拽回可见区：
+    // 宁可位置不完美，也不能让用户看到「点了完整界面，软件消失了」
+    if (geometry) await win.setMinSize(null).catch(() => {});
+    await ensureWindowVisible(
+      geometry
+        ? { width: geometry.width, height: geometry.height, x: geometry.x, y: geometry.y }
+        : undefined,
+    );
     await win.unminimize().catch(() => {});
   } finally {
     // 无论几何还原是否成功，回到完整界面都要取消置顶

@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
 import { FolderInput, Link2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { springSnappy } from "../design/springs";
+import { scrimFade, springSnappy } from "../design/springs";
 import { ipc, type InstallMode, type InstallProgress } from "../lib/ipc";
 import { useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
@@ -135,7 +135,7 @@ export function DropZone() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={scrimFade}
           >
             <div className="dropchoice-hint">{t("drop.sub")}</div>
             <div className="dropchoice-panels">

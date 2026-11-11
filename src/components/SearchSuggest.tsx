@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { useEffect, useMemo } from "react";
 import { Camera, FolderOpen, Puzzle, Tag, Type } from "lucide-react";
 import { allTags, familiesFor, useFontStore } from "../state/fontStore";
@@ -5,6 +6,7 @@ import { isEnabledNow } from "../lib/familyState";
 import { activeLocale, useT } from "../lib/i18n";
 import { displayFamilyName, familyNameVariants } from "../lib/fontNames";
 import { usePluginStore } from "../lib/pluginStore";
+import { springSnappy } from "../design/springs";
 import { openPluginMenu } from "../lib/pluginMenu";
 import type { PluginInfo } from "../lib/ipc";
 
@@ -168,7 +170,23 @@ export function SearchSuggest({
   if (!q) return null;
 
   return (
-    <ul className="suggest-list" role="listbox" aria-label={t("search.suggestAria")}>
+    <motion.ul
+      className="suggest-list"
+      role="listbox"
+      aria-label={t("search.suggestAria")}
+      /*
+       * 这是全项目触发最频繁的浮层（每敲一个字就出现 / 消失），原来**一点动画都没有**，
+       * 而同位置的排序 / 筛选菜单有 springSnappy + 0.13s 出场（审计 P1-9）。
+       * 参数照 TopBar.tsx 那两个菜单逐字对齐，别自成一套。
+       *
+       * 出场由父级（TopBar / QuickBar）的 <AnimatePresence> 兜住 ——
+       * 本组件是被条件挂载的，自己包一层 AnimatePresence 收不到卸载。
+       */
+      initial={{ opacity: 0, y: -6, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.13 } }}
+      transition={springSnappy}
+    >
       {items.length === 0 ? (
         <li className="suggest-empty">{t("search.noHits")}</li>
       ) : (
@@ -217,6 +235,6 @@ export function SearchSuggest({
           </li>
         ))
       )}
-    </ul>
+    </motion.ul>
   );
 }

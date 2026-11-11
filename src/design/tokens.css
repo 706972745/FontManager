@@ -318,3 +318,68 @@ input:focus {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── 「减少动效」在令牌层收口（2026-11-11，审计 P0-3） ────────────────────
+   组件层的降级由 MotionConfig 管，但全站 119 处 CSS transition 读的是这五个时长
+   变量，只在 app.css 里逐条压具体选择器永远压不全 —— 会漏掉卡片锚点生长、
+   列表行选中线、顶栏下拉、.qb-btn、.ctx-item……于是开关打开后它们照旧跑 100–260ms。
+   双轨：用户在软件里开了（data-motion）压一次，系统层开了（@media）再压一次；
+   MotionPref 只有 "system" / "reduced" 两档，「跟随系统」就靠 @media 这条兜住。
+   ⚠️ 别改成 `* { transition: none }`：那会把载入提示的 opacity / filter 一起干掉，
+      看起来像界面卡死。 */
+:root[data-motion="reduced"] {
+  --t-micro: 1ms;
+  --t-quick: 1ms;
+  --t-state: 1ms;
+  --t-layout: 1ms;
+  --t-scene: 1ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-micro: 1ms;
+    --t-quick: 1ms;
+    --t-state: 1ms;
+    --t-layout: 1ms;
+    --t-scene: 1ms;
+  }
+}
+
+/* ─── 悬停跑马灯：减少动效下横移压成 1ms（2026-11-11 收口） ───────────────
+   跑马灯的时长来自 `.marquee-roll-on` 的**简写** `transition: transform var(--marquee-dur) linear`，
+   而这个变量是 `useMarquee` **内联**写在元素上的。这里压的是**长写** `transition-duration`
+   —— 长写按层叠盖住简写里的值（本规则特异性 (0,2,0) > 原规则 (0,1,0)），
+   所以能生效；文字一帧滑到结尾，被截断的尾部仍然看得见（功能不丢）。
+   ⚠️ 别改成覆盖 `--marquee-dur`：内联自定义属性优先级高于任何选择器，压不住，那是另一件事。
+   与上面那五条一样走双轨：软件内开关 + 系统偏好。 */
+:root[data-motion="reduced"] .marquee-roll-on {
+  transition-duration: 1ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* ⚠️ 必须带 `:root ` 前缀把特异性抬到 (0,2,0)。
+     `@media` **不增加特异性**，而本文件先于 `app.css` 导入（`main.tsx:5-6`），
+     裸写 `.marquee-roll-on` 与 `app.css:3493` 那条简写同为 (0,1,0)，
+     按源序后者胜 → 这条会变成死代码（QA 在构建产物里逐字节验过：
+     `transition-duration:1ms` 在 offset 13722、简写在 73369）。
+     而「跟随系统」是默认档（`MotionPref = "system" | "reduced"`），
+     只开了系统减少动效的用户大多走这条轨道，不能让它空转。 */
+  :root .marquee-roll-on {
+    transition-duration: 1ms;
+  }
+}
+
+/* ─── 剩下的写死时长：纯颜色 / 透明度反馈（清单 M3 收尾）─────────────────
+   「减少动效」下统一压到 1ms。新写规则请直接用 --t-* 令牌，别再往这张名单里加。
+   进度条那两处（`.load-fill` / `.settings-update-bar > i`）**故意保留**：
+   它们是数据补间，一帧跳到终值反而看不出进度。
+   同样要带 `:root` 前缀 —— 这几条在 app.css 里是 (0,1,0)，本文件先导入，
+   裸写同名选择器会被源序盖掉（跑马灯那次已经踩过一次）。 */
+:root[data-motion="reduced"]
+  :is(.specimen-copied, .settings-hint, .hotkey-field, .copyright-status-btn, .qb-copied, .face-line) {
+  transition-duration: 1ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root
+    :is(.specimen-copied, .settings-hint, .hotkey-field, .copyright-status-btn, .qb-copied, .face-line) {
+    transition-duration: 1ms;
+  }
+}

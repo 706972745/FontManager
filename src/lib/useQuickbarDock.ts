@@ -14,6 +14,7 @@ import { matchesHotkey } from "./hotkey";
 import { ipc } from "./ipc";
 import { createSerialQueue, leadNormalized } from "./quickbarAnim";
 import { morphWindow } from "./windowMorph";
+import { motionReduced } from "./motion";
 
 /** 窗口顶边离屏幕工作区顶边多近算「吸顶」（逻辑像素） */
 const DOCK_TOLERANCE = 5;
@@ -93,12 +94,17 @@ const HOTKEY_HOLD_MS = 1000;
 export const TOP_BAR_HOTKEY = "Alt + `";
 
 /**
- * 收起后的三个阶段：
+ * 收起后的两个阶段：
  * - hint：带提示行；
- * - retract：提示行向上滑走、底色淡成透明的过渡态（窗口同时在变矮）；
  * - bar：只剩最上面一条横线。
+ *
+ * 以前还有一个 `retract`（提示行向上滑走、底色淡成透明）—— 那是死状态：
+ * 全项目没有任何地方 `setPhase("retract")`，`shrinkToBar()` 是在**屏幕外**直接把
+ * 阶段切成 bar 的，所以那组规则从来没生效过。已删除（审计 P1-8 方案 ②）：
+ * 补上它要给每次收起加 260ms 延迟，与「退出速览不留空档」的方向相反。
+ * 收起方向的过渡现在统一在屏幕外完成，看得见的那一段由 animateHeight 负责。
  */
-export type DockPhase = "hint" | "retract" | "bar";
+export type DockPhase = "hint" | "bar";
 export interface QuickbarDockState {
   /** 整个速览窗口是否已经收起成屏幕顶端的一条 */
   docked: boolean;
@@ -261,6 +267,13 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     /** 热键呼出后的观察期定时器 */
     let hotkeyHoldTimer: ReturnType<typeof setTimeout> | undefined;
     let raf: number | undefined;
+    /**
+     * 0 时长短路（减少动效）的兜底定时器。放在这一层而不是 `animateHeight` 内部，
+     * 是为了让 `stopAnim()` 能撤掉它 —— 否则「退出速览 / restoreNow」之后那条
+     * pending 的 settleNow 还会跑到 `done()`（collapse 的 done 会排一次收细线），
+     * 在窗口已经还原成完整尺寸之后再收回一条线（清单 M5）。
+     */
+    let zeroGuard: ReturnType<typeof setTimeout> | undefined;
     /** 动画兜底完成定时器：最小化时 rAF 停发，靠它把动画收尾（见 animateHeight） */
     let finishTimer: ReturnType<typeof setTimeout> | undefined;
     /** 收起前窗口的客户区尺寸（物理像素），展开时原样还原 */
@@ -436,6 +449,10 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         clearTimeout(finishTimer);
         finishTimer = undefined;
       }
+      if (zeroGuard !== undefined) {
+        clearTimeout(zeroGuard);
+        zeroGuard = undefined;
+      }
       animating = false;
       // 取消也得把行内高度 / data-anim 摘掉，否则 qb-frame 停在中断那一帧
       clearFrameDom();
@@ -484,6 +501,55 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       durationMs: number = ANIM_MS,
     ) => {
       stopAnim();
+      /*
+       * 0 时长（「减少动效」开着，审计 P0-2）：不做逐帧动画，一帧到位。
+       *
+       * 这里有三个必须做对的细节：
+       *   ① **等 setSize 回来再翻状态**。动画路径的最后一帧会把窗口写到位，done()
+       *      里那些"读窗口现尺寸"的逻辑（`syncQuickbarMinSize`）读到的才是终态；
+       *      0 时长没有最后一帧，不等就会拿收起时的 34px 去设最小尺寸。
+       *   ② `animating` 在等待期间保持 true：期间任何手势 / 热键都得被挡住，
+       *      否则会有人跟这次"一帧到位"抢着写几何。
+       *   ③ 收尾必须把 `finish()` 的两件事做全 —— 摘掉 `.qb-frame` 的行内高度
+       *      （否则界面钉在中断那一帧）、调 `notifyAnimSettled()`（热键 toggle 的
+       *      串行队列等在它上面，不通知就只能等 `ANIM_MS + 600` 的兜底超时，
+       *      表现为「连按几下热键只有第一下有反应」）。
+       */
+      if (!(durationMs > 0)) {
+        animating = true;
+        let settled = false;
+        /**
+         * 兜底定时器：`setSize` 既不 resolve 也不 reject 时必须有一条出路。
+         * Windows 的模态拖动 / 尺寸循环里 SetWindowPos 会被拖住（就是下面注释描述的那个场景），
+         * Promise 一直挂着 → `animating` 永久 true → 之后每次热键都在 `collapse()/expand()`
+         * 首行的 `if (animating || mutating) return` 被静默丢弃，表现是「连按热键只有第一下
+         * 有反应」，只有退出速览才能解开。动画分支有 `finishTimer`（durationMs + 800）和
+         * `visibilityState === "hidden"` 两道保护，这条短路以前一道都没有。
+         */
+        const settleNow = () => {
+          if (settled) return;
+          settled = true;
+          if (zeroGuard !== undefined) {
+            clearTimeout(zeroGuard);
+            zeroGuard = undefined;
+          }
+          animating = false;
+          notifyAnimSettled();
+          // 钩子已经卸载：不要再碰 DOM / React 状态，但 animating 已经放开
+          if (!alive) return;
+          clearFrameDom();
+          done();
+        };
+        zeroGuard = setTimeout(settleNow, ANIM_MS + 600);
+        // 顺序不能反：先 catch 再 then，拒绝也要走到 settleNow
+        void win
+          .setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, toH)))
+          .catch(() => {
+            /* 拖动 / 最小化中会失败，恢复后由 healGeometry 自愈 */
+          })
+          .then(settleNow);
+        return;
+      }
       animating = true;
       const frameEl = document.querySelector<HTMLElement>(".qb-frame");
       const shrinking = toH < fromH;
@@ -617,7 +683,9 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           await morphWindow(
             { x: px, y: py, width: widthPhys, height: from },
             { x: px, y: py - from - OFFSCREEN_PAD, width: widthPhys, height: from },
-            RETRACT_OUT_MS,
+            // 「减少动效」：不滑，直接落到屏幕外（审计 P0-2）。中间那 70ms 的
+            // BAR_SWAP_MS 不能省：换装必须发生在屏幕外，否则会露出换装那一帧的直角。
+            motionReduced() ? 0 : RETRACT_OUT_MS,
           );
           if (!alive || !dockedRef.current) return;
           // 2) 屏幕外换成细线：内容切到 bar 阶段，尺寸收成细线高，贴着顶边上沿待命
@@ -632,7 +700,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           await morphWindow(
             { x: px, y: py - to - OFFSCREEN_PAD, width: widthPhys, height: to },
             { x: px, y: py, width: widthPhys, height: to },
-            RETRACT_IN_MS,
+            motionReduced() ? 0 : RETRACT_IN_MS,
           );
         } catch {
           // 原生形变不可用：直接落位到细线，绝不能把窗口留在屏幕外
@@ -704,6 +772,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
             scheduleShrink();
           },
           scale,
+          // 「减少动效」：一帧收到位，不放 200ms 的高度动画（审计 P0-2）
+          motionReduced() ? 0 : ANIM_MS,
         );
       } finally {
         mutating = false;
@@ -771,6 +841,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
             }
           },
           scale,
+          // 「减少动效」：一帧展开到位，不放 200ms 的高度动画（审计 P0-2）
+          motionReduced() ? 0 : ANIM_MS,
         );
       } finally {
         mutating = false;
@@ -795,7 +867,15 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           setBar(null);
           restoreWindowHints();
           void ipc.setDockSensor(false).catch(() => {});
-          animateHeight(from, to, wide, () => then(), scale);
+          animateHeight(
+            from,
+            to,
+            wide,
+            () => then(),
+            scale,
+            // 「减少动效」：细线长回提示条也是一帧到位（审计 P0-2）
+            motionReduced() ? 0 : ANIM_MS,
+          );
         })
         .finally(() => {
           mutating = false;

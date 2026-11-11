@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArchiveRestore, Trash2 } from "lucide-react";
-import { spring, staggerDelay } from "../design/springs";
+import { spring, springSnappy, staggerDelay } from "../design/springs";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
@@ -36,8 +36,8 @@ export function TrashView() {
         <motion.button
           className="trash-empty-btn"
           onClick={() => void emptyTrash()}
-          whileHover={{ y: -1 }}
-          whileTap={{ scale: 0.97 }}
+          whileHover={{ y: -1, transition: spring }}
+          whileTap={{ scale: 0.97, transition: springSnappy }}
         >
           {t("trash.empty")}
         </motion.button>
@@ -73,8 +73,8 @@ export function TrashView() {
                 data-hint="hint.trashRestore"
                 className="trash-action"
                 onClick={() => void restoreTrash(entry.id)}
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ y: -1, transition: spring }}
+                whileTap={{ scale: 0.97, transition: springSnappy }}
               >
                 <ArchiveRestore size={14} strokeWidth={1.5} />
                 {t("trash.restore")}
@@ -83,8 +83,8 @@ export function TrashView() {
                 data-hint="hint.trashDelete"
                 className="trash-action trash-delete"
                 onClick={() => void deleteTrashEntry(entry.id)}
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ y: -1, transition: spring }}
+                whileTap={{ scale: 0.97, transition: springSnappy }}
               >
                 <Trash2 size={14} strokeWidth={1.5} />
                 {t("trash.delete")}

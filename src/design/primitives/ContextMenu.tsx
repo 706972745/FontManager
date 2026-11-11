@@ -9,7 +9,7 @@ import { activeLocale, useT } from "../../lib/i18n";
 import { displayFamilyName, familyNameVariants } from "../../lib/fontNames";
 import { useFontStore, type Nav } from "../../state/fontStore";
 import type { FontFace } from "../../lib/ipc";
-import { springSnappy } from "../springs";
+import { scrimFade, springSnappy } from "../springs";
 
 export type MenuItem =
   | {
@@ -42,6 +42,16 @@ export type MenuItem =
 
 interface MenuState {
   open: boolean;
+  /**
+   * 「正在播退出动画」（审计 P1-13）。
+   *
+   * `close()` 会立刻把 open 置 false，但 AnimatePresence 还会让面板和遮罩在屏幕上
+   * 多留 120–180ms。这期间如果 `isContextMenuOpen()` 已经返回 false，
+   * `App.tsx` 的 topLayerOpen() 就放开了：Delete / Ctrl+K 会作用在背后的界面上，
+   * 点击也会穿过已经淡出的遮罩命中底下的元素。
+   * 所以退出动画期间必须继续算「菜单开着」。
+   */
+  closing: boolean;
   x: number;
   y: number;
   items: MenuItem[];
@@ -53,6 +63,7 @@ interface MenuState {
 
 const useMenuStore = create<MenuState>((set, get) => ({
   open: false,
+  closing: false,
   x: 0,
   y: 0,
   items: [],
@@ -60,24 +71,33 @@ const useMenuStore = create<MenuState>((set, get) => ({
   show: (x, y, items) =>
     set({
       open: true,
+      // 上一次的退出动画可能还没走完就又被右键了：立刻复位，否则新菜单会被当成「退出中」
+      closing: false,
       x,
       y,
       items,
       prevFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
     }),
   close: () => {
+    if (!get().open) return;
     const prev = get().prevFocus;
-    set({ open: false, prevFocus: null });
+    set({ open: false, closing: true, prevFocus: null });
     // 键盘用户关掉菜单后，焦点不能掉回 body（否则 Tab 要从头开始走）
     if (prev && prev !== document.body && document.contains(prev)) {
       prev.focus({ preventScroll: true });
     }
+    // 兜底：宿主被卸载 / 退出动画被打断时 onExitComplete 不会来，
+    // closing 若永久为真会一直挡着全局快捷键（比「穿透 120ms」更糟）。
+    window.setTimeout(() => {
+      if (!get().open) set({ closing: false });
+    }, 400);
   },
 }));
 
 /** 右键菜单是否开着：全局快捷键 / 顶层弹层判定要用（见 App.tsx 的 topLayerOpen） */
 export function isContextMenuOpen(): boolean {
-  return useMenuStore.getState().open;
+  const st = useMenuStore.getState();
+  return st.open || st.closing;
 }
 
 export function openContextMenu(e: ReactMouseEvent, items: MenuItem[]) {
@@ -682,18 +702,31 @@ export function ContextMenuHost() {
   }, [open, close]);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence
+      // 退出动画全部播完才允许「菜单已关闭」生效（审计 P1-13）
+      onExitComplete={() => useMenuStore.setState({ closing: false })}
+    >
       {open && (
         <>
-          <div
+          <motion.div
+            key="ctx-backdrop"
             className="ctx-backdrop"
+            /* 遮罩原来是个瞬时出现的普通 div，而菜单面板自己有 0.2s 入场 ——
+               「弹出」缺半拍（审计 P1-5）。这里与全站遮罩统一成 0.18s。
+               注意 `.ctx-backdrop` 本身是透明的点击拦截层（不压暗页面），
+               所以这条淡入只在将来给它加底色时才看得见；写在这里是为了
+               结构一致，不再出现「全站只有这一处遮罩没有过渡」。 */
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={scrimFade}
             onClick={close}
             onContextMenu={(e) => {
               e.preventDefault();
               close();
             }}
           />
-          <MenuPanel x={x} y={y} items={items} />
+          <MenuPanel key="ctx-panel" x={x} y={y} items={items} />
         </>
       )}
     </AnimatePresence>

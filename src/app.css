@@ -921,15 +921,28 @@ body,
   padding: 0 10px;
   border-radius: 4px;
   color: var(--text-tertiary);
-  transition: background var(--t-quick) ease, color var(--t-quick) ease,
-    box-shadow var(--t-quick) ease;
+  /* 位置上下文 + 独立层叠上下文：滑动指示器（.view-pill，z-index:-1）要压在
+     图标下面、又要在 .view-toggle 的底色上面（审计 P1-10）。 */
+  position: relative;
+  z-index: 0;
+  /* 底块交给 .view-pill 之后这里只剩文字色需要过渡 */
+  transition: color var(--t-quick) ease;
 }
 .view-btn:hover {
   color: var(--text-secondary);
 }
+/* 当前项只负责文字色：底块由 .view-pill 这个共享元素滑过来（与侧栏 nav-pill 同一套） */
 .view-btn-active {
-  background: var(--e3);
   color: var(--text-primary);
+}
+/* 视图切换的滑动底块。圆角跟 `.view-toggle > *`（2px）保持一致 ——
+   别写 4px，那会让底块比按钮自己的圆角更圆，切换时四角露边。 */
+.view-pill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 2px;
+  background: var(--e3);
   box-shadow:
     inset 0 1px 0 var(--glass-top-highlight),
     0 0 10px var(--accent-glow-soft),
@@ -1667,6 +1680,14 @@ h2.detail-title.copy-name {
   padding: 32px;
 
   padding-bottom: 8vh;
+}
+/* 空态内容层：换「空的原因」时带 key 重挂载、只做淡入（审计 P2-3）。
+   外层 .empty-state 负责居中，这层接管内边距与纵向间距。 */
+.empty-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 .empty-tile {
   display: grid;
@@ -3484,7 +3505,10 @@ h2.detail-title.copy-name {
   display: inline-block;
   vertical-align: bottom;
   transform: translateX(0);
-  transition: transform 180ms ease;
+  /* 「离开」方向的回滚时长：走令牌而不是写死 180ms。正常态 --t-quick 就是 180ms
+     （零视觉变化），「减少动效」下被令牌压成 1ms —— 否则会出现 QA 抓到的那种半截降级：
+     `--marquee-dur` 那条只管「进入」，回滚还按 180ms 慢慢滑回去（2026-11-11 收口）。 */
+  transition: transform var(--t-quick) ease;
   will-change: transform;
 }
 .marquee-roll-on {
@@ -5550,6 +5574,14 @@ h2.detail-title.copy-name {
 .spin {
   animation: online-spin 1s linear infinite;
 }
+/* 「仍在扫描」的慢转（审计 P2-8）。减少动效下 motion 的 rotate 会被 MotionConfig
+   直接压成静止，重新扫描图标停在半路，看起来像卡死。这里换成 3s 一圈：
+   慢到不刺激，又能证明后台还在干活。
+   ⚠️ 别把它并进下面「减少动效统一关掉无限循环」那条名单 —— 那几处是纯装饰，
+      这一处是全项目唯一的活动指示，停下来信息就丢了。 */
+.rescan-spin-slow {
+  animation: online-spin 3s linear infinite;
+}
 
 .card-os-lock {
   display: inline-flex;
@@ -5996,15 +6028,18 @@ h2.detail-title.copy-name {
   background: var(--qb-bg);
   overflow: hidden;
   /* 圆角全程常开（半径 = 8 物理像素 / DPR，见 useQuickbarDock 的 --qb-radius）。
-     以前只在收起态（hint/retract）加：展开时 docked 立刻变 false，这条规则失效，
+     以前只在收起态（hint）加：展开时 docked 立刻变 false，这条规则失效，
      而系统圆角要等 IPC 往返才切回来，中间几帧窗口是直角 —— 就是「展开时四角闪一下」。 */
   border-radius: var(--qb-radius, 8px);
   color: var(--qb-fg);
   -webkit-font-smoothing: antialiased;
-  /* 收起成细线时底色要淡成透明（retract 阶段），过渡而不是一帧切过去 */
+  /* 收起成细线时底色要淡成透明（屏幕外切到 bar 阶段），过渡而不是一帧切过去。
+     时长走令牌：正常态 260ms 与窗口动画同拍；「减少动效」下窗口是一帧到位的
+     （animateHeight 0 时长），这里也必须同拍收成 1ms，否则会出现
+     「窗口已经缩成一条线了、内容还在慢慢滑」（2026-11-11 收口）。 */
   transition:
-    background-color 0.26s linear,
-    border-color 0.26s linear;
+    background-color var(--t-state) linear,
+    border-color var(--t-state) linear;
 }
 /* 形变 / 淡出垫底用速览自己的底色，免得切换途中露出一块颜色不同的矩形 */
 body.qb-mode.is-morphing #root,
@@ -6060,11 +6095,13 @@ body.is-dragging textarea {
      用中性灰而不用主题 ink：收起后这条线浮在桌面上，浅色主题的深线在黑色
      桌面/任务栏上会隐形，深色主题的浅线在白色背景上同样隐形（2026-11-05 用户反馈） */
   background: rgba(138, 138, 143, 0.62);
-  /* 收起时这条线要摊成整条细线，和提示行滑走同一拍 */
+  /* 收起时这条线要摊成整条细线，和提示行滑走同一拍。
+     时长走令牌（不是写死 0.26s）：「减少动效」下窗口一帧到位，
+     这条线也必须 1ms 摊开，否则它是唯一还在动的那个（2026-11-11 收口）。 */
   transition:
-    width 0.26s cubic-bezier(0.32, 0.72, 0, 1),
-    height 0.26s cubic-bezier(0.32, 0.72, 0, 1),
-    background-color 0.26s linear;
+    width var(--t-state) cubic-bezier(0.32, 0.72, 0, 1),
+    height var(--t-state) cubic-bezier(0.32, 0.72, 0, 1),
+    background-color var(--t-state) linear;
 }
 
 /**
@@ -6086,8 +6123,8 @@ body.is-dragging textarea {
   background: rgba(138, 138, 143, 0.85);
   /**
    * 细线阶段不做任何过渡：这条线的终值在上面（100% / dock-line-h / 0.38），
-   * 和 retract 阶段末尾完全一致，所以这里关掉过渡不会少掉任何「摊开」动作
-   * （摊开发生在 retract，用户看得见）。
+   * 而「摊开」这一步现在完全发生在屏幕外（阶段在隐藏期间切到 bar），
+   * 所以这里关掉过渡不会少掉任何看得见的动作。
    *
    * 之前不关的后果：切到 bar 发生在屏幕外，0.26s 的宽度/高度/透明度过渡正好
    * 撞上 160ms 的滑入 —— 线滑回屏幕时还是半透明的，落到顶边后才继续「淡入」，
@@ -6115,12 +6152,11 @@ body.is-dragging textarea {
   transition: none;
 }
 /**
- * 收起态（提示条 / 收回中 / 细线）：窗口本体一律直角（DWM 圆角在速览期间是关掉的，
+ * 收起态（提示条 / 细线）：窗口本体一律直角（DWM 圆角在速览期间是关掉的，
  * 见 useQuickbarDock），圆角由 .qb-frame 的常开 border-radius 画。
  * 这里保留一条显式规则只是为了语义清晰：收起态的形状与展开态完全一致。
  */
-.qb-frame[data-dock-phase="hint"],
-.qb-frame[data-dock-phase="retract"] {
+.qb-frame[data-dock-phase="hint"] {
   border-radius: var(--qb-radius, 8px);
 }
 /* html/body 全程透明（见文件顶部），速览不再需要按 qb-mode / 收起阶段切换底色。 */
@@ -6286,11 +6322,13 @@ body.ui-fade-out .app-frame {
   cursor: grab;
   touch-action: none;
   overflow: hidden;
-  /* 时长和 RETRACT_MS 对齐：窗口变矮、底色变透明、这一行往上滑走是同一拍 */
+  /* 时长和 RETRACT_MS 对齐：窗口变矮、底色变透明、这一行往上滑走是同一拍。
+     走令牌而不是写死 0.26s：「减少动效」下窗口一帧到位，这一行也得 1ms 收掉
+     （2026-11-11 收口）。 */
   transition:
-    height 0.26s cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 0.26s cubic-bezier(0.32, 0.72, 0, 1),
-    transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+    height var(--t-state) cubic-bezier(0.32, 0.72, 0, 1),
+    opacity var(--t-state) cubic-bezier(0.32, 0.72, 0, 1),
+    transform var(--t-state) cubic-bezier(0.32, 0.72, 0, 1);
 }
 /* bar 阶段：只剩最上面那条横线，提示行完全收掉 */
 .qb-frame[data-dock-phase="bar"] .qb-dockbar {
@@ -6300,22 +6338,12 @@ body.ui-fade-out .app-frame {
   pointer-events: none;
 }
 /**
- * retract 阶段：提示行向上滑走 + 淡出，窗口高度同时被 animateHeight 收到细线高度。
- * 原来是「setPhase(bar) → 提示行瞬间消失，窗口再自己变矮」，看起来像被一刀切掉；
- * 现在整段是连贯的「卷起来」，落定后才切到 bar。
+ * 注意：这里**没有**「收起中」的中间阶段。
+ * 曾经写过一组 `.qb-frame[data-dock-phase="retract"]`（提示行向上滑走 + 抓手线摊开），
+ * 但全项目从来没有人 setPhase("retract") —— `shrinkToBar()` 是在屏幕外直接把阶段
+ * 切成 bar 的，那组规则是死代码，已随 DockPhase 一起删掉（审计 P1-8）。
+ * 收起方向看得见的那一段由 `animateHeight` 的窗口高度动画负责。
  */
-.qb-frame[data-dock-phase="retract"] .qb-dockbar {
-  opacity: 0;
-  transform: translateY(-14px);
-  pointer-events: none;
-}
-/* retract 期间这条线就开始摊成最终那条整宽的细线（尺寸用过渡，不是到 bar 才跳过去） */
-.qb-frame[data-dock-phase="retract"] .qb-grip-bar {
-  width: 100%;
-  height: var(--dock-line-h, 5px);
-  border-radius: 3px;
-  background: rgba(138, 138, 143, 0.85);
-}
 /**
  * 提示行本体：左「状态」+ 右「操作」。
  * 一行里两种字号（11 / 9），用 baseline 对齐才不会让 9px 那截看着往上飘。
@@ -6697,6 +6725,11 @@ body.ui-fade-out .app-frame {
   min-height: 0;
   overflow-y: auto;
   padding: 0;
+  /* 关掉浏览器的滚动锚定（审计 P0-1）：展开字重是 height 动画，每帧都在改「实测行高」，
+     默认的锚定会跟着补偿 scrollTop，表现就是列表自己在跳。
+     必须挂在**滚动容器**上 —— 与 `.specimen-scroll`（app.css:3301 起）同一个写法；
+     挂在子元素 `.qb-list` 上只是「恰好它是唯一子节点」才有效，加个兄弟节点就复发。 */
+  overflow-anchor: none;
 }
 /* 窄竖排列表：0.9.9-25 起是虚拟列表，子项绝对定位（行高由 QuickBar 实测）。
    R2 起行与行之间不再留间距，分隔完全交给 1px 发丝线。 */
@@ -7062,6 +7095,9 @@ body.ui-fade-out .app-frame {
   margin-top: 8px;
   padding-top: 5px;
   border-top: 1px solid var(--qb-hair);
+  /* 展开/收起走 height 0↔auto（与完整界面 `.card-styles` 同一套动作，2026-11-11 审计 P0-1）：
+     没有 overflow:hidden 的话，动画途中字重行会溢出行外，看起来像「先长出来再收回去」。 */
+  overflow: hidden;
 }
 /**
  * 窄档（≤400）里「Aa」列没了，网格从 6 列变 5 列，字重列表要跟着从第 2 列起。
@@ -7733,8 +7769,15 @@ body.ui-fade-out .app-frame {
 }
 /* 行首三态锚点（2026-11-11 复原）：与速览同一套（点 → 80 灰线 → 96 蓝线），生长起点固定。
    卡片浏览界面按用户要求回到这个固定长度版本 —— 「随卡片高度长满」那套只给样张格子用，
-   见 §3.5 的 .specimen-tile 锚点。 */
+   见 §3.5 的 .specimen-tile 锚点。
+
+   2026-11-11（审计 P1-3）：这里原来用 width / height / border-radius 三个**布局属性**
+   做过渡，一行一族时每次 hover 都要走一次重排。现在拆成和速览（.qb-anchor-dot /
+   .qb-anchor）、样张（.specimen-tile::before / ::after）完全一致的两层：
+   ::before 是圆点（只切 transform + opacity），::after 是竖线（只切 scaleY）。
+   线高固定 96px、靠 scaleY 表达 0 / 80 / 96 三种长度 —— 全程合成器属性，不触发重排。 */
 .family-card::before {
+  /* 圆点：静止时的形态 */
   content: "";
   position: absolute;
   left: 26px;
@@ -7744,23 +7787,42 @@ body.ui-fade-out .app-frame {
   border-radius: 3px;
   background: var(--ui-dot);
   transition:
-    width var(--t-quick) ease-out,
-    height var(--t-quick) ease-out,
-    border-radius var(--t-quick) ease-out,
-    background-color var(--t-quick) ease-out;
+    transform var(--t-quick) ease-out,
+    opacity var(--t-quick) ease-out;
 }
-.family-card:hover::before {
-  width: 2px;
-  height: 80px;
-  border-radius: 1px;
-  background: var(--ui-line-hover);
-}
-.family-card.card-selected::before,
-.family-card.card-selected:hover::before {
+.family-card::after {
+  /* 竖线：左沿与顶端沿用旧版的 26 / 24，落点逐像素不变。
+     线高固定 96px，默认缩成 0；hover 长到 80px（scaleY 80/96），选中长满（1）。 */
+  content: "";
+  position: absolute;
+  left: 26px;
+  top: 24px;
   width: 2px;
   height: 96px;
   border-radius: 1px;
+  background: var(--ui-line-hover);
+  transform: scaleY(0);
+  transform-origin: top center;
+  transition:
+    transform var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
+}
+.family-card:hover::before {
+  transform: scale(0);
+  opacity: 0;
+}
+.family-card:hover::after {
+  transform: scaleY(0.8333);
+}
+.family-card.card-selected::before,
+.family-card.card-selected:hover::before {
+  transform: scale(0);
+  opacity: 0;
+}
+.family-card.card-selected::after,
+.family-card.card-selected:hover::after {
   background: var(--ui-accent);
+  transform: scaleY(1);
 }
 /* 头部：格式徽标 → 族名 → 样式数 …… 右端 许可 / ☆ / 开关 */
 .card-head {
@@ -9075,7 +9137,7 @@ body.ui-fade-out .app-frame {
 }
 
 /* ─── D4：「减弱动态效果」下折叠三阶段也要缩短 ────────────────────────
-   原来只接管了 .qb-content 的入场动画；折叠带（hint → retract → bar）的
+   原来只接管了 .qb-content 的入场动画；折叠带（hint → bar）的
    260ms 过渡仍然在跑。与其它 [data-motion="reduced"] 规则一样压到 1ms。 */
 :root[data-motion="reduced"] .qb-dockbar,
 :root[data-motion="reduced"] .qb-grip-bar {
@@ -9086,6 +9148,50 @@ body.ui-fade-out .app-frame {
   .qb-grip-bar {
     transition-duration: 1ms;
   }
+}
+
+/* ─── 导览：速览那一步真的切进速览（1.9.3，清单 B52 / B53） ──────────────
+   速览窗口约 472 × 992（QUICKBAR_WIDTH / QUICKBAR_HEIGHT），卡片 340 放得下，
+   但摆在中间会同时压住顶栏和列表，而且按通用算法算出来的位置会随卡片量测高度
+   跳一次。速览里只用一条死规矩：贴窗口底部内侧、宽度跟着窗口收（被拖窄时
+   靠 min() 兜住，不外溢），上面整片字体列表留给用户当「实物」。
+   圆角不在这里写 —— `.tour-card` 已由 R8 的「B 级面板类」收到 12。 */
+.tour-card-qb {
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+/* ─── 速览相位的导览层允许「点穿」（1.9.3 收口，清单 B60） ─────────────────
+   这一步的文案让用户「点一下族名试试」，而 `.tour-layer` 是 inset:0 的整屏层、
+   默认会把下面那块速览整个挡住 —— 文案和可操作性自相矛盾。
+   只在**速览相位**放开：完整界面那几步讲的是右击菜单 / 设置面板，点穿会把浮层点乱。
+   卡片自己接回指针（「跳过 / 上一步 / 下一步」必须能点）；聚光靶本来就是 pointer-events:none。 */
+.tour-layer-qb {
+  pointer-events: none;
+}
+.tour-layer-qb .tour-card-qb {
+  pointer-events: auto;
+}
+/* ─── B60 的补丁：速览步期间顶栏一律不可点（1.9.3 收口，清单 B61） ──────────
+   点穿只该放开**列表**（文案只承诺「点族名」），顶栏里有两颗按钮会真的把导览搞坏：
+   · 搜索框：点得进去、字也打得进去（默认动作不受 stopImmediatePropagation 影响），
+     但 React 的 onChange 收不到（导览在 window capture 里无差别掐断）→ query 不更新、
+     列表不筛选，下一次重渲染还会把字抹掉；← / → 被导览当成翻步。
+   · 最小化：`minimizeAtTop()` 的门是「窗口贴顶」，导览期间正好贴顶 →
+     它会把窗口压成 12px 再真最小化，而卡片是 fixed 挂在同一窗口里 → 卡片跟着消失。
+   抓手条 `.qb-grip` 不在 `.qb-head` 里（它是 `.qb-pin` 的子节点），所以单独列一条：
+   导览期间拖动窗口不算坏，但「卡片跟着窗口跑」观感怪，一并不给点。 */
+body.tour-qb .qb-head,
+body.tour-qb .qb-grip {
+  pointer-events: none;
+}
+/* 唯一的例外：「完整界面」那颗（`.qb-btn-text`，QuickBar.tsx:779）。
+   B55 的整套出口设计就靠它 —— 用户自己点它退出速览 → `setQuickbar(false)` →
+   `noticeQuickbarClosed()` 接住并顺移一步，比记 Alt+` 好记。
+   用 `.qb-btn-text` 精确点名而不是 `.qb-actions > button`：Pin 与最小化仍在封锁里。 */
+body.tour-qb .qb-actions .qb-btn-text {
+  pointer-events: auto;
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -9107,7 +9213,7 @@ body.ui-fade-out .app-frame {
    ④ 轨道类 2px（字号滑杆 / install-track/fill / axis-row）：轨道本身只有 2–3px 高。
    ⑤ 锚点圆头 1px（`.qb-anchor` / `.family-card:hover::before`）：2px 宽 + 1px 圆头
       = 圆头竖线，改 0 就成方头，行首三态的语言直接失效。
-   ⑥ `.qb-grip-bar` 在 bar / retract 阶段的 3px：5px 可见高度，r=3 才是圆头。
+   ⑥ `.qb-grip-bar` 在 bar 阶段的 3px：5px 可见高度，r=3 才是圆头。
    ════════════════════════════════════════════════════════════════════ */
 
 /* ─── A 级之一：5px → 4px（主界面控件，33 处） ────────────────────────

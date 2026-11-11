@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { LoaderCircle } from "lucide-react";
 import { ArtIcon } from "./ArtIcon";
 import { PillToggle } from "../design/primitives/PillToggle";
-import { springSoft } from "../design/springs";
+import { scrimFade, springSoft } from "../design/springs";
 import { ipc, type PluginInfo } from "../lib/ipc";
 import { openPluginMenu, openPluginSettings } from "../lib/pluginMenu";
 import { usePluginStore } from "../lib/pluginStore";
@@ -673,7 +673,7 @@ export function SettingsOverlay() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
+          transition={scrimFade}
           onClick={() => setSettingsOpen(false)}
         >
           <motion.div

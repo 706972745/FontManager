@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Keyboard, X } from "lucide-react";
 import { useEffect } from "react";
-import { springSoft } from "../design/springs";
+import { scrimFade, springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
@@ -91,7 +91,7 @@ export function ShortcutsOverlay() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
+          transition={scrimFade}
           onClick={() => setHelpOpen(false)}
         >
           <motion.div

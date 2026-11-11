@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 import { useEffect } from "react";
-import { springSoft } from "../design/springs";
+import { scrimFade, springSoft } from "../design/springs";
 import { useFontCss } from "../lib/fontLoader";
 import { familiesFor, useFontStore, type Family } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
@@ -96,7 +96,7 @@ export function CompareOverlay() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
+          transition={scrimFade}
           onClick={closeCompare}
         >
           <motion.div

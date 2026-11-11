@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Columns2, MousePointerClick, X } from "lucide-react";
-import { springSoft } from "../design/springs";
+import { spring, springSnappy, springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
 
@@ -50,8 +50,8 @@ export function SelectionBar() {
             className={`selection-compare ${ready ? "" : "selection-compare-off"}`}
             disabled={!ready}
             onClick={() => openCompare(selection)}
-            whileHover={ready ? { y: -1 } : undefined}
-            whileTap={ready ? { scale: 0.97 } : undefined}
+            whileHover={ready ? { y: -1, transition: spring } : undefined}
+            whileTap={ready ? { scale: 0.97, transition: springSnappy } : undefined}
             animate={picking && ready ? { scale: [1, 1.06, 1] } : { scale: 1 }}
             transition={
               picking && ready

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Tag, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { springSoft } from "../design/springs";
+import { scrimFade, spring, springSnappy, springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { playTag } from "../lib/sound";
@@ -40,7 +40,7 @@ export function BulkTagPrompt() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
+          transition={scrimFade}
           onClick={() => setBulkTagFor(null)}
         >
           <motion.div
@@ -85,8 +85,8 @@ export function BulkTagPrompt() {
               className="bulktag-apply"
               disabled={!tag.trim()}
               onClick={apply}
-              whileHover={{ y: -1 }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={{ y: -1, transition: spring }}
+              whileTap={{ scale: 0.97, transition: springSnappy }}
             >
               {t("bulk.apply", { count: bulkTagFor.length })}
             </motion.button>
