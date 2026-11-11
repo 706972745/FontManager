@@ -257,9 +257,9 @@ PUT  /api/v1/curation/favorite    { "family": "...", "favorite": true }
 
 ### 权限名单
 
-令牌的权限**就是** `plugin.json` 里 `permissions` 那一串，主程序原样照抄、不增不减
-（签发处：`plugins.rs` 的 `Scope { perms: m.permissions.clone() }`）。
-可用权限名单定义在 `src-tauri/src/api.rs` 的 `PERMS`：
+令牌的权限**就是** `plugin.json` 里 `permissions` 那一串，但要先过一遍白名单
+（签发处：`plugins.rs` 调 `api::sanitize_plugin_perms`）：只发 `PERMS` 里登记过的名字，
+其余一律丢掉并写一行日志。可用权限名单定义在 `src-tauri/src/api.rs` 的 `PERMS`：
 
 | 权限 | 能做什么 | 对应端点 |
 |---|---|---|
@@ -272,9 +272,10 @@ PUT  /api/v1/curation/favorite    { "family": "...", "favorite": true }
 | `export` | 触发打包导出、查导出进度 | `POST /export/pack`、`GET /jobs/{id}` |
 | `import` | 导入字体包 | `POST /import` |
 
-`*` 是通配全权。**插件千万别写**：主程序不会替你过滤，`"permissions": ["*"]`
-是真的能拿到全部权限（等于绕过上面这张表）。主程序自己也用 `*`，所以这条路没有额外限制
-——插件的权限边界，最终靠的就是 `plugin.json` 里那一行写得够窄。
+**`*` 不等于全权，插件写了也拿不到**（1.9.2 起）：签发时按上表白名单过滤，`*` 和拼错的
+权限名会被直接丢掉，`activation.log` 里留一行「申报了不受支持的权限 […]，已忽略」。
+想用某个端点就把表里对应的名字写上；写错了的表现是「接口 403 + 日志里有告警」，
+而不是悄悄拿到更多权限。设置页插件卡上显示的是**实际生效**的权限，不是 manifest 原文。
 
 ### 少了权限怎么办
 
