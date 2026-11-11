@@ -3336,7 +3336,11 @@ h2.detail-title.copy-name {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 13px 12px;
+  /* 左右内距都 39，是**对称**的（用户 2026-11-11：先要「线到文字 30px」，再说「右边间距和左边间距一样」）：
+     左：锚点竖线右缘在 9（left 7 + 宽 2），39 - 9 = 30px 是「线到文字」；
+     右：文字末梢到格子右缘也是 39 —— 这样预览行在格子里左右各留一条等宽的空白，
+     不会出现「左边一大截、右边顶到边」的不平衡。 */
+  padding: 10px 39px 12px 39px;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(var(--ink-rgb), 0.045), rgba(var(--ink-rgb), 0.02));
   border: 1px solid rgba(var(--ink-rgb), 0.06);
@@ -3361,7 +3365,8 @@ h2.detail-title.copy-name {
    只向下的方向感；不直接过渡 height（百分比与 px 混在一条 transition 里
    Chromium 不保证逐帧插值，会「宽度在动、高度突然跳到底」）。
    三态：静止圆点 → 悬停长到底部留 16px 的灰线 → 复制成功那 1.5s 一路长到格子底边的蓝线。
-   锚点左缘 5px、头部左内距 13px，两者不重叠，所以不用像卡片那样给头部让位。 */
+   锚点左缘 5px，格子左内距 39px —— 线右缘 9 到内容 39 之间留 30px。
+   （1.8.6 之前是 13，只有 4px，线与 TTF 徽标贴在一起；用户要求按他画的框加宽。） */
 .specimen-tile {
   position: relative;
 }
@@ -5752,10 +5757,13 @@ h2.detail-title.copy-name {
   min-width: 0;
 }
 .row-name-text {
+  /* flex 子项默认 min-width:auto，不加这行 overflow/ellipsis 在 flex 里不生效 */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .row-members {
   display: inline-flex;
   align-items: center;
@@ -7838,7 +7846,45 @@ body.ui-fade-out .app-frame {
 .list-row.row-selected,
 .list-row[aria-selected="true"] {
   background: transparent;
-  box-shadow: inset 2px 0 0 var(--ui-accent);
+  /* 选中不再画 inset 左条：锚点 ::after 就是那条线（1.8.6）。
+     两套并存会在行首 0 和 8 并排出现两条线（用户 2026-11-11：「这里多了一个」）。 */
+  box-shadow: none;
+}
+/* 行首锚点（1.8.6）：语义照**卡片视图**，不照速览 / 样张。
+   —— 卡片是「悬停灰线、选中蓝线」，选中状态常驻；速览 / 样张那套是
+   「点一下复制族名 → 蓝线跟着『已复制』一起 1.5s 后消失」，列表不这么做
+   （用户 2026-11-11：「交互效果和卡片视图一样，不需要和速览界面/样张视图一样」）。
+   静止什么都不画（不显示圆点）；左缘 8、行内距 24 → 线到文字 14px（行才 32 高）。 */
+.list-row {
+  position: relative;
+}
+.list-row::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--ui-line-hover);
+  transform: scaleY(0);
+  transform-origin: 50% 0;
+  transition:
+    transform var(--t-quick) ease-out,
+    top var(--t-quick) ease-out,
+    bottom var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
+}
+.list-row:hover::after {
+  transform: scaleY(1);
+}
+/* 选中 = 占满行高的蓝线（常驻，和卡片 .card-selected 的 96px 蓝线同一语义） */
+.list-row.row-selected::after,
+.list-row[aria-selected="true"]::after {
+  top: 0;
+  bottom: 0;
+  background: var(--ui-accent);
+  transform: scaleY(1);
 }
 .list-row .col-styles,
 .list-row .col-size,
