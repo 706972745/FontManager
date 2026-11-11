@@ -13,22 +13,31 @@ All notable changes to FontManager are documented here. The format follows
 
 - **插件设置面板（齿轮 / 插件菜单触发的 `open-url`）永远打不开**：点齿轮或插件菜单项后毫无反应，
   插件只能降级到系统默认浏览器。根因是 WebView2 的硬约束 —— 同一个 `UserDataFolder`
-  只能存在一个环境，且后续窗口的创建参数必须与第一个窗口一致。主窗口在
-  `tauri.conf.json` 里配了 `additionalBrowserArgs`（`--disable-features=…`、
-  `--force-renderer-accessibility`），而 `open_panel_window()` 新建 `WebviewWindow`
-  时没有传这一串，触发 `HRESULT(0x8007139F) ERROR_INVALID_STATE`；失败被日志兜住，
-  主程序不受影响，界面上就表现为「点了没反应」。
-  现在从 `app.config().app.windows` 取 `label == "main"` 的窗口，把它的
-  `additionalBrowserArgs` 复用到面板窗口；其中 `--remote-debugging-port*` 一律剔除
-  （等号写法与空格写法都覆盖，空格写法会连带丢掉紧跟的端口值），避免本地调试端口
-  混进面板窗口。主题、窗口尺寸、`catch_unwind` 以及「失败只记日志、不打断同步/退出」
-  的原有语义保持不变。
+  的所有 WebView 共享一个 browser process，`CoreWebView2EnvironmentOptions` 必须与
+  第一个窗口逐字一致。主窗口在 `tauri.conf.json` 里配了 `additionalBrowserArgs`
+  （`--disable-features=…`、`--force-renderer-accessibility`），而 `open_panel_window()`
+  新建 `WebviewWindow` 时没有传这一串，触发 `HRESULT(0x8007139F) ERROR_INVALID_STATE`；
+  失败被日志兜住，主程序不受影响，界面上就表现为「点了没反应」。
+  现在把主窗口 `additionalBrowserArgs` 的查找抽成 `main_window_browser_args()`，
+  由 `open_panel_window()` **原样透传**给面板窗口，一个字符都不增删。
+  这里**不能过滤**（包括剔除 `--remote-debugging-port`）：该端口由共享的 browser process
+  监听，多个 WebView 只是多个 CDP target，任何参数增删都会让环境选项不匹配、重新触发
+  `0x8007139F`；发布配置本就不含调试端口，透传也不会凭空注入。
+  主题、窗口尺寸、`catch_unwind` 以及「失败只记日志、不打断同步/退出」的原有语义保持不变。
 - **验证**：`cargo check` 通过；`cargo test --lib` **172 passed / 0 failed / 13 ignored**
-  （新增 `panel_browser_args_strips_both_debugging_port_forms` 单测覆盖两种端口写法）；
-  `tsc --noEmit` 0 error。真机用与 `tauri.conf.json` 完全一致的窗口参数构建后，
-  插件 `open-url` 成功创建了独立的应用内面板窗口（Win32 顶层窗口枚举 + 全屏截图 +
-  `activation.log` 里不再出现 `0x8007139F`），不再回退到系统浏览器。
-  发布配置 `tauri.conf.json` 不含任何调试端口。
+  （`panel_browser_args_are_passed_through_unchanged` 直接调用生产用的
+  `main_window_browser_args()`：锁定含 `--remote-debugging-port=9223` /
+  `--remote-debugging-port 9223` 的配置串也必须逐字透传，并静态断言发布配置不含调试端口）；
+  `npm test` **280 passed / 0 failed**；`tsc --noEmit` 0 error；`vite build` OK。
+  真机两轮证据：① 与 `tauri.conf.json` 窗口参数完全一致的构建下，插件 `open-url`
+  成功开出独立的应用内面板窗口（Win32 顶层窗口枚举 + 全屏截图 +
+  `activation.log` 里不再出现 `0x8007139F`）；② QA Round 1 判定 A 后，用**带
+  `--remote-debugging-port=9223`** 的临时构建 + 真实 `font-sync` 插件 + 设置页齿轮
+  真实链路复验 `RESULT: PASS` —— 相对触发前基线新增顶层窗口「字体库同步 · 设置」、
+  pid 归属本轮 EXE、CDP 新增回环页面 target、本轮 `0x8007139F` 0 行。
+  验证脚本判据已收紧为「相对触发前基线新增窗口 + pid 归属本轮 EXE」，不再只看标题命中。
+  截图与日志在 `软件迭代/_tmp/plugin-test/verify4-run.log`、`verify4/`（不进仓库）。
+  发布配置 `tauri.conf.json` 不含任何调试端口；临时 CDP 配置在验证后已删除。
 
 ## [1.9.3] — 2026-11-11
 
