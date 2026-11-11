@@ -4,9 +4,10 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.9.4] — 2026-11-12
 
-> 未发版修复：版本号保持 **1.9.3**；只做本地提交，不推送、不打 tag、不建 Release。
+> **1.9.4 正式版**：修复插件设置面板（齿轮 / 插件菜单触发的 `open-url`）永远打不开的问题。
+> 这是一次不改变功能与数据格式的单点修复，可直接覆盖升级。
 
 ### 修复
 
