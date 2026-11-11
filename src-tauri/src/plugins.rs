@@ -90,38 +90,39 @@ fn panel_theme() -> Option<tauri::Theme> {
     }
 }
 
-/// 从主窗口的 `additionalBrowserArgs` 里剔除远程调试端口，供面板窗口复用。
+/// 从窗口配置序列里按 label 找到主窗口的 `additionalBrowserArgs`，**原样返回引用**。
 ///
-/// WebView2 的调试端口只能有一个监听者，第二个窗口再要一遍会直接创建失败，
-/// 所以本地截图配置里的 `--remote-debugging-port*` 绝不能带进面板窗口。
-/// 两种写法都要挡住：
-/// - `--remote-debugging-port=9223`（等号，一个 token）；
-/// - `--remote-debugging-port 9223`（空格，端口值是紧跟的独立 token）。
-/// 只删开关会留下一个孤立的 `9223` 参数，同样会污染 WebView2 的创建参数。
-fn panel_browser_args(raw: &str) -> String {
-    let tokens: Vec<&str> = raw.split_whitespace().collect();
-    let mut kept: Vec<&str> = Vec::with_capacity(tokens.len());
-    let mut i = 0;
-    while i < tokens.len() {
-        let token = tokens[i];
-        if token.starts_with("--remote-debugging-port=") {
-            i += 1;
-            continue;
-        }
-        if token == "--remote-debugging-port" {
-            i += 1;
-            // 空格分隔写法：紧跟的纯数字端口值是它的参数，一并丢掉。
-            if i < tokens.len() && tokens[i].chars().all(|c| c.is_ascii_digit()) {
-                i += 1;
-            }
-            continue;
-        }
-        kept.push(token);
-        i += 1;
-    }
-    kept.join(" ")
+/// 抽成纯函数是为了让「一字不改」这条约束有真正覆盖生产实现路径的单测：
+/// `open_panel_window()` 与 `tests` 共用同一个实现，测试不再是自造恒等闭包自证。
+/// 刻意返回 `&str` 而非 `String` —— 不 clone、不 split / filter / replace，
+/// 任何加工都会让 `CoreWebView2EnvironmentOptions` 与第一个窗口不一致。
+fn main_window_browser_args<'a>(
+    windows: impl IntoIterator<Item = (&'a str, Option<&'a str>)>,
+) -> Option<&'a str> {
+    windows
+        .into_iter()
+        .find(|(label, _)| *label == "main")
+        .and_then(|(_, args)| args)
 }
 
+/// 插件发 `open-url` 时创建应用内面板窗口。
+///
+/// WebView2 的硬约束（MS Learn `CreateCoreWebView2EnvironmentWithOptions` /
+/// `ICoreWebView2Environment`）：**同一个 `UserDataFolder` 的所有 WebView 共享一个
+/// browser process**，`CoreWebView2EnvironmentOptions` 必须与第一个窗口逐字一致；
+/// 后续窗口的参数只要有任何增删，创建就会失败于
+/// `HRESULT_FROM_WIN32(ERROR_INVALID_STATE)` = `0x8007139F`。
+/// 因此这里把主窗口的 `additionalBrowserArgs` **原样透传，一个字符都不增删** ——
+/// 包括 `--remote-debugging-port`：该端口由共享的 browser process 监听，
+/// 多个 WebView 只是多个 CDP target，不存在「第二个窗口重复监听端口」这回事，
+/// 剔除它反而制造参数不一致。发布配置 `tauri.conf.json` 本就不含调试端口，
+/// 透传不会凭空注入；本地 CDP 配置里的端口只出现在临时验证构建里。
+///
+/// 参考：
+/// - <https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2environment>
+/// - <https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl#createcorewebview2environmentwithoptions>
+/// - wry 0.57.0 `src/webview2/mod.rs:300-366`：每次创建 webview 都把
+///   `additional_browser_args` 传进 `CreateCoreWebView2EnvironmentWithOptions`。
 fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), String> {
     // URL 先严格解析并校验，这个分支里**绝不 unwrap** —— 插件的数据不可信
     let url = validate_panel_url(url)?;
@@ -136,21 +137,15 @@ fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), Stri
         // 绝不能带崩主进程（与 api_server 的 catch_unwind 同一模式）。
         // 配置读取与窗口构建都放在同一个 catch 边界内，语义与修复前一致。
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // WebView2 的硬约束：同一个 UserDataFolder 只能有一个「环境」，且创建参数必须与
-            // 第一个窗口一致。主窗口在 tauri.conf.json 里配了 additionalBrowserArgs
-            // （--force-renderer-accessibility 等），新窗口不传就会撞
-            // HRESULT(0x8007139F) ERROR_INVALID_STATE —— 症状是插件设置面板永远打不开，
-            // 插件只能降级到系统浏览器。这里照抄主窗口那一串，但**剔除调试端口**：
-            // 端口只能有一个监听者，第二个窗口再要一遍会直接失败。
-            let extra = app
-                .config()
-                .app
-                .windows
-                .iter()
-                .find(|w| w.label == "main")
-                .and_then(|w| w.additional_browser_args.clone())
-                .map(|args| panel_browser_args(&args))
-                .filter(|s| !s.trim().is_empty());
+            // 主窗口在 tauri.conf.json 里配了 additionalBrowserArgs
+            // （--disable-features=… --force-renderer-accessibility），新窗口不传就会撞
+            // 0x8007139F —— 症状是插件设置面板永远打不开，插件只能降级到系统浏览器。
+            // 直接原样透传：任何加工（split / filter / 剔除端口）都会让
+            // CoreWebView2EnvironmentOptions 与第一个窗口不一致，见函数上方说明。
+            let cfg = app.config();
+            let extra = main_window_browser_args(cfg.app.windows.iter().map(|w| {
+                (w.label.as_str(), w.additional_browser_args.as_deref())
+            }));
 
             let mut builder =
                 WebviewWindowBuilder::new(&app, "plugin-panel", WebviewUrl::External(url.clone()))
@@ -158,7 +153,7 @@ fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), Stri
                     .theme(theme)
                     .inner_size(1040.0, 900.0)
                     .min_inner_size(760.0, 560.0);
-            if let Some(args) = extra.as_deref() {
+            if let Some(args) = extra {
                 builder = builder.additional_browser_args(args);
             }
             builder.build()
@@ -1952,29 +1947,55 @@ pub fn stop_all() {
 mod tests {
     use super::*;
 
-    /// 面板窗口复用主窗口浏览器参数时，两种调试端口写法都必须剔除干净；
-    /// 发布配置本身要一字不差地保留（WebView2 环境参数必须与第一个窗口一致）。
+    /// 面板窗口必须复用主窗口「一字不差」的浏览器参数：不得过滤、不得增删任何 token。
+    /// 含 `--remote-debugging-port=9223` / `--remote-debugging-port 9223` 的配置串
+    /// 也必须逐字透传 —— 剔除端口会让 `CoreWebView2EnvironmentOptions` 与第一个窗口
+    /// 不一致，重新触发 `0x8007139F`（QA Round 1 判定 A）。
+    /// 直接调用生产用的 `main_window_browser_args()`，不是自造恒等闭包。
     #[test]
-    fn panel_browser_args_strips_both_debugging_port_forms() {
+    fn panel_browser_args_are_passed_through_unchanged() {
         let published = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
                          --force-renderer-accessibility";
-        assert_eq!(panel_browser_args(published), published);
+
+        // 单个 main 窗口：原样拿到整串。
+        let windows = vec![("main", Some(published))];
         assert_eq!(
-            panel_browser_args(&format!("{published} --remote-debugging-port=9223")),
-            published
+            main_window_browser_args(windows.iter().copied()),
+            Some(published)
         );
-        assert_eq!(
-            panel_browser_args(&format!("{published} --remote-debugging-port 9223")),
-            published
-        );
-        // 端口夹在中间：不能把后面的参数一起吞掉
-        assert_eq!(
-            panel_browser_args("--a --remote-debugging-port 9223 --b"),
-            "--a --b"
-        );
-        // 只有端口 → 空串，调用方据而不传 additional_browser_args
-        assert_eq!(panel_browser_args("--remote-debugging-port=9223"), "");
-        assert_eq!(panel_browser_args("--remote-debugging-port 9223"), "");
+
+        // 带调试端口的两种写法、以及端口夹在参数中间的写法：一个字符都不能少。
+        let with_eq = format!("{published} --remote-debugging-port=9223");
+        let w = vec![("main", Some(with_eq.as_str()))];
+        assert_eq!(main_window_browser_args(w.into_iter()), Some(with_eq.as_str()));
+
+        let with_space = format!("{published} --remote-debugging-port 9223");
+        let w = vec![("main", Some(with_space.as_str()))];
+        assert_eq!(main_window_browser_args(w.into_iter()), Some(with_space.as_str()));
+
+        let mixed = "--a --remote-debugging-port 9223 --b";
+        let w = vec![("main", Some(mixed))];
+        assert_eq!(main_window_browser_args(w.into_iter()), Some(mixed));
+
+        // 查找语义：只认 label == "main"，别的窗口参数不会被误用；
+        // main 没配参数时返回 None（生产代码就不调用 additional_browser_args）。
+        let w = vec![("other", Some("--x")), ("main", Some(published))];
+        assert_eq!(main_window_browser_args(w.into_iter()), Some(published));
+        let w = vec![("other", Some("--x"))];
+        assert_eq!(main_window_browser_args(w.into_iter()), None);
+        let w = vec![("main", None::<&str>)];
+        assert_eq!(main_window_browser_args(w.into_iter()), None);
+
+        // 发布配置本身不含调试端口：原样透传不会把 9223 带进发布产物。
+        let cfg: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let args = cfg["app"]["windows"][0]["additionalBrowserArgs"]
+            .as_str()
+            .expect("main 窗口应配置 additionalBrowserArgs");
+        assert_eq!(args, published);
+        assert!(!args.contains("remote-debugging-port"));
+        let w = vec![("main", Some(args))];
+        assert_eq!(main_window_browser_args(w.into_iter()), Some(args));
     }
 
     fn manifest(entry: &str, interpreter_path: Option<&str>) -> PluginManifest {
