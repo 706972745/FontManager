@@ -664,47 +664,102 @@ fn try_channel(
     Ok(())
 }
 
+/// `canonicalize()` / 某些启动方式会给回 `\\?\C:\...`（扩展长度路径）。
+///
+/// `Start-Process` **不认**这种前缀，会「找不到路径」；而脚本顶部是
+/// `SilentlyContinue`，于是 NSIS 静默没跑、应用照常重启 —— 看起来像升级成功，
+/// 实际什么都没换（1.8.8 端到端测试抓到的就是这个）。UNC 的
+/// `\\?\UNC\server\share` 归一成 `\\server\share`。
+///
+/// 安装包路径和本程序路径都要过这一道：后者漏了同样会让「装完自动重启」静默失效。
+fn strip_verbatim(p: &std::path::Path) -> String {
+    let s = p.to_string_lossy().into_owned();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else {
+        s.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(s)
+    }
+}
+
 /// 生成安装脚本。
 ///
 /// 为什么不是「直接 spawn 安装器」：Windows 不允许覆盖正在运行的 exe，
 /// 而我们要退出的这个进程正是它。所以脚本先等我们的 pid 消失，再 `/S` 静默装，
 /// 最后把新版启动起来。`-Wait` 保证「装完才启动」，否则会出现新版启动时文件还在写。
-fn ps1_script(pid: u32, setup: &std::path::Path, exe: &std::path::Path) -> String {
+///
+/// 全链写日志（`apply-update.log`，和脚本同目录，脚本自删后仍留着）：NSIS `/S` 失败
+/// 是**完全静默**的 —— 没有日志的话，「装完自动重启」到底成没成只能靠用户看版本号猜。
+/// 日志里记：等待耗时 / 安装器退出码 / 装完的 exe 版本 vs 期望版本 / 有没有拉起来。
+fn ps1_script(
+    pid: u32,
+    setup: &std::path::Path,
+    exe: &std::path::Path,
+    want_version: &str,
+    log: &std::path::Path,
+) -> String {
     let q = |p: &std::path::Path| format!("'{}'", p.display().to_string().replace('\'', "''"));
     let mut s = String::from("\u{feff}"); // UTF-8 BOM：PowerShell 5.1 才认得出中文路径
     s.push_str("$ErrorActionPreference = 'SilentlyContinue'\r\n");
+    s.push_str(&format!("$log = {}\r\n", q(log)));
+    s.push_str(&format!("$want = '{}'\r\n", want_version.replace('\'', "''")));
+    s.push_str(
+        "function Note($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $m) -Encoding UTF8 }\r\n",
+    );
+    s.push_str(&format!(
+        "Note ('start: host pid={pid}, setup=' + {} )\r\n",
+        q(setup)
+    ));
     s.push_str(&format!("$target = {pid}\r\n"));
+    s.push_str("$i = 0\r\n");
     s.push_str("for ($i = 0; $i -lt 240; $i++) {\r\n");
     s.push_str("  if (-not (Get-Process -Id $target -ErrorAction SilentlyContinue)) { break }\r\n");
     s.push_str("  Start-Sleep -Milliseconds 250\r\n");
     s.push_str("}\r\n");
+    s.push_str("Note ('host gone after ' + ($i * 250) + ' ms')\r\n");
     s.push_str("Start-Sleep -Milliseconds 800\r\n");
     // WebView2 子进程（msedgewebview2）可能比宿主多活几秒，还握着 exe 的句柄；
     // 不等它们退出，NSIS /S 会「覆盖失败、静默中止」，看起来像装好了其实没装。
     // 这里等「命令行里带本程序名字的 msedgewebview2」全部退出，最多再等 30 秒。
     s.push_str(&format!("$exeName = (Split-Path -Leaf {})\r\n", q(exe)));
-    s.push_str("for ($i = 0; $i -lt 120; $i++) {\r\n");
+    s.push_str("$j = 0\r\n");
+    s.push_str("for ($j = 0; $j -lt 120; $j++) {\r\n");
     s.push_str("  $left = Get-CimInstance Win32_Process -Filter \"Name = 'msedgewebview2.exe'\" |\r\n");
     s.push_str("    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($exeName) }\r\n");
     s.push_str("  if (-not $left) { break }\r\n");
     s.push_str("  Start-Sleep -Milliseconds 250\r\n");
     s.push_str("}\r\n");
+    s.push_str("Note ('webview gone after ' + ($j * 250) + ' ms')\r\n");
     s.push_str("Start-Sleep -Milliseconds 500\r\n");
+    // -PassThru -Wait：要拿退出码判断 NSIS 到底跑没跑成（0 = 成功）
     s.push_str(&format!(
-        "Start-Process -FilePath {} -ArgumentList '/S' -Wait\r\n",
+        "$p = Start-Process -FilePath {} -ArgumentList '/S' -Wait -PassThru\r\n",
         q(setup)
     ));
+    s.push_str("Note ('install exit code = ' + $(if ($p) { $p.ExitCode } else { 'unknown' }))\r\n");
     s.push_str("Start-Sleep -Milliseconds 500\r\n");
+    // 装完核对版本：/S 失败时旧 exe 还在原位，光看「文件存在」会误判成功
     s.push_str(&format!(
-        "if (Test-Path -LiteralPath {p}) {{ Start-Process -FilePath {p} }}\r\n",
+        "$v = (Get-Item -LiteralPath {} -ErrorAction SilentlyContinue).VersionInfo.ProductVersion\r\n",
+        q(exe)
+    ));
+    s.push_str("if ($v) {\r\n");
+    s.push_str("  if ($want -and ($v -ne $want)) { Note ('WARN version after install = ' + $v + ', want ' + $want + ' (安装可能没生效)') }\r\n");
+    s.push_str("  else { Note ('version after install = ' + $v) }\r\n");
+    s.push_str("} else { Note 'WARN exe not found after install' }\r\n");
+    s.push_str(&format!(
+        "if (Test-Path -LiteralPath {p}) {{ Start-Process -FilePath {p}; Note 'relaunched' }}\r\n",
         p = q(exe)
     ));
+    s.push_str("else { Note 'WARN exe missing, cannot relaunch' }\r\n");
     s.push_str("Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\r\n");
     s
 }
 
 /// 校验通过后启动安装脚本，并在 1.2 秒后退出本进程。
-pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str) -> Result<(), String> {
+///
+/// `want_version` 只用于**装完核对**（写进 apply-update.log），不参与任何安全判定：
+/// 空字符串表示不核对。静默安装失败时旧 exe 还在原位，没有这一步就看不出「装了但没换」。
+pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str, want_version: &str) -> Result<(), String> {
     crate::diag::log(&format!("[update] install start {path}"));
     let dir = update_dir();
     let canon_dir = dir
@@ -731,22 +786,23 @@ pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str) -> Result<(), 
     }
 
     let exe = std::env::current_exe().map_err(|e| format!("找不到当前程序路径：{e}"))?;
-    // canonicalize 返回 `\\?\C:\...`（扩展长度路径）。Start-Process 不认这种前缀，
-    // 会「找不到路径」—— 而脚本顶部就是 SilentlyContinue，于是 NSIS 静默没跑、
-    // 应用却照常重启，看起来像升级成功实际什么都没换（2026-11-11 端到端抓到）。
-    // 这里剥掉前缀再交给脚本；UNC 的 `\\?\UNC\server\share` 归一成 `\\server\share`。
-    let canon_display = canon.to_string_lossy().into_owned();
-    let setup_for_script = if let Some(rest) = canon_display.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{rest}")
-    } else {
-        canon_display
-            .strip_prefix(r"\\?\")
-            .map(str::to_string)
-            .unwrap_or(canon_display)
-    };
+    // 两条路径都要剥 `\\?\`：安装包（canonicalize 一定会带）和本程序（某些启动方式会带）。
+    // 漏掉后者 → 脚本里 Test-Path 失败 → 装完了却拉不起来，「自动重启」静默失效。
+    let setup_for_script = strip_verbatim(&canon);
+    let exe_for_script = strip_verbatim(&exe);
     let script = dir.join("apply-update.ps1");
-    std::fs::write(&script, ps1_script(std::process::id(), std::path::Path::new(&setup_for_script), &exe))
-        .map_err(|e| format!("写安装脚本失败：{e}"))?;
+    let log = dir.join("apply-update.log");
+    std::fs::write(
+        &script,
+        ps1_script(
+            std::process::id(),
+            std::path::Path::new(&setup_for_script),
+            std::path::Path::new(&exe_for_script),
+            want_version.trim(),
+            &log,
+        ),
+    )
+    .map_err(|e| format!("写安装脚本失败：{e}"))?;
 
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -764,6 +820,10 @@ pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str) -> Result<(), 
             format!("启动安装脚本失败：{e}")
         })?;
     crate::diag::log("[update] ps1 spawned (host exit -> webview exit -> /S -> relaunch)");
+    crate::diag::log(&format!(
+        "[update] 安装脚本日志（装完/没装成都能在这看）：{}",
+        log.display()
+    ));
 
     // 留一点时间让前端把「正在安装」画完、把 IPC 收掉，然后自己退出
     let app = app.clone();
@@ -943,7 +1003,8 @@ mod tests {
     fn ps1_waits_for_our_pid_then_installs_silently() {
         let setup = std::path::Path::new("C:\\Users\\a b\\Temp\\FontManager-update\\fm-setup.exe");
         let exe = std::path::Path::new("C:\\Users\\a b\\AppData\\Local\\FontManager\\fontmanager.exe");
-        let s = ps1_script(4321, setup, exe);
+        let log = std::path::Path::new("C:\\Users\\a b\\Temp\\FontManager-update\\apply-update.log");
+        let s = ps1_script(4321, setup, exe, "1.9.2", log);
         assert!(s.starts_with('\u{feff}'), "PowerShell 5.1 靠 BOM 认 UTF-8 路径");
         assert!(s.contains("$target = 4321"), "必须等本进程退出再装");
         assert!(s.contains("Get-Process -Id $target"));
@@ -951,5 +1012,78 @@ mod tests {
         assert!(s.contains("-Wait"), "装完才启动新版本");
         assert!(s.contains("'C:\\Users\\a b\\Temp\\FontManager-update\\fm-setup.exe'"));
         assert!(s.contains("'C:\\Users\\a b\\AppData\\Local\\FontManager\\fontmanager.exe'"));
+        // 装完必须把新版拉起来（用户要求：安装完成后自动重启）
+        assert!(
+            s.contains("Test-Path -LiteralPath 'C:\\Users\\a b\\AppData\\Local\\FontManager\\fontmanager.exe'")
+                && s.contains("Start-Process -FilePath 'C:\\Users\\a b\\AppData\\Local\\FontManager\\fontmanager.exe'"),
+            "装完要自动重启"
+        );
+        // 全链日志 + 装后版本核对：/S 静默失败时旧 exe 还在，不核对就看不出来
+        assert!(s.contains("apply-update.log"));
+        assert!(s.contains("$want = '1.9.2'"));
+        assert!(s.contains("-PassThru"), "要拿安装器退出码");
+        assert!(s.contains("WARN version after install"));
+        // 等待循环的计数变量不能复用（原来两段都写 $i，第一段的耗时会被第二段覆盖）
+        assert!(s.contains("$j = 0") && s.contains("($i * 250)") && s.contains("($j * 250)"));
+    }
+
+    /// 生成的脚本必须能被 PowerShell **真正解析**。
+    ///
+    /// 只做语法解析、不执行任何东西。1.8.8 的教训：脚本里 `SilentlyContinue` 一挂，
+    /// 写错一个括号的后果是「静默什么都没发生」，靠日志和退出码都很难看出来。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn generated_script_parses_in_powershell() {
+        let dir = std::env::temp_dir().join(format!("zfm-ps1-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("apply-update.ps1");
+        std::fs::write(
+            &script,
+            ps1_script(
+                1,
+                std::path::Path::new(r"C:\a b\setup.exe"),
+                std::path::Path::new(r"C:\a b\fontmanager.exe"),
+                "1.9.2",
+                &dir.join("apply-update.log"),
+            ),
+        )
+        .unwrap();
+        let cmd = format!(
+            "$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('{}',[ref]$null,[ref]$e); \
+             if ($e) {{ $e | ForEach-Object {{ $_.Message }}; exit 1 }} else {{ 'PARSE_OK' }}",
+            script.display().to_string().replace('\'', "''")
+        );
+        let out = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
+            .output();
+        let _ = std::fs::remove_dir_all(&dir);
+        let Ok(out) = out else {
+            return; // 没有 powershell（非开发机）就跳过，别让测试假红
+        };
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("PARSE_OK"),
+            "生成的安装脚本语法有错：{stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// 扩展长度路径前缀必须剥掉：`Start-Process` 不认 `\\?\`，静默失败会伪装成「装好了」
+    #[test]
+    fn verbatim_prefix_is_stripped_for_both_paths() {
+        assert_eq!(
+            strip_verbatim(std::path::Path::new(r"\\?\C:\Users\a\setup.exe")),
+            r"C:\Users\a\setup.exe"
+        );
+        assert_eq!(
+            strip_verbatim(std::path::Path::new(r"\\?\UNC\srv\share\setup.exe")),
+            r"\\srv\share\setup.exe"
+        );
+        assert_eq!(
+            strip_verbatim(std::path::Path::new(r"C:\Users\a\setup.exe")),
+            r"C:\Users\a\setup.exe",
+            "没前缀的原样返回"
+        );
     }
 }

@@ -135,7 +135,7 @@ export function UpdateSection() {
       setProgress({ phase: "download", received: 0, total: 0, percent: 0 });
       const path = await ipc.updateDownload(cur.setupUrl, cur.setupName, cur.sha256, cur.setupAssetId);
       setProgress({ phase: "ready", received: 1, total: 1, percent: 100 });
-      await ipc.updateInstall(path, cur.sha256);
+      await ipc.updateInstall(path, cur.sha256, cur.latest);
       // 走到这里安装脚本已经起来了，后端会在 1.2 秒后退出本进程
     } catch (e) {
       setProgress(null);
