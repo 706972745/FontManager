@@ -1,22 +1,32 @@
-import { ArrowUpRight, RefreshCw } from "lucide-react";
+import { Download, ArrowUpRight, RefreshCw } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "../design/primitives/Toast";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { useT } from "../lib/i18n";
-import { ipc, type UpdateCheck } from "../lib/ipc";
+import { ipc, type UpdateCheck, type UpdateProgress } from "../lib/ipc";
 import { APP_VERSION } from "../lib/version";
 
 /**
- * 设置 → 更新（1.8.1）。
+ * 设置 → 更新。
  *
- * 用户要求「加入检查更新，检查是否有新版本可用」。三条硬约定：
+ * 1.8.1 的约定是「只读，不下载、不执行任何远端内容」，安装包让用户去浏览器下。
+ * 1.8.4 起多了一条**用户点了才会走**的一键路径（用户要求「静默下载 + 静默安装」），
+ * 但边界没有放松，反而收得更紧：
  *
- * 1. **只读，不自动安装**：后端只取版本号与发布说明，安装包由用户在浏览器里下载。
- *    自动替换可执行文件是一件「仓库被投毒就等于被投毒」的事，不值得为省一次点击去做。
- * 2. **可以彻底关掉**：`updateCheck` 关掉之后那一次匿名 GET 都不会发（同一台机器可能装在
- *    内网机器上，任何出网请求都该是用户自己点头的）。
- * 3. **可以跳过某个版本**：`updateSkipped` 记住用户点过「跳过」的版本号，
- *    下次自动检查就不再提示它（手点「检查更新」仍然会如实显示）。
+ * 1. **只在这三种条件同时满足时出现按钮**：发布里带了 NSIS 安装包直链、带了 SHA-256
+ *    （GitHub Asset 的 digest）、当前是「按用户安装」的版本。缺一条就退回「打开下载页」，
+ *    绝不做「先下下来再说」。
+ * 2. **下载完必须过校验**：哈希对不上直接删掉并报错，不执行。执行前还会再算一次，
+ *    防的是「下载完到点安装之间文件被换掉」。
+ * 3. **只认白名单站点**：https + github.com / objects.githubusercontent.com /
+ *    release-assets.githubusercontent.com，重定向后的落点也要在里面。
+ * 4. **不碰 MSI**：perMachine 安装需要 UAC，静默跑必然失败或卡住等一个没人能点的框。
+ * 5. **还是可以彻底关掉**：`updateCheck` 关掉后连版本号都不查，自然也谈不上更新。
+ * 6. **仍然可以跳过某个版本**：`updateSkipped` 记住用户点过「跳过」的版本号。
+ *
+ * 安装动作会重启软件 —— 这是用户点「下载并安装」时就已经接受的代价（Windows 不允许
+ * 覆盖正在运行的 exe，必须先退出）。
  */
 export function UpdateSection() {
   const t = useT();
@@ -24,6 +34,8 @@ export function UpdateSection() {
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<UpdateCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 下载 / 校验 / 安装的实时状态；null = 没在走这条路径 */
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
 
   useEffect(() => {
     void ipc
@@ -34,6 +46,23 @@ export function UpdateSection() {
         setAuto(typeof v === "boolean" ? v : true);
       })
       .catch(() => {});
+  }, []);
+
+  // 后端每下 200ms 推一次进度；监听器随组件卸载一起摘掉
+  useEffect(() => {
+    let alive = true;
+    let off: (() => void) | undefined;
+    void listen<UpdateProgress>("update:progress", (e) => {
+      if (!alive) return;
+      setProgress(e.payload);
+    }).then((f) => {
+      off = f;
+      if (!alive) f();
+    });
+    return () => {
+      alive = false;
+      off?.();
+    };
   }, []);
 
   const check = useCallback(
@@ -67,6 +96,26 @@ export function UpdateSection() {
       .catch((e) => toast.error(String(e)));
   };
 
+  /** 下载 → 校验（后端做）→ 静默安装。全程只有用户点这一下。 */
+  const downloadAndInstall = async () => {
+    if (!info?.canAutoInstall || progress) return;
+    setError(null);
+    setProgress({ phase: "download", received: 0, total: 0, percent: 0 });
+    try {
+      const path = await ipc.updateDownload(info.setupUrl, info.setupName, info.sha256);
+      setProgress({ phase: "ready", received: 1, total: 1, percent: 100 });
+      await ipc.updateInstall(path, info.sha256);
+      // 走到这里安装脚本已经起来了，后端会在 1.2 秒后退出本进程
+    } catch (e) {
+      setProgress(null);
+      setError(String(e));
+      toast.error(t("settings.updateInstallFailed"), String(e));
+    }
+  };
+
+  const downloading = progress !== null && progress.phase !== "error";
+  const manualOnly = !!info?.hasUpdate && !info.canAutoInstall;
+
   return (
     <section className="settings-section">
       <div className="detail-heading">{t("settings.update")}</div>
@@ -85,14 +134,22 @@ export function UpdateSection() {
       <div className="settings-data-actions settings-update-actions">
         <button
           className="settings-data-btn"
-          disabled={busy}
+          disabled={busy || downloading}
           onClick={() => void check(true)}
           data-hint-text={t("settings.updateCheckHint")}
         >
           <RefreshCw size={13} strokeWidth={1.5} className={busy ? "spin" : undefined} />
           {busy ? t("settings.updateChecking") : t("settings.updateCheck")}
         </button>
-        {info?.hasUpdate && (
+
+        {/* 能静默装就给「下载并安装」，装不了就退回「打开下载页」 */}
+        {info?.hasUpdate && info.canAutoInstall && !downloading && (
+          <button className="settings-data-btn" onClick={() => void downloadAndInstall()}>
+            <Download size={13} strokeWidth={1.5} />
+            {t("settings.updateInstallNow")}
+          </button>
+        )}
+        {info?.hasUpdate && !info.canAutoInstall && (
           <button
             className="settings-data-btn"
             onClick={() => void ipc.openUrl(info.url).catch((e) => toast.error(String(e)))}
@@ -101,12 +158,27 @@ export function UpdateSection() {
             {t("settings.updateDownload")}
           </button>
         )}
-        {info?.hasUpdate && !info.skipped && (
+        {info?.hasUpdate && !info.skipped && !downloading && (
           <button className="settings-data-btn" onClick={skip}>
             {t("settings.updateSkip")}
           </button>
         )}
       </div>
+
+      {downloading && (
+        <div className="settings-update-progress">
+          <div className="settings-update-bar" role="progressbar" aria-valuenow={progress.percent}>
+            <i style={{ width: `${Math.max(progress.percent, 2)}%` }} />
+          </div>
+          <div className="settings-sub tabular">
+            {progress.phase === "download"
+              ? t("settings.updateDownloading", { percent: String(progress.percent) })
+              : progress.phase === "verify"
+                ? t("settings.updateVerifying")
+                : t("settings.updateInstalling")}
+          </div>
+        </div>
+      )}
 
       {error && <div className="settings-sub settings-update-line">{error}</div>}
       {!error && info && (
@@ -117,6 +189,10 @@ export function UpdateSection() {
           {/* 只有 raw / cdn 兜底时才说明「没有发布说明」：正常路径不用画蛇添足 */}
           {info.hasUpdate && info.source !== "github" ? ` · ${t("settings.updateNoNotes")}` : ""}
         </div>
+      )}
+      {/* 有新版但这一版装不了：说清楚是为什么，别让用户以为按钮坏了 */}
+      {manualOnly && !error && (
+        <div className="settings-sub settings-update-line">{t("settings.updateManualHint")}</div>
       )}
       {!error && info?.hasUpdate && info.notes.trim() && (
         <pre className="settings-update-notes">{info.notes}</pre>
