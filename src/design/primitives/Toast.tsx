@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { springBouncy } from "../springs";
 import { playError, playKind } from "../../lib/sound";
+import { enqueueToast } from "../../lib/toastQueue";
 
 type Kind = "success" | "error" | "info";
 
@@ -18,7 +19,19 @@ interface ToastItem {
   title: string;
   detail?: string;
   action?: ToastAction;
+  /** 相同内容合并后的条数（默认 1；>1 时标题后显示 `×N`） */
+  count: number;
 }
+
+/**
+ * 同时最多显示几条。
+ *
+ * 批量操作是会「一条一条报错」的：导入 40 个 zip、把 60 个族丢进回收站，
+ * 每个失败都 push 一条（`for (const err of errors) toast.error(...)`）。
+ * 之前没有上限也没有合并，屏幕上会一路堆到看不见的窗外，而且每条都响一次错误音。
+ * 4 条是「不挡列表、又能看清」的上限，超出的从最旧的一条开始收。
+ */
+const MAX_TOASTS = 4;
 
 interface ToastStore {
   toasts: ToastItem[];
@@ -52,15 +65,41 @@ function arm(id: number, ms: number, dismiss: (id: number) => void) {
   );
 }
 
+/** 一条提示该停留多久 */
+function ttl(kind: Kind, action?: ToastAction): number {
+  return kind === "error" ? 7000 : action ? 6500 : 4000;
+}
+
 const useToastStore = create<ToastStore>((set, get) => ({
   toasts: [],
   push: (kind, title, detail, sound, action) => {
+    const list = get().toasts;
+    const id = nextId++;
+    const { list: next, dropped, mergedId } = enqueueToast(
+      list,
+      { id, kind, title, detail, action, count: 1 },
+      MAX_TOASTS,
+    );
+
+    // ① 和上一条一模一样：只把计数 +1，不新建、不重复响错误音
+    if (mergedId != null) {
+      set({ toasts: next });
+      arm(mergedId, ttl(kind, action), get().dismiss);
+      return;
+    }
+
+    // ② 超过上限被挤出去的：顺手清掉计时器与暂停标记（否则会泄漏）
+    for (const old of dropped) {
+      clearTimeout(timers.get(old.id));
+      timers.delete(old.id);
+      pausedIds.delete(old.id);
+    }
+
     if (kind === "success") playKind(sound ?? "success");
     else playError();
-    const id = nextId++;
-    set({ toasts: [...get().toasts, { id, kind, title, detail, action }] });
 
-    arm(id, kind === "error" ? 7000 : action ? 6500 : 4000, get().dismiss);
+    set({ toasts: next });
+    arm(id, ttl(kind, action), get().dismiss);
   },
   dismiss: (id) => {
     clearTimeout(timers.get(id));
@@ -141,7 +180,14 @@ export function Toaster() {
               <Info size={16} strokeWidth={2} className="toast-icon info" />
             )}
             <span>
-              <span className="toast-title">{t.title}</span>
+              <span className="toast-title">
+                {t.title}
+                {t.count > 1 && (
+                  <span className="toast-count tabular" aria-label={`×${t.count}`}>
+                    ×{t.count}
+                  </span>
+                )}
+              </span>
               {t.detail && <span className="toast-detail">{t.detail}</span>}
             </span>
             {t.action && (
