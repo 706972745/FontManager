@@ -8,7 +8,7 @@ import { useMarquee } from "../design/primitives/useMarquee";
 import { useListFontCss } from "../lib/fontLoader";
 import { listChars } from "../lib/listChars";
 import { copyrightExpired, familyCopyrightClass } from "../lib/license";
-import { buildFamilyMenu } from "../lib/menus";
+import { buildFamilyMenu, copyText } from "../lib/menus";
 import { useFamilyMembership } from "../lib/membership";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
 import { StarRating } from "./StarRating";
@@ -103,6 +103,22 @@ const SpecimenTile = memo(function SpecimenTile({
 
   const [faceId, setFaceId] = useState<string | undefined>(() => rememberedFace(family.name));
 
+  /**
+   * 点一下就复制族名（用户 2026-11-11，与速览界面同一套反馈）：族名后就地出现
+   * 「已复制」，1.5s 淡出，同时保留全局那个 toast。
+   * 选择状态照旧更新 —— 样张视图里没有详情面板，但方向键 / 空格 / Delete 都作用在
+   * `selectedFamily` 上，不选中的话键盘就没法接着操作这一格。
+   */
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
+  const copyName = useCallback(() => {
+    copyText(family.name, t("copy.familyName"));
+    setCopied(true);
+    window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
+  }, [family.name, t]);
+
   /** 悬停跑马灯：预览文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
   const previewMarquee = useMarquee(size);
 
@@ -169,7 +185,7 @@ const SpecimenTile = memo(function SpecimenTile({
 
   return (
     <motion.article
-      className={`specimen-tile ${selected && picking ? "card-selected" : ""}`}
+      className={`specimen-tile ${selected && picking ? "card-selected" : ""} ${copied ? "is-copied" : ""}`}
       data-family={family.name}
       tabIndex={0}
       role="button"
@@ -183,11 +199,15 @@ const SpecimenTile = memo(function SpecimenTile({
         }
         const mode = e.ctrlKey || e.metaKey ? "toggle" : e.shiftKey ? "range" : "single";
         selectWith(family.name, mode, st.visibleOrder);
+        // 只有「纯点击」才复制：Ctrl / Shift + 点击是选择手势，那两下不该往剪贴板里塞东西
+        if (mode === "single") copyName();
       }}
       onKeyDown={(e) => {
         if (e.key !== "Enter" || e.target !== e.currentTarget) return;
         e.preventDefault();
         selectWith(family.name, "single", useFontStore.getState().visibleOrder);
+        // 键盘的 Enter 等同于「点一下」（速览界面也是这么接的）
+        copyName();
       }}
       onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(family))}
       onMouseEnter={previewMarquee.enter}
@@ -198,6 +218,11 @@ const SpecimenTile = memo(function SpecimenTile({
         <FormatBadge format={family.formats[0]} isVariable={family.isVariable} />
         <span className="specimen-name" data-hint-text={family.name}>
           {displayName(family)}
+        </span>
+        {/* 「已复制」放在截断容器外面：族名很长时不会被 ellipsis 一起裁掉。
+            它一直占位（只切 opacity），所以出现 / 消失不会把右边的徽章推来推去。 */}
+        <span className={`specimen-copied ${copied ? "is-shown" : ""}`} aria-hidden={!copied}>
+          {t("copy.done")}
         </span>
         <span className="specimen-gap" />
         {system && family.deactivatable && (

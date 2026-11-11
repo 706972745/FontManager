@@ -3352,6 +3352,61 @@ h2.detail-title.copy-name {
   border-color: color-mix(in srgb, var(--accent-a) 70%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-a) 32%, transparent);
 }
+
+/* ─── 样张格子的行首锚点（2026-11-11 用户要求） ────────────────────────
+   卡片 / 列表行 / 在线列表 / 速览行都有这套「静止 6px 圆点 → 悬停长成 2px 灰线 →
+   选中是 2px 蓝线」，只有样张格子没有。这里补齐，尺寸取整条的中间档：
+   格子高度随字号档变（约 120~190px），线取 64（悬停）/ 76（选中）——
+   比卡片矮就不照抄 80/96，也不会像百分比那样在过渡里跳。
+   锚点左缘 5px、头部左内距 13px，两者不重叠，所以不用像卡片那样给头部让位。 */
+.specimen-tile {
+  position: relative;
+}
+.specimen-tile::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ui-dot);
+  transition:
+    width var(--t-quick) ease-out,
+    height var(--t-quick) ease-out,
+    border-radius var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
+}
+.specimen-tile:hover::before {
+  width: 2px;
+  height: 64px;
+  border-radius: 1px;
+  background: var(--ui-line-hover);
+}
+
+/* 点一下就复制族名：族名后就地出现「已复制」，1.5s 淡出（与速览同一套）。
+   它一直在 DOM 里、只切 opacity —— 出现时不把右边的徽章推走。 */
+.specimen-copied {
+  flex: none;
+  font-size: var(--fs-9);
+  font-weight: 400;
+  color: var(--accent-a);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s linear;
+}
+.specimen-copied.is-shown {
+  opacity: 1;
+}
+/* 复制成功的那 1.5s 里锚点长成蓝线，和「已复制」一起出现、一起退回圆点
+   （用户 2026-11-11：这个效果要随「已复制」一起消失，不要常驻）。
+   选中态不画线 —— 选中本来就是持久状态，靠格子的蓝色描边表达就够了。 */
+.specimen-tile.is-copied::before {
+  width: 2px;
+  height: 76px;
+  border-radius: 1px;
+  background: var(--ui-accent);
+}
 /* 补足最后一行的空格子：只占位，不画也不响应 */
 .specimen-tile-empty {
   visibility: hidden;
@@ -6700,7 +6755,7 @@ body.ui-fade-out .app-frame {
   pointer-events: none;
 }
 .qb-item:hover .qb-anchor-dot,
-.qb-item[data-active="true"] .qb-anchor-dot {
+.qb-item[data-copied="true"] .qb-anchor-dot {
   opacity: 0;
 }
 /* 悬停：2 × 80 灰线 */
@@ -6709,10 +6764,12 @@ body.ui-fade-out .app-frame {
   transform: scaleY(0.8333);
   background: var(--qb-anchor-hover);
 }
-/* 点中 / 键盘焦点：2 × 96 蓝线（长度 + 颜色双重编码，色觉障碍下靠长度也能分） */
-.qb-item[data-active="true"] .qb-anchor,
+/* 复制成功 / 键盘焦点：2 × 96 蓝线（长度 + 颜色双重编码，色觉障碍下靠长度也能分）。
+   2026-11-11 用户要求：这条蓝线和「已复制」一起出现、一起消失，不再常驻 ——
+   所以它挂在 `data-copied`（1.5s 的瞬时态）上，而不是「当前激活行」上。 */
+.qb-item[data-copied="true"] .qb-anchor,
 .qb-item:focus-visible .qb-anchor,
-.qb-item[data-active="true"]:hover .qb-anchor {
+.qb-item[data-copied="true"]:hover .qb-anchor {
   opacity: 1;
   transform: scaleY(1);
   background: var(--qb-accent);

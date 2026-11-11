@@ -450,7 +450,7 @@
   "quickbar.autoHideOn": "Oben automatisch ausblenden: an (zum Ausschalten klicken)",
   "quickbar.back": "Zurück zur vollständigen Ansicht",
   "quickbar.backShort": "Vollansicht",
-  "quickbar.copied": "Kopiert",
+  "copy.done": "Kopiert",
   "quickbar.copyHint": "Klicken kopiert „{name}“ · Rechtsklick für mehr",
   "quickbar.empty": "Noch keine Fonts aktiviert",
   "quickbar.enter": "Schnellansicht der aktivierten Fonts (blendet oben automatisch aus)",

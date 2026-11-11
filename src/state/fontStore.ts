@@ -87,7 +87,12 @@ import {
 import { askPluginsForMissingFamilies, ensurePluginList, snapshotRestorePlugins } from "../lib/snapshotPlugins";
 import { toast } from "../design/primitives/Toast";
 import { setSoundLevel, type SoundLevel } from "../lib/sound";
-import { applyTheme, type ThemePref } from "../lib/theme";
+import {
+  applyTheme,
+  pickThemePref,
+  THEME_MIGRATED_KEY,
+  type ThemePref,
+} from "../lib/theme";
 import {
   activeLocale,
   getLocalePref,
@@ -152,6 +157,7 @@ const PREVIEW_SIZE_DEFAULT_INDEX = SIZES.indexOf(32);
  */
 const PREVIEW_SIZE_MIGRATED_KEY = "previewSizeMigrated32";
 const LEGACY_PREVIEW_SIZE_INDEX = 3;
+
 export type MotionPref = "system" | "reduced";
 export type TransparencyPref = "full" | "reduced";
 export type UiScale = "auto" | number;
@@ -1056,6 +1062,8 @@ function persistPrefs(get: () => FontStore) {
       activatedAt: s.activatedAt,
       // 一次性迁移标记：写进去之后，用户自己拨回 24px 才不会被改回 32px
       [PREVIEW_SIZE_MIGRATED_KEY]: true,
+      // 同上：主题迁移过之后，用户自己选回深色也不会被改回系统
+      [THEME_MIGRATED_KEY]: true,
       quickbarHotkey: s.quickbarHotkey,
       quickbarHotkeyOpens: s.quickbarHotkeyOpens,
       collectionFaces: s.collectionFaces,
@@ -1676,8 +1684,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
         set({ scanFonts: get().scanFonts.concat(add) });
       }, 150);
     });
+    let themeMigrated = false;
     try {
       const prefs = (await ipc.getPrefs()) ?? {};
+      // 一次性迁移：只有「没标记 + 还是旧默认」才动手（结论要在 try 外用，故提到外面）
+      const picked = pickThemePref(prefs);
+      themeMigrated = picked.migrated;
       set({
         // 老版本把默认示例文本也存进了 prefs，升级后要换成新的默认句；
         // 用户自己改过的（不是那句默认）原样保留。
@@ -1727,9 +1739,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
         soundPref: (["off", "subtle", "on"] as const).includes(prefs.soundPref as SoundLevel)
           ? (prefs.soundPref as SoundLevel)
           : "off",
-        themePref: (["dark", "light", "system"] as const).includes(prefs.themePref as ThemePref)
-          ? (prefs.themePref as ThemePref)
-          : "dark",
+        themePref: picked.pref,
         onboarded: prefs.onboarded === true,
         localePref: isLocalePref(prefs.localePref) ? prefs.localePref : get().localePref,
         lastImported: Array.isArray(prefs.lastImported)
@@ -1790,6 +1800,13 @@ export const useFontStore = create<FontStore>((set, get) => ({
     } catch {
     }
     applyTheme(get().themePref);
+    if (themeMigrated) {
+      // 当场落盘：只发这两个键（后端 set_prefs 是合并写入），这样插件面板 / 速览
+      // 下次读 prefs 拿到的也是 system，不用等用户改别的偏好才被顺手写进去。
+      void ipc
+        .setPrefs({ themePref: "system", [THEME_MIGRATED_KEY]: true })
+        .catch(() => {});
+    }
     applyMotionPref(get().motionPref);
     applyTransparencyPref(get().transparencyPref);
     try {

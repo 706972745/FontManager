@@ -95,18 +95,7 @@ function QuickFaceRow({
   return <FaceLine family={family} face={face} probeText={probeText} onHover={onHover} />;
 }
 
-function QuickItem({
-  family,
-  index,
-  active,
-  onActivate,
-}: {
-  family: Family;
-  index: number;
-  /** 当前「点中」的那一行（R2 设计：点击 / 键盘焦点 → 行首锚点转蓝并伸长） */
-  active: boolean;
-  onActivate: (name: string) => void;
-}) {
+function QuickItem({ family, index }: { family: Family; index: number }) {
   const t = useT();
   // 速览里同样按界面语言显示字体名（与完整界面一个口径）
   const displayName = useDisplayName();
@@ -177,7 +166,6 @@ function QuickItem({
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
   const copyName = () => {
     copyText(family.name, t("copy.familyName"));
-    onActivate(family.name);
     setCopied(true);
     window.clearTimeout(copiedTimer.current);
     copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
@@ -203,12 +191,11 @@ function QuickItem({
       role="button"
       tabIndex={0}
       className="qb-item"
-      data-active={active ? "true" : undefined}
+      data-copied={copied ? "true" : undefined}
       data-hint-text={t("quickbar.copyHint", { name: family.name })}
       onMouseEnter={previewMarquee.enter}
       onMouseLeave={previewMarquee.leave}
       onClick={copyName}
-      onFocus={() => onActivate(family.name)}
       onKeyDown={(e) => {
         // div[role=button] 不会自己响应键盘：Enter / Space 得手动接（§5 第 31 条）。
         // 焦点在子控件（展开字重、字重行）上时那个控件负责，这里不抢。
@@ -238,7 +225,7 @@ function QuickItem({
         <span className="qb-item-name">
           {displayName(family)}
           <span className={`qb-copied ${copied ? "is-shown" : ""}`} aria-hidden={!copied}>
-            {t("quickbar.copied")}
+            {t("copy.done")}
           </span>
         </span>
         {/* 画不出示例文字的语言时，这一行直接换成「无中文」这类标注（与完整界面一致） */}
@@ -405,8 +392,6 @@ export function QuickBar() {
    * 当前点中 / 聚焦的那一行（只影响视觉：行首锚点从 6px 灰点长成 96px 蓝线）。
    * 不参与任何筛选与数据，换搜索词或换列表时清掉，避免蓝线停在无关的行上。
    */
-  const [activeName, setActiveName] = useState<string | null>(null);
-  useEffect(() => setActiveName(null), [query]);
 
   // 拖到屏幕顶部时整个速览窗口收起成一条（contentHeight 用于动画期间钉住内容高度）
   const { docked, contentHeight, phase, bar } = useQuickbarDock(autoHide);
@@ -870,12 +855,7 @@ export function QuickBar() {
                         transform: `translateY(${row.start}px)`,
                       }}
                     >
-                      <QuickItem
-                        family={family}
-                        index={row.index}
-                        active={activeName === family.name}
-                        onActivate={setActiveName}
-                      />
+                      <QuickItem family={family} index={row.index} />
                     </div>
                   );
                 })}
