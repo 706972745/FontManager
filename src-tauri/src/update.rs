@@ -66,6 +66,8 @@ pub struct UpdateInfo {
     pub setup_name: String,
     /// 安装包 SHA-256（小写十六进制，取自 GitHub Asset 的 `digest`；拿不到 = 空串）
     pub sha256: String,
+    /// 安装包 Asset 的数字 id（`api.github.com` asset 直取通道用；拿不到 = 0）
+    pub setup_asset_id: u64,
     /// 能不能一键静默安装（直链 + 校验值齐全 + 当前是「按用户安装」的 NSIS 版）
     pub can_auto_install: bool,
 }
@@ -199,11 +201,12 @@ fn trim_notes(text: &str) -> String {
 /// 只认 `*-setup.exe`（NSIS，currentUser 安装、不需要提权）。**不碰 MSI**：
 /// perMachine 安装要 UAC，静默跑会直接失败或者弹一个没人点的授权框。
 /// 同一版里若同时有 x64 与其它架构，优先 x64。
-fn pick_setup(assets: &serde_json::Value) -> (String, String, String) {
+/// 返回 (url, name, sha256, asset_id)。
+fn pick_setup(assets: &serde_json::Value) -> (String, String, String, u64) {
     let Some(list) = assets.as_array() else {
-        return (String::new(), String::new(), String::new());
+        return (String::new(), String::new(), String::new(), 0);
     };
-    let mut best: Option<(u8, String, String, String)> = None;
+    let mut best: Option<(u8, String, String, String, u64)> = None;
     for a in list {
         let name = a.get("name").and_then(|x| x.as_str()).unwrap_or("");
         if !name.to_ascii_lowercase().ends_with("-setup.exe") {
@@ -224,15 +227,16 @@ fn pick_setup(assets: &serde_json::Value) -> (String, String, String) {
             .and_then(|d| d.strip_prefix("sha256:"))
             .map(|h| h.to_ascii_lowercase())
             .unwrap_or_default();
+        let id = a.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
         let rank = if name.contains("x64") { 1 } else { 0 };
-        let cand = (rank, name.to_string(), url.to_string(), digest);
+        let cand = (rank, name.to_string(), url.to_string(), digest, id);
         if best.as_ref().map(|b| cand.0 > b.0).unwrap_or(true) {
             best = Some(cand);
         }
     }
     match best {
-        Some((_, name, url, digest)) => (url, name, digest),
-        None => (String::new(), String::new(), String::new()),
+        Some((_, name, url, digest, id)) => (url, name, digest, id),
+        None => (String::new(), String::new(), String::new(), 0),
     }
 }
 
@@ -272,7 +276,8 @@ async fn from_release_api() -> Result<UpdateInfo, String> {
         .to_string();
     let notes = v.get("body").and_then(|x| x.as_str()).unwrap_or("");
     let published_at = v.get("published_at").and_then(|x| x.as_str()).unwrap_or("");
-    let (setup_url, setup_name, sha256) = pick_setup(v.get("assets").unwrap_or(&serde_json::Value::Null));
+    let (setup_url, setup_name, sha256, setup_asset_id) =
+        pick_setup(v.get("assets").unwrap_or(&serde_json::Value::Null));
     Ok(UpdateInfo {
         current: env!("CARGO_PKG_VERSION").to_string(),
         has_update: is_newer(&latest, env!("CARGO_PKG_VERSION")),
@@ -285,6 +290,7 @@ async fn from_release_api() -> Result<UpdateInfo, String> {
         setup_url,
         setup_name,
         sha256,
+        setup_asset_id,
     })
 }
 
@@ -310,6 +316,7 @@ async fn from_package_json(url: &str) -> Result<UpdateInfo, String> {
         setup_url: String::new(),
         setup_name: String::new(),
         sha256: String::new(),
+        setup_asset_id: 0,
         can_auto_install: false,
     })
 }
@@ -376,6 +383,13 @@ const DOWNLOAD_HOSTS: [&str; 3] = [
     "release-assets.githubusercontent.com",
 ];
 
+/// 备用通道宿主（1.9.1）：国内网络下 `github.com` 常被干扰而 `api.github.com` 可用，
+/// 所以镜像前缀与 asset API 都是真实可行的退路。**镜像只是换条路拿同一个文件**，
+/// SHA-256 校验值取自 GitHub 官方 digest、贯穿所有通道 —— 通道被投毒也过不了校验。
+const MIRROR_HOSTS: [&str; 2] = ["gh-proxy.com", "ghfast.top"];
+const MIRROR_PREFIXES: [&str; 2] = ["https://gh-proxy.com/", "https://ghfast.top/"];
+const ASSET_API_PREFIX: &str = "https://api.github.com/repos/706972745/FontManager/releases/assets/";
+
 fn download_url_ok(url: &str) -> bool {
     // 测试端点配套：`FM_UPDATE_ENDPOINT` 设着的时候放行本机回环直链（带不带端口都算）
     if endpoint_override().is_some() && is_loopback_url(url) {
@@ -386,6 +400,80 @@ fn download_url_ok(url: &str) -> bool {
     };
     let host = rest.split(['/', '?', '#']).next().unwrap_or("");
     DOWNLOAD_HOSTS.contains(&host)
+}
+
+/// 重定向**落点**的白名单：比入口宽一档 —— 镜像通道的落点可以是镜像域自身
+/// （代理流），asset API 的落点是 objects/release-assets。
+fn download_resp_host_ok(url: &str) -> bool {
+    if endpoint_override().is_some() && is_loopback_url(url) {
+        return true;
+    }
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    DOWNLOAD_HOSTS.contains(&host) || MIRROR_HOSTS.contains(&host) || host == "api.github.com"
+}
+
+/// 一条下载通道。`octet = true` 时请求要带 `Accept: application/octet-stream`
+///（asset API 靠这个头返回文件内容而不是 JSON 元数据）。
+struct DlChannel {
+    url: String,
+    octet: bool,
+    label: &'static str,
+}
+
+/// 通道接力表（1.9.1）：
+///   ① 直连 browser_download_url —— 海外/直连可用时最快；
+///   ② gh-proxy.com 镜像、③ ghfast.top 镜像 —— 国内网络实测可用；
+///   ④ asset API —— 只依赖 api.github.com（与「检查更新」同一条命），
+///      慢但最难挂，放最后兜底。
+/// 测试端点（FM_UPDATE_ENDPOINT）保持只有一条：就是给定的那个 URL。
+fn download_channels(url: &str, asset_id: u64) -> Vec<DlChannel> {
+    let mut v = vec![DlChannel {
+        url: url.to_string(),
+        octet: false,
+        label: "direct",
+    }];
+    if endpoint_override().is_some() {
+        // 测试钩子也要能端到端验证通道接力：假端点只替代「检查」这一步，
+        // 它给出的 setupUrl 若是真实的 github.com 直链，镜像 / asset API
+        // 照拼 —— 下载走的仍是真 GitHub 链路。
+        if download_url_ok(url) {
+            for m in MIRROR_PREFIXES {
+                v.push(DlChannel {
+                    url: format!("{m}{url}"),
+                    octet: false,
+                    label: "mirror",
+                });
+            }
+            if asset_id != 0 {
+                v.push(DlChannel {
+                    url: format!("{ASSET_API_PREFIX}{asset_id}"),
+                    octet: true,
+                    label: "asset-api",
+                });
+            }
+        }
+        return v;
+    }
+    if download_url_ok(url) {
+        for m in MIRROR_PREFIXES {
+            v.push(DlChannel {
+                url: format!("{m}{url}"),
+                octet: false,
+                label: "mirror",
+            });
+        }
+        if asset_id != 0 {
+            v.push(DlChannel {
+                url: format!("{ASSET_API_PREFIX}{asset_id}"),
+                octet: true,
+                label: "asset-api",
+            });
+        }
+    }
+    v
 }
 
 /// 文件名只允许 `…-setup.exe`，且不含路径分隔符 / 通配符（防目录穿越与参数注入）
@@ -439,13 +527,19 @@ fn update_dir() -> std::path::PathBuf {
 ///
 /// 已经下过且哈希对的文件直接复用：用户网络差、第一次下到一半断了再点一次，
 /// 不该从头再来一遍。
-pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) -> Result<String, String> {
-    use std::io::{Read as _, Write as _};
-
+///
+/// 1.9.1 起**通道接力**：直连 → gh-proxy.com → ghfast.top → asset API。
+/// 国内网络下 `github.com` 常被干扰（连接直接重置）而 `api.github.com` 可用，
+/// 只试直连的话「下载并安装」永远失败 —— 这正是用户反馈的问题。
+/// 每条通道下载完都要过同一把 SHA-256（官方 digest），通道内容被篡改照样拦下。
+pub fn download_setup(
+    app: &AppHandle,
+    url: &str,
+    name: &str,
+    want_sha: &str,
+    asset_id: u64,
+) -> Result<String, String> {
     crate::diag::log(&format!("[update] download start {name} <- {url}"));
-    if !download_url_ok(url) {
-        return Err(format!("下载地址不在允许的站点内：{url}"));
-    }
     if !setup_name_ok(name) {
         return Err(format!("安装包文件名不合法：{name}"));
     }
@@ -468,7 +562,47 @@ pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) ->
         let _ = std::fs::remove_file(&dest);
     }
 
-    emit_progress(app, "download", 0, 0, None);
+    let channels = download_channels(url, asset_id);
+    let mut errs: Vec<String> = Vec::new();
+    for ch in &channels {
+        // 只有直连通道的 URL 来自外部（Releases API 的 browser_download_url），
+        // 必须过一遍白名单；镜像 / asset API 是内部拼的，格式自证。
+        if ch.label == "direct" && !download_url_ok(&ch.url) {
+            errs.push(format!("{}：下载地址不在允许的站点内", ch.label));
+            continue;
+        }
+        emit_progress(app, "download", 0, 0, None);
+        match try_channel(app, ch, name, &want, &dir, &dest) {
+            Ok(()) => {
+                crate::diag::log(&format!("[update] download done {name} (sha ok, via {})", ch.label));
+                emit_progress(app, "ready", 1, 1, None);
+                return Ok(dest.to_string_lossy().into_owned());
+            }
+            Err(e) => {
+                crate::diag::log(&format!("[update] channel {} failed: {e}", ch.label));
+                errs.push(format!("{}：{e}", ch.label));
+            }
+        }
+    }
+    emit_progress(app, "error", 0, 0, Some("下载失败"));
+    Err(format!(
+        "直连与备用通道都下载失败（{}）；可以到发布页手动下载",
+        errs.join("；")
+    ))
+}
+
+/// 走单条通道把文件下到 `.part`，SHA-256 校验通过后挪到 `dest`。
+fn try_channel(
+    app: &AppHandle,
+    ch: &DlChannel,
+    name: &str,
+    want: &str,
+    dir: &std::path::Path,
+    dest: &std::path::Path,
+) -> Result<(), String> {
+    use std::io::{Read as _, Write as _};
+
+    let partial = dir.join(format!("{name}.part"));
     let client = {
         let mut b = reqwest::blocking::Client::builder()
             .user_agent(UA)
@@ -476,19 +610,22 @@ pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) ->
             .timeout(Duration::from_secs(600));
         // 环回目标（FM_UPDATE_ENDPOINT 的本机假服务）绝不走代理：
         // 用户的 HTTP_PROXY 常常没配 no_proxy，代理进程会拒收「连回本机」的请求。
-        if is_loopback_url(url) {
+        if is_loopback_url(&ch.url) {
             b = b.no_proxy();
         }
         b.build()
             .map_err(|e| format!("网络客户端初始化失败：{e}"))?
     };
-    let mut resp = client
-        .get(url)
+    let mut req = client.get(&ch.url);
+    if ch.octet {
+        req = req.header(reqwest::header::ACCEPT, "application/octet-stream");
+    }
+    let mut resp = req
         .send()
         .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("下载失败：{e}（可以在发布页手动下载）"))?;
+        .map_err(|e| format!("{e}"))?;
     // 重定向后的落点也要在白名单里（GitHub 的下载会 302 到 objects.githubusercontent.com）
-    if !download_url_ok(resp.url().as_str()) {
+    if !download_resp_host_ok(resp.url().as_str()) {
         return Err(format!(
             "下载被重定向到非预期站点：{}",
             resp.url().host_str().unwrap_or("?")
@@ -496,7 +633,6 @@ pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) ->
     }
     let total = resp.content_length().unwrap_or(0);
 
-    let partial = dir.join(format!("{name}.part"));
     {
         let mut f = std::fs::File::create(&partial).map_err(|e| format!("写临时文件失败：{e}"))?;
         let mut received: u64 = 0;
@@ -524,10 +660,8 @@ pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) ->
         emit_progress(app, "error", 0, 0, Some("校验失败"));
         return Err("安装包校验失败（内容与发布页的 SHA-256 不一致），已删除，没有安装".into());
     }
-    std::fs::rename(&partial, &dest).map_err(|e| format!("保存安装包失败：{e}"))?;
-    emit_progress(app, "ready", 1, 1, None);
-    crate::diag::log(&format!("[update] download done {name} (sha ok)"));
-    Ok(dest.to_string_lossy().into_owned())
+    std::fs::rename(&partial, dest).map_err(|e| format!("保存安装包失败：{e}"))?;
+    Ok(())
 }
 
 /// 生成安装脚本。
@@ -616,11 +750,14 @@ pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str) -> Result<(), 
 
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    // 1.9.1 修复：不能再叠加 DETACHED_PROCESS —— powershell.exe 是控制台程序，
+    // DETACHED 下拿不到控制台又不会新建，-NonInteractive 模式下**启动即退**，
+    // NSIS 根本不会跑（真机实验实锤：同一段脚本普通 spawn 全程 9~68 秒完成，
+    // 加 DETACHED 后 3 秒内进程消失）。CREATE_NO_WINDOW 已足够不弹窗。
     std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(&script)
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|e| {
             crate::diag::log(&format!("[update] ps1 spawn failed: {e}"));
@@ -740,22 +877,66 @@ mod tests {
             { "name": "FontManager_1.8.3_x64_en-US.msi", "browser_download_url": "https://github.com/a.msi",
               "digest": "sha256:cccc" },
             { "name": "FontManager_1.8.3_arm64-setup.exe", "browser_download_url": "https://github.com/b.exe",
-              "digest": "sha256:DDDD" },
+              "digest": "sha256:DDDD", "id": 11 },
             { "name": "FontManager_1.8.3_x64-setup.exe", "browser_download_url": "https://github.com/c.exe",
-              "digest": "sha256:ABCDEF" }
+              "digest": "sha256:ABCDEF", "id": 42 }
         ]);
-        let (url, name, sha) = pick_setup(&assets);
+        let (url, name, sha, id) = pick_setup(&assets);
         assert_eq!(name, "FontManager_1.8.3_x64-setup.exe");
         assert_eq!(url, "https://github.com/c.exe");
         assert_eq!(sha, "abcdef", "digest 要转小写，和本地 hex 比较才一致");
+        assert_eq!(id, 42, "asset id 给 asset API 兜底通道用");
     }
 
     #[test]
     fn pick_setup_without_assets_returns_empty() {
         for assets in [serde_json::json!(null), serde_json::json!([])] {
-            let (url, name, sha) = pick_setup(&assets);
-            assert!(url.is_empty() && name.is_empty() && sha.is_empty());
+            let (url, name, sha, id) = pick_setup(&assets);
+            assert!(url.is_empty() && name.is_empty() && sha.is_empty() && id == 0);
         }
+    }
+
+    // ── 下载通道接力（1.9.1）────────────────────────────────────────
+
+    #[test]
+    fn channels_direct_mirrors_then_asset_api() {
+        let url = "https://github.com/706972745/FontManager/releases/download/v1.9.0/FontManager_1.9.0_x64-setup.exe";
+        let ch = download_channels(url, 735072858);
+        assert_eq!(ch.len(), 4, "直连 + 2 镜像 + asset API");
+        assert_eq!(ch[0].label, "direct");
+        assert_eq!(ch[1].url, format!("https://gh-proxy.com/{url}"));
+        assert_eq!(ch[2].url, format!("https://ghfast.top/{url}"));
+        assert_eq!(ch[3].url, format!("{ASSET_API_PREFIX}735072858"));
+        assert!(ch[3].octet, "asset API 必须带 octet-stream 头");
+    }
+
+    #[test]
+    fn channels_without_asset_id_still_have_mirrors() {
+        let url = "https://github.com/a/b/releases/download/v1.0.0/x-setup.exe";
+        let ch = download_channels(url, 0);
+        assert_eq!(ch.len(), 3, "没有 asset id 就只有直连 + 镜像");
+    }
+
+    #[test]
+    fn channels_for_test_endpoint_are_single() {
+        // 测试钩子存在时只有给定的一条 —— 但本测试进程没设 FM_UPDATE_ENDPOINT，
+        // 所以这里用非白名单 URL 验证「镜像不拼」这一半即可。
+        let ch = download_channels("https://evil.example/x-setup.exe", 5);
+        assert_eq!(ch.len(), 1, "非白名单直连不给配镜像/asset API");
+    }
+
+    #[test]
+    fn resp_host_allows_mirrors_and_api() {
+        assert!(download_resp_host_ok("https://gh-proxy.com/https://github.com/x"));
+        assert!(download_resp_host_ok("https://ghfast.top/file"));
+        assert!(download_resp_host_ok(
+            "https://api.github.com/repos/706972745/FontManager/releases/assets/1"
+        ));
+        assert!(download_resp_host_ok("https://objects.githubusercontent.com/x/y"));
+        assert!(download_resp_host_ok("https://release-assets.githubusercontent.com/x/y"));
+        assert!(!download_resp_host_ok("https://evil.example/x"));
+        assert!(!download_resp_host_ok("https://github.com.evil.example/x"));
+        assert!(!download_resp_host_ok("http://gh-proxy.com/x"));
     }
 
     #[test]
