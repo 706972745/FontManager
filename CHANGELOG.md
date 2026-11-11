@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.6] — 2026-11-11
+
+> 一处视觉修正：卡片里那根行首竖线和右边的文字之间太挤（好看的是「线、留白、文字」三段节奏，
+> 挤在一起就成了一条贴着字的划痕）。现在卡片的内容左缘从 22px 让到 **30px**，
+> 线与文字之间的距离和速览行**逐像素一致**（都是 28px）。
+
+### 界面
+
+- **卡片行首锚点与文字的间距**（用户要求，附网格视图截图）：「这根线和线右边的文字之间
+  多一点空间，这里看起来都贴在一起了，参考速览界面文字和线的距离」。
+  卡片内容左缘 = `padding-left 26 + margin-left 30 = 56`，锚点竖线右缘在 28 ——
+  中间 **28px**；速览行是 `--qb-pad 24 + Aa 列 32 - 线右缘 28` = **28px**，两者对齐。
+  族名 / 预览 / 字重列表三处同步（它们本来共用同一条左缘），改名之后左缘依旧是一条直线。
+- 无头实测：`::before` 左 26 / 宽 2、`.card-head` 距卡片左缘 56、线到文字 28px。
+
+
 All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).

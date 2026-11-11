@@ -7751,9 +7751,12 @@ body.ui-fade-out .app-frame {
   border-radius: 1px;
   background: var(--ui-accent);
 }
-/* 头部：格式徽标 → 族名 → 样式数 …… 右端 许可 / ☆ / 开关 */
+/* 头部：格式徽标 → 族名 → 样式数 …… 右端 许可 / ☆ / 开关。
+   左边距 = 锚点让位：卡片 padding-left 26 + 30 = 内容左缘 56，
+   锚点竖线右缘在 28 —— 线与文字之间 28px，与速览行（pad 24 + Aa 列 32 - 线右缘 28）
+   **完全一致**（用户 2026-11-11：「这里都贴在一起了，参考速览界面文字和线的距离」）。 */
 .card-head {
-  margin-left: 22px;
+  margin-left: 30px;
   gap: 10px;
   min-height: 16px;
 }
@@ -7793,9 +7796,9 @@ body.ui-fade-out .app-frame {
   background: none;
   color: var(--ui-fg-2);
 }
-/* 预览：32px 档，左缘与族名同一条竖线，右侧渐隐 */
+/* 预览：32px 档，左缘与族名同一条竖线，右侧渐隐（让位同上，30） */
 .card-preview {
-  margin-left: 22px;
+  margin-left: 30px;
   padding-top: 10px;
   min-height: 46px;
 }
@@ -7805,7 +7808,7 @@ body.ui-fade-out .app-frame {
 }
 /* 样式数那一行 / 字重列表：与速览同一套 face-line */
 .card-styles {
-  margin-left: 22px;
+  margin-left: 30px;
   border-top: 1px solid var(--ui-line);
   padding-top: 6px;
 }
