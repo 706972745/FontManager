@@ -314,13 +314,13 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 |---|---|
 | 卡片 `.family-card` | `padding: 20px 24px 22px 26px`；`min-height: 196px`（按 96px 档预留）；0 圆角 / 0 描边 / 透明底 / 无阴影 |
 | 行首锚点 | **固定长度三态**（与速览同一套）：单个 `::before` 伪元素，静止 6px 圆点 @ `left: 26 / top: 24` → 悬停 `2 × 80` 灰线（`--ui-line-hover`）→ 选中 `2 × 96` 蓝线（`--ui-accent`），`--t-quick` 过渡 `width / height / border-radius / background-color`。线从圆点往下长（`top` 固定）。**不跟随卡片高度** —— 1.8.5 曾做过「悬停 = 卡片高 − 48 / 选中占满整卡」，用户看过真机后要求卡片浏览界面回到原来的固定长度，「占满高度」那套只留给样张格子（§3.5） |
-| 卡头 `.card-head` | `margin-left: 38`（给锚点让位；1.8.6 由 22 加到 38，内容左缘 64 = 26 内距 + 38）/ gap 10 / `min-height: 16`；锚点竖线右缘在 28 → **线与文字 36px**（速览行是 28px；卡片预览字更大，留白相应更宽） |
+| 卡头 `.card-head` | `margin-left: 22`（给锚点让位）/ gap 10 / `min-height: 16`；锚点竖线右缘在 28，线与文字之间 20px |
 | 族名 `.card-name` | 11px / 500 / `line-height: 16` / 主文字色 |
 | 格式徽标 `.badge` | 等宽 **9px** / `line-height: 14` / `padding: 0 4px` / 1px 描边 / **0 圆角** / 次文字色 / 字距 0.04em |
 | `VAR` 徽标 `.badge-variable` | **34×16** / 0 圆角 / 8px 等宽 / 蓝底白字 / 字距 0.04em |
-| 预览区 `.card-preview` | `margin-left: 38`（与族名同一条左缘，1.8.6 同改）/ `padding-top: 10` / `min-height: 46`（32px 档恰好） |
+| 预览区 `.card-preview` | `margin-left: 22`（与族名同一条左缘）/ `padding-top: 10` / `min-height: 46`（32px 档恰好） |
 | 预览文字 `.preview-text` | `line-height: 1.15` / 主文字色 |
-| 字重区 `.card-styles` | `margin-left: 38`（同上）/ 顶部 1px 发丝线 / `padding-top: 6` |
+| 字重区 `.card-styles` | `margin-left: 22`（同上）/ 顶部 1px 发丝线 / `padding-top: 6` |
 | 归属芯片 `.member-chip` | 9px / **2px 圆角** / `padding: 1px 5px` / 1px 描边 / 无底色 |
 | 许可 `.lic-chip` | 9px / 无描边无底色 / 次文字色 |
 | 展开按钮 `.card-expand` | 4px 圆角 / 9px |
@@ -342,7 +342,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 
 | 元素 | 规格 |
 |---|---|
-| 单元 `.specimen-tile` | **0 圆角 / 0 描边 / 无底色 / 无阴影**，只留底部 1px 发丝线；悬停 `--ui-hover`；选中 = `inset 2px 0 0` 蓝竖线 |
+| 单元 `.specimen-tile` | **0 圆角 / 0 描边 / 无底色 / 无阴影**，只留底部 1px 发丝线；悬停 `--ui-hover`；选中 = `inset 2px 0 0` 蓝竖线；内距 `10px 13px 12px 39px` —— **左内距 39** 给行首锚点让位（线右缘 9 → 线到文字 **30px**，1.8.6 由 13 改） |
 | 族名 `.specimen-name` | 13px / 500 |
 | 字重数 `.specimen-styles` | 等宽 **9px** / 弱色 |
 | 行容器 `.specimen-row` | 绝对定位铺满；grid / gap 10 / `padding-bottom: 10` |
@@ -351,7 +351,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 工具行 `.specimen-tools` | 高 20 / flex / gap 5 |
 | 字重胶囊 `.specimen-weight` | **999px 胶囊**（语义值）/ `padding: 2px 4px 2px 7px` / `max-width: 132` / 10px |
 | 样张文字 `.specimen-text` | `line-height: 1.12` / 居中 / `nowrap` / `text-overflow: clip`（直接裁，不出省略号） |
-| 样张格子 `.specimen-tile` 行首锚点 | **占满格子高度、只向下长**：拆两个伪元素 —— `::before` = 6px 圆点 @ `left: 5 / top: 11`；`::after` = 2px 竖线 @ `left: 7`（与圆点同心）、`top: 11` 固定、`bottom` 16 → 0 定位、`transform: scaleY(0)` 收起、`transform-origin: 50% 0`（所以生长方向只有向下）、`--t-quick` 过渡。**悬停**长到距格子底边 16px 的灰线（`--ui-line-hover`），**复制成功那 1.5s** 继续长到底边（`bottom: 0`）并转蓝（`--ui-accent`），与「已复制」同时出现同时消失。线长跟着格子高度走（格子随字号档 120~190px），不过渡 `height`（百分比与 px 混在 transition 里 Chromium 不保证逐帧插值） |
+| 样张格子 `.specimen-tile` 行首锚点 | **占满格子高度、只向下长**：拆两个伪元素 —— `::before` = 6px 圆点 @ `left: 5 / top: 11`；`::after` = 2px 竖线 @ `left: 7`（与圆点同心）、`top: 11` 固定、`bottom` 16 → 0 定位、`transform: scaleY(0)` 收起、`transform-origin: 50% 0`（所以生长方向只有向下）、`--t-quick` 过渡。**悬停**长到距格子底边 16px 的灰线（`--ui-line-hover`），**复制成功那 1.5s** 继续长到底边（`bottom: 0`）并转蓝（`--ui-accent`），与「已复制」同时出现同时消失。线长跟着格子高度走（格子随字号档 120~190px），不过渡 `height`（百分比与 px 混在 transition 里 Chromium 不保证逐帧插值）。**线与文字的距离 30px**（格子左内距 39 − 线右缘 9），与卡片视图的 36px 同一量级；1.8.6 之前左内距只有 13、间距 4px，线与 TTF 徽标贴在一起 |
 | 样张格子 · 复制反馈 | 点一下把族名写进剪贴板：名字后出现 `.specimen-copied`（9px / `--accent-a` / `margin: 6px` 由 `.specimen-head` 的 gap 提供），**1.5s 淡出**（0.2s linear）；与锚点蓝线同时出现、同时消失。它常驻 DOM 只切 opacity，出现时不推走右侧徽章。Ctrl / Shift + 点击不复制 |
 | 样张侧栏 | 62px 只留图标；**分组 / 快照行保留序号**（`gap: 2px`，图标右紧跟数字），文字与计数照旧隐藏。**行内容左对齐 + `padding-left: 16`**（1.8.4 起）：所有图标落在同一条竖线上（x=23），序号挂在图标右侧；原来是 `justify-content: center`，带序号的行图标左移 7px、不带序号的行居中，一栏图标是锯齿状。`padding-left` 参与 `--t-state` 过渡，切视图时图标平移而不是跳位 |
 
