@@ -1302,10 +1302,17 @@ fn runtime_download_task(app: &AppHandle, kind: &str) -> Result<(), String> {
         let name = e.name().to_string();
         if name.starts_with(&top) && !name.ends_with('/') {
             let rel = &name[top.len()..];
-            if rel.split(['/', '\\']).any(|c| c == "..") {
+            // zip-slip 防护（2026-11-11 审查）：原来的手写检查只挡 `..`，
+            // 挡不住 `C:/x`、`/x` 这类「join 会替换基目录」的绝对路径。
+            // `enclosed_name()` 是 zip crate 的官方清洗：拒绝绝对路径 / 盘符 / 父目录。
+            let Some(safe_rel) = e.enclosed_name() else {
+                return Err(format!("运行时包里有可疑路径：{name}"));
+            };
+            let rel = safe_rel.to_string_lossy().replace('\\', "/");
+            if rel.split('/').any(|c| c == "..") {
                 return Err(format!("运行时包里有可疑路径：{name}"));
             }
-            let out = exe_base.join(&top).join(rel);
+            let out = exe_base.join(&top).join(&rel);
             if let Some(p) = out.parent() {
                 std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
             }

@@ -31,6 +31,19 @@ All notable changes to FontManager are documented here. The format follows
   列表 `::after` 左 8 / 宽 2、`.row-name-text` 左 24、线到文字 14.0px；
   选中行 `::after` = `top/bottom: 0` + `box-shadow: none`（只剩一条蓝线）。
 
+### 质量审查（发版前过一遍）
+
+- **安全**：更新安装链（下载 → SHA-256 → 白名单文件名 → canonicalize 限定目录 →
+  PS1 单引号转义）逐段核过，无注入点；插件 zip 与运行时 zip 的 zip-slip 防护补齐 ——
+  运行时解包原来只挡 `..`，`C:/x`、`/x` 这种会被 `Path::join` 换基目录的绝对路径
+  现在用 `zip::ZipArchive::enclosed_name()` 官方清洗统一拒绝；本地 API 权限表
+  （read/write fonts、snapshot、curation、export、import）与路由一一核对无遗漏。
+- **性能**：搜索匹配 5000 字族实测 0.2~3.9ms/次（CJK 稍重），远低于一帧预算；
+  网格 / 列表 / 样张三视图全部虚拟化，设置页 `content-visibility: auto`；
+  惯性滚动帧率无关（`e^(-λdt)`）、越界即让位。
+- **动效**：无 `transition: all`；无 >300ms 的界面过渡；卡片 / 样张 / 列表锚点
+  全部走 `transform: scaleY` 合成器路径，不触发布局。
+
 ### 备注
 
 - 上一版（同号 1.8.6 的中间构建）曾把「线到文字」加宽做到**卡片视图**（`margin-left` 22 → 38），
