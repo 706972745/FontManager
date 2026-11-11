@@ -57,6 +57,30 @@ pub const PERMS: &[&str] = &[
     "import",
 ];
 
+/// 插件 manifest 申报的权限 → 实际签发的权限（保留项, 被丢掉的原样）。
+///
+/// 为什么必须过这一道：[`Scope::allow`] 认 `*` 通配（主令牌用它表示全权），而插件令牌
+/// 原本是 `manifest.permissions` 原样照抄的 —— 插件在 `plugin.json` 里写
+/// `"permissions": ["*"]` 就能拿到整张权限表，分级形同虚设。这里只放行 [`PERMS`]
+/// 登记过的名字：`*` 与拼错的名字一律丢掉并回报，由调用方记日志。
+///
+/// 顺带做去重与 trim，免得 `" read:fonts"` 这种手写空格被当成未知权限。
+pub fn sanitize_plugin_perms(declared: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut keep: Vec<String> = Vec::new();
+    let mut dropped: Vec<String> = Vec::new();
+    for raw in declared {
+        let p = raw.trim();
+        if p == "*" || !PERMS.contains(&p) {
+            dropped.push(raw.clone());
+            continue;
+        }
+        if !keep.iter().any(|k| k == p) {
+            keep.push(p.to_string());
+        }
+    }
+    (keep, dropped)
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Cfg {
     pub enabled: bool,
@@ -1083,5 +1107,110 @@ mod tests {
         assert!(host_allowed(&h));
         h.insert(axum::http::header::HOST, "evil.example:51482".parse().unwrap());
         assert!(!host_allowed(&h));
+    }
+
+    /// 插件权限收敛：`*` 与拼错的名字必须被丢掉，否则一行 manifest 就能绕过整张权限表
+    #[test]
+    fn plugin_perms_are_whitelisted() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+
+        let (keep, drop) = sanitize_plugin_perms(&s(&["*"]));
+        assert!(keep.is_empty(), "`*` 绝不能换来全权，实际 {:?}", keep);
+        assert_eq!(drop, s(&["*"]));
+
+        let (keep, drop) = sanitize_plugin_perms(&s(&["read:fonts", "*", "read:font"]));
+        assert_eq!(keep, s(&["read:fonts"]));
+        assert_eq!(drop, s(&["*", "read:font"]), "未知权限名要回报，插件作者才知道自己拼错了");
+
+        // 去重 + 去空白，但顺序保持申报顺序（日志/界面读起来和 manifest 一致）
+        let (keep, drop) = sanitize_plugin_perms(&s(&[" write:curation ", "read:fonts", "write:curation"]));
+        assert_eq!(keep, s(&["write:curation", "read:fonts"]));
+        assert!(drop.is_empty());
+
+        // 全表都认得
+        let all = PERMS.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+        let (keep, drop) = sanitize_plugin_perms(&all);
+        assert_eq!(keep.len(), PERMS.len());
+        assert!(drop.is_empty());
+    }
+
+    /// 从源码里抠出 `.route(路径, 方法(...))`：路径 = 第一个字符串字面量，
+    /// 方法 = 括号内的 `get(` / `post(` / `put(` / `delete(` / `patch(` 等。
+    fn parse_routes(src: &str) -> Vec<(String, String)> {
+        // 拼出来是为了让本文件里不出现会被自己匹配到的字面量
+        let marker = concat!(".", "route(");
+        let bytes = src.as_bytes();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while let Some(pos) = src[i..].find(marker) {
+            let start = i + pos + marker.len();
+            let mut depth = 1usize;
+            let mut j = start;
+            while j < bytes.len() {
+                match bytes[j] {
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+            let call = &src[start..j];
+            i = j;
+            let Some(q0) = call.find('"') else { continue };
+            let Some(q1) = call[q0 + 1..].find('"').map(|x| x + q0 + 1) else {
+                continue;
+            };
+            let path = &call[q0 + 1..q1];
+            for m in ["get", "post", "put", "delete", "patch", "head", "options"] {
+                if call[q1..].contains(&format!("{m}(")) {
+                    out.push((m.to_uppercase(), path.to_string()));
+                }
+            }
+        }
+        out
+    }
+
+    /// 每条路由都必须落在权限表里（或显式豁免名单里）。
+    ///
+    /// `perm_for` 末尾的 `_ => None` 是**默认放行**：以后加接口忘了登记，就是一条无声的
+    /// 越权通道 —— 受限令牌照样能打通。这条单测直接读本文件源码里的路由声明，
+    /// 新增端点不写权限会立刻变红，不需要人去记「记得同步权限表」。
+    #[test]
+    fn every_route_is_gated() {
+        // 只需令牌、不需要额外权限的路由（目前只有探活）
+        const EXEMPT: &[(&str, &str)] = &[("GET", "/api/v1/health")];
+
+        let routes = parse_routes(include_str!("api.rs"));
+        assert!(
+            routes.len() >= 16,
+            "只解析到 {} 条路由，解析器大概失效了（源码写法变了？）",
+            routes.len()
+        );
+        assert!(
+            routes.iter().any(|(_, p)| p == "/api/v1/import"),
+            "解析器没抓到 /import，说明它已经不可信了"
+        );
+
+        for (method, path) in routes {
+            // 路径模板 → 一个具体路径，喂给 perm_for 判断
+            let concrete = path.replace("{name}", "x").replace("{id}", "1");
+            let exempt = EXEMPT.iter().any(|(m, p)| *m == method && *p == path);
+            match perm_for(&method, &concrete) {
+                Some(perm) => assert!(
+                    PERMS.contains(&perm),
+                    "{method} {path} 要的权限「{perm}」不在 PERMS 名单里，插件永远申请不到它"
+                ),
+                None => assert!(
+                    exempt,
+                    "{method} {path} 没有登记权限 —— perm_for 会默认放行，受限令牌也能打通。\
+                     要么在 perm_for 里补一条，要么显式加进 EXEMPT"
+                ),
+            }
+        }
     }
 }

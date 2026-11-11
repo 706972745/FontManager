@@ -654,7 +654,9 @@ pub fn list() -> Vec<PluginInfo> {
                     version: m.version,
                     summary: m.summary,
                     description: m.description,
-                    permissions: m.permissions,
+                    // 显示**实际生效**的权限，不是 manifest 原文：申报了 `*` 或拼错的名字
+                    // 会被签发处丢掉，界面要是照原文显示 `*`，用户会以为它真拿到了全权。
+                    permissions: crate::api::sanitize_plugin_perms(&m.permissions).0,
                     hooks: m.hooks,
                     menus: m.menus,
                     settings: m.settings,
@@ -1462,14 +1464,24 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
     if !enabled || port == 0 {
         return Err("插件依赖本地 API，但「本地 API」现在是关的。请先在设置 → 本地 API 里打开".into());
     }
-    // 受限令牌：只有 manifest 声明的权限
+    // 受限令牌：只发 manifest 申报里**通过白名单**的那几项。
+    // `*` 与拼错的名字在这里被丢掉（否则写一行 `["*"]` 就能拿到全权，见 api::sanitize_plugin_perms）。
+    let (perms, dropped) = crate::api::sanitize_plugin_perms(&m.permissions);
+    if !dropped.is_empty() {
+        crate::diag::log(&format!(
+            "[plugin] {} 申报了不受支持的权限 {:?}，已忽略（可用权限：{:?}）",
+            m.id,
+            dropped,
+            crate::api::PERMS
+        ));
+    }
     let token = format!("plugin-{}", crate::api::new_plugin_token());
     if let Ok(mut t) = api.tokens.lock() {
         t.insert(
             token.clone(),
             crate::api::Scope {
                 name: format!("plugin:{}", m.id),
-                perms: m.permissions.clone(),
+                perms: perms.clone(),
             },
         );
     }
@@ -1705,7 +1717,7 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
             version: m.version,
             summary: m.summary,
             description: m.description,
-            permissions: m.permissions,
+            permissions: crate::api::sanitize_plugin_perms(&m.permissions).0,
             hooks: m.hooks,
             menus: m.menus,
             settings: m.settings,

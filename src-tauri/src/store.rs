@@ -229,13 +229,130 @@ fn prefs_path() -> PathBuf {
 
 /// 原子写一个 JSON 文件：先写 .tmp 再 rename，写一半断电也不会留下半份文件。
 fn write_json_atomic<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    let json = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    write_bytes_atomic(path, &json)
+}
+
+fn write_bytes_atomic(path: &Path, json: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let tmp = path.with_extension("json.tmp");
-    let json = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
     fs::write(&tmp, json).map_err(|e| e.to_string())?;
     fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+/// 读主文件的三种结局。**「读不出来」和「没有文件」必须分开**：
+/// 前者是事故（文件被截断 / 字段不认识 / 磁盘坏道），后者才是全新安装。
+enum ReadOutcome {
+    Ok(AppState),
+    Missing,
+    Broken(String),
+}
+
+fn read_state_file(path: &Path) -> ReadOutcome {
+    match fs::read(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => ReadOutcome::Missing,
+        Err(e) => ReadOutcome::Broken(format!("读不出来：{e}")),
+        // 0 字节 / 只剩空白：典型的中途断电或磁盘满，serde 只会报个含糊的 EOF
+        Ok(b) if b.iter().all(|c| c.is_ascii_whitespace()) => {
+            ReadOutcome::Broken("文件是空的（0 字节或只剩空白）".into())
+        }
+        Ok(b) => match serde_json::from_slice::<AppState>(&b) {
+            Ok(s) => ReadOutcome::Ok(s),
+            Err(e) => ReadOutcome::Broken(format!("解析失败：{e}")),
+        },
+    }
+}
+
+/// 坏文件**绝不原地丢弃**：改名留证（`state.corrupt-<unix 秒>.json`），再试滚动备份。
+///
+/// 2026-11-11 真机事故：`state.json` 从 1.7 MB 被写成 16 KB，备注 / 标签 / 库配置全空，
+/// 界面上只剩 324 个系统字体。旧代码把「解析失败」当成「全新安装」，接着任何一次保存
+/// 都把那份默认状态写回磁盘 —— 用户几年的数据就这么无声无息地没了，日志里一个字都没有。
+/// 现在的顺序是「先留证 → 再回滚 → 最后才认命」，每一步都写日志。
+fn recover_broken_state(path: &Path, why: &str) -> AppState {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let keep = path.with_file_name(format!("state.corrupt-{stamp}.json"));
+    match fs::rename(path, &keep) {
+        Ok(()) => crate::diag::log(&format!(
+            "store: state.json {why}；坏文件已留证 → {}",
+            keep.display()
+        )),
+        Err(e) => crate::diag::log(&format!(
+            "store: state.json {why}；而且留证改名也失败了（{e}），继续尝试从备份恢复"
+        )),
+    }
+    let bak = path.with_file_name("state.json.bak");
+    match fs::read(&bak)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<AppState>(&b).ok())
+    {
+        Some(s) => {
+            crate::diag::log(&format!(
+                "store: 已从 {} 恢复（{} 条备注 / {} 个入库记录）",
+                bak.display(),
+                s.notes.len(),
+                s.added.len()
+            ));
+            s
+        }
+        None => {
+            crate::diag::log("store: 没有可用的 state.json.bak，只能按全新安装启动");
+            AppState::default()
+        }
+    }
+}
+
+fn load_state_file(path: &Path) -> AppState {
+    match read_state_file(path) {
+        ReadOutcome::Ok(s) => s,
+        ReadOutcome::Missing => AppState::default(),
+        ReadOutcome::Broken(why) => recover_broken_state(path, &why),
+    }
+}
+
+/// 覆盖前留一份滚动备份（`state.json.bak`）。
+///
+/// 备份点放在**覆盖之前**，所以「将要毁掉数据的那一次保存」正好是留下好文件的那一次。
+/// 节流（默认 10 分钟最多一次）是为了不让每次启停字体都拷 1.7 MB；
+/// 任何失败都只记日志 —— 备份不该反过来挡住正常保存。
+fn backup_before_overwrite(path: &Path, min_gap: std::time::Duration) -> Option<PathBuf> {
+    fs::metadata(path).ok()?; // 首次落盘，没有旧文件可备份
+    let bak = path.with_file_name("state.json.bak");
+    if let Ok(bmeta) = fs::metadata(&bak) {
+        let fresh = bmeta
+            .modified()
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .map(|d| d < min_gap)
+            .unwrap_or(false);
+        if fresh {
+            return None;
+        }
+    }
+    match fs::copy(path, &bak) {
+        Ok(_) => Some(bak),
+        Err(e) => {
+            crate::diag::log(&format!("store: 滚动备份失败（继续保存）：{e}"));
+            None
+        }
+    }
+}
+
+/// 两份文件体积差得离谱 = 数据要丢了的强信号（正常增删不会差 4 倍）。
+/// 只记日志、不拦保存：拦下来会让用户的操作直接失败，而 .bak 已经留好了。
+fn warn_size_cliff(old: u64, new: usize, bak: Option<&Path>) {
+    if old >= 200 * 1024 && (new as u64) * 4 < old {
+        crate::diag::log(&format!(
+            "store: ⚠️ 体积断崖 {old} → {new} 字节，疑似数据丢失（旧文件已备份到 {}）",
+            bak.map(|p| p.display().to_string())
+                .unwrap_or_else(|| "<备份失败>".into())
+        ));
+    }
 }
 
 /// **只**保存偏好（约 20 KB）。调用前提：这次改动确实只动了 `state.prefs`。
@@ -307,10 +424,8 @@ fn copy_dir_filtered(src: &Path, dst: &Path, skip: &[&str]) -> std::io::Result<(
 
 pub fn load() -> AppState {
     migrate_legacy_dirs();
-    let mut state: AppState = fs::read(state_path())
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default();
+    let path = state_path();
+    let mut state = load_state_file(&path);
     // 偏好以 prefs.json 为准（1.8.1 拆分）。老用户没有这个文件 → 用 state.json 里的
     // 那份并当场补写一份，之后纯偏好改动就再也不用重写 1.7 MB 的主文件了。
     let pf = prefs_path();
@@ -386,7 +501,13 @@ fn pin_legacy_library(_state: &mut AppState) -> bool {
 }
 
 pub fn save(state: &AppState) -> Result<(), String> {
-    write_json_atomic(&state_path(), state)?;
+    let path = state_path();
+    let json = serde_json::to_vec_pretty(state).map_err(|e| e.to_string())?;
+    // 先备份旧文件，再覆盖：见 backup_before_overwrite 的注释
+    let old = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    let bak = backup_before_overwrite(&path, std::time::Duration::from_secs(600));
+    warn_size_cliff(old, json.len(), bak.as_deref());
+    write_bytes_atomic(&path, &json)?;
     // 两份必须同步：万一 prefs.json 被删/损坏，load() 回退到 state.json 时
     // 不能读到一个几周前的旧偏好。写失败只记日志，主文件已经落盘了。
     if let Err(e) = save_prefs(state) {
@@ -448,6 +569,102 @@ mod tests {
             state.snapshots[0].entries[0].path.as_deref(),
             Some("C:\\Windows\\Fonts\\arial.ttf")
         );
+    }
+
+    fn tmp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("zfm-store-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// 主文件不存在 = 全新安装：默认状态，不制造任何 .corrupt 文件
+    #[test]
+    fn missing_state_is_fresh_install() {
+        let d = tmp_dir("missing");
+        let p = d.join("state.json");
+        let s = load_state_file(&p);
+        assert!(s.notes.is_empty() && s.added.is_empty());
+        let corrupt: Vec<_> = fs::read_dir(&d)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains("corrupt"))
+            .collect();
+        assert!(corrupt.is_empty(), "没有坏文件就别造一个出来");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// 2026-11-11 事故的复现：主文件坏了，但 .bak 好 → 必须自动回滚，且坏文件留证
+    #[test]
+    fn broken_state_rolls_back_to_backup() {
+        let d = tmp_dir("rollback");
+        let p = d.join("state.json");
+        let bak = d.join("state.json.bak");
+
+        let mut good = AppState::default();
+        good.notes.insert("思源黑体".into(), "这是用户写的备注".into());
+        good.library_dir = Some(r"E:\字体库".into());
+        fs::write(&bak, serde_json::to_vec(&good).unwrap()).unwrap();
+
+        fs::write(&p, b"{\"notes\": {\"broken").unwrap(); // 截断的 JSON
+
+        let s = load_state_file(&p);
+        assert_eq!(s.notes.len(), 1, "必须从备份里把备注捞回来");
+        assert_eq!(s.library_dir.as_deref(), Some(r"E:\字体库"));
+        assert!(!p.exists(), "坏文件不该留在原位（否则下次还会被它挡住）");
+
+        let kept: Vec<_> = fs::read_dir(&d)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("state.corrupt-"))
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(kept.len(), 1, "坏文件必须留证，方便事后查是怎么坏的");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// 坏文件 + 没有备份：留证后按全新安装走（总比原地丢弃强，至少证据还在）
+    #[test]
+    fn broken_state_without_backup_keeps_evidence() {
+        let d = tmp_dir("nobak");
+        let p = d.join("state.json");
+        fs::write(&p, b"").unwrap(); // 0 字节：断电 / 磁盘满的典型形态
+
+        let s = load_state_file(&p);
+        assert!(s.notes.is_empty());
+        assert!(!p.exists());
+        assert_eq!(
+            fs::read_dir(&d)
+                .unwrap()
+                .flatten()
+                .filter(|e| e.file_name().to_string_lossy().starts_with("state.corrupt-"))
+                .count(),
+            1
+        );
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// 覆盖前备份：min_gap=0 时每次都留；节流期内不再重复拷
+    #[test]
+    fn overwrite_backs_up_once_per_window() {
+        let d = tmp_dir("bak");
+        let p = d.join("state.json");
+        let bak = d.join("state.json.bak");
+
+        assert!(backup_before_overwrite(&p, std::time::Duration::ZERO).is_none(), "没有旧文件就没什么可备份");
+
+        fs::write(&p, b"v1").unwrap();
+        let got = backup_before_overwrite(&p, std::time::Duration::ZERO).expect("应当留下备份");
+        assert_eq!(got, bak);
+        assert_eq!(fs::read(&bak).unwrap(), b"v1");
+
+        fs::write(&p, b"v2-longer").unwrap();
+        assert!(
+            backup_before_overwrite(&p, std::time::Duration::from_secs(600)).is_none(),
+            "10 分钟窗口内不重复拷 1.7 MB"
+        );
+        assert_eq!(fs::read(&bak).unwrap(), b"v1", "窗口内备份内容保持不变");
+        let _ = fs::remove_dir_all(&d);
     }
 
     /// 1.2.6：默认库搬到安装目录后，以前往旧默认库导入过字体的用户
