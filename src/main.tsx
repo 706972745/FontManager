@@ -5,6 +5,13 @@ import "@fontsource-variable/jetbrains-mono";
 import "./design/tokens.css";
 import "./app.css";
 import App from "./App";
+import { installMomentumScroll } from "./lib/momentumScroll";
+
+// 惯性滚动（2026-11-11 用户要求）：Windows 上的 WebView2 滚轮没有惯性，
+// 松手就停；这里统一接管成「继续滑行 + 指数减速」。整套逻辑自带边界
+// （到底交还原生、输入框 / Ctrl 滚轮 / 横向滚动一律放行、减动效时关闭），
+// 完整界面与速览两个窗口都会装上。
+installMomentumScroll();
 
 // 关掉 WebView2 自带的右键菜单（返回 / 刷新 / 另存为 / 打印 / 更多工具）：
 // 软件自己的右键菜单由 React 处理，空白处右键弹出浏览器菜单只会让人困惑
