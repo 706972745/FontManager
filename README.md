@@ -330,6 +330,9 @@ Right-click a family → "Apply in {app}…":
   <kbd>↑</kbd><kbd>↓</kbd> to pick, <kbd>Enter</kbd> or click to jump: the app
   switches to the right view and scrolls the family into view.
   <kbd>Esc</kbd> clears the query first, then closes the menu
+
+![Type-to-search inside a context menu: a search box appears on top, results filter live, and the footer tells you more matches are available](contextmenu.png?v=1.9.3)
+
 - **Tab toggles the search scope**: while searching, <kbd>Tab</kbd> (or the
   badge next to the box) switches between "enabled ↔ all fonts" — the QuickBar
   searches enabled fonts by default (picking one scrolls the QuickBar list;
@@ -338,7 +341,7 @@ Right-click a family → "Apply in {app}…":
 - <kbd>?</kbd> (or the sidebar "Shortcuts" entry): the full shortcut list —
   navigation / selection / actions on selection / snapshots
 
-![Shortcut list](shortcuts.png?v=1.9.3)
+![Shortcut list: open with ? or the sidebar "Shortcuts" entry — grouped into navigation / selection / actions](shortcuts.png?v=1.9.3)
 
 ### 17. Multiple libraries: up to 3 folders, one-click switching
 
