@@ -1270,7 +1270,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "fontmanager"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "axum",
  "dirs 6.0.0",
