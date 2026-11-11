@@ -4,6 +4,31 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+> 未发版修复：版本号保持 **1.9.3**；只做本地提交，不推送、不打 tag、不建 Release。
+
+### 修复
+
+- **插件设置面板（齿轮 / 插件菜单触发的 `open-url`）永远打不开**：点齿轮或插件菜单项后毫无反应，
+  插件只能降级到系统默认浏览器。根因是 WebView2 的硬约束 —— 同一个 `UserDataFolder`
+  只能存在一个环境，且后续窗口的创建参数必须与第一个窗口一致。主窗口在
+  `tauri.conf.json` 里配了 `additionalBrowserArgs`（`--disable-features=…`、
+  `--force-renderer-accessibility`），而 `open_panel_window()` 新建 `WebviewWindow`
+  时没有传这一串，触发 `HRESULT(0x8007139F) ERROR_INVALID_STATE`；失败被日志兜住，
+  主程序不受影响，界面上就表现为「点了没反应」。
+  现在从 `app.config().app.windows` 取 `label == "main"` 的窗口，把它的
+  `additionalBrowserArgs` 复用到面板窗口；其中 `--remote-debugging-port*` 一律剔除
+  （等号写法与空格写法都覆盖，空格写法会连带丢掉紧跟的端口值），避免本地调试端口
+  混进面板窗口。主题、窗口尺寸、`catch_unwind` 以及「失败只记日志、不打断同步/退出」
+  的原有语义保持不变。
+- **验证**：`cargo check` 通过；`cargo test --lib` **172 passed / 0 failed / 13 ignored**
+  （新增 `panel_browser_args_strips_both_debugging_port_forms` 单测覆盖两种端口写法）；
+  `tsc --noEmit` 0 error。真机用与 `tauri.conf.json` 完全一致的窗口参数构建后，
+  插件 `open-url` 成功创建了独立的应用内面板窗口（Win32 顶层窗口枚举 + 全屏截图 +
+  `activation.log` 里不再出现 `0x8007139F`），不再回退到系统浏览器。
+  发布配置 `tauri.conf.json` 不含任何调试端口。
+
 ## [1.9.3] — 2026-11-11
 
 > **1.9.3 正式版**：一次把「动效与交互」从令牌层对到窗口层 —— 进出速览变成对称的一上一下，
