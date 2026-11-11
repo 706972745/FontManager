@@ -3336,10 +3336,11 @@ h2.detail-title.copy-name {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* 左内距 39 不是随手写的：锚点竖线右缘在 9（left 7 + 宽 2），
-     39 - 9 = **30px** 就是「线到文字」的距离（用户 2026-11-11 画框要的量）。
-     原来 13 时只有 4px，线和 TTF 徽标挤在一起 —— 看着像字被线压住了。 */
-  padding: 10px 13px 12px 39px;
+  /* 左右内距都 39，是**对称**的（用户 2026-11-11：先要「线到文字 30px」，再说「右边间距和左边间距一样」）：
+     左：锚点竖线右缘在 9（left 7 + 宽 2），39 - 9 = 30px 是「线到文字」；
+     右：文字末梢到格子右缘也是 39 —— 这样预览行在格子里左右各留一条等宽的空白，
+     不会出现「左边一大截、右边顶到边」的不平衡。 */
+  padding: 10px 39px 12px 39px;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(var(--ink-rgb), 0.045), rgba(var(--ink-rgb), 0.02));
   border: 1px solid rgba(var(--ink-rgb), 0.06);
