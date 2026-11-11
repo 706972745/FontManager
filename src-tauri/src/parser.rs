@@ -493,8 +493,14 @@ fn lang_tag(name: &ttf_parser::name::Name) -> String {
     }
 }
 
-/// 收集 name 表里所有语言的字族名（nameID 16 优先，缺失时退到 nameID 1）。
+/// 收集 name 表里**所有**语言的字族名：nameID 16（typographic）排前，nameID 1（legacy）跟在后面。
 /// 同一字符串只保留第一次出现（通常英文记录排在最前）。
+///
+/// 2026-11-11 改：以前是「有 nameID 16 就整组丢掉 nameID 1」，结果一批中文字体的
+/// 中文名只写在 legacy 记录里（如 `方正品尚粗黑.ttf`：16 = `A-OTF Maru Folk Pro`、
+/// 1 = `方正品尚粗黑`），中文名于是彻底消失 —— 列表里显示英文名、搜中文名也搜不到。
+/// 用户要的是「不管中文、拉丁还是其他语言的名字都能搜到」，所以两组取并集：
+/// typographic 先入（它是更规范的族名），legacy 里没出现过的再补进来。
 fn localized_family_names(face: &ttf_parser::Face) -> Vec<LocalizedName> {
     let mut typographic: Vec<LocalizedName> = Vec::new();
     let mut legacy: Vec<LocalizedName> = Vec::new();
@@ -516,11 +522,8 @@ fn localized_family_names(face: &ttf_parser::Face) -> Vec<LocalizedName> {
             name: value,
         });
     }
-    if typographic.is_empty() {
-        legacy
-    } else {
-        typographic
-    }
+    typographic.extend(legacy);
+    typographic
 }
 
 /// 书写系统的探针码位。命中「全部」才算支持。

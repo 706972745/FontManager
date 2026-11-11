@@ -28,6 +28,7 @@ import { useDisplayName } from "../lib/displayName";
 import { copyrightExpired } from "../lib/license";
 import { familyCopyrightClass } from "../lib/license";
 import { isEnabledNow } from "../lib/familyState";
+import { familyMatches, searchTokens } from "../lib/familySearch";
 import { useFamilyMembership } from "../lib/membership";
 import { buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
@@ -42,6 +43,8 @@ import { ApplyProgress } from "./ApplyProgress";
 import {
   applyFamilyFilters,
   familiesFor,
+  searchLabelMaps,
+  searchableFamily,
   sortFamilies,
   SIZES,
   syncQuickbarMinSize,
@@ -352,6 +355,8 @@ export function QuickBar() {
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
   const sessionActivated = useFontStore((s) => s.sessionActivated);
+  // 备注也参与搜索（与完整界面同口径），所以速览也要订阅它
+  const notes = useFontStore((s) => s.notes);
   const setQuickbar = useFontStore((s) => s.setQuickbar);
   const autoHide = useFontStore((s) => s.quickbarAutoHide);
   const setAutoHide = useFontStore((s) => s.setQuickbarAutoHide);
@@ -522,11 +527,23 @@ export function QuickBar() {
       }
       scoped = scoped.filter((f) => f.faces.some((fc) => ids.has(fc.id)));
     }
-    const q = query.trim().toLowerCase();
-    const hit = q ? scoped.filter((f) => f.name.toLowerCase().includes(q)) : scoped;
+    /**
+     * 搜索与完整界面走**同一条匹配链**（`lib/familySearch.ts`）：族名、标签、格式、
+     * 厂商、备注、授权，以及每个字面的样式 / PostScript / 文件名 / **所有语言的本地化名**。
+     * 以前这里只比 `f.name`，于是「名称列写着微软雅黑，搜微软雅黑却一条都不出」
+     * （用户 2026-11-11：中文 / 拉丁 / 其他语言的名字都应该能搜到）。
+     */
+    const tokens = searchTokens(query);
+    const labels = tokens.length > 0 ? searchLabelMaps() : null;
+    const hit =
+      labels === null
+        ? scoped
+        : scoped.filter((f) =>
+            familyMatches(searchableFamily(f, notes[f.name] ?? null), tokens, labels),
+          );
     return sortFamilies(hit, sort, activatedAt);
   }, [
-    fonts, tags, sessionActivated, query, sort,
+    fonts, tags, sessionActivated, notes, query, sort,
     classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter,
     charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus,
     ratings, ratingFilter, activatedAt,

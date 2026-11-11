@@ -4,6 +4,7 @@ import {
   displayFamilyName,
   englishFamilyName,
   extraFamilyNames,
+  familyNameVariants,
   languageLabel,
   languagePriority,
   otherFamilyNames,
@@ -137,4 +138,32 @@ test("显示名优先用界面语言的本地化名（没有才回退默认名�
   assert.equal(displayFamilyName(onlyEn, "zh-CN"), "Inter");
 
   assert.deepEqual(languagePriority("zh-TW"), ["zh-hant", "zh-tw", "zh-hk", "zh"]);
+});
+
+/**
+ * 搜索用的「全部名字」（用户 2026-11-11：「这个字体在软件中的名称也要支持能搜索到」）。
+ * 名称列显示的是本地化名（微软雅黑），族名键是拉丁名（Microsoft YaHei），
+ * 两个都得能搜到；同一串只留一份。
+ */
+test("搜索名覆盖族名 + 每个字面的每种语言名", () => {
+  const f = family("Microsoft YaHei", [
+    face("Microsoft YaHei", [{ lang: "en", name: "Microsoft YaHei" }], "Bold"),
+    face("Microsoft YaHei", [
+      { lang: "en", name: "Microsoft YaHei" },
+      { lang: "zh-Hans", name: "微软雅黑" },
+      { lang: "ja", name: "Microsoft YaHei UI" },
+    ]),
+  ]);
+  assert.deepEqual(familyNameVariants(f), ["Microsoft YaHei", "微软雅黑", "Microsoft YaHei UI"]);
+});
+
+test("搜索名自己去重（大小写不敏感），空串不进来", () => {
+  const f = family("FZBangShuXingS-R-GB", [
+    face("FZBangShuXingS-R-GB", [
+      { lang: "en", name: "fzbangshuxings-r-gb" },
+      { lang: "zh-Hans", name: "方正榜书行简体" },
+      { lang: "und", name: "  " },
+    ]),
+  ]);
+  assert.deepEqual(familyNameVariants(f), ["FZBangShuXingS-R-GB", "方正榜书行简体"]);
 });
