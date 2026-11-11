@@ -41,46 +41,42 @@ fn exe_of(entry: &ProcessEntry32W) -> String {
     String::from_utf16_lossy(&entry.sz_exe_file[..len]).to_ascii_lowercase()
 }
 
-/// 任意一个候选 exe 名（不含路径，大小写不敏感）在跑就返回 true。
-pub fn any_running(names: &[&str]) -> bool {
-    if names.is_empty() {
-        return false;
-    }
-    let wanted: Vec<String> = names.iter().map(|n| n.to_ascii_lowercase()).collect();
+/// 三个目标软件**一次快照查完**：返回 (photoshop, illustrator, coreldraw)。
+///
+/// 调用方（`warm::tick` 每 400ms、`warm::snapshot` 每 2 秒）原来每个软件各拍一份
+/// 全系统进程快照，合计平均每秒 ~3 份；Toolhelp 快照要把全部进程枚举一遍，
+/// 在进程多的机器上这是一项稳定的后台 CPU 消耗（2026-11-11 同事反馈卡顿排查时发现）。
+/// 合并后每秒只剩 ~1.5 份，行为不变 —— 三个答案本来就来自同一时刻，
+/// 放同一份快照里反而更一致。
+pub fn targets_running() -> (bool, bool, bool) {
+    const PS: &str = "photoshop.exe";
+    const AI: &str = "illustrator.exe";
+    const CDR: [&str; 2] = ["coreldrw.exe", "coreldrw.exe.exe"];
     // SAFETY: 快照句柄只在本次调用内使用，返回前一定关闭；entry 是栈上的合法结构体。
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snap as isize == INVALID_HANDLE_VALUE || snap.is_null() {
-            return false;
+            return (false, false, false);
         }
         let mut entry: ProcessEntry32W = std::mem::zeroed();
         entry.dw_size = std::mem::size_of::<ProcessEntry32W>() as u32;
-        let mut found = false;
+        let (mut ps, mut ai, mut cdr) = (false, false, false);
         if Process32FirstW(snap, &mut entry) != 0 {
             loop {
-                if wanted.iter().any(|w| *w == exe_of(&entry)) {
-                    found = true;
-                    break;
+                let exe = exe_of(&entry);
+                if !ps && exe == PS {
+                    ps = true;
+                } else if !ai && exe == AI {
+                    ai = true;
+                } else if !cdr && CDR.iter().any(|w| *w == exe) {
+                    cdr = true;
                 }
-                if Process32NextW(snap, &mut entry) == 0 {
+                if (ps && ai && cdr) || Process32NextW(snap, &mut entry) == 0 {
                     break;
                 }
             }
         }
         CloseHandle(snap);
-        found
+        (ps, ai, cdr)
     }
-}
-
-/// 三个目标软件各自的可执行文件名。
-pub fn photoshop_running() -> bool {
-    any_running(&["photoshop.exe"])
-}
-
-pub fn illustrator_running() -> bool {
-    any_running(&["illustrator.exe"])
-}
-
-pub fn coreldraw_running() -> bool {
-    any_running(&["coreldrw.exe", "coreldrw.exe.exe"])
 }

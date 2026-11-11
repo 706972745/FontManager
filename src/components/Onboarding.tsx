@@ -64,6 +64,14 @@ const STEPS: TourStep[] = [
     onEnter: () => useFontStore.setState({ viewMode: "grid" }),
   },
   {
+    /* 1.9.0 新增：右击菜单。还停在卡片视图（上一步设过 grid），直接指一张卡片；
+       讲的是全软件共用的那套 buildFamilyMenu，搜索结果 / 列表行 / 样张同一套 */
+    target: ".family-card",
+    title: "tour.contextmenu.title",
+    body: "tour.contextmenu.body",
+    onEnter: () => useFontStore.setState({ viewMode: "grid" }),
+  },
+  {
     target: ".detail",
     title: "tour.inspector.title",
     body: "tour.inspector.body",
@@ -95,6 +103,20 @@ const STEPS: TourStep[] = [
     target: ".sidebar-footer",
     title: "tour.trash.title",
     body: "tour.trash.body",
+  },
+  {
+    /* 1.9.0 新增：速览界面。目标是标题栏左上的速览按钮；不真的切过去 ——
+       导览是模态层，窗口 morph 期间聚光靶会跟着丢，讲清楚入口和玩法就够了 */
+    target: '[data-tour="quickbar"]',
+    title: "tour.quickbar.title",
+    body: "tour.quickbar.body",
+  },
+  {
+    /* 1.9.0 新增：插件安装。设置面板是另一层模态，导览期间不打开它，
+       指着设置齿轮讲「进去之后去哪儿装」即可 */
+    target: '[data-tour="settings"]',
+    title: "tour.plugins.title",
+    body: "tour.plugins.body",
   },
   {
     target: '[data-tour="settings"]',

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AVAILABLE_ADOBE_APPS, ipc, type AppWarm } from "../lib/ipc";
 import { useT } from "../lib/i18n";
 
@@ -12,13 +12,20 @@ import { useT } from "../lib/i18n";
 export function WarmFooter({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const [list, setList] = useState<AppWarm[]>([]);
+  /** 上一次的内容指纹：没变化就不 setState，免得每 2 秒白渲染一次（1.9.0 排查卡顿） */
+  const lastRef = useRef("");
 
   useEffect(() => {
     let alive = true;
     const tick = async () => {
       try {
         const next = await ipc.appWarmState();
-        if (alive) setList(next);
+        if (!alive) return;
+        const raw = JSON.stringify(next);
+        if (raw !== lastRef.current) {
+          lastRef.current = raw;
+          setList(next);
+        }
       } catch {
         /* 读不到就保持上一次的值，不要闪 */
       }

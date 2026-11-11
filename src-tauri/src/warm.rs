@@ -89,9 +89,8 @@ fn state_name(s: State) -> &'static str {
 
 /// 界面读的快照：不阻塞、不触发探测。
 pub fn snapshot() -> Vec<AppWarm> {
-    let ps_running = procs::photoshop_running();
-    let ai_running = procs::illustrator_running();
-    let cdr_running = procs::coreldraw_running();
+    // 一次快照查完三个（1.9.0）：原来这里每个软件各拍一份全系统快照
+    let (ps_running, ai_running, cdr_running) = procs::targets_running();
 
     // CorelDRAW 走常驻宿主，进度直接问 comhost
     let (cdr_percent, cdr_state, cdr_ms) = crate::comhost::stage();
@@ -135,8 +134,8 @@ pub fn snapshot() -> Vec<AppWarm> {
 
 /// 后台心跳：每 400ms 走一次，真正发起探测有节流。
 pub fn tick() {
-    let ps = procs::photoshop_running();
-    let ai = procs::illustrator_running();
+    // 一次快照查完三个（1.9.0，见 targets_running 的注释）
+    let (ps, ai, _cdr) = procs::targets_running();
     maybe_probe("photoshop", Target::Photoshop, ps);
     maybe_probe("illustrator", Target::Illustrator, ai);
 }
