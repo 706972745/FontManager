@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.8.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.8.5-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -76,6 +76,13 @@ TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还�
 
 原版所有好的部分都还在：处处实时预览、一键启停，以及那条铁律——
 **字体文件永远留在你的电脑里**。
+
+> [!NOTE]
+> **产品取向：本体够用，扩展放开。**
+> **软件本体追求「够用、舒服的体验、更快的性能」** —— 不堆功能，优先把启动、滚动、搜索、
+> 启停这些每天要做几十次的动作磨顺手。**插件生态、本地 API 与 MCP 追求「新功能、新体验、
+> 更强的扩展性」** —— 新玩法、新集成、更深的自动化都长在这三处（含插件面板），
+> 而不是往主界面继续塞东西，主程序因此可以保持小而稳。
 
 > [!WARNING]
 > **系统字体受保护。** 操作系统画自己界面要用的字体，不能从 FontManager

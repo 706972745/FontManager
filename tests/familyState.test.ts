@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { familyActivation, pathsToToggle } from "../src/lib/familyState.ts";
+import { familyActivation, isEnabledNow, pathsToToggle } from "../src/lib/familyState.ts";
 import { TEXT, library, of } from "./fixtures.ts";
 
 test("a family is inactive, partly active or active", () => {
@@ -40,4 +40,21 @@ test("a collection file with several faces is sent once", () => {
 test("fonts the OS manages are never toggled", () => {
   const faces = of(library(), TEXT).map((f) => ({ ...f, deactivatable: false }));
   assert.deepEqual(pathsToToggle(faces, true), []);
+});
+
+/**
+ * 速览的「已启用」口径（用户 2026-11-11）：速览的搜索框只能搜到已启用的字体。
+ * 列表和搜索建议必须用同一个判定，否则建议里搜得到、点下去列表是空的。
+ */
+test("enabled-now covers whole family, partly active family and this session's activation", () => {
+  const whole = { name: "Inter", active: true, partial: false };
+  const partly = { name: "Helvetica", active: false, partial: true };
+  const off = { name: "Arial", active: false, partial: false };
+  assert.equal(isEnabledNow(whole, []), true);
+  assert.equal(isEnabledNow(partly, []), true);
+  assert.equal(isEnabledNow(off, []), false);
+  // 只在这一节运行期间启用的族（重启就没了），速览也得当成「已启用」
+  assert.equal(isEnabledNow(off, ["Arial"]), true);
+  // 名字要完全一致：sessionActivated 里是别的族不算
+  assert.equal(isEnabledNow(off, ["Arial Nova"]), false);
 });

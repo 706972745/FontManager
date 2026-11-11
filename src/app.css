@@ -181,9 +181,14 @@ body,
   display: none;
 }
 .app-shell.shell-specimen .sidebar .nav-row {
-  justify-content: center;
+  /* 原来是 justify-content: center —— 两列的图标对不上：
+     带序号的行（图标 15 + 间隔 2 + 序号 12 = 29px）居中后图标在 x≈16.5，
+     不带序号的行（15px）居中后图标在 x≈23.5，一栏图标左右错开 7px，
+     扫一眼就是「没对齐」。改成左对齐 + 固定左内距：所有图标落在同一条竖线上，
+     序号挂在图标右侧。16px 恰好是「单个图标居中」的位置，看上去仍是居中的图标栏。 */
+  justify-content: flex-start;
   gap: 2px;
-  padding: 6px 0;
+  padding: 6px 0 6px 16px;
 }
 /* 样张视图也显示分组 / 快照序号（用户 2026-11-10）：只留图标时认不出是哪一组，
    序号是唯一还能对上的线索（字重行胶囊写「快照4」）。
@@ -247,7 +252,10 @@ body,
   font-size: var(--fs-13);
   font-weight: 500;
   color: var(--text-secondary);
-  transition: color var(--t-quick) ease;
+  /* padding-left 参与过渡：切到样张视图时，图标随侧栏收窄平移过去，
+     而不是在宽度动画开始的那一帧突然「跳」到居中位置（原来 justify-content:center
+     会跟着当时的宽度瞬间跳到 x≈124，再被 260ms 的宽度动画拽回来）。 */
+  transition: color var(--t-quick) ease, padding-left var(--t-state) ease;
 }
 .nav-row:hover {
   color: var(--text-primary);
@@ -3344,6 +3352,88 @@ h2.detail-title.copy-name {
   border-color: color-mix(in srgb, var(--accent-a) 70%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-a) 32%, transparent);
 }
+
+/* ─── 样张格子的行首锚点（2026-11-11 用户要求，1.8.5 二次调整） ──────────
+   卡片浏览界面那套固定 80/96 不跟卡片高度；样张格子反过来 —— 线要占满格子高度，
+   而且**只向下长**（从圆点往下延伸，顶端永远钉在 top:11）。
+   所以拆成两个伪元素：::before 是 6px 圆点，::after 是 2px 竖线，
+   线用 top/bottom 定位 + `transform: scaleY()` 生长，`transform-origin: 50% 0` 保证
+   只向下的方向感；不直接过渡 height（百分比与 px 混在一条 transition 里
+   Chromium 不保证逐帧插值，会「宽度在动、高度突然跳到底」）。
+   三态：静止圆点 → 悬停长到底部留 16px 的灰线 → 复制成功那 1.5s 一路长到格子底边的蓝线。
+   锚点左缘 5px、头部左内距 13px，两者不重叠，所以不用像卡片那样给头部让位。 */
+.specimen-tile {
+  position: relative;
+}
+.specimen-tile::before {
+  /* 圆点：静止时的形态 */
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ui-dot);
+  transition:
+    transform var(--t-quick) ease-out,
+    opacity var(--t-quick) ease-out;
+}
+.specimen-tile::after {
+  /* 竖线：与圆点同心（5 + 3 - 1 = 7），默认缩成 0 高 */
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 11px;
+  bottom: 16px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--ui-line-hover);
+  transform: scaleY(0);
+  transform-origin: 50% 0;
+  transition:
+    transform var(--t-quick) ease-out,
+    bottom var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
+}
+.specimen-tile:hover::before {
+  transform: scale(0);
+  opacity: 0;
+}
+/* 悬停：2px 灰线，底边留 16px —— 留给点击后继续往下长的那一段 */
+.specimen-tile:hover::after {
+  transform: scaleY(1);
+}
+
+/* 点一下就复制族名：族名后就地出现「已复制」，1.5s 淡出（与速览同一套）。
+   它一直在 DOM 里、只切 opacity —— 出现时不把右边的徽章推走。 */
+.specimen-copied {
+  flex: none;
+  font-size: var(--fs-9);
+  font-weight: 400;
+  color: var(--accent-a);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s linear;
+}
+.specimen-copied.is-shown {
+  opacity: 1;
+}
+/* 复制成功的那 1.5s 里锚点长到格子底边（bottom: 0），和「已复制」一起出现、
+   一起退回圆点（用户 2026-11-11：这个效果要随「已复制」一起消失，不要常驻）。
+   `bottom` 变小只会让线继续往下长，顶端不动 —— 方向永远是向下的。
+   选中态不画线 —— 选中本来就是持久状态，靠格子的蓝色描边表达就够了。 */
+.specimen-tile.is-copied::before,
+.specimen-tile.is-copied:hover::before {
+  transform: scale(0);
+  opacity: 0;
+}
+.specimen-tile.is-copied::after,
+.specimen-tile.is-copied:hover::after {
+  bottom: 0;
+  background: var(--ui-accent);
+  transform: scaleY(1);
+}
 /* 补足最后一行的空格子：只占位，不画也不响应 */
 .specimen-tile-empty {
   visibility: hidden;
@@ -4357,13 +4447,19 @@ h2.detail-title.copy-name {
   transition: background var(--t-quick) ease, color var(--t-quick) ease,
     transform var(--t-micro) ease;
 }
-.settings-data-btn:hover {
+.settings-data-btn:hover:not(:disabled) {
   background: var(--e2);
   color: var(--text-primary);
   transform: translateY(-1px);
 }
-.settings-data-btn:active {
+.settings-data-btn:active:not(:disabled) {
   transform: scale(0.97);
+}
+/* 禁用态（1.8.4 起「检查更新 / 下载并安装」会用）：
+   原来没有这条，disabled 的按钮照旧抬 1px、变亮、cursor 是手型，点下去却没反应 */
+.settings-data-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .settings-footer {
@@ -6686,7 +6782,7 @@ body.ui-fade-out .app-frame {
   pointer-events: none;
 }
 .qb-item:hover .qb-anchor-dot,
-.qb-item[data-active="true"] .qb-anchor-dot {
+.qb-item[data-copied="true"] .qb-anchor-dot {
   opacity: 0;
 }
 /* 悬停：2 × 80 灰线 */
@@ -6695,10 +6791,12 @@ body.ui-fade-out .app-frame {
   transform: scaleY(0.8333);
   background: var(--qb-anchor-hover);
 }
-/* 点中 / 键盘焦点：2 × 96 蓝线（长度 + 颜色双重编码，色觉障碍下靠长度也能分） */
-.qb-item[data-active="true"] .qb-anchor,
+/* 复制成功 / 键盘焦点：2 × 96 蓝线（长度 + 颜色双重编码，色觉障碍下靠长度也能分）。
+   2026-11-11 用户要求：这条蓝线和「已复制」一起出现、一起消失，不再常驻 ——
+   所以它挂在 `data-copied`（1.5s 的瞬时态）上，而不是「当前激活行」上。 */
+.qb-item[data-copied="true"] .qb-anchor,
 .qb-item:focus-visible .qb-anchor,
-.qb-item[data-active="true"]:hover .qb-anchor {
+.qb-item[data-copied="true"]:hover .qb-anchor {
   opacity: 1;
   transform: scaleY(1);
   background: var(--qb-accent);
@@ -7622,7 +7720,9 @@ body.ui-fade-out .app-frame {
   border-color: var(--ui-line);
   box-shadow: none;
 }
-/* 行首三态锚点：与速览同一套（点 → 80 灰线 → 96 蓝线），生长起点固定 */
+/* 行首三态锚点（2026-11-11 复原）：与速览同一套（点 → 80 灰线 → 96 蓝线），生长起点固定。
+   卡片浏览界面按用户要求回到这个固定长度版本 —— 「随卡片高度长满」那套只给样张格子用，
+   见 §3.5 的 .specimen-tile 锚点。 */
 .family-card::before {
   content: "";
   position: absolute;
@@ -9208,3 +9308,53 @@ body.ui-fade-out .app-frame {
 .settings-scroll {
   overscroll-behavior: contain;
 }
+
+/* ─── 检查更新 → 下载安装进度（1.8.4） ─────────────────────────────────
+   下载安装包时的 3px 细进度条，和软件里其它进度（扫描 / 打包 / 运行时下载）
+   同一套：2px 圆角轨道 + 强调色填充，不抢版面。 */
+.settings-update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-update-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--e2);
+  overflow: hidden;
+}
+.settings-update-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--ui-accent);
+  transition: width 0.2s linear;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   交互与动画审查（2026-11-11 第二轮）—— 四条都有具体触发场景
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ─── ① 提示条合并计数（Toast.tsx 的 MAX_TOASTS / 相同内容合并） ────────
+   批量失败会连发十几条同一句提示，现在合并成一条并标 ×N。
+   数字用弱色、贴标题右侧，不抢标题本身。 */
+.toast-count {
+  margin-left: 6px;
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+/* ─── ③ 提示条容器不该吃掉点击 ────────────────────────────────────────
+   `.toaster` 是 fixed 定位的 flex 列，一条提示时也占着「最宽那条 × 全部条数」
+   的矩形：条与条之间 8px 的缝、以及提示下方的空白，点下去都被容器接走了 ——
+   那是列表的右上角，正好是用户会点的地方。容器让出指针，提示本身再接回来。 */
+.toaster {
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+}
+
+/* ─── ② .settings-data-btn 的禁用态 ────────────────────────────────────
+   规则写在 .settings-data-btn 本体旁边（约 4360 行），这里不重复。 */

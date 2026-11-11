@@ -27,6 +27,8 @@ import { dockKeysFor, splitDockHint } from "../lib/dockHint";
 import { useDisplayName } from "../lib/displayName";
 import { copyrightExpired } from "../lib/license";
 import { familyCopyrightClass } from "../lib/license";
+import { isEnabledNow } from "../lib/familyState";
+import { familyMatches, searchTokens } from "../lib/familySearch";
 import { useFamilyMembership } from "../lib/membership";
 import { buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
@@ -41,6 +43,8 @@ import { ApplyProgress } from "./ApplyProgress";
 import {
   applyFamilyFilters,
   familiesFor,
+  searchLabelMaps,
+  searchableFamily,
   sortFamilies,
   SIZES,
   syncQuickbarMinSize,
@@ -95,18 +99,7 @@ function QuickFaceRow({
   return <FaceLine family={family} face={face} probeText={probeText} onHover={onHover} />;
 }
 
-function QuickItem({
-  family,
-  index,
-  active,
-  onActivate,
-}: {
-  family: Family;
-  index: number;
-  /** 当前「点中」的那一行（R2 设计：点击 / 键盘焦点 → 行首锚点转蓝并伸长） */
-  active: boolean;
-  onActivate: (name: string) => void;
-}) {
+function QuickItem({ family, index }: { family: Family; index: number }) {
   const t = useT();
   // 速览里同样按界面语言显示字体名（与完整界面一个口径）
   const displayName = useDisplayName();
@@ -177,7 +170,6 @@ function QuickItem({
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
   const copyName = () => {
     copyText(family.name, t("copy.familyName"));
-    onActivate(family.name);
     setCopied(true);
     window.clearTimeout(copiedTimer.current);
     copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
@@ -203,12 +195,11 @@ function QuickItem({
       role="button"
       tabIndex={0}
       className="qb-item"
-      data-active={active ? "true" : undefined}
+      data-copied={copied ? "true" : undefined}
       data-hint-text={t("quickbar.copyHint", { name: family.name })}
       onMouseEnter={previewMarquee.enter}
       onMouseLeave={previewMarquee.leave}
       onClick={copyName}
-      onFocus={() => onActivate(family.name)}
       onKeyDown={(e) => {
         // div[role=button] 不会自己响应键盘：Enter / Space 得手动接（§5 第 31 条）。
         // 焦点在子控件（展开字重、字重行）上时那个控件负责，这里不抢。
@@ -238,7 +229,7 @@ function QuickItem({
         <span className="qb-item-name">
           {displayName(family)}
           <span className={`qb-copied ${copied ? "is-shown" : ""}`} aria-hidden={!copied}>
-            {t("quickbar.copied")}
+            {t("copy.done")}
           </span>
         </span>
         {/* 画不出示例文字的语言时，这一行直接换成「无中文」这类标注（与完整界面一致） */}
@@ -364,6 +355,8 @@ export function QuickBar() {
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
   const sessionActivated = useFontStore((s) => s.sessionActivated);
+  // 备注也参与搜索（与完整界面同口径），所以速览也要订阅它
+  const notes = useFontStore((s) => s.notes);
   const setQuickbar = useFontStore((s) => s.setQuickbar);
   const autoHide = useFontStore((s) => s.quickbarAutoHide);
   const setAutoHide = useFontStore((s) => s.setQuickbarAutoHide);
@@ -405,8 +398,6 @@ export function QuickBar() {
    * 当前点中 / 聚焦的那一行（只影响视觉：行首锚点从 6px 灰点长成 96px 蓝线）。
    * 不参与任何筛选与数据，换搜索词或换列表时清掉，避免蓝线停在无关的行上。
    */
-  const [activeName, setActiveName] = useState<string | null>(null);
-  useEffect(() => setActiveName(null), [query]);
 
   // 拖到屏幕顶部时整个速览窗口收起成一条（contentHeight 用于动画期间钉住内容高度）
   const { docked, contentHeight, phase, bar } = useQuickbarDock(autoHide);
@@ -479,15 +470,17 @@ export function QuickBar() {
   // 否则勾一个筛选条件就会显示「已启用 0」，看起来像字体全被停用了。
   const enabledCount = useMemo(
     () =>
-      [...familiesFor(fonts, tags).values()].filter(
-        (f) => f.active || f.partial || sessionActivated.includes(f.name),
+      [...familiesFor(fonts, tags).values()].filter((f) =>
+        isEnabledNow(f, sessionActivated),
       ).length,
     [fonts, tags, sessionActivated],
   );
 
   const families = useMemo(() => {
-    const enabled = [...familiesFor(fonts, tags).values()].filter(
-      (f) => f.active || f.partial || sessionActivated.includes(f.name),
+    // 判定与 SearchSuggest 的 onlyActive 共用一个口径（lib/familyState.ts::isEnabledNow），
+    // 否则「建议里搜得到、列表里没有」的老问题会在两处各写一遍后再次分叉。
+    const enabled = [...familiesFor(fonts, tags).values()].filter((f) =>
+      isEnabledNow(f, sessionActivated),
     );
     const filtered = applyFamilyFilters(enabled, {
       classFilter,
@@ -534,11 +527,23 @@ export function QuickBar() {
       }
       scoped = scoped.filter((f) => f.faces.some((fc) => ids.has(fc.id)));
     }
-    const q = query.trim().toLowerCase();
-    const hit = q ? scoped.filter((f) => f.name.toLowerCase().includes(q)) : scoped;
+    /**
+     * 搜索与完整界面走**同一条匹配链**（`lib/familySearch.ts`）：族名、标签、格式、
+     * 厂商、备注、授权，以及每个字面的样式 / PostScript / 文件名 / **所有语言的本地化名**。
+     * 以前这里只比 `f.name`，于是「名称列写着微软雅黑，搜微软雅黑却一条都不出」
+     * （用户 2026-11-11：中文 / 拉丁 / 其他语言的名字都应该能搜到）。
+     */
+    const tokens = searchTokens(query);
+    const labels = tokens.length > 0 ? searchLabelMaps() : null;
+    const hit =
+      labels === null
+        ? scoped
+        : scoped.filter((f) =>
+            familyMatches(searchableFamily(f, notes[f.name] ?? null), tokens, labels),
+          );
     return sortFamilies(hit, sort, activatedAt);
   }, [
-    fonts, tags, sessionActivated, query, sort,
+    fonts, tags, sessionActivated, notes, query, sort,
     classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter,
     charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus,
     ratings, ratingFilter, activatedAt,
@@ -713,6 +718,7 @@ export function QuickBar() {
                 {queryFocus && query.trim().length > 0 && (
                   <SearchSuggest
                     query={query}
+                    onlyActive
                     onPick={(sg: Suggestion) => {
                       // 插件（1.8.1）：直接把它的设置面板弹出来，速览这边收起建议即可
                       if (sg.kind === "plugin") {
@@ -870,12 +876,7 @@ export function QuickBar() {
                         transform: `translateY(${row.start}px)`,
                       }}
                     >
-                      <QuickItem
-                        family={family}
-                        index={row.index}
-                        active={activeName === family.name}
-                        onActivate={setActiveName}
-                      />
+                      <QuickItem family={family} index={row.index} />
                     </div>
                   );
                 })}

@@ -1,4 +1,7 @@
-export type ThemePref = "dark" | "light" | "system";
+import type { ThemePref } from "./themePref";
+
+export type { ThemePref };
+export { pickThemePref, THEME_MIGRATED_KEY } from "./themePref";
 
 const query = window.matchMedia("(prefers-color-scheme: light)");
 let followingSystem = false;

@@ -459,7 +459,7 @@
   "quickbar.autoHideOn": "Masquage auto : activé (cliquer pour désactiver)",
   "quickbar.back": "Revenir à l'interface complète",
   "quickbar.backShort": "Interface complète",
-  "quickbar.copied": "Copié",
+  "copy.done": "Copié",
   "quickbar.copyHint": "Cliquer pour copier « {name} » · clic droit pour plus",
   "quickbar.empty": "Aucune police activée pour l'instant",
   "quickbar.enter": "Aperçu rapide des polices activées (masquage auto en haut de l'écran)",

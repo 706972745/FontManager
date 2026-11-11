@@ -459,7 +459,7 @@
   "quickbar.autoHideOn": "Ocultar automáticamente: activado (clic para desactivar)",
   "quickbar.back": "Volver a la interfaz completa",
   "quickbar.backShort": "Vista completa",
-  "quickbar.copied": "Copiado",
+  "copy.done": "Copiado",
   "quickbar.copyHint": "Clic para copiar «{name}» · clic derecho para más",
   "quickbar.empty": "Todavía no hay fuentes activadas",
   "quickbar.enter": "Vista rápida de las fuentes activadas (se oculta arriba automáticamente)",

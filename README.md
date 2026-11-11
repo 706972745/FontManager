@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.8.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.8.5-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -79,6 +79,12 @@ What this fork adds on top of that foundation:
 
 Everything that made the original good is still here: live previews everywhere,
 one-click activation, and the iron rule that **your font files stay on your machine**.
+
+> [!NOTE]
+> **Where this project spends its effort.** The app itself aims for *enough, comfortable,
+> fast* — no feature bloat: startup, scrolling, search and activation get polished first.
+> The **plugin ecosystem, local API and MCP** are where new features, new experiences and
+> deeper extensibility live, so the core can stay small and stable while the edges grow.
 
 > [!WARNING]
 > **System fonts are protected.** Fonts your operating system needs to draw its own

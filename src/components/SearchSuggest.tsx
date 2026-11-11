@@ -1,7 +1,9 @@
 import { useEffect, useMemo } from "react";
 import { Camera, FolderOpen, Puzzle, Tag, Type } from "lucide-react";
-import { allTags, familiesFor, familyLowerNames, useFontStore } from "../state/fontStore";
-import { useT } from "../lib/i18n";
+import { allTags, familiesFor, useFontStore } from "../state/fontStore";
+import { isEnabledNow } from "../lib/familyState";
+import { activeLocale, useT } from "../lib/i18n";
+import { displayFamilyName, familyNameVariants } from "../lib/fontNames";
 import { usePluginStore } from "../lib/pluginStore";
 import { openPluginMenu } from "../lib/pluginMenu";
 import type { PluginInfo } from "../lib/ipc";
@@ -37,15 +39,29 @@ const LIMIT_PER_KIND = { plugin: 6, tag: 6, collection: 6, snapshot: 6, family: 
 export function SearchSuggest({
   query,
   onPick,
+  onlyActive = false,
 }: {
   query: string;
   onPick: (s: Suggestion) => void;
+  /**
+   * 「只搜已启用的字体」（速览界面）。
+   *
+   * 速览列表本来就只列已启用字体，但建议下拉走的是全量 `familiesFor()` ——
+   * 于是搜 `Arial` 会弹出一条建议，点下去把关键词填进搜索框、列表却是空的
+   * （用户 2026-11-11：「速览的搜索框只能搜到已启用的字体，未启用的搜不到才对」）。
+   * 打开这个开关后字体类建议也按同一个口径筛；完整界面的搜索不传，行为不变。
+   * 标签 / 分组 / 快照不动 —— 它们不是字体，点下去是「用这个条件过滤当前列表」。
+   */
+  onlyActive?: boolean;
 }) {
   const t = useT();
+  // useT() 已经订阅了语言变更；这里再取一次当前语言，给显示名与索引用
+  const locale = activeLocale();
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
   const snapshots = useFontStore((s) => s.snapshots);
+  const sessionActivated = useFontStore((s) => s.sessionActivated);
   const plugins = usePluginStore((s) => s.plugins);
   const loadPlugins = usePluginStore((s) => s.load);
   // 兜底：主界面启动那次 `plugins_list` 若失败，用户一打字这里还会再试一次
@@ -62,8 +78,32 @@ export function SearchSuggest({
    * （1.8.0 内测第一版就是这么错的，用户截图里标签一条都不出现）。
    */
   const tagIndex = useMemo(() => allTags(tags), [tags]);
-  // 小写名索引跟着字体库缓存：打字时只做 includes，不再每次新建 4000 个字符串
-  const familyNames = useMemo(() => familyLowerNames(familiesFor(fonts, tags)), [fonts, tags]);
+  /**
+   * 字体类建议的索引（用户 2026-11-11：「这个字体在软件中的名称也要支持能搜索到
+   * —— 中文、拉丁文还是其他语言都应该可以搜到」）。
+   *
+   * 以前这里只有族名（`familyLowerNames`），可列表显示的是**本地化名**：
+   * `Microsoft YaHei` 在名称列写着「微软雅黑」，搜「微软雅黑」却一条建议都不出。
+   * 现在每个族索引**它所有的名字**（族名 + 每个字面的每种语言名，`familyNameVariants`），
+   * 建议项显示的是 `displayFamilyName`（和列表那一列完全一致），不至于点进去对不上。
+   *
+   * 索引跟字体库缓存（deps 不含 q），打字时只做 includes。
+   */
+  const familyIndex = useMemo(() => {
+    const locale = activeLocale();
+    const out: { name: string; label: string; variants: string[] }[] = [];
+    for (const family of familiesFor(fonts, tags).values()) {
+      if (onlyActive && !isEnabledNow(family, sessionActivated)) continue;
+      const names = familyNameVariants(family);
+      if (names.length === 0) continue;
+      out.push({
+        name: family.name,
+        label: displayFamilyName(family, locale),
+        variants: names.map((v) => v.toLowerCase()),
+      });
+    }
+    return out;
+  }, [fonts, tags, onlyActive, sessionActivated, locale]);
 
   const items = useMemo<Suggestion[]>(() => {
     if (!q) return [];
@@ -110,15 +150,20 @@ export function SearchSuggest({
       n++;
     }
     n = 0;
-    // 字体最后：走预计算的小写索引，只取前几条
-    for (const [lower, name] of familyNames) {
+    // 字体最后：任一语言名命中都算，只取前几条。
+    // 排序：显示名以关键词开头的 > 其他名字以关键词开头的 > 只是包含的。
+    // 搜「方正」时，名称为「方正榜书行简体」的族应该排在「A-OTF …（内部名含方正）」前面。
+    const rank = (f: { label: string; variants: string[] }) =>
+      f.label.toLowerCase().startsWith(q) ? 0 : f.variants.some((v) => v.startsWith(q)) ? 1 : 2;
+    const familyHits = familyIndex.filter((f) => f.variants.some((v) => v.includes(q)));
+    familyHits.sort((a, b) => rank(a) - rank(b));
+    for (const f of familyHits) {
       if (n >= LIMIT_PER_KIND.family) break;
-      if (!lower.includes(q)) continue;
-      out.push({ kind: "family", key: `fam:${name}`, label: name });
+      out.push({ kind: "family", key: `fam:${f.name}`, label: f.label });
       n++;
     }
     return out;
-  }, [q, plugins, familyNames, tagIndex, collections, snapshots]);
+  }, [q, plugins, familyIndex, tagIndex, collections, snapshots]);
 
   if (!q) return null;
 

@@ -26,7 +26,10 @@ use std::path::PathBuf;
 // v8：name 表改成自己解析，支持 GBK / Big5 / ShiftJIS / Wansung / Mac Roman 编码，
 // 并跳过畸形记录继续读；族名还做了字重后缀归并（Barmeno-Bold → Barmeno）。
 // 旧缓存里那批「长城美黑体」「文鼎胡子体」的族名是文件名顶上的假名，必须重算。
-const CACHE_VERSION: u32 = 8;
+// v9：localizedNames 从「有 nameID 16 就丢掉 nameID 1」改成两组取并集 ——
+// 一批中文字体的中文名只写在 legacy 记录里，之前整个丢了（显示英文名、搜中文名搜不到）。
+// 名字是烤进缓存字面的，旧缓存必须重解析一次。
+const CACHE_VERSION: u32 = 9;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
