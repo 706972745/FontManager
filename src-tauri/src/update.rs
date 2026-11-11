@@ -28,6 +28,17 @@ const CDN_PKG_URL: &str = "https://cdn.jsdelivr.net/gh/706972745/FontManager@mai
 const RELEASES_PAGE: &str = "https://github.com/706972745/FontManager/releases/latest";
 
 const TIMEOUT: Duration = Duration::from_secs(12);
+
+/// 测试钩子（1.8.7）：设了 `FM_UPDATE_ENDPOINT` 就用它替代 Releases API 地址，
+/// `download_setup` 也放行 `http://127.0.0.1/`、`http://localhost/` 的安装包直链。
+/// 只为本机端到端测试准备（假端点返回同构 JSON）；正常用户不设这个变量，
+/// 行为与原来逐字节一致 —— 白名单、SHA-256、canonicalize 一道都没少。
+fn endpoint_override() -> Option<String> {
+    std::env::var("FM_UPDATE_ENDPOINT")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
 /// 进程内缓存：同一轮运行里反复点「检查更新」不重复打接口。
 /// GitHub 匿名接口是 60 次/小时/IP，多开几次就会撞限流。
 const CACHE_TTL: Duration = Duration::from_secs(600);
@@ -115,7 +126,16 @@ fn explain(url: &str, e: &reqwest::Error) -> String {
     }
 }
 
+/// 与 [`get_json`] 相同，但不校验宿主白名单 —— 仅 `FM_UPDATE_ENDPOINT` 测试端点使用。
+async fn get_json_lenient(url: &str) -> Result<serde_json::Value, String> {
+    get_json_inner(url, false).await
+}
+
 async fn get_json(url: &str) -> Result<serde_json::Value, String> {
+    get_json_inner(url, true).await
+}
+
+async fn get_json_inner(url: &str, strict_host: bool) -> Result<serde_json::Value, String> {
     let client = client()?;
     let res = client
         .get(url)
@@ -125,7 +145,7 @@ async fn get_json(url: &str) -> Result<serde_json::Value, String> {
         .map_err(|e| explain(url, &e))?;
     // 跟随重定向之后必须再看一眼落点：304/301 都可能把请求带到别处
     let host = res.url().host_str().unwrap_or_default().to_string();
-    if !ALLOWED_HOSTS.contains(&host.as_str()) {
+    if strict_host && !ALLOWED_HOSTS.contains(&host.as_str()) {
         return Err(format!("{url} 被重定向到非预期站点：{host}"));
     }
     let status = res.status();
@@ -212,7 +232,12 @@ fn is_current_user_install() -> bool {
 }
 
 async fn from_release_api() -> Result<UpdateInfo, String> {
-    let v = get_json(API_URL).await?;
+    let override_url = endpoint_override();
+    let v = match &override_url {
+        // 测试端点：宿主白名单不适用（它本来就指向 127.0.0.1）
+        Some(u) => get_json_lenient(u).await?,
+        None => get_json(API_URL).await?,
+    };
     let tag = v
         .get("tag_name")
         .and_then(|x| x.as_str())
@@ -333,6 +358,12 @@ const DOWNLOAD_HOSTS: [&str; 3] = [
 ];
 
 fn download_url_ok(url: &str) -> bool {
+    // 测试端点配套：`FM_UPDATE_ENDPOINT` 设着的时候放行本机回环直链
+    if endpoint_override().is_some()
+        && (url.starts_with("http://127.0.0.1/") || url.starts_with("http://localhost/"))
+    {
+        return true;
+    }
     let Some(rest) = url.strip_prefix("https://") else {
         return false;
     };
