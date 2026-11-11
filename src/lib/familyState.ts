@@ -15,6 +15,20 @@ export function familyActivation(faces: FontFace[]): FamilyActivation {
   return { active, partial: activeCount > 0 && !active, activeCount };
 }
 
+/**
+ * 速览口径的「已启用」：整族启用 / 只有部分字重启用 / 本次会话临时启用。
+ *
+ * 完整界面不按这个口径筛（那边要能看见停用字体），所以这个判定只给速览列表
+ * 与速览的搜索建议用 —— 两处必须同一个口径，否则会出现「建议里能搜到 Arial，
+ * 点下去列表却是空的」（用户 2026-11-11 报的就是这个）。
+ */
+export function isEnabledNow(
+  family: { name: string; active: boolean; partial: boolean },
+  sessionActivated: readonly string[],
+): boolean {
+  return family.active || family.partial || sessionActivated.includes(family.name);
+}
+
 export function pathsToToggle(faces: FontFace[], active: boolean): string[] {
   const paths = faces
     .filter((f) => f.deactivatable && f.active !== active)

@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { Camera, FolderOpen, Puzzle, Tag, Type } from "lucide-react";
 import { allTags, familiesFor, familyLowerNames, useFontStore } from "../state/fontStore";
+import { isEnabledNow } from "../lib/familyState";
 import { useT } from "../lib/i18n";
 import { usePluginStore } from "../lib/pluginStore";
 import { openPluginMenu } from "../lib/pluginMenu";
@@ -37,15 +38,27 @@ const LIMIT_PER_KIND = { plugin: 6, tag: 6, collection: 6, snapshot: 6, family: 
 export function SearchSuggest({
   query,
   onPick,
+  onlyActive = false,
 }: {
   query: string;
   onPick: (s: Suggestion) => void;
+  /**
+   * 「只搜已启用的字体」（速览界面）。
+   *
+   * 速览列表本来就只列已启用字体，但建议下拉走的是全量 `familiesFor()` ——
+   * 于是搜 `Arial` 会弹出一条建议，点下去把关键词填进搜索框、列表却是空的
+   * （用户 2026-11-11：「速览的搜索框只能搜到已启用的字体，未启用的搜不到才对」）。
+   * 打开这个开关后字体类建议也按同一个口径筛；完整界面的搜索不传，行为不变。
+   * 标签 / 分组 / 快照不动 —— 它们不是字体，点下去是「用这个条件过滤当前列表」。
+   */
+  onlyActive?: boolean;
 }) {
   const t = useT();
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
   const snapshots = useFontStore((s) => s.snapshots);
+  const sessionActivated = useFontStore((s) => s.sessionActivated);
   const plugins = usePluginStore((s) => s.plugins);
   const loadPlugins = usePluginStore((s) => s.load);
   // 兜底：主界面启动那次 `plugins_list` 若失败，用户一打字这里还会再试一次
@@ -62,8 +75,18 @@ export function SearchSuggest({
    * （1.8.0 内测第一版就是这么错的，用户截图里标签一条都不出现）。
    */
   const tagIndex = useMemo(() => allTags(tags), [tags]);
-  // 小写名索引跟着字体库缓存：打字时只做 includes，不再每次新建 4000 个字符串
-  const familyNames = useMemo(() => familyLowerNames(familiesFor(fonts, tags)), [fonts, tags]);
+  // 小写名索引跟着字体库缓存：打字时只做 includes，不再每次新建 4000 个字符串。
+  // 速览口径（onlyActive）在这层过滤：索引本身仍按全量缓存，避免为「速览 / 完整」
+  // 各建一份 4000 条的小写数组。
+  const familyNames = useMemo(() => {
+    const families = familiesFor(fonts, tags);
+    const list = familyLowerNames(families);
+    if (!onlyActive) return list;
+    return list.filter(([, name]) => {
+      const family = families.get(name);
+      return !!family && isEnabledNow(family, sessionActivated);
+    });
+  }, [fonts, tags, onlyActive, sessionActivated]);
 
   const items = useMemo<Suggestion[]>(() => {
     if (!q) return [];
