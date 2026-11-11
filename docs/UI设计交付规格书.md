@@ -332,8 +332,8 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 |---|---|
 | 列网格（表头与行同） | `minmax(0,1fr) 64px 96px 120px 64px` = 族名 / 字重数 / 格式 / 大小 / 状态 |
 | 表头 `.list-header` | `padding: 12px 24px`；等宽 **10px** / 500 / 字距 0.04em / **不大写** / 弱色；底部 1px 线；无底色 |
-| 行 `.list-row` | 高 **32px**；`padding: 0 24px`；11px；底部 1px 发丝线；透明底；悬停 `--ui-hover`；选中 = `inset 2px 0 0` 蓝线 |
-| 行首锚点 `.list-row::after` | 1.8.6 新增，与样张同一套但**静止不画圆点**：`left: 8`（线右缘 10，文字 24 → 线到文字 **14px**）、`top: 6` 钉死、`bottom: 6`，`transform: scaleY(0→1)` 生长（`transform-origin: 50% 0`，只向下长）。**悬停** = 灰线（`--ui-line-hover`）；**点一下复制族名那 1.5s** = `top/bottom: 0` 占满行高 + 蓝线（`--ui-accent`），随「已复制」一起消失 |
+| 行 `.list-row` | 高 **32px**；`padding: 0 24px`；11px；底部 1px 发丝线；透明底；悬停 `--ui-hover`；选中**不画 inset 左条**（由下面的行首锚点承担，避免两条线并排） |
+| 行首锚点 `.list-row::after` | 1.8.6 新增，**语义照卡片视图**（不是速览/样张那套复制闪现）：`left: 8`（线右缘 10，文字 24 → 线到文字 **14px**）、`top: 6` 钉死、`bottom: 6`、`transform: scaleY(0→1)`（`transform-origin: 50% 0`，只向下长）。**静止什么都不画**（无圆点）；**悬停** = 灰线（`--ui-line-hover`）；**选中** = `top/bottom: 0` 占满行高的蓝线（`--ui-accent`，常驻）。列表行**不复制族名、无「已复制」** |
 | 选中态 | 不铺底 + `inset 2px 0 0 var(--ui-accent)`（左侧 2px 蓝竖线） |
 | 数字列 `.col-styles` / `.col-size` / `.col-format` | 等宽 / `tabular-nums` / 右对齐 / 10px / 次文字色（`.col-styles` 为 11px 弱色） |
 | 族名 `.row-name` | 单行省略（`text-overflow: ellipsis`） |
