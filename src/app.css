@@ -7752,11 +7752,13 @@ body.ui-fade-out .app-frame {
   background: var(--ui-accent);
 }
 /* 头部：格式徽标 → 族名 → 样式数 …… 右端 许可 / ☆ / 开关。
-   左边距 = 锚点让位：卡片 padding-left 26 + 30 = 内容左缘 56，
-   锚点竖线右缘在 28 —— 线与文字之间 28px，与速览行（pad 24 + Aa 列 32 - 线右缘 28）
-   **完全一致**（用户 2026-11-11：「这里都贴在一起了，参考速览界面文字和线的距离」）。 */
+   左边距 = 锚点让位：卡片 padding-left 26 + 38 = 内容左缘 64，
+   锚点竖线右缘在 28 —— 线与文字之间 **36px**。
+   参照速览行（--qb-pad 24 + Aa 列 32 - 线右缘 28 = 28），卡片这边再宽一档：
+   卡片里的预览大字是 32~96px，字号越大、锚点与内容之间的留白越需要明显，
+   28 在卡片上仍然显挤（用户 2026-11-11：「都贴在一起了」→ 改完仍说「没什么变化」）。 */
 .card-head {
-  margin-left: 30px;
+  margin-left: 38px;
   gap: 10px;
   min-height: 16px;
 }
@@ -7796,9 +7798,9 @@ body.ui-fade-out .app-frame {
   background: none;
   color: var(--ui-fg-2);
 }
-/* 预览：32px 档，左缘与族名同一条竖线，右侧渐隐（让位同上，30） */
+/* 预览：32px 档，左缘与族名同一条竖线，右侧渐隐（让位同上，38） */
 .card-preview {
-  margin-left: 30px;
+  margin-left: 38px;
   padding-top: 10px;
   min-height: 46px;
 }
@@ -7808,7 +7810,7 @@ body.ui-fade-out .app-frame {
 }
 /* 样式数那一行 / 字重列表：与速览同一套 face-line */
 .card-styles {
-  margin-left: 30px;
+  margin-left: 38px;
   border-top: 1px solid var(--ui-line);
   padding-top: 6px;
 }
