@@ -1,6 +1,6 @@
 import { Download, ArrowUpRight, RefreshCw } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "../design/primitives/Toast";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { useT } from "../lib/i18n";
@@ -36,6 +36,13 @@ export function UpdateSection() {
   const [error, setError] = useState<string | null>(null);
   /** 下载 / 校验 / 安装的实时状态；null = 没在走这条路径 */
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
+  /**
+   * 一键安装的一次性闸门。
+   * `progress` 是 state，从点下到重渲染之间有一帧空档：手快连点两下
+   * （或触控板双击）会进两次 `downloadAndInstall`，下两份安装包、起两个安装进程。
+   * ref 是同步写入的，第二下直接被挡掉。失败时才打开，允许重试。
+   */
+  const installLock = useRef(false);
 
   useEffect(() => {
     void ipc
@@ -98,7 +105,8 @@ export function UpdateSection() {
 
   /** 下载 → 校验（后端做）→ 静默安装。全程只有用户点这一下。 */
   const downloadAndInstall = async () => {
-    if (!info?.canAutoInstall || progress) return;
+    if (!info?.canAutoInstall || progress || installLock.current) return;
+    installLock.current = true;
     setError(null);
     setProgress({ phase: "download", received: 0, total: 0, percent: 0 });
     try {
@@ -107,6 +115,7 @@ export function UpdateSection() {
       await ipc.updateInstall(path, info.sha256);
       // 走到这里安装脚本已经起来了，后端会在 1.2 秒后退出本进程
     } catch (e) {
+      installLock.current = false;
       setProgress(null);
       setError(String(e));
       toast.error(t("settings.updateInstallFailed"), String(e));

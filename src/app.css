@@ -181,9 +181,14 @@ body,
   display: none;
 }
 .app-shell.shell-specimen .sidebar .nav-row {
-  justify-content: center;
+  /* 原来是 justify-content: center —— 两列的图标对不上：
+     带序号的行（图标 15 + 间隔 2 + 序号 12 = 29px）居中后图标在 x≈16.5，
+     不带序号的行（15px）居中后图标在 x≈23.5，一栏图标左右错开 7px，
+     扫一眼就是「没对齐」。改成左对齐 + 固定左内距：所有图标落在同一条竖线上，
+     序号挂在图标右侧。16px 恰好是「单个图标居中」的位置，看上去仍是居中的图标栏。 */
+  justify-content: flex-start;
   gap: 2px;
-  padding: 6px 0;
+  padding: 6px 0 6px 16px;
 }
 /* 样张视图也显示分组 / 快照序号（用户 2026-11-10）：只留图标时认不出是哪一组，
    序号是唯一还能对上的线索（字重行胶囊写「快照4」）。
@@ -247,7 +252,10 @@ body,
   font-size: var(--fs-13);
   font-weight: 500;
   color: var(--text-secondary);
-  transition: color var(--t-quick) ease;
+  /* padding-left 参与过渡：切到样张视图时，图标随侧栏收窄平移过去，
+     而不是在宽度动画开始的那一帧突然「跳」到居中位置（原来 justify-content:center
+     会跟着当时的宽度瞬间跳到 x≈124，再被 260ms 的宽度动画拽回来）。 */
+  transition: color var(--t-quick) ease, padding-left var(--t-state) ease;
 }
 .nav-row:hover {
   color: var(--text-primary);
@@ -4357,13 +4365,19 @@ h2.detail-title.copy-name {
   transition: background var(--t-quick) ease, color var(--t-quick) ease,
     transform var(--t-micro) ease;
 }
-.settings-data-btn:hover {
+.settings-data-btn:hover:not(:disabled) {
   background: var(--e2);
   color: var(--text-primary);
   transform: translateY(-1px);
 }
-.settings-data-btn:active {
+.settings-data-btn:active:not(:disabled) {
   transform: scale(0.97);
+}
+/* 禁用态（1.8.4 起「检查更新 / 下载并安装」会用）：
+   原来没有这条，disabled 的按钮照旧抬 1px、变亮、cursor 是手型，点下去却没反应 */
+.settings-data-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .settings-footer {
@@ -9229,3 +9243,32 @@ body.ui-fade-out .app-frame {
   background: var(--ui-accent);
   transition: width 0.2s linear;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   交互与动画审查（2026-11-11 第二轮）—— 四条都有具体触发场景
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ─── ① 提示条合并计数（Toast.tsx 的 MAX_TOASTS / 相同内容合并） ────────
+   批量失败会连发十几条同一句提示，现在合并成一条并标 ×N。
+   数字用弱色、贴标题右侧，不抢标题本身。 */
+.toast-count {
+  margin-left: 6px;
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+/* ─── ③ 提示条容器不该吃掉点击 ────────────────────────────────────────
+   `.toaster` 是 fixed 定位的 flex 列，一条提示时也占着「最宽那条 × 全部条数」
+   的矩形：条与条之间 8px 的缝、以及提示下方的空白，点下去都被容器接走了 ——
+   那是列表的右上角，正好是用户会点的地方。容器让出指针，提示本身再接回来。 */
+.toaster {
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+}
+
+/* ─── ② .settings-data-btn 的禁用态 ────────────────────────────────────
+   规则写在 .settings-data-btn 本体旁边（约 4360 行），这里不重复。 */
