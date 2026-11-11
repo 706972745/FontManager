@@ -255,12 +255,12 @@ catalogue, 1,984 families.
 **Importing** is always: double-click the file, or drop it on the window.
 Files are recognized by **content**, not extension.
 
-Every FontManager-specific file carries a **sticker-style icon**, easy to spot
-in Explorer: app icon **.Z** · snapshot export **.S** · pack-with-fonts **.P** ·
-data-only export **.L** · library folder **.F** (gray folder + pulled-out
-sheet + black letter):
+Every FontManager-specific file carries a **sticker-paper icon** (torn edges +
+a handwritten caption), easy to spot in Explorer: the app icon (a **TYPE
+FontManager** wordmark) · snapshot export **.S** · pack-with-fonts **.P** ·
+data-only export **.L** · library folder **.F**:
 
-![FontManager icon set: sticker-paper style (black & white & gray)](icons-overview.png)
+![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png)
 
 ### 11. Trash: regret is allowed
 
