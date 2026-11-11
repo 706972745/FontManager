@@ -5757,9 +5757,30 @@ h2.detail-title.copy-name {
   min-width: 0;
 }
 .row-name-text {
+  /* flex 子项默认 min-width:auto，不加这行 overflow/ellipsis 在 flex 里不生效 */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 「已复制」：与样张 /.specimen-copied 同一套。不常驻占位 —— 列表行很密，
+   每行都空出三十来像素去等一个 1.5s 的提示不划算，所以平时宽 0 + 抵消 gap。 */
+.row-copied {
+  flex: none;
+  width: 0;
+  margin-right: -6px;
+  overflow: hidden;
+  font-size: var(--fs-9);
+  font-weight: 400;
+  color: var(--accent-a);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s linear;
+}
+.row-copied.is-shown {
+  width: auto;
+  margin-right: 0;
+  opacity: 1;
 }
 .row-members {
   display: inline-flex;
@@ -7844,6 +7865,40 @@ body.ui-fade-out .app-frame {
 .list-row[aria-selected="true"] {
   background: transparent;
   box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+/* 行首锚点（1.8.6，用户：「列表视图也加入样张那个效果，只不过那个圆点不需要显示」）：
+   静止什么都不画 → 悬停从 top:6 长出 2px 灰线（顶端钉死 = 只向下长）→
+   点一下复制族名时整行高变蓝，1.5s 后随「已复制」一起消失。
+   左缘 8、行内距 24 → 线到文字 14px（行才 32 高，不用样张那 30）。 */
+.list-row {
+  position: relative;
+}
+.list-row::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--ui-line-hover);
+  transform: scaleY(0);
+  transform-origin: 50% 0;
+  transition:
+    transform var(--t-quick) ease-out,
+    top var(--t-quick) ease-out,
+    bottom var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
+}
+.list-row:hover::after {
+  transform: scaleY(1);
+}
+.list-row.is-copied::after,
+.list-row.is-copied:hover::after {
+  top: 0;
+  bottom: 0;
+  background: var(--ui-accent);
+  transform: scaleY(1);
 }
 .list-row .col-styles,
 .list-row .col-size,
