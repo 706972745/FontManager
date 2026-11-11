@@ -4,8 +4,9 @@
 > 所有数值逐条取自源码（`src/design/tokens.css`、`src/app.css`、`src/state/fontStore.ts`），
 > 改了代码请同步改这里 —— 否则它会变成一份骗人的文档。
 >
-> - 适用版本：**1.8.2**
+> - 适用版本：**1.8.4**
 > - 落地进度：速览与主界面**均已落地**；第 3 节全部小节（3.1–3.15）数值已按源码回写
+> - 1.8.4 变化：检查更新加「下载并安装」+ 3px 进度条（§3.15）；1.8.3 变化见 §3.15 末尾。
 > - 1.8.2 变化：深色浮层底（右键菜单 / Toast）由 R7 冷灰 `#1e1e22` 改回暖墨 `#1c1c1a`、
 >   悬停底改 `color-mix`；设置面板首帧优化（屏外分区跳过渲染、入场不再缩放）。见 §3.12
 > - 1.8.1 变化：新增设置「更新」分区（§3.15）、插件分区权限提示（§3.12 补充）、
@@ -588,8 +589,9 @@ R8 §3 明确「20px 的微型徽标与 36px 的特殊块保持不动」，所�
 |---|---|
 | 更新分区 `.settings-section` | 位置：设置弹窗**最后一个分区**、`.settings-footer` 之前；`UpdateSection.tsx` 独立组件 |
 | 更新行 | 主标签「自动检查更新」+ 副行「当前版本 · 1.8.1」（11px 弱色）；右侧 `PillToggle`（34×19） |
-| 动作组 `.settings-update-actions` | 复用 `.settings-data-actions`（flex / gap 8），额外 `margin-top: 10` + `flex-wrap`；按钮全部 `.settings-data-btn`（4px 圆角 / 13px）。按钮：检查更新 → 打开发布页（仅有新版时）→ 跳过这个版本（仅有新版且未跳过时） |
+| 动作组 `.settings-update-actions` | 复用 `.settings-data-actions`（flex / gap 8），额外 `margin-top: 10` + `flex-wrap`；按钮全部 `.settings-data-btn`（4px 圆角 / 13px）。按钮顺序：检查更新 → **下载并安装**（1.8.4，仅 `canAutoInstall` 时）/ 打开发布页（有新版但不能一键装时二选一出现）→ 跳过这个版本（有新版且未跳过、且不在下载中） |
 | 结果行 `.settings-update-line` | `.settings-sub` 11px / 弱色 / `margin-top: 6` / `line-height: 1.5` |
+| 下载进度 `.settings-update-progress` | 1.8.4：flex column / gap 6；进度条 `.settings-update-bar` **3px 高 / 2px 圆角** / 轨道 `--e2` / 填充 `--ui-accent` / 宽度 `transition 0.2s linear`；下方一行 `.settings-sub` 等宽 11px，文案分三段：正在下载… N% / 正在校验安装包… / 正在安装，软件会自动重启… |
 | 发布说明 `.settings-update-notes` | `max-height: 180px`；`overflow-y: auto`；**8px 圆角**（浮层档）；`padding: 10px 12px`；1px 发丝线；底 `--e1`；11px 等宽；`white-space: pre-wrap`；`overscroll-behavior: contain` |
 | 插件权限提示 `.settings-plugins-trust` | 分区标题下、清单头之上；flex / gap 6 / `margin: 2px 0 8px`；`Info` 12px 图标 + 11px 弱色文字；**不用警告色** |
 | 搜索建议「插件」类 | 复用 `.suggest-list` / `.suggest-item`（4px 圆角 / `max-height: 320px` 滚动）；图标 `Puzzle` 12px / 1.6 描边；右侧 `v{version} · 插件`（9px）；排序在标签 / 分组 / 快照 / 字体**之前**；`data-kind="plugin"` |
@@ -600,6 +602,10 @@ R8 §3 明确「20px 的微型徽标与 36px 的特殊块保持不动」，所�
   **右键** = 与设置页插件行同一套菜单（`lib/pluginMenu.tsx`）。
 - `onMouseDown` 只在 `e.button === 0` 时触发选中，否则右键会连带打开面板。
 - 速览是独立 WebviewWindow，插件清单自己拉一份，与主界面不共享内存。
+- **一键安装（1.8.4）**：只有「发布带 NSIS 直链 + 带 SHA-256 + 当前是按用户安装的 NSIS 版」
+  三条同时成立才出现「下载并安装」，否则显示「打开发布页」。点下去是
+  下载 → 校验 → 静默装 → 自动重启，中途软件会自己退出（Windows 不允许覆盖运行中的 exe）。
+  装不了时不给空按钮，也不给半截流程。
 
 ---
 
@@ -642,6 +648,7 @@ R8 §3 明确「20px 的微型徽标与 36px 的特殊块保持不动」，所�
 | 1.7.8 | 在线库：族名改用**该字族自身字体**渲染（Google 字符级子集，均 335 B；取不到回退界面字体并给一行说明）；来源行拆成三个可点击地址 + 按 unicode-range 子集筛选，搜索同时覆盖地址与子集 |
 | 1.8.0 | 字号滑条两处统一并居中、分组视图操作条、筛选「范围」二级菜单、搜索建议（含标签）、全局滚动条靠近变粗、侧栏序号贴图标、整包导出可取消 |
 | 1.8.1 | 设置「更新」分区、插件分区权限提示、搜索建议第 5 类「插件」（详见 §3.15；B33–B35 待设计师确认） |
+| 1.8.4 | 检查更新加「下载并安装」（静默下载 → SHA-256 校验 → `/S` 静默装 → 自动重启）+ 3px 进度条；只在能装时出现，装不了退回「打开发布页」（B37 / C12） |
 | 1.8.2 | 深色浮层底（右键菜单 / Toast）从 R7 的冷灰 `#1e1e22` 改回暖墨 `#1c1c1a`，悬停底改 `color-mix`；设置面板首帧优化（屏外分区 `content-visibility: auto`、入场去掉 scale）—— 见 §3.12 浮层底色行 |
 
 ---

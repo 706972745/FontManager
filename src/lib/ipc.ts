@@ -671,6 +671,15 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    * 用户在设置里手点传 true。只读版本号与发布说明，不下载任何文件。
    */
   checkUpdate: (force = false) => invoke<UpdateCheck>("check_update", { force }),
+  /**
+   * 下载新版本安装包（1.8.4）。下完核对 SHA-256，对不上后端会自己删掉并抛错。
+   * `sha256` 必须是发布页给的那个值，别在别处拼。
+   */
+  updateDownload: (url: string, name: string, sha256: string) =>
+    invoke<string>("update_download", { url, name, sha256 }),
+  /** 静默安装：再校验一次 → 起等待脚本 → 本进程约 1.2 秒后退出并重启新版 */
+  updateInstall: (path: string, sha256: string) =>
+    invoke<void>("update_install", { path, sha256 }),
 };
 
 /** `check_update` 的结果 */
@@ -687,6 +696,27 @@ export interface UpdateCheck {
   source: "github" | "raw" | "cdn";
   /** 用户点过「跳过这个版本」 */
   skipped: boolean;
+  /** NSIS 安装包直链（空 = 这一版没有可直接安装的包） */
+  setupUrl: string;
+  /** 安装包文件名 */
+  setupName: string;
+  /** 安装包 SHA-256（小写十六进制；空 = 没有校验值，不允许一键安装） */
+  sha256: string;
+  /**
+   * 能不能一键下载安装。
+   * 三个条件同时满足才为 true：有直链、有校验值、当前是「按用户安装」的 NSIS 版。
+   * 装在 Program Files 的 MSI 版为 false —— 静默装会装出第二份。
+   */
+  canAutoInstall: boolean;
+}
+
+/** `update:progress` 事件（下载安装包） */
+export interface UpdateProgress {
+  phase: "download" | "verify" | "ready" | "error";
+  received: number;
+  total: number;
+  percent: number;
+  error?: string | null;
 }
 
 /** 一个插件运行时（Python / Node）的状态（`runtimes_status`） */

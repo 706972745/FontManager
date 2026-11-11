@@ -4,6 +4,33 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.4] — 2026-11-11
+
+> 检查更新里多了一个「下载并安装」：点了自己下载、自己校验、自己装、自己重启。
+> 这是唯一一处会**执行远端可执行文件**的地方，所以边界收得比功能更紧。
+
+### 新增
+
+- **检查更新 → 下载并安装**（用户要求）：发现新版本时，按钮从「打开发布页」变成
+  「下载并安装」——静默下载 NSIS 安装包 → 核对 SHA-256 → 起一段等待脚本 →
+  本进程退出 → `/S` 静默安装 → 自动启动新版本。界面显示 3px 细进度条与
+  「下载 / 校验 / 正在安装」三段文案。
+
+### 安全边界（都不会为了省一次点击而放松）
+
+- **必须有校验值**：只认发布资产里的 `sha256`（GitHub Asset digest）。没有校验值的版本
+  一律不提供一键安装，退回「打开发布页」。
+- **下载完必须对得上**：哈希不一致立刻删掉并报错，不执行；**执行前再算一次**，
+  防的是「下载完到点安装之间文件被替换」。
+- **只认白名单站点**：`https` + `github.com` / `objects.githubusercontent.com` /
+  `release-assets.githubusercontent.com`，跟随重定向后的落点也要在里面。
+- **只认 NSIS 的 `*-setup.exe`**：MSI 是 perMachine 安装，静默跑会卡在一个没人能点的 UAC 框。
+- **只给「按用户安装」的版本用**（程序在 `%LOCALAPPDATA%\FontManager` 下）。装在
+  Program Files 的 MSI 版不出现这个按钮 —— 否则会装出第二份、两套字体关联打架。
+- 安装包文件名过白名单（必须 `…-setup.exe`、不含路径分隔符），执行前还要求它确实躺在
+  自己的临时目录里（防目录穿越与参数注入）。
+- `updateCheck` 关掉后连版本号都不查，这条路径自然走不到。
+
 ## [1.8.3] — 2026-11-11
 
 > 一条联动：快照缺字体时，提示条上多了「从 GitHub 补全缺失字体」。需要配合

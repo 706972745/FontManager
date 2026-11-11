@@ -9208,3 +9208,24 @@ body.ui-fade-out .app-frame {
 .settings-scroll {
   overscroll-behavior: contain;
 }
+
+/* ─── 检查更新 → 下载安装进度（1.8.4） ─────────────────────────────────
+   下载安装包时的 3px 细进度条，和软件里其它进度（扫描 / 打包 / 运行时下载）
+   同一套：2px 圆角轨道 + 强调色填充，不抢版面。 */
+.settings-update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-update-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--e2);
+  overflow: hidden;
+}
+.settings-update-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--ui-accent);
+  transition: width 0.2s linear;
+}

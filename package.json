@@ -12,7 +12,7 @@
     "url": "https://github.com/706972745/FontManager/issues"
   },
   "private": true,
-  "version": "1.8.3",
+  "version": "1.8.4",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {

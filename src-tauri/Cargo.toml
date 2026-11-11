@@ -1,6 +1,6 @@
 [package]
 name = "fontmanager"
-version = "1.8.3"
+version = "1.8.4"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
 authors = ["IIEOzo"]
 license = "GPL-3.0-only"
@@ -37,6 +37,9 @@ thiserror = "2"
 notify = "7"
 rodio = { version = "0.19", default-features = false }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "rustls", "blocking"] }
+# 检查更新 → 下载安装包后必须核对 SHA-256（GitHub Asset 的 digest），
+# 校验不过就删掉、绝不执行。纯 Rust 实现，不依赖系统 openssl / certutil。
+sha2 = "0.10"
 sysinfo = "0.38.4"
 tokio = { version = "1.53.1", features = ["time", "rt", "net", "sync"] }
 # 本地 API（1.3.0）：极小 HTTP 服务，只绑 127.0.0.1

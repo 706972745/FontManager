@@ -2349,9 +2349,33 @@ async fn check_update(store: State<'_, Store>, force: bool) -> Result<serde_json
     Ok(doc)
 }
 
-/// 插件清单。每个插件都要读 manifest、探一次运行时是否具备（冷缓存时会 spawn 解释器，
-/// 最长 3 秒），所以同样放后台线程，别让 UI 线程等它。
+/// 下载新版本安装包（1.8.4）。下载完核对 SHA-256，对不上就删掉，**不会执行**。
+///
+/// 走 `spawn_blocking`：几 MB 的包在网络差时要几十秒，同步命令会把界面卡住。
+/// 进度通过 `update:progress` 事件推给前端（download / verify / ready / error）。
 #[tauri::command]
+async fn update_download(
+    app: tauri::AppHandle,
+    url: String,
+    name: String,
+    sha256: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::update::download_setup(&app, &url, &name, &sha256))
+        .await
+        .map_err(|e| format!("下载任务异常：{e}"))?
+}
+
+/// 静默安装刚下好的包（1.8.4）：再校验一次 → 起一段等待脚本 → 本进程 1.2 秒后退出。
+///
+/// 退出是必须的：Windows 不允许覆盖正在运行的 exe。脚本会等我们消失再 `/S` 安装，
+/// 装完把新版启动起来。
+#[tauri::command]
+fn update_install(app: tauri::AppHandle, path: String, sha256: String) -> Result<(), String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::update::install_setup(&app, &path, &sha256)
+    }))
+    .unwrap_or_else(|_| Err("安装出错（已拦下，软件继续运行）；详情见日志".into()))
+}#[tauri::command]
 async fn plugins_list() -> Vec<crate::plugins::PluginInfo> {
     tauri::async_runtime::spawn_blocking(crate::plugins::list)
         .await
@@ -2791,6 +2815,8 @@ pub fn run() {
             api_set_port,
             api_reset_token,
             check_update,
+            update_download,
+            update_install,
             plugins_list,
             plugin_set_enabled,
             plugin_invoke,

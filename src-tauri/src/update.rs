@@ -16,6 +16,7 @@
 use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use tauri::AppHandle;
 
 const UA: &str = concat!("FontManager/", env!("CARGO_PKG_VERSION"), " (+https://zsync.eu/fontmanager/)");
 
@@ -40,7 +41,7 @@ pub struct UpdateInfo {
     pub latest: String,
     /// 远端比本机新
     pub has_update: bool,
-    /// 发布页地址（浏览器打开，不在这里下载）
+    /// 发布页地址（浏览器打开）
     pub url: String,
     /// 发布说明（Markdown 原文，截断到 4000 字符，界面按纯文本展示）
     pub notes: String,
@@ -48,6 +49,14 @@ pub struct UpdateInfo {
     pub published_at: String,
     /// `github` = Releases API；`raw` = 只能读到 package.json 的兜底
     pub source: String,
+    /// NSIS 安装包直链（拿不到 = 空串，界面退回「打开下载页」）
+    pub setup_url: String,
+    /// 安装包文件名（落地文件名 + 二次校验用）
+    pub setup_name: String,
+    /// 安装包 SHA-256（小写十六进制，取自 GitHub Asset 的 `digest`；拿不到 = 空串）
+    pub sha256: String,
+    /// 能不能一键静默安装（直链 + 校验值齐全 + 当前是「按用户安装」的 NSIS 版）
+    pub can_auto_install: bool,
 }
 
 /// 版本号解析：`v1.8.10` / `1.8.10-beta.1` / `1.8` 都接受，只取主.次.修订三段。
@@ -146,6 +155,62 @@ fn trim_notes(text: &str) -> String {
     out
 }
 
+/// 从 release 的 assets 里挑出「能静默装的安装包」。
+///
+/// 只认 `*-setup.exe`（NSIS，currentUser 安装、不需要提权）。**不碰 MSI**：
+/// perMachine 安装要 UAC，静默跑会直接失败或者弹一个没人点的授权框。
+/// 同一版里若同时有 x64 与其它架构，优先 x64。
+fn pick_setup(assets: &serde_json::Value) -> (String, String, String) {
+    let Some(list) = assets.as_array() else {
+        return (String::new(), String::new(), String::new());
+    };
+    let mut best: Option<(u8, String, String, String)> = None;
+    for a in list {
+        let name = a.get("name").and_then(|x| x.as_str()).unwrap_or("");
+        if !name.to_ascii_lowercase().ends_with("-setup.exe") {
+            continue;
+        }
+        let url = a
+            .get("browser_download_url")
+            .and_then(|x| x.as_str())
+            .unwrap_or("");
+        if url.is_empty() {
+            continue;
+        }
+        // GitHub 从 2024 起给 asset 带 digest（"sha256:…"）；老接口没有就留空，
+        // 没有校验值的版本一律不提供一键安装（见 can_auto_install）。
+        let digest = a
+            .get("digest")
+            .and_then(|x| x.as_str())
+            .and_then(|d| d.strip_prefix("sha256:"))
+            .map(|h| h.to_ascii_lowercase())
+            .unwrap_or_default();
+        let rank = if name.contains("x64") { 1 } else { 0 };
+        let cand = (rank, name.to_string(), url.to_string(), digest);
+        if best.as_ref().map(|b| cand.0 > b.0).unwrap_or(true) {
+            best = Some(cand);
+        }
+    }
+    match best {
+        Some((_, name, url, digest)) => (url, name, digest),
+        None => (String::new(), String::new(), String::new()),
+    }
+}
+
+/// 当前这份程序是不是「按用户安装」的 NSIS 版（`%LOCALAPPDATA%\FontManager`）。
+///
+/// 静默安装走的就是这条路径。装在 Program Files 的 MSI 版如果也走静默安装，
+/// 会装出第二份到用户目录、两套字体关联打架 —— 那种情况只给「打开下载页」。
+fn is_current_user_install() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let Some(base) = std::env::var_os("LOCALAPPDATA") else {
+        return false;
+    };
+    exe.starts_with(std::path::Path::new(&base).join("FontManager"))
+}
+
 async fn from_release_api() -> Result<UpdateInfo, String> {
     let v = get_json(API_URL).await?;
     let tag = v
@@ -163,6 +228,7 @@ async fn from_release_api() -> Result<UpdateInfo, String> {
         .to_string();
     let notes = v.get("body").and_then(|x| x.as_str()).unwrap_or("");
     let published_at = v.get("published_at").and_then(|x| x.as_str()).unwrap_or("");
+    let (setup_url, setup_name, sha256) = pick_setup(v.get("assets").unwrap_or(&serde_json::Value::Null));
     Ok(UpdateInfo {
         current: env!("CARGO_PKG_VERSION").to_string(),
         has_update: is_newer(&latest, env!("CARGO_PKG_VERSION")),
@@ -171,6 +237,10 @@ async fn from_release_api() -> Result<UpdateInfo, String> {
         notes: trim_notes(notes),
         published_at: published_at.to_string(),
         source: "github".into(),
+        can_auto_install: !setup_url.is_empty() && !sha256.is_empty() && is_current_user_install(),
+        setup_url,
+        setup_name,
+        sha256,
     })
 }
 
@@ -192,6 +262,11 @@ async fn from_package_json(url: &str) -> Result<UpdateInfo, String> {
         notes: String::new(),
         published_at: String::new(),
         source: if url.contains("jsdelivr") { "cdn" } else { "raw" }.into(),
+        // 兜底源只有版本号，没有资产信息：一律不给一键安装
+        setup_url: String::new(),
+        setup_name: String::new(),
+        sha256: String::new(),
+        can_auto_install: false,
     })
 }
 
@@ -233,6 +308,247 @@ fn remember(info: UpdateInfo) -> UpdateInfo {
         *guard = Some((Instant::now(), info.clone()));
     }
     info
+}
+
+// ═════════════════ 下载 + 静默安装（1.8.4） ═════════════════
+//
+// 从这里往下会**真的下载可执行文件并执行它**，所以规矩比「检查更新」严得多：
+//
+//   · 只接受 https + 白名单域名（github.com / objects / release-assets），
+//     跟着重定向之后的落点也要落在里面；
+//   · 必须带 SHA-256（GitHub Asset 的 digest）。下完核对不上 → **删掉，绝不执行**；
+//   · 只认 NSIS 的 `*-setup.exe`。MSI 是 perMachine 安装，静默跑会弹 UAC 或直接失败；
+//   · 只给「按用户安装」的版本用（程序在 `%LOCALAPPDATA%\FontManager` 下）。
+//     装在 Program Files 的 MSI 版走手动下载 —— 否则会装出第二份、两套字体关联打架；
+//   · 安装本身交给一段临时 PowerShell 脚本：等本进程退出 → `/S` 静默装 → 启动新版本。
+//     必须等进程退出，Windows 不允许覆盖正在运行的 exe。
+
+/// 安装包下载进度（`update:progress` 事件）
+pub const PROGRESS_EVENT: &str = "update:progress";
+
+const DOWNLOAD_HOSTS: [&str; 3] = [
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+];
+
+fn download_url_ok(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    DOWNLOAD_HOSTS.contains(&host)
+}
+
+/// 文件名只允许 `…-setup.exe`，且不含路径分隔符 / 通配符（防目录穿越与参数注入）
+fn setup_name_ok(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 120
+        && name.to_ascii_lowercase().ends_with("-setup.exe")
+        && !name.contains(['/', '\\', ':', '"', '<', '>', '|', '?', '*'])
+}
+
+fn sha256_hex_ok(h: &str) -> bool {
+    h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn sha256_file(path: &std::path::Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).map_err(|e| format!("读不到安装包：{e}"))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = f.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+fn emit_progress(app: &AppHandle, phase: &str, received: u64, total: u64, error: Option<&str>) {
+    use tauri::Emitter as _;
+    let _ = app.emit(
+        PROGRESS_EVENT,
+        serde_json::json!({
+            "phase": phase,
+            "received": received,
+            "total": total,
+            "percent": if total > 0 { (received.saturating_mul(100) / total).min(100) } else { 0 },
+            "error": error,
+        }),
+    );
+}
+
+/// 安装包落地的固定目录（`install_setup` 只认这里的文件）
+fn update_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join("FontManager-update")
+}
+
+/// 下载安装包到临时目录并校验 SHA-256，返回落地路径。
+///
+/// 已经下过且哈希对的文件直接复用：用户网络差、第一次下到一半断了再点一次，
+/// 不该从头再来一遍。
+pub fn download_setup(app: &AppHandle, url: &str, name: &str, want_sha: &str) -> Result<String, String> {
+    use std::io::{Read as _, Write as _};
+
+    if !download_url_ok(url) {
+        return Err(format!("下载地址不在允许的站点内：{url}"));
+    }
+    if !setup_name_ok(name) {
+        return Err(format!("安装包文件名不合法：{name}"));
+    }
+    let want = want_sha.trim().to_ascii_lowercase();
+    if !sha256_hex_ok(&want) {
+        return Err("这一版没有提供 SHA-256 校验值，不能自动安装（请到发布页手动下载）".into());
+    }
+
+    let dir = update_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("建临时目录失败：{e}"))?;
+    let dest = dir.join(name);
+
+    if dest.is_file() {
+        if let Ok(h) = sha256_file(&dest) {
+            if h == want {
+                emit_progress(app, "ready", 1, 1, None);
+                return Ok(dest.to_string_lossy().into_owned());
+            }
+        }
+        let _ = std::fs::remove_file(&dest);
+    }
+
+    emit_progress(app, "download", 0, 0, None);
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(UA)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|e| format!("网络客户端初始化失败：{e}"))?;
+    let mut resp = client
+        .get(url)
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("下载失败：{e}（可以在发布页手动下载）"))?;
+    // 重定向后的落点也要在白名单里（GitHub 的下载会 302 到 objects.githubusercontent.com）
+    if !download_url_ok(resp.url().as_str()) {
+        return Err(format!(
+            "下载被重定向到非预期站点：{}",
+            resp.url().host_str().unwrap_or("?")
+        ));
+    }
+    let total = resp.content_length().unwrap_or(0);
+
+    let partial = dir.join(format!("{name}.part"));
+    {
+        let mut f = std::fs::File::create(&partial).map_err(|e| format!("写临时文件失败：{e}"))?;
+        let mut received: u64 = 0;
+        let mut last_emit = Instant::now();
+        let mut buf = [0u8; 65536];
+        loop {
+            let n = resp.read(&mut buf).map_err(|e| format!("下载中断：{e}"))?;
+            if n == 0 {
+                break;
+            }
+            f.write_all(&buf[..n]).map_err(|e| format!("写临时文件失败：{e}"))?;
+            received += n as u64;
+            if last_emit.elapsed() >= Duration::from_millis(200) {
+                emit_progress(app, "download", received, total, None);
+                last_emit = Instant::now();
+            }
+        }
+        f.flush().ok();
+    }
+
+    emit_progress(app, "verify", total, total, None);
+    let got = sha256_file(&partial)?;
+    if got != want {
+        let _ = std::fs::remove_file(&partial);
+        emit_progress(app, "error", 0, 0, Some("校验失败"));
+        return Err("安装包校验失败（内容与发布页的 SHA-256 不一致），已删除，没有安装".into());
+    }
+    std::fs::rename(&partial, &dest).map_err(|e| format!("保存安装包失败：{e}"))?;
+    emit_progress(app, "ready", 1, 1, None);
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// 生成安装脚本。
+///
+/// 为什么不是「直接 spawn 安装器」：Windows 不允许覆盖正在运行的 exe，
+/// 而我们要退出的这个进程正是它。所以脚本先等我们的 pid 消失，再 `/S` 静默装，
+/// 最后把新版启动起来。`-Wait` 保证「装完才启动」，否则会出现新版启动时文件还在写。
+fn ps1_script(pid: u32, setup: &std::path::Path, exe: &std::path::Path) -> String {
+    let q = |p: &std::path::Path| format!("'{}'", p.display().to_string().replace('\'', "''"));
+    let mut s = String::from("\u{feff}"); // UTF-8 BOM：PowerShell 5.1 才认得出中文路径
+    s.push_str("$ErrorActionPreference = 'SilentlyContinue'\r\n");
+    s.push_str(&format!("$target = {pid}\r\n"));
+    s.push_str("for ($i = 0; $i -lt 240; $i++) {\r\n");
+    s.push_str("  if (-not (Get-Process -Id $target -ErrorAction SilentlyContinue)) { break }\r\n");
+    s.push_str("  Start-Sleep -Milliseconds 250\r\n");
+    s.push_str("}\r\n");
+    s.push_str("Start-Sleep -Milliseconds 800\r\n");
+    s.push_str(&format!(
+        "Start-Process -FilePath {} -ArgumentList '/S' -Wait\r\n",
+        q(setup)
+    ));
+    s.push_str("Start-Sleep -Milliseconds 500\r\n");
+    s.push_str(&format!(
+        "if (Test-Path -LiteralPath {p}) {{ Start-Process -FilePath {p} }}\r\n",
+        p = q(exe)
+    ));
+    s.push_str("Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\r\n");
+    s
+}
+
+/// 校验通过后启动安装脚本，并在 1.2 秒后退出本进程。
+pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str) -> Result<(), String> {
+    let dir = update_dir();
+    let canon_dir = dir
+        .canonicalize()
+        .map_err(|_| "临时目录里没有待安装的包（可能被杀毒软件清掉了）".to_string())?;
+    let canon = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|e| format!("找不到安装包：{e}"))?;
+    if !canon.starts_with(&canon_dir) {
+        return Err("安装包不在允许的位置，拒绝执行".into());
+    }
+    let name = canon.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    if !setup_name_ok(name) {
+        return Err("安装包文件名不合法，拒绝执行".into());
+    }
+    let want = want_sha.trim().to_ascii_lowercase();
+    if !sha256_hex_ok(&want) {
+        return Err("缺少校验值，拒绝执行安装包".into());
+    }
+    // 执行前再算一次：下载完到点安装之间，文件可能被替换掉
+    if sha256_file(&canon)? != want {
+        let _ = std::fs::remove_file(&canon);
+        return Err("安装包校验失败（内容已被改动），已删除，没有安装".into());
+    }
+
+    let exe = std::env::current_exe().map_err(|e| format!("找不到当前程序路径：{e}"))?;
+    let script = dir.join("apply-update.ps1");
+    std::fs::write(&script, ps1_script(std::process::id(), &canon, &exe))
+        .map_err(|e| format!("写安装脚本失败：{e}"))?;
+
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&script)
+        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .spawn()
+        .map_err(|e| format!("启动安装脚本失败：{e}"))?;
+
+    // 留一点时间让前端把「正在安装」画完、把 IPC 收掉，然后自己退出
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(1200));
+        app.exit(0);
+    });
+    Ok(())
 }
 
 #[cfg(test)]
@@ -281,5 +597,92 @@ mod tests {
         assert!(ALLOWED_HOSTS.contains(&"api.github.com"));
         assert!(!ALLOWED_HOSTS.contains(&"evil.example"));
         assert!(RELEASES_PAGE.starts_with("https://github.com/706972745/FontManager/"));
+    }
+
+    // ── 下载 / 静默安装（1.8.4）──────────────────────────────────────
+
+    #[test]
+    fn download_url_must_be_https_and_whitelisted() {
+        assert!(download_url_ok(
+            "https://github.com/706972745/FontManager/releases/download/v1.8.3/FontManager_1.8.3_x64-setup.exe"
+        ));
+        assert!(download_url_ok("https://objects.githubusercontent.com/x/y"));
+        // 下面这些一律拒绝：http、外站、伪装成白名单前缀的域名
+        assert!(!download_url_ok("http://github.com/x"));
+        assert!(!download_url_ok("https://evil.example/setup.exe"));
+        assert!(!download_url_ok("https://github.com.evil.example/x"));
+        assert!(!download_url_ok("https://raw.githubusercontent.com/x"));
+        assert!(!download_url_ok("file:///C:/setup.exe"));
+        assert!(!download_url_ok(""));
+    }
+
+    #[test]
+    fn setup_name_cannot_escape_the_directory() {
+        assert!(setup_name_ok("FontManager_1.8.3_x64-setup.exe"));
+        assert!(!setup_name_ok("../../evil-setup.exe"));
+        assert!(!setup_name_ok("C:\\Windows\\evil-setup.exe"));
+        assert!(!setup_name_ok("FontManager_1.8.3_x64.msi"));
+        assert!(!setup_name_ok("setup.exe"));
+        assert!(!setup_name_ok(""));
+        assert!(!setup_name_ok(&format!("{}-setup.exe", "a".repeat(200))));
+    }
+
+    #[test]
+    fn sha256_hex_shape() {
+        assert!(sha256_hex_ok(&"a".repeat(64)));
+        assert!(sha256_hex_ok(&"0123456789abcdef".repeat(4)));
+        assert!(!sha256_hex_ok(""));
+        assert!(!sha256_hex_ok("xyz"));
+        assert!(!sha256_hex_ok(&"a".repeat(63)));
+        assert!(!sha256_hex_ok(&"g".repeat(64)));
+    }
+
+    #[test]
+    fn sha256_of_known_bytes() {
+        let dir = std::env::temp_dir().join("fontmanager-update-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("abc.bin");
+        std::fs::write(&f, b"abc").unwrap();
+        let h = sha256_file(&f).unwrap();
+        assert_eq!(h, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        let _ = std::fs::remove_file(&f);
+    }
+
+    #[test]
+    fn pick_setup_prefers_x64_and_lowercases_digest() {
+        let assets = serde_json::json!([
+            { "name": "FontManager_1.8.3_x64_en-US.msi", "browser_download_url": "https://github.com/a.msi",
+              "digest": "sha256:cccc" },
+            { "name": "FontManager_1.8.3_arm64-setup.exe", "browser_download_url": "https://github.com/b.exe",
+              "digest": "sha256:DDDD" },
+            { "name": "FontManager_1.8.3_x64-setup.exe", "browser_download_url": "https://github.com/c.exe",
+              "digest": "sha256:ABCDEF" }
+        ]);
+        let (url, name, sha) = pick_setup(&assets);
+        assert_eq!(name, "FontManager_1.8.3_x64-setup.exe");
+        assert_eq!(url, "https://github.com/c.exe");
+        assert_eq!(sha, "abcdef", "digest 要转小写，和本地 hex 比较才一致");
+    }
+
+    #[test]
+    fn pick_setup_without_assets_returns_empty() {
+        for assets in [serde_json::json!(null), serde_json::json!([])] {
+            let (url, name, sha) = pick_setup(&assets);
+            assert!(url.is_empty() && name.is_empty() && sha.is_empty());
+        }
+    }
+
+    #[test]
+    fn ps1_waits_for_our_pid_then_installs_silently() {
+        let setup = std::path::Path::new("C:\\Users\\a b\\Temp\\FontManager-update\\fm-setup.exe");
+        let exe = std::path::Path::new("C:\\Users\\a b\\AppData\\Local\\FontManager\\fontmanager.exe");
+        let s = ps1_script(4321, setup, exe);
+        assert!(s.starts_with('\u{feff}'), "PowerShell 5.1 靠 BOM 认 UTF-8 路径");
+        assert!(s.contains("$target = 4321"), "必须等本进程退出再装");
+        assert!(s.contains("Get-Process -Id $target"));
+        assert!(s.contains("-ArgumentList '/S'"), "静默安装参数");
+        assert!(s.contains("-Wait"), "装完才启动新版本");
+        assert!(s.contains("'C:\\Users\\a b\\Temp\\FontManager-update\\fm-setup.exe'"));
+        assert!(s.contains("'C:\\Users\\a b\\AppData\\Local\\FontManager\\fontmanager.exe'"));
     }
 }
