@@ -2349,20 +2349,24 @@ async fn check_update(store: State<'_, Store>, force: bool) -> Result<serde_json
     Ok(doc)
 }
 
-/// 下载新版本安装包（1.8.4）。下载完核对 SHA-256，对不上就删掉，**不会执行**。
+/// 下载新版本安装包（1.8.4；1.9.1 起多通道接力）。下载完核对 SHA-256，对不上就删掉，**不会执行**。
 ///
 /// 走 `spawn_blocking`：几 MB 的包在网络差时要几十秒，同步命令会把界面卡住。
 /// 进度通过 `update:progress` 事件推给前端（download / verify / ready / error）。
+/// `asset_id` 是 Release Asset 的数字 id，给 `api.github.com` 兜底通道用（0 = 没有兜底）。
 #[tauri::command]
 async fn update_download(
     app: tauri::AppHandle,
     url: String,
     name: String,
     sha256: String,
+    asset_id: u64,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::update::download_setup(&app, &url, &name, &sha256))
-        .await
-        .map_err(|e| format!("下载任务异常：{e}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::update::download_setup(&app, &url, &name, &sha256, asset_id)
+    })
+    .await
+    .map_err(|e| format!("下载任务异常：{e}"))?
 }
 
 /// 静默安装刚下好的包（1.8.4）：再校验一次 → 起一段等待脚本 → 本进程 1.2 秒后退出。
