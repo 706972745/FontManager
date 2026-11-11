@@ -2373,10 +2373,20 @@ async fn update_download(
 ///
 /// 退出是必须的：Windows 不允许覆盖正在运行的 exe。脚本会等我们消失再 `/S` 安装，
 /// 装完把新版启动起来。
+/// 静默安装刚下好的包（1.8.4）：再校验一次 → 起一段等待脚本 → 本进程 1.2 秒后退出。
+///
+/// 退出是必须的：Windows 不允许覆盖正在运行的 exe。脚本会等我们消失再 `/S` 安装，
+/// 装完把新版启动起来。`version` 是这次要装的版本号，只用于**装完核对**
+/// （写进 apply-update.log：`/S` 失败时旧 exe 还在原位，不核对就看不出「装了但没换」）。
 #[tauri::command]
-fn update_install(app: tauri::AppHandle, path: String, sha256: String) -> Result<(), String> {
+fn update_install(
+    app: tauri::AppHandle,
+    path: String,
+    sha256: String,
+    version: Option<String>,
+) -> Result<(), String> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::update::install_setup(&app, &path, &sha256)
+        crate::update::install_setup(&app, &path, &sha256, version.as_deref().unwrap_or(""))
     }))
     .unwrap_or_else(|_| Err("安装出错（已拦下，软件继续运行）；详情见日志".into()))
 }#[tauri::command]

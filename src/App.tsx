@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { ipc } from "./lib/ipc";
+import { UPDATE_RECHECK_TICK_MS, dueForUpdateCheck } from "./lib/updateGate";
 import { MotionConfig, motion } from "motion/react";
 import { Camera, Clock, FilterX, FolderOpen, History, Monitor, Power, PowerOff, SearchX, Star, Tag as TagIcon, Type } from "lucide-react";
 import { useEffect, useMemo } from "react";
@@ -265,8 +266,9 @@ function MainContent() {
   }, []);
 
   /**
-   * 启动时静默检查更新（1.8.1）。
+   * 检查更新（1.8.1；1.9.2 起常驻期间也复查）。
    *
+   * 用户口径：**每天最多查一次，有更新只提醒，装不装由用户决定**。
    * 三层节流一起用，缺一个都会变成骚扰：
    *   ① `updateCheck === false` → 一次请求都不发（内网机器 / 有出网审计的用户）；
    *   ② 24 小时内检查过 → 跳过（GitHub 匿名接口 60 次/小时/IP）；
@@ -274,16 +276,21 @@ function MainContent() {
    *
    * 全程不下载任何东西，只在**确实有新版本**时弹一条带「查看」按钮的提示。
    * 断网 / 限流 / 仓库没发布都是常态，失败一律静默 —— 一个检查更新不该制造错误弹窗。
+   *
+   * 为什么不是「启动时跑一次」了事：这是托盘常驻型软件，用户开着好几天不重启，
+   * 只在启动查 = 这几天永远不会被提醒。定时器每 6 小时看一眼「到 24 小时了没有」，
+   * 判断只是读一次 prefs，不联网。
    */
   useEffect(() => {
-    void (async () => {
+    let alive = true;
+    const tick = async () => {
       try {
         const prefs = await ipc.getPrefs();
+        if (!alive) return;
         if (prefs?.updateCheck === false) return;
-        const last = typeof prefs?.updateLastCheck === "number" ? prefs.updateLastCheck : 0;
-        if (Date.now() - last < 24 * 60 * 60 * 1000) return;
+        if (!dueForUpdateCheck(prefs?.updateLastCheck)) return;
         const info = await ipc.checkUpdate(false);
-        if (!info.hasUpdate || info.skipped) return;
+        if (!alive || !info.hasUpdate || info.skipped) return;
         toast.success(
           translate("update.availableTitle", { version: info.latest }),
           translate("update.availableDetail"),
@@ -293,8 +300,14 @@ function MainContent() {
       } catch {
         /* 静默：见上面的注释 */
       }
-    })();
-    // 只在启动时跑一次：t 变化（切语言）不该重新发起检查
+    };
+    void tick();
+    const timer = window.setInterval(() => void tick(), UPDATE_RECHECK_TICK_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+    // 只在挂载时起：t 变化（切语言）不该重新发起检查
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

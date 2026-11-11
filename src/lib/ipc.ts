@@ -679,9 +679,12 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    */
   updateDownload: (url: string, name: string, sha256: string, assetId: number) =>
     invoke<string>("update_download", { url, name, sha256, assetId }),
-  /** 静默安装：再校验一次 → 起等待脚本 → 本进程约 1.2 秒后退出并重启新版 */
-  updateInstall: (path: string, sha256: string) =>
-    invoke<void>("update_install", { path, sha256 }),
+  /**
+   * 静默安装：再校验一次 → 起等待脚本 → 本进程约 1.2 秒后退出并重启新版。
+   * `version` 只是给脚本装完核对用的（写进 apply-update.log），不参与任何安全判定。
+   */
+  updateInstall: (path: string, sha256: string, version?: string) =>
+    invoke<void>("update_install", { path, sha256, version }),
 };
 
 /** `check_update` 的结果 */
