@@ -314,13 +314,13 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 |---|---|
 | 卡片 `.family-card` | `padding: 20px 24px 22px 26px`；`min-height: 196px`（按 96px 档预留）；0 圆角 / 0 描边 / 透明底 / 无阴影 |
 | 行首锚点 | **固定长度三态**（与速览同一套）：单个 `::before` 伪元素，静止 6px 圆点 @ `left: 26 / top: 24` → 悬停 `2 × 80` 灰线（`--ui-line-hover`）→ 选中 `2 × 96` 蓝线（`--ui-accent`），`--t-quick` 过渡 `width / height / border-radius / background-color`。线从圆点往下长（`top` 固定）。**不跟随卡片高度** —— 1.8.5 曾做过「悬停 = 卡片高 − 48 / 选中占满整卡」，用户看过真机后要求卡片浏览界面回到原来的固定长度，「占满高度」那套只留给样张格子（§3.5） |
-| 卡头 `.card-head` | `margin-left: 30`（给锚点让位；1.8.6 由 22 加到 30，内容左缘 56 = 26 内距 + 30）/ gap 10 / `min-height: 16`；锚点竖线右缘在 28 → **线与文字 28px**，与速览行逐像素一致 |
+| 卡头 `.card-head` | `margin-left: 38`（给锚点让位；1.8.6 由 22 加到 38，内容左缘 64 = 26 内距 + 38）/ gap 10 / `min-height: 16`；锚点竖线右缘在 28 → **线与文字 36px**（速览行是 28px；卡片预览字更大，留白相应更宽） |
 | 族名 `.card-name` | 11px / 500 / `line-height: 16` / 主文字色 |
 | 格式徽标 `.badge` | 等宽 **9px** / `line-height: 14` / `padding: 0 4px` / 1px 描边 / **0 圆角** / 次文字色 / 字距 0.04em |
 | `VAR` 徽标 `.badge-variable` | **34×16** / 0 圆角 / 8px 等宽 / 蓝底白字 / 字距 0.04em |
-| 预览区 `.card-preview` | `margin-left: 30`（与族名同一条左缘，1.8.6 同改）/ `padding-top: 10` / `min-height: 46`（32px 档恰好） |
+| 预览区 `.card-preview` | `margin-left: 38`（与族名同一条左缘，1.8.6 同改）/ `padding-top: 10` / `min-height: 46`（32px 档恰好） |
 | 预览文字 `.preview-text` | `line-height: 1.15` / 主文字色 |
-| 字重区 `.card-styles` | `margin-left: 30`（同上）/ 顶部 1px 发丝线 / `padding-top: 6` |
+| 字重区 `.card-styles` | `margin-left: 38`（同上）/ 顶部 1px 发丝线 / `padding-top: 6` |
 | 归属芯片 `.member-chip` | 9px / **2px 圆角** / `padding: 1px 5px` / 1px 描边 / 无底色 |
 | 许可 `.lic-chip` | 9px / 无描边无底色 / 次文字色 |
 | 展开按钮 `.card-expand` | 4px 圆角 / 9px |
