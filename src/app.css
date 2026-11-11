@@ -7718,7 +7718,10 @@ body.ui-fade-out .app-frame {
   transform: none;
 }
 .family-card:hover {
-  background: var(--ui-hover);
+  /* 1.9.0：悬停不再画整行底色矩形（用户 2026-11-11：版权声明下面那个矩形底不要了，
+     要和速览一样把文字直接放在纸底上）。悬停反馈交给行首锚点 —— 圆点长成 2×80 灰线。
+     border-color / box-shadow 这两行保留：压住上方旧版 .family-card:hover 的
+     描边加粗与大阴影，别让它趁虚而入。 */
   border-color: var(--ui-line);
   box-shadow: none;
 }
@@ -8583,7 +8586,10 @@ body.ui-fade-out .app-frame {
   box-shadow: none;
 }
 .specimen-tile:hover {
-  background: var(--ui-hover);
+  /* 1.9.0：悬停不再画整格底色矩形（与卡片视图同一天改，用户 2026-11-11）——
+     反馈 = 行首锚点灰线（§3.5 锚点）。这条保留是为了压住上方 3334 行
+     旧版 .specimen-tile:hover 的渐变底，别让它复活。 */
+  background: none;
 }
 .specimen-tile.card-selected,
 .specimen-tile.card-selected:hover {
