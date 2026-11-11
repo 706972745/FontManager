@@ -11,8 +11,10 @@ import { APP_VERSION } from "../lib/version";
  * 设置 → 更新。
  *
  * 1.8.1 的约定是「只读，不下载、不执行任何远端内容」，安装包让用户去浏览器下。
- * 1.8.4 起多了一条**用户点了才会走**的一键路径（用户要求「静默下载 + 静默安装」），
- * 但边界没有放松，反而收得更紧：
+ * 1.8.4 起多了一条**用户点了才会走**的一键路径（用户要求「静默下载 + 静默安装」）；
+ * 1.8.7 按用户要求把「下载并安装」做成常驻按钮 —— 不用先点「检查更新」，
+ * 点它 = 检查 + 下载（进度条）+ 静默安装，「打开发布页」只在装不了时兜底。
+ * 边界没有放松，反而收得更紧：
  *
  * 1. **只在这三种条件同时满足时出现按钮**：发布里带了 NSIS 安装包直链、带了 SHA-256
  *    （GitHub Asset 的 digest）、当前是「按用户安装」的版本。缺一条就退回「打开下载页」，
@@ -72,17 +74,23 @@ export function UpdateSection() {
     };
   }, []);
 
+  /**
+   * 检查更新。返回结果给调用方（「下载并安装」内部要先查一次再下载）；
+   * `silent` = 不弹错误 toast（那条路自己会把错误写进 catch 分支）。
+   */
   const check = useCallback(
-    async (force: boolean) => {
+    async (force: boolean, silent = false): Promise<UpdateCheck | null> => {
       setBusy(true);
       setError(null);
       try {
         const next = await ipc.checkUpdate(force);
         setInfo(next);
+        return next;
       } catch (e) {
         setError(String(e));
         // 手点时把失败原因也弹出来（面板里那行小字容易被忽略）
-        if (force) toast.error(t("settings.updateFailed"), String(e));
+        if (force && !silent) toast.error(t("settings.updateFailed"), String(e));
+        return null;
       } finally {
         setBusy(false);
       }
@@ -103,22 +111,38 @@ export function UpdateSection() {
       .catch((e) => toast.error(String(e)));
   };
 
-  /** 下载 → 校验（后端做）→ 静默安装。全程只有用户点这一下。 */
+  /**
+   * 「下载并安装」完整链路（1.8.7 起按钮常驻，不再要求先点「检查更新」）：
+   * 检查（顺带刷新缓存）→ 有新版 → 下载（进度条）→ 校验（后端做）→ 静默安装重启。
+   * 已是最新就安静地收尾；这一版装不了（MSI / 缺直链）退回「打开发布页」。
+   */
   const downloadAndInstall = async () => {
-    if (!info?.canAutoInstall || progress || installLock.current) return;
+    if (progress || installLock.current) return;
     installLock.current = true;
     setError(null);
-    setProgress({ phase: "download", received: 0, total: 0, percent: 0 });
     try {
-      const path = await ipc.updateDownload(info.setupUrl, info.setupName, info.sha256);
+      const cur = info?.hasUpdate ? info : await check(true, true);
+      if (!cur) return;
+      if (!cur.hasUpdate) {
+        toast.success(t("settings.updateLatest"));
+        return;
+      }
+      if (!cur.canAutoInstall) {
+        // MSI / 缺直链：静默装不了，才退回浏览器
+        await ipc.openUrl(cur.url).catch((e) => toast.error(String(e)));
+        return;
+      }
+      setProgress({ phase: "download", received: 0, total: 0, percent: 0 });
+      const path = await ipc.updateDownload(cur.setupUrl, cur.setupName, cur.sha256);
       setProgress({ phase: "ready", received: 1, total: 1, percent: 100 });
-      await ipc.updateInstall(path, info.sha256);
+      await ipc.updateInstall(path, cur.sha256);
       // 走到这里安装脚本已经起来了，后端会在 1.2 秒后退出本进程
     } catch (e) {
-      installLock.current = false;
       setProgress(null);
       setError(String(e));
       toast.error(t("settings.updateInstallFailed"), String(e));
+    } finally {
+      installLock.current = false;
     }
   };
 
@@ -151,20 +175,22 @@ export function UpdateSection() {
           {busy ? t("settings.updateChecking") : t("settings.updateCheck")}
         </button>
 
-        {/* 能静默装就给「下载并安装」，装不了就退回「打开下载页」 */}
-        {info?.hasUpdate && info.canAutoInstall && !downloading && (
-          <button className="settings-data-btn" onClick={() => void downloadAndInstall()}>
-            <Download size={13} strokeWidth={1.5} />
-            {t("settings.updateInstallNow")}
-          </button>
-        )}
-        {info?.hasUpdate && !info.canAutoInstall && (
+        {/* 「下载并安装」常驻（1.8.7，用户要求：不跳发布页，点了就直接下载 +
+            进度条 + 静默安装）。只有查到新版但这一版装不了（MSI / 缺直链）时，
+            同一个位置才退化成「打开发布页」—— 那种情况下跳浏览器是唯一出路。 */}
+        {!downloading && (
           <button
             className="settings-data-btn"
-            onClick={() => void ipc.openUrl(info.url).catch((e) => toast.error(String(e)))}
+            disabled={busy}
+            onClick={() => void downloadAndInstall()}
+            data-hint-text={t("settings.updateCheckHint")}
           >
-            <ArrowUpRight size={12} strokeWidth={1.5} className="settings-btn-arrow" />
-            {t("settings.updateDownload")}
+            {manualOnly ? (
+              <ArrowUpRight size={12} strokeWidth={1.5} className="settings-btn-arrow" />
+            ) : (
+              <Download size={13} strokeWidth={1.5} />
+            )}
+            {manualOnly ? t("settings.updateDownload") : t("settings.updateInstallNow")}
           </button>
         )}
         {info?.hasUpdate && !info.skipped && !downloading && (
