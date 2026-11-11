@@ -451,7 +451,7 @@
   "quickbar.back": "Back to the full interface",
   "quickbar.backShort": "Full view",
   "quickbar.collapsedHint": "Collapsed — hover or press {hotkey} to expand",
-  "quickbar.copied": "Copied",
+  "copy.done": "Copied",
   "quickbar.copyHint": "Click to copy “{name}” · right-click for more",
   "quickbar.empty": "No fonts are enabled yet",
   "quickbar.enter": "Quick view of enabled fonts (auto-hides at the screen top)",

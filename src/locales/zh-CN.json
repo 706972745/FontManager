@@ -445,7 +445,7 @@
   "quickbar.back": "返回完整界面",
   "quickbar.backShort": "完整界面",
   "quickbar.collapsedHint": "速览已收起 · 靠近或按 {hotkey} 展开",
-  "quickbar.copied": "已复制",
+  "copy.done": "已复制",
   "quickbar.copyHint": "点击复制「{name}」· 右键更多操作",
   "quickbar.empty": "还没有启用任何字体",
   "quickbar.enter": "速览已启用字体（贴顶自动隐藏）",

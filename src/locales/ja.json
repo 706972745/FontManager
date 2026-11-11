@@ -441,7 +441,7 @@
   "quickbar.autoHideOn": "画面上端で自動的に隠す：オン（クリックでオフ）",
   "quickbar.back": "通常の画面に戻る",
   "quickbar.backShort": "通常画面",
-  "quickbar.copied": "コピーしました",
+  "copy.done": "コピーしました",
   "quickbar.copyHint": "クリックで「{name}」をコピー · 右クリックでその他",
   "quickbar.empty": "有効なフォントはまだありません",
   "quickbar.enter": "有効なフォントをクイック表示（画面上端で自動的に隠れます）",
