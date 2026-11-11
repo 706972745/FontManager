@@ -26,7 +26,7 @@ import {
   Type,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { springSnappy } from "../design/springs";
+import { scrimFade, springSnappy } from "../design/springs";
 import { familiesFor, useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
@@ -306,7 +306,7 @@ export function CommandPalette() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          transition={scrimFade}
           onClick={() => setOpen(false)}
         >
           <motion.div

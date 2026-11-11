@@ -138,7 +138,7 @@ export function StarRating({
             void toggleFavorite(family);
             setRating(family, undo ? 0 : 1);
           }}
-          whileTap={{ scale: 0.85 }}
+          whileTap={{ scale: 0.94, transition: springSnappy }}
         >
           <Star size={iconSize} strokeWidth={1.5} />
           {rating > 0 && (

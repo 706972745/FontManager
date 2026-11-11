@@ -1,8 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
-import { easeTop, spring } from "../design/springs";
+import { easeTop, spring, springSnappy } from "../design/springs";
 import { useFontCss, formatBytes, pathBasename } from "../lib/fontLoader";
 import { familiesFor, conflictsFor, useFontStore, type Family } from "../state/fontStore";
 import { ipc, type CharsetStats, type FontFace, type VariationAxis } from "../lib/ipc";
@@ -79,7 +79,8 @@ function StyleRow({
       className={`style-row ${selected ? "style-selected" : ""}`}
       onClick={onSelect}
       aria-pressed={selected}
-      whileTap={{ scale: 0.99 }}
+      /* 整行属于「大块面」：按统一口径压暗、不缩放（审计 P1-1） */
+      whileTap={{ opacity: 0.96, transition: springSnappy }}
     >
       <span
         className="style-name"
@@ -107,7 +108,7 @@ function StyleRow({
             void exportFace(face.path, pathBasename(face.path));
           }
         }}
-        whileTap={{ scale: 0.9 }}
+        whileTap={{ scale: 0.94, transition: springSnappy }}
       >
         <Download size={13} strokeWidth={1.5} />
       </motion.span>
@@ -130,7 +131,7 @@ function StyleRow({
             openContextMenuAt(r.left, r.bottom + 4, buildFaceMenu(familyData, face));
           }
         }}
-        whileTap={{ scale: 0.9 }}
+        whileTap={{ scale: 0.94, transition: springSnappy }}
       >
         <MoreHorizontal size={13} strokeWidth={1.75} />
       </motion.span>
@@ -198,7 +199,7 @@ function FeatureChips({
               aria-pressed={on}
               data-hint-text={tag}
               onClick={() => onToggle(tag)}
-              whileTap={{ scale: 0.96 }}
+              whileTap={{ scale: 0.97, transition: springSnappy }}
             >
               {featureLabel(tag)}
             </motion.button>
@@ -684,6 +685,11 @@ export function DetailPanel() {
   const [resizing, setResizing] = useState(false);
   /** 拖宽时挂上的监听清理函数：pointercancel / 卸载时统一收掉 */
   const dragCleanup = useRef<(() => void) | null>(null);
+  /**
+   * 内容滚动容器（.detail-inner）。去掉了 `key={family.name}` 之后它不再重建，
+   * 换族时得自己把滚动位置复位 —— 原来这一下是「整块重挂载」顺带完成的。
+   */
+  const innerRef = useRef<HTMLDivElement>(null);
 
   const onResizeDown = useCallback(
     (e: React.PointerEvent) => {
@@ -731,10 +737,13 @@ export function DetailPanel() {
 
   const [features, setFeatures] = useState<string[]>([]);
   const [featureOverrides, setFeatureOverrides] = useState<Record<string, boolean>>({});
-  useEffect(() => {
+  useLayoutEffect(() => {
     setStyleId(null);
     setAxisValues({});
     setFeatureOverrides({});
+    // 换族把内容滚回顶部：原来是 `key={family.name}` 重挂载顺带做的（审计 P1-7 去掉 key 之后必须自己来）。
+    // 用 layout effect：在 paint 之前复位，否则会先闪一帧「上一个族的滚动位置」。
+    if (innerRef.current) innerRef.current.scrollTop = 0;
   }, [selectedFamily]);
 
   const snapshots = useFontStore((s) => s.snapshots);
@@ -948,9 +957,19 @@ export function DetailPanel() {
           </div>
 
           <motion.div
-            key={family.name}
+            ref={innerRef}
             className="detail-inner"
-            initial="hidden"
+            /*
+             * 只在「面板从无到有」时播一次 12 段 stagger（审计 P1-7）。
+             *
+             * 原来这里有 `key={family.name}`：每换一个族，整块内容卸载重建，
+             * 12 段 y:10→0 从头再播一遍 —— 排版几乎没变，看起来是「整块在抖」。
+             * 去掉 key 之后组件保持挂载，换族只是各段内容跟着更新。
+             *
+             * initial 必须受 intro 门控（同文件的 aside 一直是这么写的）：
+             * 窗口形变期间挂载的话直接就位，别在窗口还在动的 260ms 里再叠一层入场。
+             */
+            initial={intro ? "hidden" : false}
             animate="show"
             /* 内容跟着外壳一起到位：原来 0.04 × N + 0.06 的延迟会让最后一块比面板
                晚 0.5 秒才出现，看起来像「壳先到、字后爬」。压到今天一条 300ms 的节奏里。 */
@@ -1358,8 +1377,8 @@ export function DetailPanel() {
                 className="detail-uninstall"
                 onClick={() => void uninstallFamily(family.name)}
                 variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.97 }}
+                whileHover={{ y: -1, transition: spring }}
+                whileTap={{ scale: 0.97, transition: springSnappy }}
               >
                 <Trash2 size={14} strokeWidth={1.5} />
                 {t("detail.moveToTrash")}

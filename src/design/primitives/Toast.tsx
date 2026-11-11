@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { CheckCircle2, Info, XCircle } from "lucide-react";
 import { useEffect } from "react";
 import { create } from "zustand";
-import { springBouncy } from "../springs";
+import { spring, springSnappy } from "../springs";
 import { playError, playKind } from "../../lib/sound";
 import { enqueueToast } from "../../lib/toastQueue";
 
@@ -154,13 +154,23 @@ export function Toaster() {
             role="status"
             initial={{ opacity: 0, x: 40, y: -10, scale: 0.94 }}
             animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+            /*
+             * 出场与入场同方向、同幅度（审计 P2-10）：原来只回 x:32、y 不动、
+             * scale 还是 0.96 —— 看上去是「略微变大再消失」，和「从右上进来」对不上。
+             * 现在原路退回：x:40 / y:-10，scale 收到 0.98（不再变大）。
+             *
+             * 入场曲线从 springBouncy（ζ≈0.51，16% 过冲）换成 springSnappy（ζ≈0.78）：
+             * Toast 是全项目唯一「会弹」的东西，与整体克制的基调不符（审计 P1-11）。
+             * 只改曲线、保留三轴：三轴同时动在 0.16s 里其实看不出「弹」，只是收尾抖一下。
+             */
             exit={{
               opacity: 0,
-              x: 32,
-              scale: 0.96,
+              x: 40,
+              y: -10,
+              scale: 0.98,
               transition: { duration: 0.16, ease: "easeIn" },
             }}
-            transition={springBouncy}
+            transition={springSnappy}
             onClick={() => dismiss(t.id)}
             onMouseEnter={() => pause(t.id)}
             onMouseLeave={() => resume(t.id)}
@@ -168,8 +178,8 @@ export function Toaster() {
             // 否则刚 Tab 过去它就被收走了（§5 第 34 条）
             onFocusCapture={() => pause(t.id)}
             onBlurCapture={() => resume(t.id)}
-            whileHover={{ y: -1 }}
-            whileTap={{ scale: 0.97 }}
+            whileHover={{ y: -1, transition: spring }}
+            whileTap={{ scale: 0.97, transition: springSnappy }}
             layout
           >
             {t.kind === "success" ? (

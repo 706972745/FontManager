@@ -898,7 +898,7 @@
   "tour.last.title": "Une dernière chose",
   "tour.next": "Suivant",
   "tour.quickbar.title": "La barre rapide",
-  "tour.quickbar.body": "Cliquez sur ce bouton (ou Alt + `) : toute la fenêtre se replie en une fine barre d'aperçu collée en haut de l'écran, avec uniquement les polices activées. Un clic sur une famille copie son nom ; dépliez la ligne pour voir graisses et licence ; recliquez sur le bouton pour revenir à la fenêtre complète.",
+  "tour.quickbar.body": "Cette fine bande collée en haut de l'écran, c'est la barre rapide : elle n'affiche que les polices activées. Un clic sur le nom d'une famille le copie ; la ligne se déplie pour montrer graisses et licence. En avançant, on revient tout seul à la fenêtre complète ; pour revenir ici, appuyez sur Alt + ` ou sur le bouton à droite de la barre de titre.",
   "tour.plugins.title": "Extensions",
   "tour.plugins.body": "La section Extensions des réglages étend l'application : installation depuis un ZIP, interrupteur général, activation individuelle. Une extension est un processus séparé — si elle plante, l'application continue. Une extension activée ajoute ses entrées au menu contextuel (font-sync, par exemple, synchronise incrémentalement votre bibliothèque vers votre dépôt GitHub privé).",
   "tour.sample.body": "Tapez ce que vous voulez ici et toute la bibliothèque s’affiche avec. Essayez le nom de votre marque, ou ce titre que vous êtes en train de composer.",

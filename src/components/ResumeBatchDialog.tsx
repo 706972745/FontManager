@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { History, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { springSnappy, springSoft } from "../design/springs";
+import { scrimFade, spring, springSnappy, springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
 import { useFocusTrap } from "../lib/useFocusTrap";
@@ -62,7 +62,7 @@ export function ResumeBatchDialog() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          transition={scrimFade}
         >
           <motion.div
             ref={panelRef}
@@ -96,7 +96,7 @@ export function ResumeBatchDialog() {
                 className="trashconfirm-cancel"
                 onClick={dismiss}
                 disabled={busy}
-                whileTap={busy ? undefined : { scale: 0.97 }}
+                whileTap={busy ? undefined : { scale: 0.97, transition: springSnappy }}
                 transition={springSoft}
               >
                 {t("resumeBatch.discard")}
@@ -105,8 +105,8 @@ export function ResumeBatchDialog() {
                 className="trashconfirm-run"
                 onClick={resume}
                 disabled={busy}
-                whileHover={busy ? undefined : { y: -1 }}
-                whileTap={busy ? undefined : { scale: 0.97 }}
+                whileHover={busy ? undefined : { y: -1, transition: spring }}
+                whileTap={busy ? undefined : { scale: 0.97, transition: springSnappy }}
                 transition={springSoft}
               >
                 {busy && <Loader2 size={14} strokeWidth={2} className="trashconfirm-spin" />}

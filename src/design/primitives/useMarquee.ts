@@ -48,6 +48,15 @@ export function useMarquee(size: number) {
     open: shift !== 0,
     moverStyle: {
       transform: `translateX(${shift}px)`,
+      /**
+       * 时长按字号与溢出量算（32px 基准 56ms/px；1.2s 下限 / 15s 上限）。
+       *
+       * 「减少动效」的降级**不在这里**：由 `design/tokens.css` 末尾那条
+       * `:root[data-motion="reduced"] .marquee-roll-on { transition-duration: 1ms }` 负责
+       * —— 它压的是 `transition-duration` 长属性，能盖住 `.marquee-roll-on` 简写里的值。
+       * 别再往这个内联变量上打主意：内联自定义属性优先级高于任何选择器，
+       * `{ --marquee-dur: 1ms }` 这种写法压不住它（这是两件不同的事）。
+       */
       "--marquee-dur": `${Math.min(
         15000,
         Math.max(1200, Math.abs(shift) * 56 * Math.max(0.25, size / 32)),

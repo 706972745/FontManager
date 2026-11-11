@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, FolderSync, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { springSnappy, springSoft } from "../design/springs";
+import { scrimFade, spring, springSnappy, springSoft } from "../design/springs";
 import { toast } from "../design/primitives/Toast";
 import { ipc } from "../lib/ipc";
 import { useT } from "../lib/i18n";
@@ -126,7 +126,7 @@ export function LabelResyncDialog({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          transition={scrimFade}
         >
           <motion.div
             ref={panelRef}
@@ -204,8 +204,8 @@ export function LabelResyncDialog({
                   className="trashconfirm-run"
                   onClick={() => void apply()}
                   disabled={!canApply}
-                  whileHover={canApply ? { y: -1 } : undefined}
-                  whileTap={canApply ? { scale: 0.97 } : undefined}
+                  whileHover={canApply ? { y: -1, transition: spring } : undefined}
+                  whileTap={canApply ? { scale: 0.97, transition: springSnappy } : undefined}
                   transition={springSoft}
                 >
                   {applying && (

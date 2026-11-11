@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   ArrowUpDown,
   Check,
@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { springSnappy, springSoft } from "../design/springs";
+import { spring, springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
 import { familiesFor, MIN_PREVIEW_SIZE_INDEX, SIZES, allTags, useFontStore, type SortMode } from "../state/fontStore";
@@ -90,7 +90,7 @@ export function SortMenu() {
         onClick={toggle}
         aria-haspopup="listbox"
         aria-expanded={open}
-        whileTap={{ scale: 0.96 }}
+        whileTap={{ scale: 0.97, transition: springSnappy }}
       >
         <ArrowUpDown size={13} strokeWidth={1.5} />
         <span>{t(SORT_KEYS[sort])}</span>
@@ -317,7 +317,7 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t("filter.aria")}
-        whileTap={{ scale: 0.96 }}
+        whileTap={{ scale: 0.97, transition: springSnappy }}
       >
         <Filter size={13} strokeWidth={1.5} />
         {activeCount > 0 && <span className="filter-count tabular">{activeCount}</span>}
@@ -654,6 +654,18 @@ function RescanButton() {
   const t = useT();
   const rescan = useFontStore((s) => s.rescan);
   const scanning = useFontStore((s) => s.phase === "scanning");
+  /**
+   * 减少动效下**不能**把转圈交给 motion（审计 P2-8）。
+   *
+   * `MotionConfig reducedMotion="always"` 会把 rotate 直接压成终态 → 图标停在半路，
+   * 看起来像「扫描卡死了」。而「仍在工作」这个信号本身比动画更重要，
+   * 所以这里换成 CSS 慢转（3s 一圈）：既没有快速旋转的刺激，也不会被读成死机。
+   * 与 `.spin`（减少动效下 animation: none）口径不同，理由写在这里：
+   * 那几处是**装饰**，这一处是**唯一的活动指示**。
+   */
+  const motionPref = useFontStore((s) => s.motionPref);
+  const systemReduce = useReducedMotion();
+  const slowSpin = systemReduce || motionPref === "reduced";
   return (
     <motion.button
       data-hint="hint.rescan"
@@ -661,13 +673,13 @@ function RescanButton() {
       aria-label={t("top.rescan")}
       disabled={scanning}
       onClick={() => void rescan()}
-      whileTap={{ scale: 0.94 }}
+      whileTap={{ scale: 0.94, transition: springSnappy }}
     >
       <motion.span
-        className="rescan-icon"
-        animate={scanning ? { rotate: 360 } : { rotate: 0 }}
+        className={scanning && slowSpin ? "rescan-icon rescan-spin-slow" : "rescan-icon"}
+        animate={scanning && !slowSpin ? { rotate: 360 } : { rotate: 0 }}
         transition={
-          scanning
+          scanning && !slowSpin
             ? { duration: 1.2, repeat: Infinity, ease: "linear" }
             : { duration: 0.2 }
         }
@@ -704,7 +716,7 @@ function ImportFolderButton() {
           setBusy(false);
         }
       }}
-      whileTap={{ scale: 0.94 }}
+      whileTap={{ scale: 0.94, transition: springSnappy }}
     >
       <FolderOpen size={14} strokeWidth={1.5} />
     </motion.button>
@@ -733,8 +745,8 @@ function CompareButton() {
         if (armed) openCompare(selection);
         else setComparePicking(!picking);
       }}
-      whileHover={{ y: -1 }}
-      whileTap={{ scale: 0.96 }}
+      whileHover={{ y: -1, transition: spring }}
+      whileTap={{ scale: 0.97, transition: springSnappy }}
     >
       <Columns2 size={14} strokeWidth={1.5} />
       <span>
@@ -868,9 +880,13 @@ export function TopBar() {
           aria-label={t("top.searchAria")}
           spellCheck={false}
         />
-        {searchFocus && searchText.trim().length > 0 && (
-          <SearchSuggest query={searchText} onPick={pickSuggestion} />
-        )}
+        {/* 建议下拉的出场动画靠这层 AnimatePresence（审计 P1-9）：组件本身是被
+            条件挂载的，自己包一层收不到卸载，exit 就成死代码（项目踩过一次）。 */}
+        <AnimatePresence>
+          {searchFocus && searchText.trim().length > 0 && (
+            <SearchSuggest key="suggest" query={searchText} onPick={pickSuggestion} />
+          )}
+        </AnimatePresence>
         {searchText.length > 0 && (
           <button
             className="search-clear"
@@ -955,8 +971,14 @@ export function TopBar() {
             tabIndex={viewMode === mode ? 0 : -1}
             className={`view-btn ${viewMode === mode ? "view-btn-active" : ""}`}
             onClick={() => setViewMode(mode)}
-            whileTap={{ scale: 0.94 }}
+            whileTap={{ scale: 0.94, transition: springSnappy }}
           >
+            {/* 滑动指示器（审计 P1-10）：与侧栏 nav-pill 同一套共享元素。
+                挂在当前按钮内部而不是绝对定位算坐标 —— 三个 tab 的宽度由图标 + padding
+                决定，写死 left 在换语言 / 换字号时就会错位。 */}
+            {viewMode === mode && (
+              <motion.span className="view-pill" layoutId="view-pill" transition={springSnappy} />
+            )}
             {mode === "grid" ? (
               <LayoutGrid size={15} strokeWidth={1.5} />
             ) : mode === "list" ? (

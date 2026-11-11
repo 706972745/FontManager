@@ -137,6 +137,15 @@ function EmptyLibrary({
     title = t("empty.system.title");
     hint = t("empty.system.body");
   }
+  /**
+   * 空态换「理由」时的 key：库空 / 搜不到 / 筛没了 / 某个分组空了……
+   * 原来是一个实例直接换字符串，文字硬跳（审计 P2-3）。
+   */
+  const emptyKey = searching
+    ? "search"
+    : filtered
+      ? "filtered"
+      : `${nav.kind}:${"name" in nav && nav.name ? nav.name : ""}`;
   return (
     <motion.div
       className="empty-state"
@@ -144,9 +153,18 @@ function EmptyLibrary({
       animate={{ opacity: 1, y: 0 }}
       transition={intro ? spring : INTRO_OFF}
     >
-      <span className="empty-tile">{icon}</span>
-      <h2>{title}</h2>
-      <p>{hint}</p>
+      {/* 内层带 key：换理由时重挂载、只做 120ms 淡入，不再硬跳 */}
+      <motion.div
+        key={emptyKey}
+        className="empty-inner"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.12 }}
+      >
+        <span className="empty-tile">{icon}</span>
+        <h2>{title}</h2>
+        <p>{hint}</p>
+      </motion.div>
     </motion.div>
   );
 }
@@ -756,6 +774,10 @@ export default function App() {
     return (
       <MotionConfig reducedMotion={motionPref === "reduced" ? "always" : "user"}>
         <QuickBar />
+        {/* 导览在速览态下也要活着：它自己要讲速览这一步（1.9.3）。只带导览这一层，
+            完整界面那些浮层（DropZone / SelectionBar / 设置 / 右键菜单…）在速览里
+            没有意义，也不能顺手带出来。 */}
+        <Onboarding />
         <ContextMenuHost />
         <Toaster />
         <ResizeGrips />

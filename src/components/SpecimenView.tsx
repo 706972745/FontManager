@@ -4,6 +4,7 @@ import { ChevronDown, Lock, Monitor } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
 import { PillToggle } from "../design/primitives/PillToggle";
+import { springSnappy } from "../design/springs";
 import { useMarquee } from "../design/primitives/useMarquee";
 import { useListFontCss } from "../lib/fontLoader";
 import { listChars } from "../lib/listChars";
@@ -212,7 +213,7 @@ const SpecimenTile = memo(function SpecimenTile({
       onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(family))}
       onMouseEnter={previewMarquee.enter}
       onMouseLeave={previewMarquee.leave}
-      whileTap={{ opacity: 0.96 }}
+      whileTap={{ opacity: 0.96, transition: springSnappy }}
     >
       <header className="specimen-head">
         <FormatBadge format={family.formats[0]} isVariable={family.isVariable} />

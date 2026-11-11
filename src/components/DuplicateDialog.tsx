@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { springSnappy } from "../design/springs";
+import { scrimFade, springSnappy } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
 import { useT } from "../lib/i18n";
 import { useFocusTrap } from "../lib/useFocusTrap";
@@ -57,7 +57,7 @@ export function DuplicateDialog() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          transition={scrimFade}
         >
           <motion.div
             ref={panelRef}

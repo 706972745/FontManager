@@ -898,7 +898,7 @@
   "tour.last.title": "Mais uma coisa",
   "tour.next": "Avançar",
   "tour.quickbar.title": "A barra rápida",
-  "tour.quickbar.body": "Clique neste botão (ou Alt + `) e a janela inteira se recolhe numa barra de visualização rápida grudada no topo da tela: apenas fontes ativadas. Um clique no nome da família copia; expanda a linha para ver pesos e licença; clique no botão de novo para voltar à janela completa.",
+  "tour.quickbar.body": "Esta faixa estreita grudada no topo da tela é a barra rápida: ela lista só as fontes ativadas. Um clique no nome da família copia; a linha se expande para ver pesos e licença. Ao avançar, voltamos sozinhos à janela completa; para entrar de novo, use Alt + ` ou o botão à direita da barra de título.",
   "tour.plugins.title": "Extensões",
   "tour.plugins.body": "A seção Extensões nas Configurações amplia o aplicativo: instalar de um ZIP, interruptor geral, ativar um por um. Uma extensão é um processo à parte — se falhar, o aplicativo continua rodando. As ativadas adicionam entradas ao menu de contexto (o font-sync, por exemplo, sincroniza sua biblioteca incrementalmente com seu repositório privado no GitHub).",
   "tour.sample.body": "Digite qualquer coisa aqui e a biblioteca inteira é redesenhada com isso. Experimente o nome da sua marca ou aquele título que você está compondo.",

@@ -3,7 +3,7 @@ import { Camera, ChevronDown, Clock, FileUp, FolderOpen, Globe, History, Info, K
 import { useEffect, useRef, useState } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { openContextMenu, type MenuItem } from "../design/primitives/ContextMenu";
-import { spring, springSoft, staggerDelay } from "../design/springs";
+import { spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { allTags, familiesFor, isSystemFamily, useFontStore, type Family, type Nav } from "../state/fontStore";
 import { faceKey } from "../lib/snapshotKey";
@@ -72,7 +72,7 @@ function NavRow({
       initial={intro ? { opacity: 0, x: -12 } : false}
       animate={{ opacity: 1, x: 0 }}
       transition={intro ? { ...springSoft, delay: staggerDelay(index) } : INTRO_OFF}
-      whileTap={{ scale: 0.97 }}
+      whileTap={{ opacity: 0.96, transition: springSnappy }}
     >
       {active && (
         <motion.span className="nav-pill" layoutId="nav-pill" transition={spring} />
@@ -403,7 +403,7 @@ export function Sidebar() {
               className="sidebar-add"
               aria-label={t("side.newCollection")}
               onClick={() => setCreating(true)}
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.94, transition: springSnappy }}
             >
               <Plus size={13} strokeWidth={2} />
             </motion.button>
@@ -539,7 +539,7 @@ export function Sidebar() {
                   },
                 ])
               }
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.94, transition: springSnappy }}
             >
               <FileUp size={13} strokeWidth={2} />
             </motion.button>
@@ -548,7 +548,7 @@ export function Sidebar() {
               className="sidebar-add"
               aria-label={t("side.newSnapshot")}
               onClick={() => setCreatingSnapshot(true)}
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.94, transition: springSnappy }}
             >
               <Plus size={13} strokeWidth={2} />
             </motion.button>
@@ -691,7 +691,7 @@ export function Sidebar() {
           initial={intro ? { opacity: 0, x: -12 } : false}
           animate={{ opacity: 1, x: 0 }}
           transition={intro ? { ...springSoft, delay: staggerDelay(i++) } : INTRO_OFF}
-          whileTap={{ scale: 0.97 }}
+          whileTap={{ opacity: 0.96, transition: springSnappy }}
         >
           <span className="nav-icon">
             <Keyboard size={15} strokeWidth={1.5} />

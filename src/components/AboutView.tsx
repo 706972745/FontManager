@@ -9,7 +9,7 @@ import {
   SlidersHorizontal,
   Star,
 } from "lucide-react";
-import { spring, springSoft, staggerDelay } from "../design/springs";
+import { spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
 import { toast } from "../design/primitives/Toast";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 import { APP_LICENSE, displayVersion } from "../lib/version";
@@ -85,8 +85,8 @@ function LinkCard({ item, delay }: { item: LinkItem; delay: number }) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...springSoft, delay }}
-      whileHover={{ y: -1 }}
-      whileTap={{ scale: 0.99 }}
+      whileHover={{ y: -1, transition: spring }}
+      whileTap={{ opacity: 0.96, transition: springSnappy }}
     >
       {/* 结构对齐参考图：第一行「图标 + 标题 + 箭头」，第二行地址跨整宽压在图标下方 */}
       <span className="about-link-icon">{item.icon}</span>

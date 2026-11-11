@@ -239,8 +239,12 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
        * 原来还有 whileTap={{ scale: 0.99 }}：点击卡片切详情时整卡缩一下，
        * 贴右的星标 / 开关跟着横移约 4px 再弹回 —— 用户报的「切换详细面板时按钮偏移」
        * 就是这一下。这里给一个不改变几何的按下反馈（轻微压暗），位置始终不动。
+       *
+       * 停用态按下不能「变亮」（审计 P1-4）：常态 0.94，按下若还是 0.96 反而更亮。
+       * 整卡属于「大块面」，按统一口径只压暗、不缩放；曲线显式给 springSnappy
+       * （审计 P1-1），不再吃 motion 的默认过渡。
        */
-      whileTap={{ opacity: 0.96 }}
+      whileTap={{ opacity: family.active ? 0.96 : 0.9, transition: springSnappy }}
       transition={spring}
       layout="position"
     >
@@ -267,8 +271,8 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
               e.stopPropagation();
               setExpanded((v) => !v);
             }}
-            whileHover={{ y: -1 }}
-            whileTap={{ scale: 0.94 }}
+            whileHover={{ y: -1, transition: spring }}
+            whileTap={{ scale: 0.94, transition: springSnappy }}
           >
             <motion.span
               className="chevron"
@@ -402,9 +406,18 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
               </span>
             </motion.p>
           ) : failed ? (
-            <p key="failed" className="preview-text preview-failed">
+            /* 失败态是 5 个分支里唯一没有入场动画的（审计 P2-2）：
+               字体解码失败时这一格会「啪」地换成提示，与其它分支的淡入不同拍。
+               参数照上面的 noscript 分支逐字对齐。 */
+            <motion.p
+              key="failed"
+              className="preview-text preview-failed"
+              initial={intro ? { opacity: 0, y: 5 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={intro ? spring : INTRO_OFF}
+            >
               {t("card.noPreview")}
-            </p>
+            </motion.p>
           ) : (
             /* E1 占位：字体还在排队/解码时先用界面字体把示例文字顶上，
                加载完成换成真字体 —— 首屏不再是一排 skeleton 灰条（B1 p95 489 ms 的体感主因） */

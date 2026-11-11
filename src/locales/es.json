@@ -898,7 +898,7 @@
   "tour.last.title": "Una última cosa",
   "tour.next": "Siguiente",
   "tour.quickbar.title": "La barra rápida",
-  "tour.quickbar.body": "Pulse este botón (o Alt + `) y toda la ventana se convierte en una barra de vista rápida pegada a la parte superior de la pantalla: solo fuentes activadas. Un clic en una familia copia su nombre; despliegue la fila para ver estilos y licencia; pulse el botón otra vez para volver a la ventana completa.",
+  "tour.quickbar.body": "Esta franja estrecha pegada al borde superior de la pantalla es la barra rápida: solo muestra las fuentes activadas. Un clic en el nombre de la familia lo copia; la fila se despliega para ver estilos y licencia. Al avanzar volvemos solos a la ventana completa; para entrar otra vez, pulse Alt + ` o el botón de la derecha de la barra de título.",
   "tour.plugins.title": "Complementos",
   "tour.plugins.body": "La sección Complementos de Ajustes amplía la aplicación: instalar desde un ZIP, interruptor general, activar uno a uno. Un complemento es un proceso aparte: si falla, la aplicación sigue funcionando. Los activados añaden sus entradas al menú contextual (font-sync, por ejemplo, sincroniza incrementalmente su biblioteca con su repositorio privado de GitHub).",
   "tour.sample.body": "Escribe aquí lo que quieras y toda la biblioteca se redibuja con ello. Prueba con el nombre de tu marca o con ese titular que estás componiendo.",
