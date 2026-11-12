@@ -1,16 +1,16 @@
 import { toast } from "../design/primitives/Toast";
-import { t } from "./i18n";
-import { ipc, type AdobeApp } from "./ipc";
-import { useFontStore } from "../state/fontStore";
+import { ipc } from "./ipc";
 import { pluginMenuItems } from "./pluginMenuBridge";
 
 /**
- * 双击「点击复制」的位置 = 套用到最近在用的设计软件（1.9.12）。
+ * 双击「点击复制」的位置 = 把这一下交给「字体套用」插件的「自动」项（1.9.12）。
  *
- * 优先交给「字体套用」插件的「自动」项：套用策略只有插件里一份。
- * 插件没装 / 没启用 / 没在跑时**静默兜底**走主程序自己的同一套引擎
- * （active_target + applyFaceInApp）—— 双击是复制位上的顺手操作，
- * 绝不能因为「你没装插件」弹一句像 bug 的提示。
+ * 主程序在这里**只做转发**：不判断目标软件、不调套用引擎、不写任何兜底逻辑。
+ * 套用策略（挑字重 / 认目标 / 翻提示）只有插件里一份，主程序不认识任何具体插件，
+ * 只按「菜单标题以『自动：』开头」这条约定找。
+ *
+ * 找不到插件时**什么都不做**：双击本身的「复制」已经生效，那就是这一下原本的行为。
+ * 不能提示「去启用插件」——用户会以为是软件坏了。
  *
  * `pluginMenuItems()` 是同步的（读 pluginMenuBridge 的缓存），所以只能放在事件回调里调，
  * 不能放进 render —— 缓存刷新时不会触发重渲染。
@@ -21,19 +21,7 @@ export function applyToActiveApp(family: string, faceId: string): void {
     if (!hit) continue;
     void ipc
       .pluginInvoke(p.id, "context-menu", { family, menu: hit.title, faceId })
-      .catch(() => void applyDirect(family, faceId)); // 插件调用失败也要落到兜底
+      .catch((e) => toast.error(String(e)));
     return;
   }
-  void applyDirect(family, faceId);
-}
-
-/** 兜底：与插件「自动」项同一条链路，只是由主程序自己发起 */
-async function applyDirect(family: string, faceId: string): Promise<void> {
-  const active = await ipc.activeApp().catch(() => null);
-  if (!active?.app) {
-    // 只有「三个软件都没开」才提示；这是用户能理解的状态，不是缺插件
-    toast.info(t("apply.noTarget"));
-    return;
-  }
-  await useFontStore.getState().applyFaceInApp(family, faceId, active.app as AdobeApp);
 }

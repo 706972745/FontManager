@@ -338,18 +338,6 @@ export interface AffinityConnection {
 export type InstallMode = "link" | "move" | "copy";
 
 /**
- * 「最近在用的设计软件」（`active_app` 命令，1.9.12）。
- *
- * 双击「点击复制」的**兜底路径**用它决定套到哪个软件（插件没装 / 没在跑时）。
- * `null` = 三个都没在跑，这是正常状态，不是错误 —— 调用方给一句提示即可。
- */
-export interface ActiveApp {
-  app: AdobeApp;
-  /** 前台窗口的 exe 文件名（小写），如 `photoshop.exe`；排查时有用 */
-  exe: string;
-}
-
-/**
  * 字族名为空时补一个可用的名字。
  *
  * 少数字体把 name 表的字族名写成空串（ALLMYHAN、Wartorn、EXCEL、苏新诗古印宋简…）。
@@ -630,11 +618,6 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
       familyName,
       aliases: aliases ?? [],
     }),
-  /**
-   * 最近在用的设计软件（1.9.12）。双击「点击复制」的兜底路径用它决定套到哪个软件。
-   * `null` = 三个都没在跑 —— 正常状态，不是错误。
-   */
-  activeApp: () => invoke<ActiveApp | null>("active_app"),
   appWarmState: () => invoke<AppWarm[]>("app_warm_state"),
   affinityLink: () => invoke<AffinityConnection | null>("affinity_link"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
