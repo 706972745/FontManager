@@ -34,7 +34,7 @@ and MCP when you want your tools to join in.
 
 <br>
 
-<img src="main.png?v=1.9.3" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
+<img src="main.png?v=2.0.0" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -113,7 +113,7 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: sidebar, toolbar, font cards with live previews](main.png?v=1.9.3)
+![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.0.0)
 
 **Find your way first: the window has five regions**
 
