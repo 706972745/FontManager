@@ -20,7 +20,7 @@ import { StarRating } from "./StarRating";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
-import { applyViaPlugin } from "../lib/applyViaPlugin";
+import { applyToActiveApp } from "../lib/applyActive";
 
 /** 把「目录 → 文件名列表」摊平成可点击的条目，同名去重、按文件名排序 */
 function flattenInfoFiles(map: Record<string, string[]>): { dir: string; name: string }[] {
@@ -992,7 +992,7 @@ export function DetailPanel() {
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   copyName(family.name, t("copy.familyName"));
-                  if (lead) applyViaPlugin(family.name, lead.id);
+                  if (lead) applyToActiveApp(family.name, lead.id);
                 }}
                 data-hint-text={t("detail.copyNameHint")}
               >
