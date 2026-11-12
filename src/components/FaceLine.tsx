@@ -114,6 +114,39 @@ export function FaceLine({
     copiedTimer.current = window.setTimeout(() => setCopied(false), COPIED_MS);
   }, [family.name, face, t]);
 
+  /**
+   * 整条字重行都可点（用户 2026-11-12：「点击一整条任何一个地方都可以复制，
+   * 除了原本点击有其他操作的按钮」）。
+   *
+   * 做成「行上挂一个 click，再按命中目标让路」而不是把整行改成 `<button>`：
+   * 行里本来就有按钮（字重名、眼睛开关），HTML 不允许按钮套按钮，而且行内按钮的
+   * 键盘可达性（Tab 到名字、Enter 复制）靠的就是它们各自是按钮 —— 换成一个整行按钮
+   * 反而会把眼睛开关一起吞进去。
+   *
+   * 两种目标要分开看：
+   * · 行内已有自己动作的元素（字重名按钮、眼睛开关、将来的任何 button / a / 输入类）
+   *   一律 **让路**，只在它们身上点才算它们的事 —— 眼睛按钮仍只会启停字重，不会复制；
+   * · 其余地方（空白、缺字提示、归属胶囊、占位条）都算「点这一行」→ 复制。
+   *
+   * 让路与截断冒泡是两件事，别合并：
+   * · 让路 = `closest(...)` 命中就 return，什么都不做；
+   * · 截断 = `stopPropagation()`。完整界面的整卡是 `role="button"` 且点击会改选中
+   *   （FamilyCard 的 onClick），复制不该顺手把卡片选中 / 取消选中。
+   * `onPointerDown` 同理：卡片本体有 `whileTap`（整卡透明度掉到 0.9），按一下行内空白
+   * 不该连整卡一起暗一下 —— 与字重名按钮、PillToggle、星标按钮同一套处理。
+   */
+  const isOwnActionTarget = (target: EventTarget | null) =>
+    !!(target as Element | null)?.closest?.("button, a[href], input, select, textarea");
+  const onLineClick = (e: ReactMouseEvent) => {
+    if (isOwnActionTarget(e.target)) return;
+    e.stopPropagation();
+    copyFaceName();
+  };
+  const onLinePointerDown = (e: ReactMouseEvent) => {
+    if (isOwnActionTarget(e.target)) return;
+    e.stopPropagation();
+  };
+
   const title = t("hint.copyFaceName", { name: fullName });
   const onContext = (e: ReactMouseEvent) => {
     e.preventDefault();
@@ -168,7 +201,7 @@ export function FaceLine({
         {t("copy.done")}
       </span>
       {/* 纯占位：把 ScriptChip / 归属胶囊 / 眼睛按钮照旧推到行尾。空元素、`aria-hidden`，
-          不参与可访问性树，也不可点。 */}
+          不参与可访问性树。它本身可点 —— 整条行都是复制热区，见上面的 onLineClick。 */}
       <span className="face-line-spacer" aria-hidden="true" />
       <ScriptChip status={scriptStatus} />
       {/* 这个字重本身损坏 / 不完整：直接标在字重行上，别让用户点进去才发现 */}
@@ -233,6 +266,8 @@ export function FaceLine({
         onMouseEnter={() => onHover(face.id)}
         onMouseLeave={() => onHover(null)}
         onContextMenu={onContext}
+        onClick={onLineClick}
+        onPointerDown={onLinePointerDown}
       >
         {body}
       </div>
@@ -244,6 +279,8 @@ export function FaceLine({
       onMouseEnter={() => onHover(face.id)}
       onMouseLeave={() => onHover(null)}
       onContextMenu={onContext}
+      onClick={onLineClick}
+      onPointerDown={onLinePointerDown}
       initial={intro ? { opacity: 0, y: 8 } : false}
       animate={{ opacity: 1, y: 0 }}
       transition={intro ? { ...spring, delay: staggerDelay(index) } : INTRO_OFF}

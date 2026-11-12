@@ -191,6 +191,8 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
   同时该行左竖线（悬停时的灰线）转成 `--accent-a`，到点文字与竖线一起回归。
   「已复制」常驻占位、只切 opacity，出现时不推挤右侧元素。悬停 / 键盘 Tab 聚焦后
   Enter、Space 都能触发；点击不冒泡（不会连带选中整行/整卡）
+- **整条字重行都可点**（1.9.7）：空白处、占位条、缺字提示、归属胶囊都算复制热区，
+  只有行内已有动作的按钮（名字、眼睛启停）让路；行内光标为 `pointer`
 - 窄档（≤400px）时网格变 5 列，字重列表改为从**第二列**起 —— 它与 Aa 列同宽，视觉上仍对齐内容起点
 
 ### 2.5 折叠态（拖回屏幕顶边）
@@ -841,10 +843,11 @@ compare-panel 排除，于是**没有更晚的 12 覆盖**，最终 **8px 胜出
 | 元素 | `.face-line-name`，`<button type="button">`（原来是 `<span>`） |
 | 位置（`flex`） | 名字 `flex: 0 1 auto`（**按内容宽度站住**，长名字靠 `min-width: 0` + `overflow: hidden` + `text-overflow: ellipsis` 收缩）；「已复制」紧随其后、`margin-left: 2px`（与行 `gap: 6px` 合计 **8px**）；剩余空间交给空占位条 `.face-line-spacer`（`flex: 1 1 auto`），`ScriptChip` / 归属胶囊 / 眼睛按钮因此仍在行尾。**不要**把名字改回 `flex: 1`：那会让它吃掉整行剩余空间，把「已复制」顶到行尾、中间空出一大片（真机验收打回的那次） |
 | 复制内容 | `faceFullName(族名, 字面)` = `"族名 样式"`，与右键菜单「复制名字」**同一份实现**（`src/lib/faceName.ts`）；族名 + 样式都为空时退回 PostScript 名 → 文件名 |
+| 点击热区 | **整条 `.face-line` 都可点**（1.9.7）：只有行内已有自己动作的元素（字重名按钮、眼睛启停开关、任何 `button` / `a[href]` / 输入类）让路，其余地方 —— 空白、占位条、缺字提示、归属胶囊 —— 一律算「点这一行」→ 复制。这层判定按 `closest("button, a[href], input, select, textarea")` 命中即 return，**不**做成整行 `<button>`（按钮不能套按钮，且会把眼睛开关一起吞进去） |
 | 反馈 1 | 名字后就地出现 `.face-line-copied`「已复制」：9px / `--accent-a` / `line-height 1.3`；**常驻 DOM、只切 opacity**（`--t-quick` 线性），出现 / 消失不移动右侧任何元素；亮 **1500ms** |
 | 反馈 2 | 该行 `.face-line.is-copied` 的左竖线（`inset 2px 0 0`）由悬停灰 `rgba(var(--ink-rgb),0.32)` 改成 `--accent-a`，与「已复制」同时出现、到点同时回归 |
 | 覆盖关系 | 复制态压住悬停态（`.face-line.is-copied` 写在 `.face-line:hover` 之后）；连点同一行**重置**计时，不叠加 |
-| 手势 | 左键点击、键盘 Enter / Space（按钮原生行为）。**点击**不冒泡（不触发父级卡片的选中与详情面板开关）；**按键只拦 Enter / Space**（按钮自己消费的那两个），其余键必须放行 —— 全局快捷键挂在 `window` 的冒泡阶段，在按钮里无差别拦截会让「点过字重名之后 Delete / Esc / 方向键 / Ctrl+A 全部失效」；`pointerdown` 只拦在按钮自己身上，避免卡片 `whileTap` 把整卡压暗 |
+| 手势 | 左键点击**行内任意非按钮处或字重名本身**、键盘 Enter / Space（按钮原生行为）。**点击**不冒泡（不触发父级卡片的选中与详情面板开关）；**按键只拦 Enter / Space**（按钮自己消费的那两个），其余键必须放行 —— 全局快捷键挂在 `window` 的冒泡阶段，在按钮里无差别拦截会让「点过字重名之后 Delete / Esc / 方向键 / Ctrl+A 全部失效」；`pointerdown` 只拦在按钮自己身上，避免卡片 `whileTap` 把整卡压暗。整行可点之后，光标在行内（含空白）为 `pointer` |
 | Toast | 仍走原有 `copyText` —— 右下角一条 toast + tick 音效，文案 `copy.faceName` |
 | 悬停提示 | `hint.copyFaceName`：「点击复制「{name}」」。`{name}` = **将要复制的那一串**（`faceFullName`，原始族名 + 样式），与剪贴板内容、右键菜单标题三处一致 —— 提示说复制什么，粘出来就是什么 |
 
