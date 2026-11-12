@@ -1061,7 +1061,6 @@
   "settings.pluginsRefresh": "Rescanner",
   "settings.pluginsInstallZip": "Installer depuis un ZIP",
   "settings.plugCrashCause": "Cause : {line}",
-  "settings.plugCrashNoLog": "Aucune autre piste dans le journal — ouvrez le bouton journal à droite",
   "settings.pluginsOpenLog": "Ouvrir le journal",
   "settings.pluginsOpenOne": "Dossier",
   "settings.pluginsSettings": "Réglages de l’extension",

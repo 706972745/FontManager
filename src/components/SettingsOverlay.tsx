@@ -1299,15 +1299,13 @@ export function SettingsOverlay() {
                       {p.error ?? p.summary ?? p.description ?? p.permissions.join(" · ")}
                     </div>
                     {/* 崩溃原因（1.9.x）：真实死因就在 activation.log 里，别让用户自己去翻。
-                        一行小字、超长省略，`title` 兜住被截断的部分。 */}
-                    {p.error && (
-                      <div
-                        className="settings-plugin-crash"
-                        title={p.lastLog ?? undefined}
-                      >
-                        {p.lastLog
-                          ? t("settings.plugCrashCause", { line: p.lastLog })
-                          : t("settings.plugCrashNoLog")}
+                        一行小字、超长省略，`title` 兜住被截断的部分。
+                        **只在真捞到错误行时**才多这一行：`error` 还有「API 级别不兼容」
+                        这种非崩溃来源，那种情况 .settings-sub 已经把话说清了，
+                        再补一句「日志里没留下线索」是噪音，还会让人以为插件崩了。 */}
+                    {p.error && p.lastLog && (
+                      <div className="settings-plugin-crash" title={p.lastLog}>
+                        {t("settings.plugCrashCause", { line: p.lastLog })}
                       </div>
                     )}
                   </div>

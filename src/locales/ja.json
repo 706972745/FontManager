@@ -1027,7 +1027,6 @@
   "settings.pluginsRefresh": "再スキャン",
   "settings.pluginsInstallZip": "ZIP からインストール",
   "settings.plugCrashCause": "原因：{line}",
-  "settings.plugCrashNoLog": "ログに手がかりが残っていません。右のログボタンで全文を確認してください",
   "settings.pluginsOpenLog": "ログを見る",
   "settings.pluginsOpenOne": "フォルダー",
   "settings.pluginsSettings": "プラグイン設定",

@@ -1061,7 +1061,6 @@
   "settings.pluginsRefresh": "Reexaminar",
   "settings.pluginsInstallZip": "Instalar do ZIP",
   "settings.plugCrashCause": "Causa: {line}",
-  "settings.plugCrashNoLog": "O log não traz mais pistas — abra o botão de log à direita",
   "settings.pluginsOpenLog": "Abrir log",
   "settings.pluginsOpenOne": "Pasta",
   "settings.pluginsSettings": "Configurações do plugin",
