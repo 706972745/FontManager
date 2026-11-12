@@ -2536,27 +2536,6 @@ async fn apply_font_in_app(
     Ok(outcome)
 }
 
-/// 最近在用的设计软件（1.9.12）。前端双击「点击复制」的位置用它决定套到哪个软件。
-///
-/// 为什么不走 HTTP：这是 UI 交互路径上的一次探测，几十毫秒内要出结果，
-/// 走本地 API 反而要多付一次令牌校验 + 序列化往返；而且本地 API 默认是关的。
-#[derive(serde::Serialize)]
-struct ActiveApp {
-    /// photoshop / illustrator / coreldraw
-    app: String,
-    /// 前台窗口的 exe 文件名（小写），排查时有用
-    exe: String,
-}
-
-/// `null` = 三个软件都没在跑（正常状态，不是错误，前端给一句提示即可）。
-#[tauri::command]
-fn active_app() -> Option<ActiveApp> {
-    aim::active_target().map(|(app, exe)| ActiveApp {
-        app: app.to_string(),
-        exe,
-    })
-}
-
 /// panic 钩子从这里落盘（main.rs 里 set_hook 调它）。
 /// 发布版没有控制台，闪退现场只剩这一条线索 —— 别删。
 pub fn log_panic(msg: &str) {
@@ -2912,7 +2891,6 @@ pub fn run() {
             open_url,
             adobe_available,
             apply_font_in_app,
-            active_app,
             window_dock::set_quickbar_mode,
             window_dock::set_dock_sensor,
             window_round::set_window_rounded,
