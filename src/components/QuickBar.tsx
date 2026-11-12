@@ -1,6 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { listen } from "@tauri-apps/api/event";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
   ChevronRight,
@@ -11,10 +10,9 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openContextMenu } from "../design/primitives/ContextMenu";
-import { toast } from "../design/primitives/Toast";
 import { useMarquee } from "../design/primitives/useMarquee";
 import { easeTop, spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
 import { MemberChip } from "./MemberChip";
@@ -64,7 +62,8 @@ import {
  */
 const QB_OVERSCAN = experiment.quickbarOverscan();
 const QB_ROOT_MARGIN = experiment.quickbarRootMargin();
-import { ipc, type AimResult, type FontFace } from "../lib/ipc";
+import type { FontFace } from "../lib/ipc";
+import { applyToActiveApp } from "../lib/applyActive";
 import { buildFaceIndexCached, entryFaceIds, faceKey } from "../lib/snapshotKey";
 import { FilterMenu } from "./TopBar";
 import { SearchSuggest, type Suggestion } from "./SearchSuggest";
@@ -101,19 +100,7 @@ function QuickFaceRow({
   return <FaceLine family={family} face={face} probeText={probeText} onHover={onHover} />;
 }
 
-function QuickItem({
-  family,
-  index,
-  onAim,
-}: {
-  family: Family;
-  index: number;
-  /**
-   * 双击示例文字：进入「点一下要应用到的窗口」待命（1.9.10）。
-   * 由 QuickBar 统一持有待命状态 —— 待命只有一个，行自己记不住「现在等的是谁」。
-   */
-  onAim: (family: Family, faceId: string) => void;
-}) {
+function QuickItem({ family, index }: { family: Family; index: number }) {
   const t = useT();
   // 速览里同样按界面语言显示字体名（与完整界面一个口径）
   const displayName = useDisplayName();
@@ -222,6 +209,17 @@ function QuickItem({
       onMouseEnter={previewMarquee.enter}
       onMouseLeave={previewMarquee.leave}
       onClick={copyName}
+      /**
+       * 双击整行 = 复制族名 + 套用到「最近在用的设计软件」（1.9.12）。
+       * 双击前那两次 click 已经各自走过 copyName，这里再调一次只是把「已复制」的
+       * 显示时间重置，toast 会被合并成一条 —— 用户的心智是「点一下复制、点两下连套用」。
+       * 套用的字面取当前悬停字重（`previewFace`），没悬停就是 Regular。
+       */
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        copyName();
+        void applyToActiveApp(family.name, previewFace.id);
+      }}
       onKeyDown={(e) => {
         // div[role=button] 不会自己响应键盘：Enter / Space 得手动接（§5 第 31 条）。
         // 焦点在子控件（展开字重、字重行）上时那个控件负责，这里不抢。
@@ -269,17 +267,9 @@ function QuickItem({
                 : { fontSize: size }
             }
             /**
-             * 双击示例文字 = 「复制族名 + 套用到我接下来点的窗口」（1.9.10）。
-             * 只挂在示例文字上而不是整行：整行双击和单击复制本来就容易误触，
-             * 而且示例文字是「字体本身」，双击它再点目标窗口，语义最直白。
-             * 双击前的两次 click 已经各自走过 copyName（父节点的 onClick），
-             * 这里再调一次只是把「已复制」的显示时间重置，toast 会被合并成一条。
+             * 双击已上移到整行（1.9.12）：示例文字是行里最大的一块，但用户双击族名、
+             * 双击状态列时心智是一样的，挂在整行才一致。
              */
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              copyName();
-              onAim(family, previewFace.id);
-            }}
             initial={animated ? { opacity: 0, y: 5 } : false}
             animate={animated ? { opacity: 1, y: 0 } : undefined}
             transition={animated ? spring : undefined}
@@ -405,7 +395,12 @@ export function QuickBar() {
   const setQuickbar = useFontStore((s) => s.setQuickbar);
   const autoHide = useFontStore((s) => s.quickbarAutoHide);
   const setAutoHide = useFontStore((s) => s.setQuickbarAutoHide);
-  const sort = useFontStore((s) => s.sort);
+  /**
+   * 速览**不订阅**完整界面的排序（`s.sort`，1.9.12）。
+   * 速览是「最近启用的在最上面」的固定口径：用户启用一款字体，多半就是马上要用它，
+   * 回到速览却要按完整界面那套排序翻半天，等于白启用。订阅了反而会让「换个排序
+   * 控件，速览也跟着变」，两处口径纠缠不清 —— 所以这里连 state 都不读。
+   */
   // 顶栏「筛选」的条件与完整界面共用同一份状态、同一套口径
   const classFilter = useFontStore((s) => s.classFilter);
   const scriptFilter = useFontStore((s) => s.scriptFilter);
@@ -483,89 +478,6 @@ export function QuickBar() {
   const dragWindow = useWindowDrag();
   // 进入速览的那一下窗口正在形变，列表不要再做逐个入场的动作
   const intro = useIntro();
-
-  /**
-   * 「点一下要应用到的窗口」待命状态（1.9.10）。
-   *
-   * 数据流：双击示例文字 → 复制族名 + `ipc.aimArm(id)`（后端起一个 80ms 轮询线程，
-   * 盯着前台窗口）→ 用户点下一个窗口 → 后端解析出 exe → 发 `aim-target` 事件 →
-   * 这里按 id 核对是不是当前这一轮 → 是 PS/AI/CDR 就交给 `applyFaceInApp` 复用现有套用引擎。
-   *
-   * 为什么 id 放在 ref 里而不是 state：事件回调是闭包，state 会读到旧值；
-   * 而 id 只在「发起」和「核对」两处用，不参与渲染。
-   */
-  const aimRef = useRef<{ id: string; family: Family; faceId: string } | null>(null);
-  /** 待命中的族名（null = 没在待命）。只用于提示文案的无障碍标签 */
-  const [aiming, setAiming] = useState<string | null>(null);
-
-  /** 取消待命：清前端状态 + 告诉后端别等了。message 有值就顺手给一条提示 */
-  const cancelAim = useCallback((message?: string) => {
-    const wasArmed = aimRef.current !== null;
-    aimRef.current = null;
-    setAiming(null);
-    void ipc.aimCancel().catch(() => {});
-    if (wasArmed && message) toast.info(message);
-  }, []);
-
-  const startAim = useCallback((family: Family, faceId: string) => {
-    // id 只需要「同一毫秒内点两次也不会撞」，不用 UUID
-    const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    aimRef.current = { id, family, faceId };
-    setAiming(family.name);
-    // 命令失败（后端没起来 / 版本不匹配）时别让界面卡在「待命」里出不来
-    void ipc.aimArm(id).catch(() => {
-      aimRef.current = null;
-      setAiming(null);
-    });
-  }, []);
-
-  /**
-   * 接收后端的一次性结果。`id` 对不上就丢弃 —— 用户连点两次双击时，
-   * 上一轮的线程可能刚好还在飞（它下一拍才会发现自己被顶掉了）。
-   */
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    void listen<AimResult>("aim-target", (e) => {
-      const cur = aimRef.current;
-      const payload = e.payload;
-      if (!cur || !payload || payload.id !== cur.id) return;
-      aimRef.current = null;
-      setAiming(null);
-      if (payload.app) {
-        // 复用现有套用引擎：启用检查、CJK 提醒、9 种 outcome 的中文提示都在里面
-        void useFontStore.getState().applyFaceInApp(cur.family.name, cur.faceId, payload.app);
-        return;
-      }
-      if (payload.reason === "timeout") toast.info(t("aim.timeout"));
-      else toast.info(t("aim.notTarget"), payload.exe || undefined);
-    }).then((un) => {
-      if (cancelled) un();
-      else unlisten = un;
-    });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [t]);
-
-  // 待命中按 Esc = 取消套用。必须挂在**捕获阶段**：下面那个「Esc 退出速览」的监听
-  // 也在 window 上，捕获阶段先跑完再 stopPropagation，事件就走不到冒泡阶段，
-  // 用户按 Esc 想取消套用却把整个速览关掉这种事不会发生。
-  useEffect(() => {
-    if (!aiming) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      cancelAim(t("aim.cancelled"));
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [aiming, cancelAim, t]);
-
-  // 离开速览（切回完整界面 / 关窗口）时把待命收掉：否则后端会白等 15 秒
-  useEffect(() => () => void ipc.aimCancel().catch(() => {}), []);
 
   // 速览窗口整段时间都挂 qb-mode：html/body 让出底色，四角交给 .qb-frame 的 CSS 圆角。
   // 不能只按 docked 挂 —— 展开的那一瞬间 docked 变 false，底色会回来，圆角外侧露出直角，
@@ -669,9 +581,11 @@ export function QuickBar() {
         : scoped.filter((f) =>
             familyMatches(searchableFamily(f, notes[f.name] ?? null), tokens, labels),
           );
-    return sortFamilies(hit, sort, activatedAt);
+    // 固定按「启用时间」排（最近启用的在最上）。口径见上面 `sort` 被删掉的注释：
+    // 速览与完整界面解耦，`activatedAt` 由 `markActivated()` 在用户主动启用时写入。
+    return sortFamilies(hit, "activated", activatedAt);
   }, [
-    fonts, tags, sessionActivated, notes, query, sort,
+    fonts, tags, sessionActivated, notes, query,
     classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter,
     charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus,
     ratings, ratingFilter, activatedAt,
@@ -755,15 +669,6 @@ export function QuickBar() {
       className="qb-frame"
       data-docked={docked ? "true" : undefined}
       data-dock-phase={docked ? phase : undefined}
-      /**
-       * 待命中在面板里点任何东西 = 放弃这次套用（用户点的是我们自己的界面，
-       * 不是「要应用到的窗口」）。用捕获阶段是为了先收状态、再让被点的那个控件
-       * 照常干活 —— 用户点的是「关闭」「筛选」这类按钮，不该因为取消套用而失效。
-       * 双击本身不会误触发：两次 pointerdown 都发生在 `aiming` 置位之前。
-       */
-      onPointerDownCapture={
-        aiming ? () => cancelAim(t("aim.cancelled")) : undefined
-      }
       style={frameStyle}
       initial={intro ? { opacity: 0 } : false}
       animate={{ opacity: revealed ? 1 : 0 }}
@@ -980,33 +885,19 @@ export function QuickBar() {
               <FilterMenu membership />
             </div>
 
-            {/* 元信息行。待命时整行换成一条提示 —— 不新增布局行，窗口高度不变，
-                速览窗口是用户拖好位置常驻的，多一行会把它顶歪。 */}
-            <div className="qb-meta" data-aim={aiming ? "true" : undefined}>
-              {aiming ? (
-                <span
-                  className="qb-aim"
-                  role="status"
-                  aria-live="polite"
-                  aria-label={`${aiming} — ${t("aim.hint")}`}
-                >
-                  <span className="qb-aim-dot" aria-hidden="true" />
-                  {t("aim.hint")}
+            {/* 元信息行。排序固定写「按启用时间」：速览有自己的口径，
+                不再跟随完整界面的排序控件（1.9.12）。 */}
+            <div className="qb-meta">
+              <span className="qb-meta-l tabular">
+                {families.length} / {enabledCount}
+                <span className="qb-meta-sep" aria-hidden="true">
+                  ·
                 </span>
-              ) : (
-                <>
-                  <span className="qb-meta-l tabular">
-                    {families.length} / {enabledCount}
-                    <span className="qb-meta-sep" aria-hidden="true">
-                      ·
-                    </span>
-                    {t(`sort.${sort}` as TKey)}
-                  </span>
-                  <span className="qb-meta-r tabular">
-                    {SIZES[0]}–{SIZES[SIZES.length - 1]} PX
-                  </span>
-                </>
-              )}
+                {t("sort.activated")}
+              </span>
+              <span className="qb-meta-r tabular">
+                {SIZES[0]}–{SIZES[SIZES.length - 1]} PX
+              </span>
             </div>
           </header>
 
@@ -1044,7 +935,7 @@ export function QuickBar() {
                         transform: `translateY(${row.start}px)`,
                       }}
                     >
-                      <QuickItem family={family} index={row.index} onAim={startAim} />
+                      <QuickItem family={family} index={row.index} />
                     </div>
                   );
                 })}
