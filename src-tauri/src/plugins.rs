@@ -761,12 +761,12 @@ pub(crate) fn parse_last_error(log_text: &str, id: &str) -> Option<String> {
     found
 }
 
-/// 只读日志尾部 64 KiB，避免日志涨到几十 MB 时拖慢设置页。
+/// 读**一份**日志文件（只取尾部 64 KiB）并解析出错误摘要。
 ///
-/// 只在**确实有错**时调用（`Ok` 分支要 `err.is_some()`），正常插件一次 IO 都不多做。
-fn last_error_for(id: &str) -> Option<String> {
-    let path = crate::diag::log_path();
-    let mut file = std::fs::File::open(&path).ok()?;
+/// 文件不存在、读不动、里面没这个插件的错误 —— 一律 `None`，不 `unwrap`、不打日志：
+/// 轮转出来的那份本来就可能不存在，这不是异常。
+fn read_tail_and_parse(path: &Path, id: &str) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().map(|m| m.len()).unwrap_or(0);
     let mut buf: Vec<u8> = Vec::new();
 
@@ -779,12 +779,30 @@ fn last_error_for(id: &str) -> Option<String> {
     }
     if buf.is_empty() {
         // 从头读：文件不够大，或者 seek 失败。（重新 open，位置指针更干净）
-        let mut whole = std::fs::File::open(&path).ok()?;
+        let mut whole = std::fs::File::open(path).ok()?;
         whole.read_to_end(&mut buf).ok()?;
     }
 
     let text = String::from_utf8_lossy(&buf);
     parse_last_error(&text, id)
+}
+
+/// 只读日志尾部 64 KiB，避免日志涨到几十 MB 时拖慢设置页。
+///
+/// 只在**确实有错**时调用（`Ok` 分支要 `err.is_some()`），正常插件一次 IO 都不多做。
+///
+/// 先看当下的 `activation.log`，里面没线索再看轮转出来的 `activation.old.log`：
+/// 用户这次的真实场景就是「凌晨崩的、上午才打开设置」，中间日志滚过一次，
+/// 死因只可能留在旧文件里。
+fn last_error_for(id: &str) -> Option<String> {
+    let current = crate::diag::log_path();
+    if let Some(hit) = read_tail_and_parse(&current, id) {
+        return Some(hit);
+    }
+    // 日志超过 1 MB 会 rename 成 `activation.old.log`（见 diag::log 里的 fs::rename，
+    // 那里同样用 `path.with_extension("old.log")` —— 单测
+    // `rotated_log_path_matches_diag_rotation` 钉住了这个命名约定）。
+    read_tail_and_parse(&current.with_extension("old.log"), id)
 }
 
 /// 扫描插件目录（不启动任何东西）
@@ -2429,6 +2447,33 @@ mod tests {
         let got = parse_last_error(&log, FS_ID).expect("应该捞到");
         assert!(got.chars().count() <= MAX_ERROR_CHARS + 1);
         assert!(got.ends_with('…'));
+    }
+
+    // ── 轮转日志的命名约定 ──
+
+    /// `last_error_for` 找不到死因时会去读轮转出来的那份旧日志。它的名字必须和
+    /// `diag::log` 里 `fs::rename(&path, path.with_extension("old.log"))` 的落点一致，
+    /// 否则「凌晨崩的、上午才来看」就永远捞不到死因（用户这次的真实场景）。
+    ///
+    /// 注意 `Path::with_extension` 是**整体换掉**最后一段扩展名，不是追加：
+    /// `activation.log` → `activation.old.log`（不是 `activation.log.old`）。
+    ///
+    /// 与 diag::log 里 fs::rename 的目标保持一致：**diag.rs 若改了轮转名，这条测试必须跟着变**。
+    #[test]
+    fn rotated_log_path_matches_diag_rotation() {
+        let p = crate::diag::log_path();
+        let rotated = p.with_extension("old.log");
+        assert!(
+            rotated.to_string_lossy().ends_with("activation.old.log"),
+            "轮转文件名不是 activation.old.log：{rotated:?}"
+        );
+        // 必须和当前日志在同一个目录里（rename 是原地改名）
+        assert_eq!(rotated.parent(), p.parent(), "轮转文件必须与 activation.log 同目录");
+        // 顺手钉住「不是 activation.log.old」这个容易写错的方向
+        assert!(
+            !rotated.to_string_lossy().ends_with("activation.log.old"),
+            "with_extension 是替换而非追加：{rotated:?}"
+        );
     }
 
     #[test]
