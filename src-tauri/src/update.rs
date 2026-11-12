@@ -709,6 +709,31 @@ fn update_dir() -> std::path::PathBuf {
     std::env::temp_dir().join("FontManager-update")
 }
 
+/// 清掉临时目录里**以前版本**留下的安装包。
+///
+/// 每次升级都把 setup 下到这里，而 NSIS 只覆盖程序目录、不碰下下来的包——于是每升一次
+/// 就多留一份约 6MB 的安装包。2026-11-12 实测：升到 1.9.6 时目录里还躺着 1.9.4 和 1.9.6
+/// 两份，共 13MB，用户问「装完到底删没删」。
+///
+/// 在**开始下载新包时**顺手扫一遍：只保留下载目标这一个（「下到一半断了再点一次」要复用
+/// 它，靠 SHA-256 校验决定能不能直接用），其余 `FontManager_*_setup.exe` 一律删掉。
+/// 日志与其它文件不动——`apply-update.log` 是排障入口，不能跟着一起清。
+fn prune_stale_setups(dir: &std::path::Path, keep: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == keep || !path.is_file() {
+            continue;
+        }
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if name.starts_with("FontManager_") && name.ends_with("-setup.exe") {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 /// 下载安装包到临时目录并校验 SHA-256，返回落地路径。
 ///
 /// 已经下过且哈希对的文件直接复用：用户网络差、第一次下到一半断了再点一次，
@@ -737,6 +762,8 @@ pub fn download_setup(
     let dir = update_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("建临时目录失败：{e}"))?;
     let dest = dir.join(name);
+    // 先把更早版本留下的包清掉：不然每次升级都多留一份 6MB（见 prune_stale_setups）
+    prune_stale_setups(&dir, &dest);
 
     if dest.is_file() {
         if let Ok(h) = sha256_file(&dest) {
@@ -937,6 +964,20 @@ fn ps1_script(
         p = q(exe)
     ));
     s.push_str("else { Note 'WARN exe missing, cannot relaunch' }\r\n");
+    // 装完把安装包删掉（2026-11-12 用户提问「下载的安装包到底删没删」——之前一直没删，
+    // 每升一次就在 %TEMP% 里多留一份 6MB）。只删**装成功**的那一个：
+    // 退出码非 0 时留着，用户重试时还能复用，也方便排查。
+    // NSIS 退出后句柄通常立刻释放，但杀软扫描偶尔会晚一两秒，所以带重试。
+    s.push_str(&format!("$setupPath = {}\r\n", q(setup)));
+    s.push_str("if ($p -and $p.ExitCode -eq 0) {\r\n");
+    s.push_str("  for ($k = 0; $k -lt 20; $k++) {\r\n");
+    s.push_str("    Remove-Item -LiteralPath $setupPath -Force -ErrorAction SilentlyContinue\r\n");
+    s.push_str("    if (-not (Test-Path -LiteralPath $setupPath)) { break }\r\n");
+    s.push_str("    Start-Sleep -Milliseconds 250\r\n");
+    s.push_str("  }\r\n");
+    s.push_str("  if (Test-Path -LiteralPath $setupPath) { Note ('WARN setup still present: ' + $setupPath) }\r\n");
+    s.push_str("  else { Note 'setup removed' }\r\n");
+    s.push_str("} else { Note 'setup kept (installer exit code not 0)' }\r\n");
     s.push_str("Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\r\n");
     s
 }
@@ -1222,6 +1263,31 @@ mod tests {
         assert!(s.contains("WARN version after install"));
         // 等待循环的计数变量不能复用（原来两段都写 $i，第一段的耗时会被第二段覆盖）
         assert!(s.contains("$j = 0") && s.contains("($i * 250)") && s.contains("($j * 250)"));
+        // 装成功就把安装包删掉；失败时留着（复用 / 排查），别把「删不掉」也当成功
+        assert!(s.contains("$setupPath = 'C:\\Users\\a b\\Temp\\FontManager-update\\fm-setup.exe'"));
+        assert!(s.contains("$p.ExitCode -eq 0"), "只在安装器报成功时才删包");
+        assert!(s.contains("setup removed") && s.contains("setup kept"));
+    }
+
+    /// 下新包时清掉更早版本留下的安装包，但不动正在用的那个、也不动日志。
+    #[test]
+    fn stale_setups_are_pruned_but_keep_and_log_survive() {
+        let dir = std::env::temp_dir().join("fontmanager-prune-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("FontManager_1.9.4_x64-setup.exe");
+        let keep = dir.join("FontManager_1.9.7_x64-setup.exe");
+        let log = dir.join("apply-update.log");
+        let other = dir.join("notes.txt");
+        for f in [&old, &keep, &log, &other] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        prune_stale_setups(&dir, &keep);
+        assert!(!old.exists(), "旧版本的安装包要删掉");
+        assert!(keep.exists(), "这次要用的那个必须留着（断点续下靠它复用）");
+        assert!(log.exists(), "排障日志不能跟着清");
+        assert!(other.exists(), "不是安装包的文件一律不碰");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 生成的脚本必须能被 PowerShell **真正解析**。

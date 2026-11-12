@@ -7118,6 +7118,9 @@ body.ui-fade-out .app-frame {
   gap: 6px;
   border-radius: 5px;
   box-shadow: inset 2px 0 0 transparent;
+  /* 整条都能点 = 复制字重名（2026-11-12）：光标要跟着说明这件事。
+     行内按钮各自还有 `cursor: pointer`，不冲突。 */
+  cursor: pointer;
   transition: background 120ms ease, box-shadow 120ms ease;
 }
 /* 悬停就有左侧竖条 + 底色：完整界面和速览共用这一套（0.9.3-5 起两处完全一致） */
@@ -9548,7 +9551,8 @@ body.tour-qb .qb-actions .qb-btn-text {
   flex: 0 1 auto;
 }
 /* 占位条：吃掉名字与右侧那些固定宽度元素之间的剩余空间，眼睛按钮仍在行尾。
-   空元素 + `aria-hidden`，不参与可访问性树、不可点（点击它不复制 —— 用户点的是名字）。 */
+   空元素 + `aria-hidden`，不参与可访问性树；但**它是可点的** —— 整条行都算复制热区
+   （2026-11-12），它正好是行里最大的一块空白。 */
 .face-line-spacer {
   flex: 1 1 auto;
   min-width: 0;
