@@ -20,6 +20,7 @@ import { StarRating } from "./StarRating";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
+import { applyToActiveApp } from "../lib/applyActive";
 
 /** 把「目录 → 文件名列表」摊平成可点击的条目，同名去重、按文件名排序 */
 function flattenInfoFiles(map: Record<string, string[]>): { dir: string; name: string }[] {
@@ -983,6 +984,16 @@ export function DetailPanel() {
               <button
                 className="detail-title copy-name"
                 onClick={() => copyName(family.name, t("copy.familyName"))}
+                /**
+                 * 双击 = 复制 + 套用到「最近在用的设计软件」（1.9.12）。
+                 * 字面取面板当前的 `lead`（用户在上面选中的字重优先，否则 Regular）——
+                 * 用户正看着哪个字重，套过去的就是哪个。
+                 */
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  copyName(family.name, t("copy.familyName"));
+                  if (lead) void applyToActiveApp(family.name, lead.id);
+                }}
                 data-hint-text={t("detail.copyNameHint")}
               >
                 {displayName(family)}

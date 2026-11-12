@@ -2536,17 +2536,25 @@ async fn apply_font_in_app(
     Ok(outcome)
 }
 
-/// 速览双击示例文字后进入「待命」：等用户点下一个窗口，把结果用 `aim-target` 事件发回前端。
-/// 只捕获一次，命中 / 超时 / 取消都立即解除（细节见 `aim.rs`）。
-#[tauri::command]
-fn aim_arm(app: tauri::AppHandle, id: String) {
-    aim::arm(app, id);
+/// 最近在用的设计软件（1.9.12）。前端双击「点击复制」的位置用它决定套到哪个软件。
+///
+/// 为什么不走 HTTP：这是 UI 交互路径上的一次探测，几十毫秒内要出结果，
+/// 走本地 API 反而要多付一次令牌校验 + 序列化往返；而且本地 API 默认是关的。
+#[derive(serde::Serialize)]
+struct ActiveApp {
+    /// photoshop / illustrator / coreldraw
+    app: String,
+    /// 前台窗口的 exe 文件名（小写），排查时有用
+    exe: String,
 }
 
-/// 取消待命（Esc、面板内点击、离开速览界面）。
+/// `null` = 三个软件都没在跑（正常状态，不是错误，前端给一句提示即可）。
 #[tauri::command]
-fn aim_cancel() {
-    aim::cancel();
+fn active_app() -> Option<ActiveApp> {
+    aim::active_target().map(|(app, exe)| ActiveApp {
+        app: app.to_string(),
+        exe,
+    })
 }
 
 /// panic 钩子从这里落盘（main.rs 里 set_hook 调它）。
@@ -2904,8 +2912,7 @@ pub fn run() {
             open_url,
             adobe_available,
             apply_font_in_app,
-            aim_arm,
-            aim_cancel,
+            active_app,
             window_dock::set_quickbar_mode,
             window_dock::set_dock_sensor,
             window_round::set_window_rounded,

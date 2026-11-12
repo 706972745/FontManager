@@ -16,6 +16,7 @@ import { spring, staggerDelay } from "../design/springs";
 import { useScriptStatus } from "../lib/scriptCoverage";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import type { FontFace } from "../lib/ipc";
+import { applyToActiveApp } from "../lib/applyActive";
 import { useFontStore, type Family } from "../state/fontStore";
 import { ScriptChip } from "./ScriptChip";
 import { MemberChip } from "./MemberChip";
@@ -142,6 +143,19 @@ export function FaceLine({
     e.stopPropagation();
     copyFaceName();
   };
+  /**
+   * 双击整条字重行 = 复制 + 套用这个字重到「最近在用的设计软件」（1.9.12）。
+   *
+   * 让路规则与单击一致（点眼睛开关 / 别的按钮不算）：否则双击眼睛按钮会顺手套一次字体。
+   * `stopPropagation` 是必须的 —— 速览里字重行嵌在整行 `.qb-item` 内，而整行也有双击，
+   * 不拦的话一次双击会连套两遍（先这个字重、再 Regular）。
+   */
+  const onLineDoubleClick = (e: ReactMouseEvent) => {
+    if (isOwnActionTarget(e.target)) return;
+    e.stopPropagation();
+    copyFaceName();
+    void applyToActiveApp(family.name, face.id);
+  };
   const onLinePointerDown = (e: ReactMouseEvent) => {
     if (isOwnActionTarget(e.target)) return;
     e.stopPropagation();
@@ -267,6 +281,7 @@ export function FaceLine({
         onMouseLeave={() => onHover(null)}
         onContextMenu={onContext}
         onClick={onLineClick}
+        onDoubleClick={onLineDoubleClick}
         onPointerDown={onLinePointerDown}
       >
         {body}
@@ -280,6 +295,7 @@ export function FaceLine({
       onMouseLeave={() => onHover(null)}
       onContextMenu={onContext}
       onClick={onLineClick}
+      onDoubleClick={onLineDoubleClick}
       onPointerDown={onLinePointerDown}
       initial={intro ? { opacity: 0, y: 8 } : false}
       animate={{ opacity: 1, y: 0 }}
