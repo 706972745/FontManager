@@ -30,7 +30,7 @@ function CompareColumn({ family, onRemove }: { family: Family; onRemove: () => v
         </button>
       </header>
       <div
-        className="compare-hero"
+        className={`compare-hero ${fontFamily ? "" : "is-font-pending"}`}
         style={{
           fontFamily: fontFamily ?? undefined,
           fontStyle: lead.italic ? "italic" : "normal",
@@ -41,7 +41,7 @@ function CompareColumn({ family, onRemove }: { family: Family; onRemove: () => v
       {COMPARE_SIZES.map((px) => (
         <p
           key={px}
-          className="compare-line"
+          className={`compare-line ${fontFamily ? "" : "is-font-pending"}`}
           style={{
             fontFamily: fontFamily ?? undefined,
             fontSize: px,

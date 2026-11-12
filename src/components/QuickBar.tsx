@@ -272,7 +272,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
         ) : (
           <motion.span
             ref={previewMarquee.measureRef}
-            className={`qb-item-sample ${previewMarquee.open ? "marquee-open" : ""}`}
+            className={`qb-item-sample ${previewMarquee.open ? "marquee-open" : ""} ${fontFamily ? "" : "is-font-pending"}`}
             style={
               fontFamily
                 ? { fontFamily, fontStyle, fontWeight: previewWeight, fontSize: size }

@@ -639,7 +639,7 @@ function OnlineCard({
     >
       <div className="card-head">
         <span
-          className="card-name"
+          className={`card-name ${selfFont.fontFamily ? "" : "is-font-pending"}`}
           ref={selfFont.setEl}
           style={selfFont.fontFamily ? { fontFamily: selfFont.fontFamily } : undefined}
         >

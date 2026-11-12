@@ -1005,7 +1005,7 @@ export function DetailPanel() {
               variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
             >
               <span
-                className="specimen-glyphs"
+                className={`specimen-glyphs ${fontFamily ? "" : "is-font-pending"}`}
                 style={{
                   fontFamily: fontFamily ?? undefined,
                   fontStyle: lead.italic ? "italic" : "normal",
@@ -1022,7 +1022,7 @@ export function DetailPanel() {
                 </span>
               </span>
               <span
-                className="specimen-strip"
+                className={`specimen-strip ${fontFamily ? "" : "is-font-pending"}`}
                 aria-hidden="true"
                 style={{
                   fontFamily: fontFamily ?? undefined,
