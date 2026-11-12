@@ -154,7 +154,7 @@
   "detail.conflictSystemProtected": "System font — protected, can't be removed or trashed",
   "detail.conflictTitle": "Name conflict",
   "detail.conflictTrash": "Move to Trash",
-  "detail.copyNameHint": "Click to copy · double-click to apply to Photoshop / Illustrator / CorelDRAW",
+  "detail.copyNameHint": "Click to copy",
   "detail.copyright": "Copyright",
   "detail.copyrightStatus": "Copyright status",
   "detail.exportAll": "Export all",

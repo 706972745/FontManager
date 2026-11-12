@@ -12,7 +12,6 @@ import { useRevealFamily } from "../lib/useReveal";
 import { listChars } from "../lib/listChars";
 import { copyrightExpired, familyCopyrightClass } from "../lib/license";
 import { buildFamilyMenu, copyText } from "../lib/menus";
-import { applyToActiveApp } from "../lib/applyActive";
 import { useFamilyMembership } from "../lib/membership";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
 import { StarRating } from "./StarRating";
@@ -229,16 +228,6 @@ const SpecimenTile = memo(function SpecimenTile({
         copyName();
       }}
       onContextMenu={(e) => openContextMenu(e, buildFamilyMenu(family))}
-      /**
-       * 双击 = 复制族名 + 套用到「最近在用的设计软件」（1.9.12）。
-       * 落点与单击一致（整格都能点复制），用户心智连贯：点一下复制、点两下连套用。
-       * 套用的字面取这一格的 lead（Regular 优先），与详情面板同一口径。
-       */
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        copyName();
-        applyToActiveApp(family.name, lead.id);
-      }}
       onMouseEnter={previewMarquee.enter}
       onMouseLeave={previewMarquee.leave}
       whileTap={{ opacity: 0.96, transition: springSnappy }}
