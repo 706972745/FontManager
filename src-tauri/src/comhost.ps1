@@ -136,6 +136,15 @@ function WarmUp() {
 }
 
 # 'no-text' (not a text shape) / 'ok' / 'fail' (text, but no candidate accepted)
+#
+# 名字要归一化再比：CorelDRAW 会把传入的别名翻译成它自己的登记名再回读
+# （「微軟正黑體 Light」/「MicrosoftJhengHeiLight」→「Microsoft JhengHei Light」），
+# 直接比字符串会把成功的赋值判成失败（1.9.19 修）。
+function Norm-FontName([string]$s) {
+  if (-not $s) { return '' }
+  return ($s -replace '\s', '').ToLowerInvariant()
+}
+
 function Set-CorelFont($shape, $cands) {
   $story = $null
   try { $story = $shape.Text.Story } catch { $story = $null }
@@ -143,8 +152,11 @@ function Set-CorelFont($shape, $cands) {
   foreach ($n in $cands) {
     try {
       $story.Font = $n
-      Start-Sleep -Milliseconds 10
-      if ([string]$story.Font -eq $n) { return 'ok' }
+      # 赋值是异步落盘的：只等 10ms 会读到旧字体。最多轮询 6×40ms。
+      for ($i = 0; $i -lt 6; $i++) {
+        Start-Sleep -Milliseconds 40
+        if ((Norm-FontName ([string]$story.Font)) -eq (Norm-FontName ([string]$n))) { return 'ok' }
+      }
     } catch { }
   }
   return 'fail'
@@ -156,9 +168,9 @@ function Set-CorelFont($shape, $cands) {
 function Get-FailCode($app, $names) {
   try {
     $want = @{}
-    foreach ($n in $names) { $want[[string]$n] = $true }
+    foreach ($n in $names) { $want[(Norm-FontName ([string]$n))] = $true }
     foreach ($f in $app.FontList) {
-      if ($want.ContainsKey([string]$f)) { return 'font-rejected' }
+      if ($want.ContainsKey((Norm-FontName ([string]$f)))) { return 'font-rejected' }
     }
   } catch { }
   return 'font-not-found'
@@ -218,7 +230,18 @@ function Invoke-Apply($payload) {
     try { $made.CreateSelection() } catch {}
     return 'created'
   }
-  if ($made) { try { $made.Delete() } catch {} }
+  # 套不上多半是「字体与文字语言不匹配」：CorelDRAW 拒绝把繁体字体套到简体文字上
+  # （赋值不报错、回读还是原字体）。换成拉丁示例再试一次 —— 拉丁没有语言限制，
+  # 用户至少能在画布上看到这个字体本身（字体名在提示里已经说过了）。
+  if ($made) {
+    try { $made.Text.Story.Text = 'Hello lIEOzo' } catch {}
+    if ((Set-CorelFont $made $names) -eq 'ok') {
+      try { $made.Text.Story.Size = 48 } catch {}
+      try { $made.CreateSelection() } catch {}
+      return 'created'
+    }
+    try { $made.Delete() } catch {}
+  }
   return (Get-FailCode $app $names)
 }
 

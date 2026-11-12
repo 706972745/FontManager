@@ -375,6 +375,16 @@ if (-not $doc) { Write-Output 'no-document'; exit 0 }
 
 $names = @({FONTS})
 
+# 名字归一化：CorelDRAW 会把传入的别名**翻译成它自己的登记名**再回读 ——
+# 「微軟正黑體 Light」和「MicrosoftJhengHeiLight」赋值后回读都是
+# 「Microsoft JhengHei Light」。所以判断成功与否不能直接比字符串，
+# 要先去掉空格、转小写再比（1.9.17 修：老写法把成功的赋值误判成失败，
+# 于是一路试到族名，字重被静默降级成 Regular）。
+function Norm-FontName([string]$s) {
+  if (-not $s) { return '' }
+  return ($s -replace '\s', '').ToLowerInvariant()
+}
+
 # 返回 'no-text'（没有文字）/ 'ok' / 'fail'（有文字但候选名全都没被接受）
 function Set-CorelFont($shape, $cands) {
   $story = $null
@@ -383,8 +393,13 @@ function Set-CorelFont($shape, $cands) {
   foreach ($n in $cands) {
     try {
       $story.Font = $n
-      Start-Sleep -Milliseconds 10
-      if ($story.Font -eq $n) { return 'ok' }
+      # 赋值是**异步落盘**的：实测把中文内容换成拉丁内容后，字体要过一会儿才真的变。
+      # 只等 10ms 会读到旧字体、把成功判成失败 —— 然后一路降级到族名（Regular）
+      # 或者报 font-rejected。这里轮询最多 6×40ms，看到生效就立刻返回。
+      for ($i = 0; $i -lt 6; $i++) {
+        Start-Sleep -Milliseconds 40
+        if ((Norm-FontName ([string]$story.Font)) -eq (Norm-FontName ([string]$n))) { return 'ok' }
+      }
     } catch {}
   }
   return 'fail'
@@ -404,11 +419,12 @@ if ($shapes.Count -eq 0) {
 function Get-FailCode() {
   try {
     # 用哈希表比对：装了上万字体的机器上，把 FontList 逐个塞进数组再遍历是 O(n²)，
-    # 光是这段就能耗掉几秒。
+    # 光是这段就能耗掉几秒。键同样走归一化 —— FontList 里是 CDR 的登记名
+    # （英文名），我们传的可能是中文名或 PostScript 名。
     $want = @{}
-    foreach ($n in $names) { $want[[string]$n] = $true }
+    foreach ($n in $names) { $want[(Norm-FontName ([string]$n))] = $true }
     foreach ($f in $app.FontList) {
-      if ($want.ContainsKey([string]$f)) { return 'font-rejected' }
+      if ($want.ContainsKey((Norm-FontName ([string]$f)))) { return 'font-rejected' }
     }
   } catch {}
   return 'font-not-found'
@@ -439,6 +455,16 @@ foreach ($n in $names) {
   $made = $null
   try { $made = $layer.CreateArtisticText([double]$x, [double]$y, {LABEL}) } catch { $made = $null }
   if (-not $made) { continue }
+  if ((Set-CorelFont $made $names) -eq 'ok') {
+    try { $made.Text.Story.Size = 48 } catch {}
+    try { $made.CreateSelection() } catch {}
+    Write-Output 'created'; exit 0
+  }
+  # 套不上很可能是「字体和文字的语言不匹配」：CorelDRAW 会拒绝把繁体字体
+  # （微軟正黑體 / 蘋方）套到简体中文文字上 —— 赋值不报错，但回读还是原字体。
+  # 这时把内容换成拉丁示例再试一次：拉丁字符没有语言限制，字体能正常生效，
+  # 用户至少能在画布上看到这个字体长什么样（字体名在提示里已经说过了）。
+  try { $made.Text.Story.Text = 'Hello lIEOzo' } catch {}
   if ((Set-CorelFont $made $names) -eq 'ok') {
     try { $made.Text.Story.Size = 48 } catch {}
     try { $made.CreateSelection() } catch {}
@@ -483,11 +509,19 @@ fn corel_font_names(family_name: &str, postscript: &str, label: &str, aliases: &
     // 1) 精确字重名：显示名（「微軟正黑體 Light」）与 PostScript 名（MicrosoftJhengHeiLight）
     push_unique(&mut fonts, label);
     push_unique(&mut fonts, postscript);
-    // 2) 带字重的本地化名（「Microsoft JhengHei Light」这类）：同样精确，排在族名之前
-    for alias in aliases {
-        if !alias.trim().eq_ignore_ascii_case(family_name) {
-            push_unique(&mut fonts, alias);
-        }
+    // 2) 带字重的本地化名：**按长度从长到短**试。
+    //    CorelDRAW 的别名列表里族名（`Microsoft JhengHei`）排在
+    //    `Microsoft JhengHei Light` 前面，顺序照抄就会先用族名把字重降级成 Regular。
+    //    同一字面的所有别名都指向同一款字，谁先谁后都正确 —— 唯一要保证的是
+    //    「更长的那个（带字重的）先试」，所以按长度降序排。
+    let mut specific: Vec<&str> = aliases
+        .iter()
+        .map(|a| a.trim())
+        .filter(|a| !a.is_empty() && !a.eq_ignore_ascii_case(family_name))
+        .collect();
+    specific.sort_by_key(|a| std::cmp::Reverse(a.chars().count()));
+    for a in specific {
+        push_unique(&mut fonts, a);
     }
     // 3) 族名兜底：只有前面都没命中才用它，此时字重必然降级成 Regular
     push_unique(&mut fonts, family_name);
@@ -948,6 +982,36 @@ mod tests {
     fn coreldraw_script_deduplicates_identical_names() {
         let s = coreldraw_script("Inter", "Inter", "Inter", &[]);
         assert_eq!(s.matches("'Inter'").count(), 2, "名字数组 + 新建文本各用一次");
+    }
+
+    /// 1.9.17 的回归护栏：带字重的名字必须排在族名前面。
+    ///
+    /// 真实数据（微軟正黑體 Light）的别名顺序是
+    /// `['微軟正黑體', 'Microsoft JhengHei', '微軟正黑體 Light', 'Microsoft JhengHei Light']`
+    /// —— 族名夹在中间，照抄顺序就会先用 `Microsoft JhengHei` 把字重降级成 Regular。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn coreldraw_names_try_weight_before_family() {
+        let aliases: Vec<String> = [
+            "微軟正黑體",
+            "Microsoft JhengHei",
+            "微軟正黑體 Light",
+            "Microsoft JhengHei Light",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let names = corel_font_names("微軟正黑體", "MicrosoftJhengHeiLight", "微軟正黑體 Light", &aliases);
+        let at = |want: &str| names.iter().position(|x| x == want).unwrap_or(usize::MAX);
+        assert!(
+            at("Microsoft JhengHei Light") < at("Microsoft JhengHei"),
+            "带字重的英文全名必须先于族名：{names:?}"
+        );
+        assert!(
+            at("微軟正黑體 Light") < at("Microsoft JhengHei"),
+            "带字重的中文全名必须先于族名：{names:?}"
+        );
+        assert_eq!(*names.last().unwrap(), "微軟正黑體", "族名只能作为最后的兜底");
     }
 
     #[cfg(target_os = "windows")]

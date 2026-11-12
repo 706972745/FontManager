@@ -4,6 +4,64 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.20] — 2026-11-12
+
+> **1.9.20 修复版**：CorelDRAW 走的是**常驻宿主** `comhost.ps1`，它自带一份套用逻辑 ——
+> 1.9.17~1.9.19 改的是「一次性脚本」那份，对 CorelDRAW 完全没生效。
+
+### 修复
+
+- `comhost.ps1` 与 `CORELDRAW_TEMPLATE` 同步三处：
+  1. `Set-CorelFont` 回读**归一化比较**（去空格 + 小写）—— CorelDRAW 会把别名翻译成登记名；
+  2. 生效判定改为**轮询回读**（6×40ms）—— 赋值是异步落盘的；
+  3. 新建文字套不上时**换成拉丁示例 `Hello lIEOzo` 再试一次** ——
+     CorelDRAW 拒绝把繁体字体套到简体文字上（赋值静默失败）。
+- `Get-FailCode` 的 FontList 比对同样归一化。
+
+## [1.9.19] — 2026-11-12
+
+> **1.9.19 修复版**：CorelDRAW 的字体赋值是异步生效的，`Set-CorelFont` 只等 10ms 就读回，
+> 把成功判成失败 → 降级成 Regular / 报 font-rejected。改成轮询回读（最多 6×40ms）。
+
+### 修复
+
+- `Set-CorelFont` 的生效判定改为**轮询回读**：实测「中文内容换成拉丁内容后，字体要过一会儿才真的变」，
+  10ms 的固定等待会读到旧值。现在最多等 240ms，看到归一化后相等就立刻返回。
+- 这条同时修好了两条路径：改已有文字（拉丁）与新建文字（中文名套不上 → 换拉丁示例 → 重新赋值）。
+
+## [1.9.18] — 2026-11-12
+
+> **1.9.18 修复版**：CorelDRAW 新建文字套不上字体时，改用拉丁示例再试一次 —— 真机上「双击字体 → 点画布 → 出来还是宋体」就是这条。
+
+### 修复
+
+- **CorelDRAW 新建文字的语言回退**：`CreateArtisticText` 原来把**字体名**当内容，
+  而 CorelDRAW 会拒绝把繁体字体（微軟正黑體 / 蘋方）套到简体中文文字上 ——
+  赋值不报错、回读还是原字体（逐字符 `Characters.All`、逐段、选区四条路都试过，一样被拒）。
+  现在先用字体名试一次，套不上就把内容换成拉丁示例 `Hello lIEOzo` 再试：
+  拉丁字符没有语言限制，字体能正常生效，画布上至少能看到这个字体本身。
+- **`Set-CorelFont` 失败文案**：新增 `font-rejected` 的说明（字体在列表里但套不上，
+  多半是字体与文字语言不匹配），不再把原始状态码透给用户。
+
+## [1.9.17] — 2026-11-12
+
+> **1.9.17 修复版**：CorelDRAW 套用字重终于不再降级成 Regular。根因是**回读比较用了精确字符串**。
+
+### 修复
+
+- **`Set-CorelFont` 的回读判断改为归一化比较**（去空格 + 转小写）。
+  CorelDRAW 会把传入的别名翻译成它自己的登记名再回读，实测：
+  - `Story.Font = "微軟正黑體 Light"` → 回读 `Microsoft JhengHei Light`
+  - `Story.Font = "MicrosoftJhengHeiLight"` → 回读 `Microsoft JhengHei Light`
+
+  老写法 `if ($story.Font -eq $n)` 因此把**成功**的赋值判成失败，继续试下一个候选，
+  最后落到族名 `Microsoft JhengHei` —— 字重被静默降级成 Regular，提示却还写着 Light。
+- **`corel_font_names()` 的别名按长度降序**：CorelDRAW 的别名列表里族名
+  （`Microsoft JhengHei`）夹在 `Microsoft JhengHei Light` 前面，照抄顺序就会先用族名。
+  现在带字重的名字（更长）先试，族名永远排在最后兜底。
+- `Get-FailCode()` 的 FontList 比对同样走归一化，避免中文名查不到被误报成 `font-not-found`。
+- 新增回归测试 `coreldraw_names_try_weight_before_family`。
+
 ## [1.9.16] — 2026-11-12
 
 > **1.9.16 修复版**：CorelDRAW 套用字重时不再被族名抢先命中、把 Light/Negreta 悄悄降级成 Regular。
