@@ -24,6 +24,7 @@ src-tauri/.cargo/
 _tauri.nobuild.json
 _tauri.local.json
 _tauri.shots.json
+_tauri.e2e.json
 
 # ════════════════════════════════════════════════════════════════════
 # 内部文档与截图：只留在本地，**绝不进公库**（用户 2026-11-01 明确要求）
