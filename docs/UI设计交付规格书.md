@@ -186,6 +186,11 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 - 字重列表从**内容列（第三列）**起，铺到右边界，位于行网格的第二行
 - 与完整界面卡片里的字重行是同一个组件、同一套样式（`.face-line*`）
 - 字重名 11px，行高 1.3，单行省略；行尾依次是：归属芯片 → 预览按钮 → 启用开关（睁眼/闭眼）
+- **字重名本身是按钮**（1.9.5 后）：点一下把**字体全名**（`族名 + 空格 + 样式`）写进剪贴板，
+  与右键菜单「复制名字」逐字相同；名字后就地出现「已复制」（9px / `--accent-a`）1.5s，
+  同时该行左竖线（悬停时的灰线）转成 `--accent-a`，到点文字与竖线一起回归。
+  「已复制」常驻占位、只切 opacity，出现时不推挤右侧元素。悬停 / 键盘 Tab 聚焦后
+  Enter、Space 都能触发；点击不冒泡（不会连带选中整行/整卡）
 - 窄档（≤400px）时网格变 5 列，字重列表改为从**第二列**起 —— 它与 Aa 列同宽，视觉上仍对齐内容起点
 
 ### 2.5 折叠态（拖回屏幕顶边）
@@ -298,6 +303,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 搜索建议 `.suggest-list` | 8px 圆角 / 1px `--ui-line` / `--ui-menu` 底 / 顶部 `calc(100% + 6px)` / z 70；行 11px（图标 12 + 名称 + 「条数 · 类型」9px 弱色）；**每类必须带图标**（字体 Type / 标签 Tag / 分组 FolderOpen / 快照 Camera），顺序：标签 → 分组 → 快照 → 字体 |
 | 搜索口径（所有搜索框） | 统一走 `lib/familySearch.ts`：族名、**每个字面的每种语言名（本地化名）**、样式名、PostScript 名、文件名、标签、格式、厂商、备注、授权 / 版权正文、语言 / 分类 / 特性的编码与本地化文案。判定「软件里显示的名字一定能搜到」——列表显示的是本地化名（`微软雅黑`），族名键是拉丁名（`Microsoft YaHei`），两者必须都能命中。速览列表 / 搜索建议 / 右键「打字即搜」以前只比族名，1.8.5 起全部并到这条链上 |
 | 搜索建议的字体范围 | **完整界面搜全库；速览只搜已启用**（`onlyActive`）。速览的列表本来就只列已启用字体，建议下拉也必须同一口径，否则会出现「建议里有 Arial、点下去列表是空的」。口径 = 整族启用 / 部分字重启用 / 本次会话临时启用（`lib/familyState.ts::isEnabledNow`），与速览列表和「已启用 N」共用同一个判定。标签 / 分组 / 快照三类不受影响 —— 它们不是字体，点下去是「用这个条件过滤当前列表」。 |
+| 点选搜索建议后的输入框（2026-11-12） | 输入框**显示刚选中的那个名字**（字体类是显示名，如「微软雅黑」），但**筛选词清空** —— 列表回到全量（标签 / 分组 / 快照这三类是「跳到那个导航」）。不能让这个名字参与过滤：按它筛会把列表收成目标那一条，跳转落点与「我在这儿」高亮就看不出来了。显示值与筛选词的这次分叉用一个 ref 记录，**不写回 store**；用户一改字或点清除按钮，立刻恢复正常过滤。鼠标点击与键盘 Tab 聚焦后按 Enter / Space 走同一条路径。速览那侧口径相反（把关键词填成选中的名字，因为那里的关键词本身就是筛选条件），不要互相套用。**显示名 ≠ 族名键**：输入框显示 `label`（本地化显示名），跳转 / 选中 / 滚动必须用 `Suggestion.value`（= `family.name`），拿显示名去查族是查不到的（中文界面下点「微软雅黑」会完全没反应） |
 | 筛选「范围」二级菜单 `.filter-submenu` | **8px 圆角** / 1px `--ui-line` / `--ui-menu` 底 / `position: fixed` **向左弹出**（`.filter-menu` 有 `overflow-y:auto`，子元素不能放在它里面）；入口右侧显示已选条数与 `›`；**标签 / 分组 / 快照有数据才出现**；顺序：星级 → 范围（收藏/标签/分组/快照）→ 显示…；入口与子面板都要挂离开计时（160ms） |
 | 排序菜单 `.sort-menu` | **8px 圆角**（R8）；筛选菜单 `.filter-menu` 仍是 **4px** —— 两者同类却不同档，见 §4 |
 | 菜单项 `.sort-item` | `padding: 8px 11px` / 4px 圆角 / 13px；选中 `.sort-active` 主文字色 500 |
@@ -352,7 +358,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 头行 `.specimen-head` | 高 22 / flex / gap 8 |
 | 字形区 `.specimen-body` | flex 1 / 居中 / `overflow: hidden` |
 | 工具行 `.specimen-tools` | 高 20 / flex / gap 5 |
-| 字重胶囊 `.specimen-weight` | **999px 胶囊**（语义值）/ `padding: 2px 4px 2px 7px` / `max-width: 132` / 10px |
+| 字重胶囊 `.specimen-weight` | **999px 胶囊**（语义值）/ `padding: 2px 4px 2px 7px` / `max-width: 132` / 10px。**族里只有一个字重时**：文字划删除线（画在内部 `<span>` 上）、不画右侧 chevron、`cursor: default`、悬停不变色，点击不弹菜单（`aria-disabled`，说明文案 `hint.specimenWeightSingle`）；`>= 2` 个时行为不变 |
 | 样张文字 `.specimen-text` | `line-height: 1.12` / 居中 / `nowrap` / `text-overflow: clip`（直接裁，不出省略号） |
 | 样张格子 `.specimen-tile` 行首锚点 | **占满格子高度、只向下长**：拆两个伪元素 —— `::before` = 6px 圆点 @ `left: 5 / top: 11`；`::after` = 2px 竖线 @ `left: 7`（与圆点同心）、`top: 11` 固定、`bottom` 16 → 0 定位、`transform: scaleY(0)` 收起、`transform-origin: 50% 0`（所以生长方向只有向下）、`--t-quick` 过渡。**悬停**长到距格子底边 16px 的灰线（`--ui-line-hover`），**复制成功那 1.5s** 继续长到底边（`bottom: 0`）并转蓝（`--ui-accent`），与「已复制」同时出现同时消失。线长跟着格子高度走（格子随字号档 120~190px），不过渡 `height`（百分比与 px 混在 transition 里 Chromium 不保证逐帧插值）。**线与文字的距离 30px**（格子左内距 39 − 线右缘 9），与卡片视图的 36px 同一量级；1.8.6 之前左内距只有 13、间距 4px，线与 TTF 徽标贴在一起 |
 | 样张格子 · 复制反馈 | 点一下把族名写进剪贴板：名字后出现 `.specimen-copied`（9px / `--accent-a` / `margin: 6px` 由 `.specimen-head` 的 gap 提供），**1.5s 淡出**（0.2s linear）；与锚点蓝线同时出现、同时消失。它常驻 DOM 只切 opacity，出现时不推走右侧徽章。Ctrl / Shift + 点击不复制 |
@@ -820,3 +826,58 @@ compare-panel 排除，于是**没有更晚的 12 覆盖**，最终 **8px 胜出
 | `.settings-panel` / `.palette-panel` / `.shortcuts-panel` | 12px | 12px |
 
 `box-shadow` 全程为 `none`（对比浮层与选择条），未受影响。
+
+---
+
+## 10. 交互补全（2026-11-12 落地，随下一个版本发布）
+
+> 这一节写的是**实际生效**的规格，数值直接取自 `src/app.css` 与组件。
+> 版本号由发版统一处理，本节不绑定具体版本号。
+
+### 10.1 字重名 = 复制字体全名（`MW` 卡片字重区 + `QB-A` 就地展开，同一个 `FaceLine`）
+
+| 项 | 规格 |
+|---|---|
+| 元素 | `.face-line-name`，`<button type="button">`（原来是 `<span>`） |
+| 位置（`flex`） | 名字 `flex: 0 1 auto`（**按内容宽度站住**，长名字靠 `min-width: 0` + `overflow: hidden` + `text-overflow: ellipsis` 收缩）；「已复制」紧随其后、`margin-left: 2px`（与行 `gap: 6px` 合计 **8px**）；剩余空间交给空占位条 `.face-line-spacer`（`flex: 1 1 auto`），`ScriptChip` / 归属胶囊 / 眼睛按钮因此仍在行尾。**不要**把名字改回 `flex: 1`：那会让它吃掉整行剩余空间，把「已复制」顶到行尾、中间空出一大片（真机验收打回的那次） |
+| 复制内容 | `faceFullName(族名, 字面)` = `"族名 样式"`，与右键菜单「复制名字」**同一份实现**（`src/lib/faceName.ts`）；族名 + 样式都为空时退回 PostScript 名 → 文件名 |
+| 反馈 1 | 名字后就地出现 `.face-line-copied`「已复制」：9px / `--accent-a` / `line-height 1.3`；**常驻 DOM、只切 opacity**（`--t-quick` 线性），出现 / 消失不移动右侧任何元素；亮 **1500ms** |
+| 反馈 2 | 该行 `.face-line.is-copied` 的左竖线（`inset 2px 0 0`）由悬停灰 `rgba(var(--ink-rgb),0.32)` 改成 `--accent-a`，与「已复制」同时出现、到点同时回归 |
+| 覆盖关系 | 复制态压住悬停态（`.face-line.is-copied` 写在 `.face-line:hover` 之后）；连点同一行**重置**计时，不叠加 |
+| 手势 | 左键点击、键盘 Enter / Space（按钮原生行为）。**点击**不冒泡（不触发父级卡片的选中与详情面板开关）；**按键只拦 Enter / Space**（按钮自己消费的那两个），其余键必须放行 —— 全局快捷键挂在 `window` 的冒泡阶段，在按钮里无差别拦截会让「点过字重名之后 Delete / Esc / 方向键 / Ctrl+A 全部失效」；`pointerdown` 只拦在按钮自己身上，避免卡片 `whileTap` 把整卡压暗 |
+| Toast | 仍走原有 `copyText` —— 右下角一条 toast + tick 音效，文案 `copy.faceName` |
+| 悬停提示 | `hint.copyFaceName`：「点击复制「{name}」」。`{name}` = **将要复制的那一串**（`faceFullName`，原始族名 + 样式），与剪贴板内容、右键菜单标题三处一致 —— 提示说复制什么，粘出来就是什么 |
+
+### 10.2 搜索建议跳转：真选中 + 居中滚动 + 1.7s 落点高亮（三个视图一致）
+
+| 项 | 规格 |
+|---|---|
+| 语义 | 点搜索建议里的某个字体 = **单选选中**它（`selection` 单元素）+ 滚动到可视区**正中** + 约 **1700ms** 的落点高亮 |
+| 滚动 | 网格 / 列表：`scrollToIndex(idx, { align: "center" })`；样张（按行虚拟化）：`scrollToIndex(floor(idx / cols), { align: "center" })` |
+| 高亮 · 列表 | `.list-row.row-revealed` → `background: color-mix(in srgb, var(--accent-a) 12%, transparent)` |
+| 高亮 · 网格卡片 | `.family-card.card-revealed` → `color-mix(… 6% …)`（整行大色块，用更淡的比例） |
+| 高亮 · 样张格子 | `.specimen-tile.tile-revealed` → 底 `color-mix(… 8% …)` + 描边 `color-mix(… 45% …)` |
+| 淡出 | 1700ms 后由 JS 摘类名，`--t-state` 过渡回常态；**不留下任何常驻痕迹** |
+| 与选中的分工 | 选中 = 常驻（行首蓝线 / 蓝描边）；落点 = 临时（底色）——两者可同时成立，但**互不替代** |
+| 与点击的分工 | 用户自己点一行仍是「贴边滚动 + 无高亮」，普通点击不出现线框（沿用 2026-11-05 的约束）；只有搜索跳转会居中 + 高亮 |
+| 重复点同一条建议 | 每次都重新居中、重新亮 1.7s（靠自增的 `revealTick` 触发） |
+| 落点用哪个名字 | `Suggestion.value`（= `family.name` 族名键）。`label` 只是显示名，拿它查族查不到 —— 中文界面下点「微软雅黑」会三种反馈一起失效（不选中、不滚动、不高亮） |
+
+### 10.3 样张视图单字重：样式胶囊不可点
+
+见 §3.5 的 `.specimen-weight` 行：删除线 + 无 chevron + `cursor: default` + 悬停不变色，
+点击不弹菜单；`aria-disabled="true"`，说明文案 `hint.specimenWeightSingle`（悬停 1 秒可见）。
+只影响 `stylesCount === 1` 的格子，`>= 2` 个样式行为完全不变。
+
+### 10.4 点选搜索建议后：输入框显示选中的名字，列表不过滤
+
+见 §3.2 的「点选搜索建议后的输入框」行。三条实现约束：
+
+1. 显示值 `searchText` 与筛选值 `search` 在这次操作后**故意不一致**，用一个 ref
+   （`pickedRef`）记住那次显示值：防抖那条看到它就不再写 store，同步那条看到
+   `search === ""` 就跳过、别把显示值抹掉；
+2. 用户改字（`onChange`）或点清除按钮 → 立刻把 ref 置空，恢复正常过滤；
+3. 键盘 Tab 聚焦到建议项后 Enter / Space（`onClick` 里 `detail === 0` 判键盘）与鼠标
+   `mousedown` 走同一个 `onPick`，鼠标那一下不会重复触发。
+
+

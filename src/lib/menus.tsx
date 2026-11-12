@@ -27,6 +27,7 @@ import { AVAILABLE_ADOBE_APPS, ipc, type FontFace } from "./ipc";
 import { exportSpecimen } from "./specimen";
 import { activeLocale, t } from "./i18n";
 import { extraFamilyNames, languageLabel, shortName } from "./fontNames";
+import { faceFullName } from "./faceName";
 import { formatBytes } from "./fontLoader";
 import { pluginMenuItems } from "./pluginMenuBridge";
 
@@ -354,13 +355,9 @@ export function canToggleFace(face: FontFace): boolean {
 
 export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
   const s = useFontStore.getState();
-  // 少数字体本身没写 family/style（或写成了空格），拼出来会是空串：
-  // 这时退回 PostScript 名、再退回文件名，菜单至少有个能认的标题。
-  const fullName =
-    `${family.name} ${face.style}`.trim() ||
-    face.postscriptName ||
-    face.path.split(/[\\/]/).pop() ||
-    "—";
+  // 拼法在 lib/faceName.ts 里（2026-11-12）：字重名点击复制和这里的「复制名字」必须
+  // 粘出同一串，两处各写一份迟早会漂。退回链也在那边（空串 → PostScript → 文件名）。
+  const fullName = faceFullName(family.name, face);
   const items: MenuItem[] = [{ kind: "heading", label: fullName }];
 
   // 0.9.9-13：字重级操作。以前字重菜单只能「应用到 PS/AI/CDR」和复制名字，

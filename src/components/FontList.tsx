@@ -12,6 +12,7 @@ import { buildFamilyMenu } from "../lib/menus";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useT } from "../lib/i18n";
 import { useDisplayName } from "../lib/displayName";
+import { useRevealFamily } from "../lib/useReveal";
 
 export function FontList({ families }: { families: Family[] }) {
   const t = useT();
@@ -47,6 +48,22 @@ export function FontList({ families }: { families: Family[] }) {
     if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "auto" });
   }, [selectedFamily]);
 
+  /**
+   * 搜索建议跳转（2026-11-12）：滚到可视区**中间**，并给这一行一个约 1.7s 的跳转高亮。
+   *
+   * 和上面那条按 `selectedFamily` 滚动的区别：那条是「用户点/键盘选了一行」，
+   * 贴边就够；这里是「从搜索结果跳过来」，目标必须落在视线正中，否则用户还得自己
+   * 再找一遍。两条同时触发时后执行的是这条（center 覆盖 auto），顺序不能颠倒。
+   */
+  const { revealed, jump } = useRevealFamily();
+  useEffect(() => {
+    if (!jump) return;
+    const idx = families.findIndex((f) => f.name === jump.name);
+    // 目标被当前筛选挡掉时什么都不做（例如跳到的族不在这个分组视图里）
+    if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jump]);
+
   return (
     <div className="list-wrap">
       <div className="list-header">
@@ -68,6 +85,7 @@ export function FontList({ families }: { families: Family[] }) {
                 mem={mem}
                 hasMem={!!mem && (mem.snaps.length > 0 || mem.colls.length > 0)}
                 selected={selection.includes(fam.name)}
+                revealed={revealed === fam.name}
                 top={item.start}
                 onSelect={selectWith}
               />
@@ -85,12 +103,17 @@ export function FontList({ families }: { families: Family[] }) {
  * 行首锚点（`.list-row::after`）的语义照**卡片视图**：悬停长灰线、选中是常驻蓝线；
  * 不复制族名、也不做「已复制」的 1.5s 闪现（那是速览 / 样张的交互，
  * 用户 2026-11-11：「交互效果和卡片视图一样，不需要和速览界面/样张视图一样」）。
+ *
+ * `revealed` 是**跳转**专用的临时态（搜索建议点了这个族）：只在这 1.7s 里给行铺一层
+ * 强调色底 —— 选中本身已经是常驻蓝线了，只靠线的话「刚跳过来」和「本来就在这儿」
+ * 看不出区别。三者语义互斥地叠加：hover 灰线 / selected 蓝线 / revealed 临时底线。
  */
 function ListRow({
   fam,
   mem,
   hasMem,
   selected,
+  revealed,
   top,
   onSelect,
 }: {
@@ -98,6 +121,7 @@ function ListRow({
   mem?: FamilyMembership;
   hasMem: boolean;
   selected: boolean;
+  revealed: boolean;
   top: number;
   onSelect: (name: string, mode: "single" | "toggle" | "range", order: string[]) => void;
 }) {
@@ -114,7 +138,7 @@ function ListRow({
       role="button"
       tabIndex={0}
       aria-pressed={selected}
-      className={`list-row ${selected ? "row-selected" : ""}`}
+      className={`list-row ${selected ? "row-selected" : ""} ${revealed ? "row-revealed" : ""}`}
       style={{
         position: "absolute",
         top: 0,

@@ -809,11 +809,37 @@ export function TopBar() {
    * 输入框必须跟手，筛选慢一点没关系。清空按钮仍是立即生效。
    */
   const [searchText, setSearchText] = useState(search);
+  /**
+   * 点了搜索建议之后，输入框的显示值和真正用于筛选的词（store 的 `search`）是
+   * **故意不一致**的：框里显示刚选中的那个名字（用户得知道现在看的是哪一个），
+   * 但列表**不能**按它过滤 —— 搜「雅黑」再选中「微软雅黑」，若拿这个名字去筛，
+   * 列表就只剩这一条，跳转落点和「我在这儿」高亮全看不出来了（2026-11-12）。
+   *
+   * 这个 ref 存的就是那一次「只显示、不筛选」的值：
+   * · 防抖那条看到它就不再往 store 写；
+   * · 同步那条（store → 输入框）看到 `search` 被清空就跳过，别把显示值抹掉；
+   * · 用户一改字 / 点清除按钮，立刻置 null，恢复正常过滤。
+   *
+   * 标记**不消费**，只由「用户真的改了输入」来清。试过「防抖那条见一次就消费掉」的写法：
+   * `main.tsx` 挂着 `React.StrictMode`，开发模式下 effect 会跑两遍 —— 第一遍把标记
+   * 消费掉，第二遍就立刻排一次 `setSearch(label)`，125ms 后列表正好被过滤成一条，
+   * 也就是这次要修的那个 bug 在 dev 里原地复现。留到用户改字再清，最省事也最稳。
+   */
+  const pickedRef = useRef<string | null>(null);
   useEffect(() => {
+    if (pickedRef.current !== null) {
+      // 这一次是「点建议 → 我们自己把筛选词清空」，输入框要留着显示值。
+      // 但若筛选词变成了别的非空值（命令面板 / 别处改了筛选），说明用户已在别处
+      // 重新筛选，退出「只显示不筛选」，照常跟随 store。
+      if (search === "") return;
+      pickedRef.current = null;
+    }
     setSearchText(search);
   }, [search]);
   useEffect(() => {
     if (searchText === search) return;
+    // 这一串只是「刚选中了谁」的显示值，不是筛选条件（见 pickedRef）
+    if (pickedRef.current !== null && searchText === pickedRef.current) return;
     const id = window.setTimeout(() => setSearch(searchText), 125);
     return () => window.clearTimeout(id);
   }, [searchText, search, setSearch]);
@@ -821,11 +847,16 @@ export function TopBar() {
   /**
    * 搜索建议（用户 2026-11-10）：输入时就近给「标签 / 分组 / 快照 / 字体」四类候选，
    * 每类带自己的图标，避免用户看到一堆名字里没有关键词的字体时以为搜错了。
-   * 选中后统一清空搜索再跳转 —— 留着关键词会把目标列表继续过滤掉。
+   *
+   * 选中后：输入框显示选中的名字，但**筛选词清空** —— 留着关键词会把目标列表继续过滤，
+   * 而按名字筛更糟（只剩目标那一条，跳转等于没发生）。速览那侧是反过来把关键词填成
+   * 选中的名字的（那里 `query` 本身就是筛选条件，且标签名在搜索口径里），两边口径不同，
+   * 别拿一边的写法套另一边。
    */
   const [searchFocus, setSearchFocus] = useState(false);
   const pickSuggestion = (sg: Suggestion) => {
-    setSearchText("");
+    pickedRef.current = sg.label;
+    setSearchText(sg.label);
     setSearch("");
     setSearchFocus(false);
     const st = useFontStore.getState();
@@ -835,9 +866,16 @@ export function TopBar() {
       if (sg.plugin) void openPluginSettings(sg.plugin);
       return;
     }
-    // 选中即可：三个列表视图（列表 / 网格 / 样张）都监听 selectedFamily 自动
-    // scrollIntoView + 蓝竖线，详情面板同时打开（用户 2026-11-10 要求的效果）
-    if (sg.kind === "family") useFontStore.setState({ selectedFamily: sg.label });
+    // 跳到某个字体 = 真选中（单选）+ 滚动到可视区中间 + 一个约 1.7s 的「我在这儿」高亮。
+    // 以前这里只 setState({ selectedFamily })：三个视图判断「选中」读的都是 `selection`
+    // 数组，于是永远画不出任何标记；样张视图更是连滚动都没有（它根本没有监听选中项的
+    // 滚动定位）。三件事现在统一由 store 的 `jumpToFamily` 负责（2026-11-12）。
+    //
+    // ⚠️ 跳转要用 `value`（族名键 = `family.name`），**不能**用 `label`：
+    // label 是本地化显示名（中文界面下可能是「微软雅黑」，族名键是 `Microsoft YaHei`），
+    // 拿显示名去查族永远查不到 —— 表现就是「点了建议，界面没反应」，而且
+    // 选中态 / 滚动 / 高亮三样一起失效。输入框里显示的仍然是 label（用户认得的那个名字）。
+    if (sg.kind === "family") st.jumpToFamily(sg.value ?? sg.label);
     else if (sg.kind === "tag") st.setNav({ kind: "tag", tag: sg.label });
     else if (sg.kind === "collection") st.setNav({ kind: "collection", name: sg.label });
     else st.setNav({ kind: "snapshot", name: sg.label });
@@ -869,10 +907,27 @@ export function TopBar() {
           // 输入框也挂说明：光看占位符「搜索…」不知道能搜到什么
           data-hint="hint.search"
           value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
+          onChange={(e) => {
+            // 用户开始自己改字：退出「只显示选中名字」的状态，恢复正常过滤
+            pickedRef.current = null;
+            setSearchText(e.target.value);
+          }}
           onFocus={() => setSearchFocus(true)}
-          // 失焦延时关：mousedown 里 preventDefault 已经挡住一半，这里再兜一层
-          onBlur={() => window.setTimeout(() => setSearchFocus(false), 120)}
+          /**
+           * 失焦延时关：mousedown 里 preventDefault 已经挡住一半，这里再兜一层。
+           *
+           * 到点先看焦点在哪（2026-11-12）：Tab 到建议项时焦点**进了下拉**，这时不能关 ——
+           * 一关，键盘用户就永远按不到那一项、也就永远没法用 Enter 选中。鼠标路径不受影响
+           * （mousedown 的 preventDefault 让输入框压根不 blur）。
+           * 焦点从下拉里再 Tab 走的情况由 `SearchSuggest` 的 onDismiss 收尾。
+           */
+          onBlur={() =>
+            window.setTimeout(() => {
+              const active = document.activeElement;
+              if (active?.closest?.(".suggest-list")) return;
+              setSearchFocus(false);
+            }, 120)
+          }
           onKeyDown={(e) => {
             if (e.key === "Escape") setSearchFocus(false);
           }}
@@ -884,13 +939,21 @@ export function TopBar() {
             条件挂载的，自己包一层收不到卸载，exit 就成死代码（项目踩过一次）。 */}
         <AnimatePresence>
           {searchFocus && searchText.trim().length > 0 && (
-            <SearchSuggest key="suggest" query={searchText} onPick={pickSuggestion} />
+            <SearchSuggest
+              key="suggest"
+              query={searchText}
+              onPick={pickSuggestion}
+              /* 焦点从下拉里 Tab 走时由它收尾（输入框那侧的 onBlur 已经为「焦点进下拉」放过一次） */
+              onDismiss={() => setSearchFocus(false)}
+            />
           )}
         </AnimatePresence>
         {searchText.length > 0 && (
           <button
             className="search-clear"
             onClick={() => {
+              // 清除 = 结束「只显示选中名字」的状态（否则清空后显示值会被同步逻辑保留）
+              pickedRef.current = null;
               setSearchText("");
               setSearch("");
             }}

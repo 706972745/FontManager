@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.9.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
