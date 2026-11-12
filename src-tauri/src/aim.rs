@@ -26,11 +26,14 @@ pub struct AimResult {
 #[cfg(windows)]
 mod imp {
     use super::AimResult;
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::{Duration, Instant};
     use tauri::{AppHandle, Emitter};
+    use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetAncestor, GetForegroundWindow, GetWindowThreadProcessId, GA_ROOTOWNER,
+        GetAncestor, GetForegroundWindow, GetWindow, GetWindowThreadProcessId, IsIconic,
+        IsWindowVisible, GA_ROOTOWNER, GW_HWNDNEXT, GW_OWNER,
     };
 
     /// 是否处于待命状态。取消 = 置 false，轮询线程下一拍就自己退出。
@@ -143,6 +146,78 @@ mod imp {
         ARMED.store(false, Ordering::SeqCst);
     }
 
+    /// 某个窗口属于哪个进程、exe 叫什么。`cache` 按 pid 缓存，见 `active_target` 里的说明。
+    ///
+    /// SAFETY: 调用方保证 hwnd 是有效窗口句柄（这里只读，不持有）。
+    unsafe fn pid_exe(hwnd: HWND, cache: &mut HashMap<u32, String>) -> (u32, String) {
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 {
+            return (0, String::new());
+        }
+        if let Some(exe) = cache.get(&pid) {
+            return (pid, exe.clone());
+        }
+        let exe = crate::procs::exe_of_pid(pid).unwrap_or_default();
+        cache.insert(pid, exe.clone());
+        (pid, exe)
+    }
+
+    /// 当前「最近在用」的设计软件：给插件「自动」项用（`GET /api/v1/apps/active`，1.9.11）。
+    ///
+    /// 为什么要往下翻 Z 序而不是只看前台：插件被点的那一刻，前台往往是我们自己
+    /// （用户刚在主窗口里右键），点任务栏切窗口时前台还会先变成 explorer.exe，
+    /// 真正在用的 PS/AI/CDR 被压在下面。
+    /// 反过来，前台是别的软件时**不**往下翻 —— 那种情况下用户确实不在用设计软件，
+    /// 硬从 Z 序里翻一个出来答给插件，等于替他做决定。
+    pub fn active_target() -> Option<(&'static str, String)> {
+        // 往下翻多少个窗口。Z 序靠前的几十个里几乎一定有目标软件；翻太多会让
+        // 「没装 PS 的机器」白跑几十次进程快照（每次都是一份全系统进程枚举）。
+        const MAX_WALK: usize = 30;
+        // SAFETY: 全是只读的窗口查询，不持有任何句柄；进程名走 Toolhelp 快照。
+        unsafe {
+            let fg = GetForegroundWindow();
+            if fg.is_null() {
+                return None;
+            }
+            // pid → exe 的小缓存：同一个进程常有好几个顶层窗口，每问一次都是一份
+            // 全系统进程快照，缓存一下能把几十次降到几次。
+            let mut cache: HashMap<u32, String> = HashMap::new();
+
+            let (fg_pid, fg_exe) = pid_exe(fg, &mut cache);
+            if let Some(app) = map_exe(&fg_exe) {
+                return Some((app, fg_exe));
+            }
+            // 前台既不是我们、也不是任务栏/桌面：用户此刻不在用设计软件，别硬答
+            if fg_pid != std::process::id() && fg_exe != EXPLORER_EXE {
+                return None;
+            }
+
+            let mut hwnd = GetWindow(fg, GW_HWNDNEXT);
+            let mut steps = 0usize;
+            while !hwnd.is_null() && steps < MAX_WALK {
+                steps += 1;
+                // 先取 next 再判断：判断分支里可能 return，别把链子断在半路
+                let next = GetWindow(hwnd, GW_HWNDNEXT);
+                // 不可见 / 最小化 / 带 owner 的窗口都不算「用户在用的那个窗」：
+                // PS 的浮动面板、各种对话框都是 owned window，它们本身不该被当成目标
+                if IsWindowVisible(hwnd) != 0
+                    && IsIconic(hwnd) == 0
+                    && GetWindow(hwnd, GW_OWNER).is_null()
+                {
+                    let (pid, exe) = pid_exe(hwnd, &mut cache);
+                    if pid != 0 {
+                        if let Some(app) = map_exe(&exe) {
+                            return Some((app, exe));
+                        }
+                    }
+                }
+                hwnd = next;
+            }
+            None
+        }
+    }
+
     fn emit(app: &AppHandle, payload: AimResult) {
         // 前端窗口已经关掉时会失败，这不影响待命本身的状态，忽略即可
         let _ = app.emit("aim-target", payload);
@@ -171,6 +246,11 @@ mod imp {
     pub fn arm(_app: AppHandle, _id: String) {}
 
     pub fn cancel() {}
+
+    /// 非 Windows：`GET /api/v1/apps/active` 永远返回「没有」。
+    pub fn active_target() -> Option<(&'static str, String)> {
+        None
+    }
 }
 
-pub use imp::{arm, cancel};
+pub use imp::{active_target, arm, cancel};

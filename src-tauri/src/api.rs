@@ -8,6 +8,7 @@
 //! - **危险写**（卸载 / 清空 / 覆盖导入）默认拒绝，需在设置里单独勾选。
 //! - 所有业务逻辑都走 `crate::services`，不在这里重写一遍。
 
+use crate::adobe;
 use crate::services::{self, fonts, snapshot};
 use crate::store::{self, Store};
 use axum::{
@@ -55,6 +56,10 @@ pub const PERMS: &[&str] = &[
     "write:curation",
     "export",
     "import",
+    // 1.9.11：把字体套用到 PS / AI / CDR（会去驱动别人的软件，单列一项）
+    "write:apply",
+    // 1.9.11：问「现在最近在用的是哪个设计软件」，给插件的「自动」项用
+    "read:apps",
 ];
 
 /// 插件 manifest 申报的权限 → 实际签发的权限（保留项, 被丢掉的原样）。
@@ -401,7 +406,12 @@ fn perm_for(method: &str, path: &str) -> Option<&'static str> {
     match method {
         _ if p == "/health" => None,
         "GET" if p == "/fonts" || p == "/fonts/families" => Some("read:fonts"),
+        // 精确匹配必须排在下面那条前缀规则之前：match 是自上而下取第一条命中的，
+        // 反过来写的话 /fonts/apply 会被 starts_with("/fonts/") 吃掉，
+        // 拿到 write:fonts 而不是 write:apply（两个权限的分量完全不同）。
+        "POST" if p == "/fonts/apply" => Some("write:apply"),
         "POST" if p.starts_with("/fonts/") => Some("write:fonts"),
+        "GET" if p == "/apps/active" => Some("read:apps"),
         "GET" if p == "/snapshots" => Some("read:snapshot"),
         _ if p.starts_with("/snapshots") => Some("write:snapshot"),
         "GET" if p == "/curation" => Some("read:curation"),
@@ -441,6 +451,10 @@ fn routes() -> Router<Arc<Hub>> {
         .route("/api/v1/fonts/activate", post(activate))
         .route("/api/v1/fonts/deactivate", post(deactivate))
         .route("/api/v1/fonts/scan", post(scan))
+        // 1.9.11：把字体套用到 PS / AI / CDR（引擎只有一份，在 adobe.rs）
+        .route("/api/v1/fonts/apply", post(apply_font))
+        // 1.9.11：最近在用的设计软件，给插件「自动」项用
+        .route("/api/v1/apps/active", get(active_app))
         .route(
             "/api/v1/snapshots",
             get(list_snapshots).post(create_snapshot),
@@ -632,6 +646,96 @@ async fn list_families(Extension(scope): Extension<Scope>) -> Response {
     }
     let fams = fonts::families();
     Json(json!({ "total": fams.len(), "families": fams })).into_response()
+}
+
+// ─────────────────── 1.9.11：套用字体 / 当前设计软件 ───────────────────
+
+/// `POST /api/v1/fonts/apply` 的请求体（camelCase，与整张 API 一个口径）。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyFontBody {
+    /// `photoshop` / `illustrator` / `coreldraw`
+    app: String,
+    postscript_name: String,
+    /// 提示文案用的名字（「族名 字重」）。空则回退成 `family`
+    #[serde(default)]
+    label: String,
+    family: String,
+    /// 本地化族名候选（CorelDRAW 认中文名，只给英文名会成片找不到）
+    #[serde(default)]
+    aliases: Vec<String>,
+}
+
+/// 把字体套用到目标软件。
+///
+/// 为什么要开这个端点：插件的「右键 → 套用到 PS/AI/CDR」如果自己写 COM / JSX，
+/// 就等于把 `adobe.rs` 那套（启用检查、CJK 提醒、CorelDRAW 常驻宿主、9 种 outcome）
+/// 复制一遍，两边必然跑偏。插件只负责触发，引擎永远只有一份。
+async fn apply_font(
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<ApplyFontBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:apply") {
+        return r;
+    }
+    // 参数校验一律 400 + 人话：插件会把这句话直接转给用户
+    let target = match adobe::Target::parse(&body.app) {
+        Ok(t) => t,
+        Err(_) => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "app「{}」不认识，只能是 photoshop / illustrator / coreldraw",
+                    body.app
+                ),
+            )
+        }
+    };
+    let postscript = body.postscript_name.trim().to_string();
+    if postscript.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "postscriptName 不能为空");
+    }
+    let family = body.family.trim().to_string();
+    if family.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "family 不能为空");
+    }
+    // label 只用于提示文案；缺省回退族名，绝不能让它是空串（文案会变成「已应用「」到…」）
+    let label = if body.label.trim().is_empty() {
+        family.clone()
+    } else {
+        body.label
+    };
+    let aliases = body.aliases;
+
+    // 必须 spawn_blocking：apply 内部会起 PowerShell / 常驻宿主进程并轮询等待，
+    // PS/AI 最多 30 秒、CorelDRAW 最多 60 秒。直接在 async handler 里跑会把
+    // axum 的工作线程占死，整个本地 API 跟着没响应。
+    let res = tauri::async_runtime::spawn_blocking(move || {
+        adobe::apply(target, &postscript, &label, &family, &aliases)
+    })
+    .await;
+    match res {
+        // outcome 原样透传（applied:N / created / no-text-selected / font-not-found /
+        // no-document / not-running / app-no-response / launch-timeout / ps-error:…），
+        // 翻译成人话是调用方（插件 / Agent）的事 —— 这里翻译就等于多一份口径。
+        Ok(Ok(outcome)) => Json(json!({ "outcome": outcome })).into_response(),
+        Ok(Err(e)) => map_err(e),
+        Err(e) => fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+/// `GET /api/v1/apps/active`：最近在用的设计软件（插件「自动」项用）。
+///
+/// 没有目标时也返回 200 + `{"app":null,"exe":""}`：这是**正常状态**（用户没开 PS），
+/// 不是错误 —— 让调用方按 4xx 处理反而要多写一层分支。
+async fn active_app(Extension(scope): Extension<Scope>) -> Response {
+    if let Err(r) = need(&scope, "read:apps") {
+        return r;
+    }
+    match crate::aim::active_target() {
+        Some((app, exe)) => Json(json!({ "app": app, "exe": exe })).into_response(),
+        None => Json(json!({ "app": null, "exe": "" })).into_response(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -1173,6 +1277,97 @@ mod tests {
             }
         }
         out
+    }
+
+    /// 1.9.11 的两条新路由：权限必须是精确的那一项，不能被前缀规则吃掉。
+    ///
+    /// `/fonts/apply` 撞的是 `"POST" if p.starts_with("/fonts/")` 那条 —— match 自上而下
+    /// 取第一条命中，顺序写反了它就会拿到 `write:fonts`（能改系统字体表的权限），
+    /// 等于把一个「驱动别人软件」的动作混进了「启用/停用」里。这条单测钉住顺序。
+    #[test]
+    fn apply_and_active_use_their_own_perm() {
+        assert_eq!(perm_for("POST", "/api/v1/fonts/apply"), Some("write:apply"));
+        assert_eq!(perm_for("GET", "/api/v1/apps/active"), Some("read:apps"));
+        // 相邻的既有路由不能被新规则带偏
+        assert_eq!(perm_for("POST", "/api/v1/fonts/activate"), Some("write:fonts"));
+        assert_eq!(perm_for("POST", "/api/v1/fonts/deactivate"), Some("write:fonts"));
+        // 两个新权限本身必须在名单里，否则插件永远申请不到
+        assert!(PERMS.contains(&"write:apply"));
+        assert!(PERMS.contains(&"read:apps"));
+    }
+
+    /// 1.9.11 的两个 handler：不起 HTTP 服务也能验「闸门 + 参数校验 + 响应形状」。
+    ///
+    /// 为什么不走真 HTTP：那要先开本地 API、拿令牌、还要能起 PowerShell 真去驱动 PS。
+    /// 这三条测试都在**进入 adobe::apply 之前**返回，所以跑起来是毫秒级、不碰任何外部软件。
+    #[test]
+    fn apply_font_gates_and_validates() {
+        let body = |app: &str, ps: &str, family: &str| ApplyFontBody {
+            app: app.into(),
+            postscript_name: ps.into(),
+            label: String::new(),
+            family: family.into(),
+            aliases: Vec::new(),
+        };
+
+        // ① 权限不够 → 403，而且必须发生在参数校验之前（中间件口径：先鉴权再解析）
+        let weak = Scope {
+            name: "p".into(),
+            perms: vec!["read:fonts".into()],
+        };
+        let res = tauri::async_runtime::block_on(apply_font(
+            Extension(weak),
+            Json(body("notepad", "X-Reg", "X")),
+        ));
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+        // ② app 不认识 → 400
+        let res = tauri::async_runtime::block_on(apply_font(
+            Extension(Scope::full("test")),
+            Json(body("notepad", "X-Reg", "X")),
+        ));
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        // ③ 缺 postscriptName / family → 400
+        for (ps, family) in [("", "X"), ("X-Reg", "")] {
+            let res = tauri::async_runtime::block_on(apply_font(
+                Extension(Scope::full("test")),
+                Json(body("photoshop", ps, family)),
+            ));
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST, "ps={ps:?} family={family:?}");
+        }
+    }
+
+    /// `/apps/active` 永远 200：没有目标时返回 `{"app":null,"exe":""}` 是**正常状态**，
+    /// 不是错误。这条钉住「形状不会变」—— 插件的「自动」项按这个形状解包。
+    #[test]
+    fn active_app_always_answers_200_with_shape() {
+        let res = tauri::async_runtime::block_on(active_app(Extension(Scope::full("test"))));
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = tauri::async_runtime::block_on(axum::body::to_bytes(res.into_body(), 4096))
+            .expect("读响应体失败");
+        let v: Value = serde_json::from_slice(&bytes).expect("响应不是 JSON");
+        assert!(v.get("app").is_some(), "缺 app 字段：{v}");
+        assert!(v.get("exe").is_some(), "缺 exe 字段：{v}");
+        // app 要么是三个标识之一，要么是 null；不能是别的字符串
+        match v.get("app") {
+            Some(Value::Null) => {}
+            Some(Value::String(s)) => {
+                assert!(
+                    ["photoshop", "illustrator", "coreldraw"].contains(&s.as_str()),
+                    "app 返回了意料外的值：{s}"
+                );
+            }
+            other => panic!("app 字段类型不对：{other:?}"),
+        }
+
+        // 权限不够 → 403（同样先于任何窗口探测）
+        let weak = Scope {
+            name: "p".into(),
+            perms: vec!["read:fonts".into()],
+        };
+        let res = tauri::async_runtime::block_on(active_app(Extension(weak)));
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
     }
 
     /// 每条路由都必须落在权限表里（或显式豁免名单里）。
