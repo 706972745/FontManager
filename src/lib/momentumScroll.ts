@@ -1,33 +1,26 @@
 /**
- * 惯性滚动（2026-11-11 用户要求）。
+ * 惯性滚动（2026-11-12 第二版：滚动与滑行分离）。
  *
  * 背景：Windows 上的 Chromium/WebView2 **没有**滚轮惯性 —— 鼠标滚一格，内容走一格，
- * 松手立刻停住；而 macOS 触控板 / 移动端那种「甩一下继续滑、越滑越慢」的手感没有。
- * 用户要的正是这一条：滚完之后按当前速度继续滑行、逐渐减速，
- * 滚得越快滑得越远，慢慢滚甚至可以几乎不滑。
+ * 松手立刻停住；macOS 触控板 / 手机那种「甩一下继续滑、越滑越慢」的手感没有。
  *
- * 做法：**目标位置**与**视觉位置**分开，视觉位置每帧去追目标位置。
+ * 第一版（2026-11-11）的做法是「每格既加位移又加动量」：连续滚十几格，动量会累加到
+ * 6500px/s，松手后还要走 1.1 秒、约 1500px；再加上画面被 1400px/s 限速、目标位置早已
+ * 跑到前面，松手时还欠着几百像素没走完 —— 用户看到的就是「手停了还在滚一屏」。
  *
- *   - 滚轮只改「目标」：`goal += delta`，同时给 `velocity` 加一份动量；
- *   - 惯性作用在目标上：`goal += v·dt`，`v *= e^(-DECAY·dt)` —— 越快走越远是自然结果；
- *   - 视觉位置 `pos` 每帧按指数逼近 goal 再写进 `scrollTop`。
+ * 第二版按手机的模型拆成两段：
  *
- * 为什么不是「每格立刻写 scrollTop」（第一版的做法）：
- * Windows 滚轮一格是 100px，一次性写进去就是**硬跳 100px**，滑行只是跳完之后的尾巴，
- * 手感就是「跳、跳、跳」。现在单格 100px 会被铺成约 100ms 的连续位移，
- * 连续多格则自然叠成一段匀速滑行再减速。
+ *   1. **滚动中 1:1 跟手**：滚轮只改目标位置（`goal += delta`），**不再顺手加动量**；
+ *      同时把 `(时刻, 位移)` 记进一个 120ms 的滑动窗口。
+ *   2. **松手后按测速滑行**：90ms 没有新的滚轮 = 松手，用窗口里测出的**手速**起滑，
+ *      `v *= e^(-7t)`（时间常数 0.14s，约 0.4s 停住），滑行距离还受两道封顶：
+ *      不超过「半屏」、也不超过「刚才滚过的距离」。
  *
- * 两条保证「顺滑但不拖沓」的约束：
- *
- *   1. **追赶系数随距离自适应**：差 8px（触控板碎步）时系数 50/s，两帧到位，
- *      几乎不加延迟；差 100px 以上时降到 18/s，铺开成平滑运动。
- *   2. **单帧位移上限** `MAX_RENDER_SPEED`：连甩十几格时目标可能领先上千像素，
- *      不设上限第一帧就会跳一大段。现在一帧最多走 1400·dt（60fps 下约 23px）。
- *
- * 一个**刻意不加**的东西：起步渐入。第一版试过「80ms 内从零升到全速」，
- * 结果第一帧只走 6px、随后一路冲到 21px —— 用户感知到的正是那个「先顿一下再冲出去」
- * 的加速段（第一轮反馈「一跳一跳」的原话）。滚轮给的是一个冲量，
- * 视觉上就该第一帧最快然后一路减速，所以这里没有 ramp：`renderStep` 从满速开始。
+ * 于是：
+ *   - 慢慢滚一格 → 窗口里只有一个采样点，测不出速度 → **直接停，零滑行**；
+ *   - 连续滚 5 格 → 按 5 格/0.3s ≈ 1666px/s 起滑，再走约 200px 就停；
+ *   - 快速连甩 10 格 → 按 5000px/s 起滑，但封顶半屏，0.4s 内一定停；
+ *   - 触控板碎步 → 测速本来就小，滑行自然短，不再和系统惯性叠加。
  *
  * 帧率无关：全部用 `e^(-λ·dt)` 而不是「每帧乘 0.95」，120Hz 屏上不会滑得更远。
  *
@@ -36,86 +29,70 @@
  * 1. **到底就交还原生**：容器已经滚到头还继续滚，`return` 而不 `preventDefault`，
  *    交给浏览器做连锁滚动（`overscroll-behavior: contain` 依然是它说了算）。
  * 2. **不碰输入框**：`input / textarea / select / contenteditable` 里的滚轮照旧原生。
- * 3. **不碰 Ctrl / ⌘ / Alt + 滚轮**：Ctrl+滚轮是调预览字号（`useCtrlWheelZoom`），
- *    而且要拦掉 WebView2 的整页缩放。
+ * 3. **不碰 Ctrl / ⌘ / Alt + 滚轮**：Ctrl+滚轮是调预览字号（`useCtrlWheelZoom`）。
  * 4. **不碰横向滚动**：`|deltaX| > |deltaY|` 时原样交回（跑马灯、横向列表）。
- * 5. **减动效时整条关闭**：设置里的「减少动态效果」或系统 `prefers-reduced-motion`
- *    一旦生效，这里直接不接管，恢复成原生的「滚多少走多少」。
- * 6. **任何真实输入都立刻让位**：按下鼠标（拖滚动条、点卡片）、按翻页键、触摸，
- *    都立即停滑；另外每帧还会比对 scrollTop，被别人动过（程序滚动 / 键盘）就停。
+ * 5. **减动效时整条关闭**：设置里的「减少动态效果」或系统 `prefers-reduced-motion`。
+ * 6. **任何真实输入都立刻让位**：按下鼠标、按翻页键、触摸都立即停滑；每帧还会比对
+ *    scrollTop，被别人动过（程序滚动 / 键盘）就停。
  * 7. **单个容器可以退出**：给元素加 `data-momentum="off"`。
  *
  * 只接管「竖直、能滚、还没到底」这一个瞬间，其余一律原样放行 —— 出问题时最坏的结果是
  * 这一段手感变回原生，而不是滚动失灵。
  */
 
-/** 速度衰减（1/s）。时间常数 ≈ 0.24s，松手后约 0.7 秒内停住 */
-const DECAY = 4.2;
+/** 测速窗口（ms）：只统计最近这么久的滚轮事件 */
+const SAMPLE_WINDOW = 120;
 /**
- * 一格滚轮（px）换来的初速度（px/s）。
- * 滑行距离 ≈ (GAIN·Δ − MIN_VELOCITY) / DECAY ≈ 0.4 格 —— 一格 100px 的滚轮，
- * 松手后再滑约 40px。调大 → 更"飘"；调小 → 更"实"。
- */
-const GAIN = 2.2;
-/**
- * 低于这个速度就停（px/s）。
+ * 测速的最小时间跨度（ms）。
  *
- * 这个值不能太小：速度掉到十几 px/s 时，一帧只走 0.2px，而 Chromium 的
- * `scrollTop` 在 100% 缩放下按整数存 —— 于是每帧写进去的值被量化成 0 或 1，
- * 视觉上就是「一格一格蹭」，比干脆停住更难受。
- * 55px/s 约 0.9px/帧，正好是量化后还能看出连续位移的下限。
+ * 浏览器一次物理滚轮可能在同一帧里补发 2~3 个事件，`Δt` 会接近 0，
+ * 直接除会算出几万 px/s 的假速度。夹到 50ms 相当于「一次快甩最多算 20 格/秒」。
  */
-const MIN_VELOCITY = 55;
-/** 上限，防连甩把手感甩飞 */
-const MAX_VELOCITY = 6500;
+const MIN_SPAN = 50;
+/** 多久没有新滚轮就算「松手」（ms）。低于一帧的间隔不能算，否则连续滚动会被误判成松手 */
+const IDLE_MS = 90;
+/** 两次滚轮间隔超过这个值就当作新手势：不继承上一次的速度（ms） */
+const GESTURE_GAP = 250;
+
+/** 滑行衰减（1/s）。时间常数 0.14s，松手后约 0.5 秒停住 */
+export const GLIDE_DECAY = 7;
+/** 低于这个速度就停（px/s）。太小会让 scrollTop 的整数量化变成「一格一格蹭」 */
+const GLIDE_MIN_VELOCITY = 40;
+/** 低于这个手速压根不起滑（px/s）：慢慢滚、触控板碎步都落在这里 */
+const GLIDE_START_VELOCITY = 300;
+/** 起滑速度上限（px/s），防连甩把手感甩飞 */
+const GLIDE_MAX_VELOCITY = 6000;
+/** 滑行距离封顶：不超过容器高度的这个比例 */
+const GLIDE_CAP_RATIO = 0.45;
+/** 滑行距离封顶：不超过「刚才滚过的距离」的倍数（滚两格就不该滑出三格远） */
+const GLIDE_CAP_OF_INPUT = 0.6;
+
 /** deltaMode = 1（按行）时一行的像素估值 */
 const LINE_PX = 16;
 
 /**
  * 视觉位置追赶目标位置的系数（1/s），随「还差多少」自适应。
  *
- * - 差距小（≤ 0 起点，触控板 8~20px 的碎步）：取 `SMOOTH_FAST`，两帧就到，
- *   不加任何可感知的延迟；
+ * - 差距小（≤ 0 起点，触控板 8~20px 的碎步）：取 `SMOOTH_FAST`，两帧就到；
  * - 差距大（≥ `SMOOTH_RANGE`）：取 `SMOOTH_SLOW`，把一格的位移铺开成连续运动。
  *
- * 对照（60fps，dt≈16.7ms）：
- *   差 8px  → k≈47 → 首帧走 4.4px，两帧到位；
- *   差 100px → k≈18 → 首帧走 26px，约 100ms 走完 95%。
+ * 对照（60fps，dt≈16.7ms）：差 8px → k≈47，两帧到位；差 100px → k≈18，约 100ms 走完 95%。
  */
 const SMOOTH_FAST = 50;
 const SMOOTH_SLOW = 18;
 const SMOOTH_RANGE = 80;
 
 /**
- * 单帧位移上限（px/s）。连甩十几格时目标位置可能领先上千像素，
- * 不设上限第一帧就跳一大段 —— 这是「看着卡」的另一个来源。
+ * 单帧位移上限（px/s）的**下限**。
  *
- * 1400 在 60fps 下约 **23px/帧**。这个值直接决定「最粗的一步有多粗」：
- * 60Hz 屏上一帧 23px，肉眼是连续运动；掉一帧也只多走 23px，不会跳。
- * 想更顺就往 1100 调，代价是连甩时到得慢一点。
+ * 连甩十几格时目标位置会领先上千像素，不设上限第一帧就会跳一大段。但固定 1400 也不行：
+ * 手速 5000px/s 时画面被限在 1400，松手时还欠着几百像素 —— 那笔「欠账」就是第二版要
+ * 消灭的尾巴。所以上限跟着手速走：`max(1600, 3×当前速度)`。
  */
-const MAX_RENDER_SPEED = 1400;
+const MAX_RENDER_SPEED = 1600;
 
-/**
- * 剩余差距小于这个值（px）就直接到位，不再逐帧逼近。
- *
- * 指数追赶的理论时间常数只有 20ms，但 60fps 下每帧最多走 55%，
- * 剩下那 1~2px 的尾巴要再花两三帧才收干净 —— 视觉上毫无意义，
- * 反而让触控板碎步多出一点"黏"的感觉。2.5px 在屏幕上不到一个像素行。
- */
+/** 剩余差距小于这个值（px）就直接到位，不再逐帧逼近 */
 const SNAP_PX = 2.5;
-
-/**
- * 尾速的「分量折扣」区间（px）。
- *
- * 鼠标滚轮一格是 100 上下的**大**分量，Windows 触控板是 10~40 的**小**分量、
- * 而且系统本身已经在连续补惯性事件。两者一视同仁的话，触控板会发飘（我们的尾速
- * 叠在系统惯性上）。所以：12px 以下完全不给尾速，48px 以上按满额，
- * 中间线性过渡 —— 鼠标一格（Chromium 上是 100 上下）手感一点没变，
- * 触控板只是「滚多少走多少」。
- */
-const TAIL_RAMP_START = 12;
-const TAIL_RAMP_END = 48;
 
 /** 会被我们让路的按键（原生滚动键） */
 const SCROLL_KEYS = new Set([
@@ -148,19 +125,25 @@ export function canScrollFurther(scrollTop: number, maxScroll: number, deltaY: n
   return false;
 }
 
-/**
- * 初速度 v₀ 实际还能滑多远（px）。
- * 要扣掉「速度掉到 MIN_VELOCITY 就停」的那一截，否则算出来的距离永远偏大。
- */
-export function glideDistance(v0: number, decay = DECAY, minVelocity = MIN_VELOCITY): number {
-  const v = Math.abs(v0);
-  if (v <= minVelocity) return 0;
-  return (v - minVelocity) / decay;
+/** 一帧之后的剩余速度（帧率无关） */
+export function decayVelocity(v: number, dt: number, decay = GLIDE_DECAY): number {
+  return v * Math.exp(-decay * dt);
 }
 
-/** 一帧之后的剩余速度（帧率无关） */
-export function decayVelocity(v: number, dt: number, decay = DECAY): number {
-  return v * Math.exp(-decay * dt);
+/** 初速度 v₀ 在停住之前还能滑多远（px）：∫v = v₀/λ */
+export function glideDistance(v0: number, decay = GLIDE_DECAY): number {
+  return Math.abs(v0) / decay;
+}
+
+/**
+ * 滑行距离的两道封顶：不超过半屏，也不超过「刚才滚过的距离」。
+ * @param viewportPx 容器高度
+ * @param inputPx    本次手势累计滚过的距离（取绝对值）
+ */
+export function glideCap(viewportPx: number, inputPx: number): number {
+  const byScreen = Math.max(0, viewportPx) * GLIDE_CAP_RATIO;
+  const byInput = Math.abs(inputPx) * GLIDE_CAP_OF_INPUT;
+  return Math.max(0, Math.min(byScreen, byInput));
 }
 
 /** 是否允许惯性：设置里选了「减少动态效果」，或系统开了 reduce */
@@ -169,20 +152,15 @@ export function inertiaAllowed(motionPref: string | undefined, prefersReduced: b
   return !prefersReduced;
 }
 
-/**
- * 这个分量该按几成给尾速（0 = 只走不滑）。
- * 见 TAIL_RAMP_START / TAIL_RAMP_END 的注释：小分量是触控板，别叠系统惯性。
- */
-export function tailShare(deltaY: number): number {
-  const a = Math.abs(deltaY);
-  if (a <= TAIL_RAMP_START) return 0;
-  return clamp((a - TAIL_RAMP_START) / (TAIL_RAMP_END - TAIL_RAMP_START), 0, 1);
-}
-
 /** 追赶系数（1/s）：差得越多，追得越"柔" */
 export function smoothFactor(diff: number): number {
   const t = clamp(Math.abs(diff) / SMOOTH_RANGE, 0, 1);
   return SMOOTH_FAST - (SMOOTH_FAST - SMOOTH_SLOW) * t;
+}
+
+/** 本帧允许的最大速度（px/s）：跟着手速走，别让画面欠账 */
+export function followSpeedLimit(currentVelocity = 0): number {
+  return Math.max(MAX_RENDER_SPEED, Math.abs(currentVelocity) * 3);
 }
 
 /**
@@ -190,7 +168,7 @@ export function smoothFactor(diff: number): number {
  *
  * @param diff        目标位置 − 视觉位置
  * @param dt          距上一帧的秒数
- * @param speedLimit  本帧允许的最大速度（px/s），由调用方乘以起步渐入系数
+ * @param speedLimit  本帧允许的最大速度（px/s），见 `followSpeedLimit`
  */
 export function renderStep(diff: number, dt: number, speedLimit = MAX_RENDER_SPEED): number {
   if (diff === 0 || dt <= 0) return 0;
@@ -200,6 +178,35 @@ export function renderStep(diff: number, dt: number, speedLimit = MAX_RENDER_SPE
   const cap = speedLimit * dt;
   if (Math.abs(ease) <= cap) return ease;
   return ease > 0 ? cap : -cap;
+}
+
+/** 一次滚轮采样 */
+export interface WheelSample {
+  /** 时刻（ms，performance.now） */
+  t: number;
+  /** 折算成像素的位移 */
+  d: number;
+}
+
+/**
+ * 从滑动窗口里测「手速」（px/s）。
+ *
+ * 少于两个采样点 = 测不出来（一格滚轮就是这种情况）→ 返回 0，调用方据此不起滑。
+ * 时间跨度夹在 `MIN_SPAN` 以上，避免同帧补发的事件算出假速度。
+ */
+export function measureVelocity(samples: readonly WheelSample[]): number {
+  if (samples.length < 2) return 0;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const span = Math.max(MIN_SPAN, last.t - first.t);
+  let total = 0;
+  for (const s of samples) total += s.d;
+  return clamp((total / span) * 1000, -GLIDE_MAX_VELOCITY, GLIDE_MAX_VELOCITY);
+}
+
+/** 这个手速该不该起滑 */
+export function shouldGlide(velocity: number): boolean {
+  return Math.abs(velocity) >= GLIDE_START_VELOCITY;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -220,10 +227,6 @@ function overflowScrollsY(el: Element): boolean {
  *
  * 只对 `scrollHeight > clientHeight` 的元素查 computed style（绝大多数祖先都比一次
  * 数字比较便宜）；`overflow: hidden` 的元素即使内容溢出也不接管 —— 用户本来也滚不动它。
- *
- * 走到 `<body>` 还没找到时，再看一眼页面本身（`document.scrollingElement`）：
- * 现在所有视图都是内部滚动，但将来若有整页滚动的界面，这里能直接兜住，
- * 不用回来改逻辑。
  */
 function findScrollable(start: EventTarget | null): HTMLElement | null {
   if (document.documentElement.dataset.momentum === "off") return null;
@@ -259,11 +262,10 @@ export function installMomentumScroll(): () => void {
   let disposed = false;
 
   let el: HTMLElement | null = null;
-  /** 目标位置：滚轮与惯性共同决定的终点 */
+  /** 目标位置：滚轮与滑行共同决定的终点 */
   let goal = 0;
   /** 视觉位置：实际写进 scrollTop 的值，每帧向 goal 逼近 */
   let pos = 0;
-  let velocity = 0;
   /** 容器可滚动的最大距离（缓存：每帧读 scrollHeight 会强制同步布局） */
   let maxScroll = 0;
   let raf = 0;
@@ -271,14 +273,46 @@ export function installMomentumScroll(): () => void {
   /** 上一次由我们写进去的 scrollTop，用来识别「别人动了滚动位置」 */
   let written = 0;
 
+  /** 本次手势的滚轮采样（只留最近 SAMPLE_WINDOW 毫秒） */
+  let samples: WheelSample[] = [];
+  /** 本次手势累计滚过的距离（像素，带符号）—— 滑行封顶要用 */
+  let gestureInput = 0;
+  /** 上一次滚轮时刻（ms） */
+  let lastWheelAt = 0;
+  /** 是否处于「松手后的滑行」阶段 */
+  let gliding = false;
+  /** 滑行速度（px/s） */
+  let glideV = 0;
+  /** 本次滑行已经走了多少（px，取绝对值累计） */
+  let glideTraveled = 0;
+  /** 本次滑行的距离封顶（px） */
+  let glideLimit = 0;
+
   const reduceQuery =
     typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+
+  const resetGesture = (target: HTMLElement) => {
+    el = target;
+    pos = target.scrollTop;
+    goal = pos;
+    written = pos;
+    maxScroll = Math.max(0, target.scrollHeight - target.clientHeight);
+    samples = [];
+    gestureInput = 0;
+    gliding = false;
+    glideV = 0;
+    glideTraveled = 0;
+    glideLimit = 0;
+  };
 
   const stop = () => {
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
     el = null;
-    velocity = 0;
+    gliding = false;
+    glideV = 0;
+    samples = [];
+    gestureInput = 0;
   };
 
   const tick = (now: number) => {
@@ -298,23 +332,44 @@ export function installMomentumScroll(): () => void {
     const dt = clamp((now - lastFrame) / 1000, 0.001, 0.05);
     lastFrame = now;
 
-    // ① 惯性推进「目标位置」：这一段决定滑多远（越快越远）
-    if (Math.abs(velocity) >= MIN_VELOCITY) {
-      const next = goal + velocity * dt;
-      if (next <= 0 || next >= maxScroll) {
-        goal = clamp(next, 0, maxScroll);
-        velocity = 0; // 撞到边界就停，不顶着边继续推
-      } else {
-        goal = next;
+    // ① 松手判定：一段时间没有新滚轮 → 按窗口里测出的手速起滑（一格滚轮测不出速度，直接停）
+    if (!gliding && samples.length > 0 && now - lastWheelAt >= IDLE_MS) {
+      const v = measureVelocity(samples);
+      samples = [];
+      if (shouldGlide(v)) {
+        gliding = true;
+        glideTraveled = 0;
+        glideLimit = glideCap(target.clientHeight, gestureInput);
+        // 把「距离封顶」换算成「速度上限」而不是滑到一半硬停：
+        // 距离 ≈ v/λ，所以 v ≤ limit·λ 时自然停在 limit 上，减速曲线完整。
+        const vCap = glideLimit * GLIDE_DECAY;
+        glideV = clamp(v, -vCap, vCap);
       }
-      velocity = decayVelocity(velocity, dt);
-    } else {
-      velocity = 0;
     }
 
-    // ② 「视觉位置」追「目标位置」：这一段决定顺不顺滑
+    // ② 滑行：只推目标位置，速度按指数衰减，撞到边界或封顶就停
+    if (gliding) {
+      const step = glideV * dt;
+      const nextTraveled = glideTraveled + Math.abs(step);
+      const nextGoal = goal + step;
+      if (nextTraveled > glideLimit || nextGoal <= 0 || nextGoal >= maxScroll) {
+        goal = clamp(nextGoal, 0, maxScroll);
+        gliding = false;
+        glideV = 0;
+      } else {
+        goal = nextGoal;
+        glideTraveled = nextTraveled;
+        glideV = decayVelocity(glideV, dt);
+        if (Math.abs(glideV) < GLIDE_MIN_VELOCITY) {
+          gliding = false;
+          glideV = 0;
+        }
+      }
+    }
+
+    // ③ 视觉位置追目标位置（顺滑那一段）
     const diff = goal - pos;
-    if (Math.abs(diff) < 1 && velocity === 0) {
+    if (Math.abs(diff) < 1 && !gliding && samples.length === 0) {
       if (pos !== goal) {
         pos = goal;
         target.scrollTop = pos;
@@ -324,54 +379,53 @@ export function installMomentumScroll(): () => void {
       return;
     }
 
-    pos += renderStep(diff, dt);
+    const speed = gliding ? glideV : measureVelocity(samples);
+    pos += renderStep(diff, dt, followSpeedLimit(speed));
     target.scrollTop = pos;
-    // 记读回来的值而不是 pos：Chromium 在 100% 缩放下会把 scrollTop 量化成整数，
-    // 用精确值当基准会让下一帧的「外部改动」检测偏 0.x 像素。
+    // 记读回来的值而不是 pos：Chromium 在 100% 缩放下会把 scrollTop 量化成整数
     written = target.scrollTop;
     raf = requestAnimationFrame(tick);
   };
 
-  /** 把一格滚轮吃进来：只改目标位置与动量，实际位移交给 tick 铺开 */
-  const push = (target: HTMLElement, deltaY: number) => {
+  /** 把一格滚轮吃进来：只改目标位置并采样，位移交给 tick 铺开 */
+  const push = (target: HTMLElement, deltaY: number, now: number) => {
     if (el !== target) {
-      el = target;
-      velocity = 0;
-      pos = target.scrollTop;
-      goal = pos;
-      written = pos;
-      maxScroll = Math.max(0, target.scrollHeight - target.clientHeight);
+      resetGesture(target);
     } else {
       // 虚拟列表 / 图片加载可能改变高度，重新夹一次目标
       maxScroll = Math.max(0, target.scrollHeight - target.clientHeight);
       goal = clamp(goal, 0, maxScroll);
-      // 位置被外部改过（列表重置 / 拖滚动条 / 程序滚动到顶）：以真实位置为准重来。
-      // 不重新对齐的话，tick 开头的「别人动过」检测会把这一格整个丢掉 ——
-      // 表现就是「界面上滚了一下之后，第一次滚轮没反应」。
+      // 位置被外部改过（列表重置 / 拖滚动条 / 程序滚动到顶）：以真实位置为准重来
       if (Math.abs(target.scrollTop - written) > 2) {
         pos = target.scrollTop;
         goal = pos;
         written = pos;
-        velocity = 0;
+        gliding = false;
+        glideV = 0;
+        samples = [];
+        gestureInput = 0;
       }
     }
 
-    // 反向滚动：把旧方向的动量清掉，否则前半段会先被往反方向拽一下
-    if (velocity * deltaY < 0) velocity = 0;
+    // 新手势：不继承上一次的速度与采样
+    if (now - lastWheelAt > GESTURE_GAP) {
+      samples = [];
+      gestureInput = 0;
+    }
+    // 新的滚轮输入立刻接管：滑行中再滚，就从当前位置重新开始
+    gliding = false;
+    glideV = 0;
 
     goal = clamp(goal + deltaY, 0, maxScroll);
-    // 贴边时按剩余行程打折：不然「最后半格」会攒出一段没法兑现的速度，
-    // 下次反向滚动时先要把这段还掉，手感会发黏。
-    const room = deltaY > 0 ? maxScroll - goal : goal;
-    const share = clamp(room / Math.max(1, Math.abs(deltaY) * 2), 0, 1);
-    velocity = clamp(
-      velocity + deltaY * GAIN * share * tailShare(deltaY),
-      -MAX_VELOCITY,
-      MAX_VELOCITY,
-    );
+    gestureInput += deltaY;
+
+    samples.push({ t: now, d: deltaY });
+    const cutoff = now - SAMPLE_WINDOW;
+    while (samples.length > 0 && samples[0].t < cutoff) samples.shift();
+    lastWheelAt = now;
 
     if (!raf) {
-      lastFrame = performance.now();
+      lastFrame = now;
       raf = requestAnimationFrame(tick);
     }
   };
@@ -399,7 +453,7 @@ export function installMomentumScroll(): () => void {
     }
 
     e.preventDefault();
-    push(container, delta);
+    push(container, delta, performance.now());
   };
 
   // 任何真实输入都立刻停滑
