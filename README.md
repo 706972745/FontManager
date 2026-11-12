@@ -175,18 +175,18 @@ The three icons at the toolbar's right edge:
 - **List**: a compact table — family / styles / format / size / toggle — best for
   sweeping a big library
 
-![List view: the whole library in one table](view-list.png?v=1.9.3)
+![List view: the whole library in one table](view-list.png?v=2.0.0)
 
 - **Specimen**: a **multi-column specimen wall** — every cell keeps the full card
   header (format / name / license / ★ / toggle) and spreads the sample text **large**
   underneath; pick a face per cell (remembered); its own size control — best for
   judging a typeface's character
 
-![Specimen view: multi-column specimen wall with large sample text](view-specimen.png?v=1.9.3)
+![Specimen view: multi-column specimen wall with large sample text](view-specimen.png?v=2.0.0)
 
 ### 5. The detail panel: everything about one family
 
-![Detail panel: multi-size specimen and metadata](detail.png?v=1.9.3)
+![Detail panel: multi-size specimen and metadata](detail.png?v=2.0.0)
 
 Click any card and the right panel opens:
 
@@ -235,7 +235,7 @@ Click any card and the right panel opens:
 | Online panel | see below: filter by category / license, one-click add |
 | Local API / MCP | automated imports (see [Plugins, local API & MCP](#-plugins-local-api--mcp)) |
 
-![Online panel: category and license filters on the left, font cards with one-click add](online.png?v=1.9.3)
+![Online panel: category and license filters on the left, font cards with one-click add](online.png?v=2.0.0)
 
 How to use it: sidebar "Online" → filter by **category** (sans / serif / display /
 handwriting / mono / icons) and **license** (OFL / Apache / UFL), or just search;
@@ -264,7 +264,7 @@ a handwritten caption), easy to spot in Explorer: the app icon (a **TYPE
 FontManager** wordmark) · snapshot export **.S** · pack-with-fonts **.P** ·
 data-only export **.L** · library folder **.F**:
 
-![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png?v=1.9.3)
+![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png?v=2.0.0)
 
 ### 11. Trash: regret is allowed
 
@@ -273,7 +273,7 @@ data-only export **.L** · library folder **.F**:
 2. Sidebar "Trash" → **restore** (back exactly as it was) or **delete forever**
    (double confirmation)
 
-![Trash: removed fonts land here first — nothing disappears silently](trash.png?v=1.9.3)
+![Trash: removed fonts land here first — nothing disappears silently](trash.png?v=2.0.0)
 
 ### 12. Licenses & duplicates: no browser needed
 
@@ -310,7 +310,7 @@ faster routes:
 
 ### 14. ⚡ The QuickBar: switch fonts in 1 second, anywhere
 
-![QuickBar: the docked panel of activated fonts](quickbar.png?v=1.9.3)
+![QuickBar: the docked panel of activated fonts](quickbar.png?v=2.0.0)
 
 1. Press <kbd>Alt</kbd>+<kbd>`</kbd> anywhere — the main window collapses into the
    **docked QuickBar** (change the hotkey under Settings → System → "QuickBar
@@ -336,7 +336,7 @@ faster routes:
 - <kbd>Ctrl</kbd>+<kbd>K</kbd>: the command palette — type to jump (views, toggles,
   compare, apply-in-app, snapshots…)
 
-![Command palette](palette.png?v=1.9.3)
+![Command palette](palette.png?v=2.0.0)
 
 - **Type-to-search in any context menu**: with any right-click menu open
   (cards / list / specimens / QuickBar / detail panel), just **start typing** —
@@ -345,7 +345,7 @@ faster routes:
   switches to the right view and scrolls the family into view.
   <kbd>Esc</kbd> clears the query first, then closes the menu
 
-![Type-to-search inside a context menu: a search box appears on top, results filter live, and the footer tells you more matches are available](contextmenu.png?v=1.9.3)
+![Type-to-search inside a context menu: a search box appears on top, results filter live, and the footer tells you more matches are available](contextmenu.png?v=2.0.0)
 
 - **Tab toggles the search scope**: while searching, <kbd>Tab</kbd> (or the
   badge next to the box) switches between "enabled ↔ all fonts" — the QuickBar
@@ -355,11 +355,11 @@ faster routes:
 - <kbd>?</kbd> (or the sidebar "Shortcuts" entry): the full shortcut list —
   navigation / selection / actions on selection / snapshots
 
-![Shortcut list: open with ? or the sidebar "Shortcuts" entry — grouped into navigation / selection / actions](shortcuts.png?v=1.9.3)
+![Shortcut list: open with ? or the sidebar "Shortcuts" entry — grouped into navigation / selection / actions](shortcuts.png?v=2.0.0)
 
 ### 17. Multiple libraries: up to 3 folders, one-click switching
 
-![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png?v=1.9.3)
+![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png?v=2.0.0)
 
 Fonts scattered across folders? **Settings → Library folders**:
 
@@ -374,7 +374,7 @@ Fonts scattered across folders? **Settings → Library folders**:
 
 ### 18. Look & language
 
-![Settings: language / system / library — every toggle in one column](settings.png?v=1.9.3)
+![Settings: language / system / library — every toggle in one column](settings.png?v=2.0.0)
 
 In settings: light / dark theme · interface sounds on/off · **reduced motion**
 (calmer animation, less transparency) · nine interface languages
