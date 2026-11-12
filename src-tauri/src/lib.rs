@@ -1,6 +1,7 @@
 mod activation;
 mod adobe;
 mod affinity;
+mod aim;
 // 1.3.0：本地 HTTP API（只绑 127.0.0.1）与进程外插件
 mod api;
 mod plugins;
@@ -2535,6 +2536,19 @@ async fn apply_font_in_app(
     Ok(outcome)
 }
 
+/// 速览双击示例文字后进入「待命」：等用户点下一个窗口，把结果用 `aim-target` 事件发回前端。
+/// 只捕获一次，命中 / 超时 / 取消都立即解除（细节见 `aim.rs`）。
+#[tauri::command]
+fn aim_arm(app: tauri::AppHandle, id: String) {
+    aim::arm(app, id);
+}
+
+/// 取消待命（Esc、面板内点击、离开速览界面）。
+#[tauri::command]
+fn aim_cancel() {
+    aim::cancel();
+}
+
 /// panic 钩子从这里落盘（main.rs 里 set_hook 调它）。
 /// 发布版没有控制台，闪退现场只剩这一条线索 —— 别删。
 pub fn log_panic(msg: &str) {
@@ -2890,6 +2904,8 @@ pub fn run() {
             open_url,
             adobe_available,
             apply_font_in_app,
+            aim_arm,
+            aim_cancel,
             window_dock::set_quickbar_mode,
             window_dock::set_dock_sensor,
             window_round::set_window_rounded,
