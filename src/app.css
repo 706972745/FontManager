@@ -6720,6 +6720,46 @@ body.ui-fade-out .app-frame {
   flex: none;
 }
 
+/* 待命提示（1.9.10）：双击示例文字后，元信息行整行换成这一句。
+   用速览自己的强调色 --qb-accent（暗色 #5b8cff / 亮色 #1b4fe0），
+   与「筛选生效」那几个小字同一口径，不硬编码颜色。 */
+.qb-aim {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--qb-accent);
+  letter-spacing: 0.06em;
+}
+/* 呼吸圆点：告诉用户「正在等一个点击」，静止的小圆点看起来像装饰 */
+.qb-aim-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--qb-accent);
+  animation: qb-aim-breathe 1.2s ease-in-out infinite;
+}
+@keyframes qb-aim-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+}
+/* 系统开了减弱动效就只留静态圆点：呼吸是「等待」的修饰，不是信息本身 */
+@media (prefers-reduced-motion: reduce) {
+  .qb-aim-dot {
+    animation: none;
+  }
+}
+
 .qb-body {
   flex: 1;
   min-height: 0;

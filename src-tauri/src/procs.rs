@@ -41,6 +41,40 @@ fn exe_of(entry: &ProcessEntry32W) -> String {
     String::from_utf16_lossy(&entry.sz_exe_file[..len]).to_ascii_lowercase()
 }
 
+/// 按 PID 反查进程名（小写 exe 文件名）。
+///
+/// 为什么用 Toolhelp 快照而不是 `OpenProcess` + `QueryFullProcessImageNameW`：
+/// 目标软件常以管理员权限运行，普通权限拿不到它的进程句柄（OpenProcess 直接失败），
+/// 但进程快照是系统级枚举，不需要对目标进程有任何权限 —— 我们只要一个文件名。
+pub fn exe_of_pid(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return None;
+    }
+    // SAFETY: 快照句柄只在本次调用内使用，返回前一定关闭；entry 是栈上的合法结构体。
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap as isize == INVALID_HANDLE_VALUE || snap.is_null() {
+            return None;
+        }
+        let mut entry: ProcessEntry32W = std::mem::zeroed();
+        entry.dw_size = std::mem::size_of::<ProcessEntry32W>() as u32;
+        let mut found: Option<String> = None;
+        if Process32FirstW(snap, &mut entry) != 0 {
+            loop {
+                if entry.th32_process_id == pid {
+                    found = Some(exe_of(&entry));
+                    break;
+                }
+                if Process32NextW(snap, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+        found
+    }
+}
+
 /// 三个目标软件**一次快照查完**：返回 (photoshop, illustrator, coreldraw)。
 ///
 /// 调用方（`warm::tick` 每 400ms、`warm::snapshot` 每 2 秒）原来每个软件各拍一份

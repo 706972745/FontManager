@@ -338,6 +338,22 @@ export interface AffinityConnection {
 export type InstallMode = "link" | "move" | "copy";
 
 /**
+ * 速览「点一下要应用到的窗口」的结果（`aim-target` 事件负载，1.9.10）。
+ *
+ * `reason`：hit = 命中了 PS/AI/CDR；not-target = 用户点了别的软件；
+ * timeout = 15 秒内没点任何别的窗口。三种情况都只发一次，发完待命即解除。
+ */
+export interface AimResult {
+  /** 发起待命时生成的 id：用来丢弃过期的结果（用户连点两次双击时） */
+  id: string;
+  /** 命中的目标软件；不是三个目标之一时为 null */
+  app: AdobeApp | null;
+  /** 前台窗口的 exe 文件名（小写）；超时为空串 */
+  exe: string;
+  reason: "hit" | "not-target" | "timeout";
+}
+
+/**
  * 字族名为空时补一个可用的名字。
  *
  * 少数字体把 name 表的字族名写成空串（ALLMYHAN、Wartorn、EXCEL、苏新诗古印宋简…）。
@@ -618,6 +634,13 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
       familyName,
       aliases: aliases ?? [],
     }),
+  /**
+   * 速览双击示例文字后开始「等下一次点窗口」（1.9.10）。
+   * 结果通过 `aim-target` 事件回来（见 AimResult），只回一次。
+   */
+  aimArm: (id: string) => invoke<void>("aim_arm", { id }),
+  /** 取消待命（Esc / 面板内点击 / 离开速览界面）。后端轮询线程下一拍自己退场。 */
+  aimCancel: () => invoke<void>("aim_cancel"),
   appWarmState: () => invoke<AppWarm[]>("app_warm_state"),
   affinityLink: () => invoke<AffinityConnection | null>("affinity_link"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
