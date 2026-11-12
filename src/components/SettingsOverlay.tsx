@@ -1,6 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, SunMoon, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, SunMoon, Volume2, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -1298,8 +1298,36 @@ export function SettingsOverlay() {
                     >
                       {p.error ?? p.summary ?? p.description ?? p.permissions.join(" · ")}
                     </div>
+                    {/* 崩溃原因（1.9.x）：真实死因就在 activation.log 里，别让用户自己去翻。
+                        一行小字、超长省略，`title` 兜住被截断的部分。 */}
+                    {p.error && (
+                      <div
+                        className="settings-plugin-crash"
+                        title={p.lastLog ?? undefined}
+                      >
+                        {p.lastLog
+                          ? t("settings.plugCrashCause", { line: p.lastLog })
+                          : t("settings.plugCrashNoLog")}
+                      </div>
+                    )}
                   </div>
                   <div className="settings-plugin-actions">
+                    {/* 日志按钮：只有出错时才出现，正常插件行不该多这个入口 */}
+                    {p.error && (
+                      <button
+                        className="settings-library-open"
+                        aria-label={t("settings.pluginsOpenLog")}
+                        data-hint-text={t("settings.pluginsOpenLog")}
+                        onClick={() =>
+                          void ipc
+                            .logFilePath()
+                            .then((path) => ipc.openFile(path))
+                            .catch(() => toast.error(t("toast.couldntOpenFileManager")))
+                        }
+                      >
+                        <FileText size={13} strokeWidth={1.5} />
+                      </button>
+                    )}
                     {/* 齿轮：插件声明了 settings 才有（点了是让插件自己弹面板） */}
                     {p.settings && (
                       <button
