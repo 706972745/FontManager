@@ -280,6 +280,8 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 标题 `.titlebar-title` | 13px / 500 / 字距 0.01em / 次文字色 |
 | 右侧动作 `.titlebar-controls` | flex / gap 1px；`-webkit-app-region: no-drag` |
 | 动作分隔线 `.titlebar-sep` | 1px × 16px / margin 0 4px |
+| 库级动作 `.titlebar-controls .tb-action` | 30×30 / **无边框 · 透明底** / 4px 圆角 / 图标 14；hover = `--e2` 底 + 主文字色；禁用（扫描中 / 导入中）45% 透明、不出 hover 底。顺序固定 **导入文件夹 → 重新扫描**，紧跟在「设置」之后、`.titlebar-sep` 之前（2026-11-13 从顶栏迁来） |
+| 分组间距 `.tb-action-first` | 「导入文件夹」`margin-left: 4px`：`.titlebar-controls` 的 gap 只有 1px，这 4px 把「窗口动作（速览 / 设置）」与「字库动作（导入 / 重扫）」分成两组，右侧由 `.titlebar-sep` 兜住 |
 | 关闭按钮 `.tc-close` | 悬停 = 错误红 18% 底 + 红字（**全软件唯一的红**只用在这个危险动作上） |
 | 侧栏 `.sidebar` | 底 `--ui-bg`；`.sidebar-scroll` flex 1 / gap 4px |
 | 侧栏分组标题 `.sidebar-heading` | 10px / 600 / 全大写 / 字距 0.1em / 弱色；`padding: 14px 11px 5px` |
@@ -291,9 +293,13 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 
 ### 3.2 顶栏（搜索 / 视图切换 / 排序 / 筛选 / 字号）
 
+> 2026-11-13：**「导入文件夹」「重新扫描」已迁到标题栏**（见 §3.1）。顶栏右侧只剩「视图切换」一组，
+> 顺序为 搜索 · 预览文字 · 字号滑杆 · 筛选 · 排序 · 对比 · 视图切换。
+
 | 元素 | 规格 |
 |---|---|
 | 顶栏容器 `.topbar` | flex / gap 8px；`flex-wrap: wrap` + `row-gap: 8px`（窄窗换行，**不让按钮溢出压到详情面板上**）；`padding: 10px 16px`；底部 1px 线 |
+| 视图切换的吸附 `.topbar > .view-toggle` | `margin-left: auto`：宽窗时两个输入框本来就吃满剩余空间，这一条只在**换行后**起作用 —— 让「视图切换」仍贴右缘，而不是孤零零落在第二行行首 |
 | 控件高度 | `--control-h: 36px`（R8 §3 明确「36px 的特殊块保持不动」） |
 | 搜索框 `.topbar-search` | `flex: 1 1 90px` / `min-width: 0`（窄时先让搜索缩） |
 | 输入框 `.topbar-field` | 高 36；`padding: 0 12px`；1px 描边；**4px 圆角**（R8）；底 `--ui-panel`；聚焦边框转 `--ui-accent` |
@@ -717,6 +723,7 @@ Windows 的 WebView2 没有滚轮惯性：滚一格走一格、松手就停。1.
 | 1.8.4 | 交互与动画审查：Toast 合并计数 + 4 条上限 + 容器指针穿透；`.settings-data-btn` 禁用态；样张侧栏图标对齐（左对齐 + `padding-left: 16`）；一键安装双击闸门 |
 | 1.8.4 | 检查更新加「下载并安装」（静默下载 → SHA-256 校验 → `/S` 静默装 → 自动重启）+ 3px 进度条；只在能装时出现，装不了退回「打开发布页」（B37 / C12） |
 | 1.8.2 | 深色浮层底（右键菜单 / Toast）从 R7 的冷灰 `#1e1e22` 改回暖墨 `#1c1c1a`，悬停底改 `color-mix`；设置面板首帧优化（屏外分区 `content-visibility: auto`、入场去掉 scale）—— 见 §3.12 浮层底色行 |
+| 2.0.0 | **标题栏接管两个字库动作**：「导入文件夹」「重新扫描」从顶栏移到 `.titlebar-controls`，30×30 无边框（`.rescan-btn.tb-action` 叠加变体，基础规则未动），顺序 速览 → 设置 → **导入 → 重扫** │ 窗口按钮；顶栏右侧只剩视图切换并加 `margin-left: auto`（换行后仍贴右）。见 §3.1 / §3.2 |
 
 ---
 

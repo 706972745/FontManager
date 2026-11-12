@@ -1,21 +1,18 @@
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowUpDown,
   Check,
   ChevronRight,
   Columns2,
   Filter,
-  FolderOpen,
   LayoutGrid,
   List,
-  RefreshCw,
   Columns3,
   Search,
   Star,
   Type,
   X,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { spring, springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
@@ -650,79 +647,6 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
   );
 }
 
-function RescanButton() {
-  const t = useT();
-  const rescan = useFontStore((s) => s.rescan);
-  const scanning = useFontStore((s) => s.phase === "scanning");
-  /**
-   * 减少动效下**不能**把转圈交给 motion（审计 P2-8）。
-   *
-   * `MotionConfig reducedMotion="always"` 会把 rotate 直接压成终态 → 图标停在半路，
-   * 看起来像「扫描卡死了」。而「仍在工作」这个信号本身比动画更重要，
-   * 所以这里换成 CSS 慢转（3s 一圈）：既没有快速旋转的刺激，也不会被读成死机。
-   * 与 `.spin`（减少动效下 animation: none）口径不同，理由写在这里：
-   * 那几处是**装饰**，这一处是**唯一的活动指示**。
-   */
-  const motionPref = useFontStore((s) => s.motionPref);
-  const systemReduce = useReducedMotion();
-  const slowSpin = systemReduce || motionPref === "reduced";
-  return (
-    <motion.button
-      data-hint="hint.rescan"
-      className="rescan-btn"
-      aria-label={t("top.rescan")}
-      disabled={scanning}
-      onClick={() => void rescan()}
-      whileTap={{ scale: 0.94, transition: springSnappy }}
-    >
-      <motion.span
-        className={scanning && slowSpin ? "rescan-icon rescan-spin-slow" : "rescan-icon"}
-        animate={scanning && !slowSpin ? { rotate: 360 } : { rotate: 0 }}
-        transition={
-          scanning && !slowSpin
-            ? { duration: 1.2, repeat: Infinity, ease: "linear" }
-            : { duration: 0.2 }
-        }
-      >
-        <RefreshCw size={14} strokeWidth={1.5} />
-      </motion.span>
-    </motion.button>
-  );
-}
-
-function ImportFolderButton() {
-  const t = useT();
-  const installPaths = useFontStore((s) => s.installPaths);
-  const [busy, setBusy] = useState(false);
-  return (
-    <motion.button
-      data-hint="hint.importFolder"
-      className="rescan-btn"
-      aria-label={t("top.importFolder")}
-      disabled={busy}
-      onClick={async () => {
-        const dir = await open({
-          directory: true,
-          multiple: false,
-          title: t("top.importFolder"),
-        });
-        if (typeof dir !== "string") return;
-        setBusy(true);
-        try {
-          // 后端会递归展开目录：文件夹（含子目录）里的字体**复制**一份进字体库，
-          // 原来的文件夹原样保留（用户 2026-10-30：不走链接、也不移动源文件）。
-          await installPaths([dir], "copy");
-        } finally {
-          setBusy(false);
-        }
-      }}
-      whileTap={{ scale: 0.94, transition: springSnappy }}
-    >
-      <FolderOpen size={14} strokeWidth={1.5} />
-    </motion.button>
-  );
-}
-
 function CompareButton() {
   const t = useT();
   const selection = useFontStore((s) => s.selection);
@@ -1002,9 +926,7 @@ export function TopBar() {
 
       <CompareButton />
 
-      <ImportFolderButton />
-
-      <RescanButton />
+      {/* 「导入文件夹」「重新扫描」已迁到标题栏右侧（窗口级动作区），见 Titlebar.tsx */}
 
       <div
         className="view-toggle"

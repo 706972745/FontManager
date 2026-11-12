@@ -4,6 +4,34 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] — 2026-11-13（正式版）
+
+> **2.0.0**：标题栏接管「导入文件夹 / 重新扫描」这两个**整库级**动作，顶栏回到「只作用于当前视图」；
+> 另做了一轮资源回收与动效冲突审计，修掉一处事件监听泄漏。
+
+### 变更（界面）
+
+- **「导入文件夹」「重新扫描」从顶栏移到标题栏**，位置在「设置」之后、窗口按钮分隔线之前：
+  30×30、无边框透明底、hover 才出底，与标题栏其它动作按钮同一套手感。
+  两个动作作用于整个字体库（往库里拷文件、重扫整个目录），和「筛选 / 排序 / 对比」这些
+  「当前这一屏」的控件本来就不是一类，混在一行会让人以为它们只管眼前。
+- 顶栏右侧因此只剩「视图切换」一组，窄窗口换行时仍贴右缘（`margin-left: auto`）。
+- `.rescan-btn` 的顶栏样式**一个字没动**，标题栏尺寸用 `.tb-action` 叠加 —— 想回滚只删那一小段。
+- 说明气泡、`aria-label`、扫描中的转圈（含「减少动效」下的 CSS 慢转）与禁用逻辑全部原样保留。
+- `docs/UI设计交付规格书.md` §3.1 / §3.2 + 版本记录回写，HTML 已重新生成。
+
+### 变更（关于页）
+
+- 功能一览 6 条 → **9 条**（补「套用设计软件」「对比视图」「多字体库」），3 列网格正好 3×3，不留半行空位。
+- 9 个语言包补齐 `about.featApply` / `about.featCompare` / `about.featLibraries`。
+
+### 修复（质量审计）
+
+- **事件监听泄漏**：`App.tsx` 里四处 Tauri 事件（`app://activate` / `app://open-file` /
+  `quickbar://hotkey` / `quickbar://hotkey-error`）补 `dead` 标志 —— `listen()` 返回的 Promise
+  若在 effect cleanup **之后**才 resolve，原来的 `return () => un?.()` 拿到的还是 `undefined`，
+  监听器就永远不解绑（开发模式 StrictMode 双调用、热重载时表现为同一事件被处理多次）。
+
 ## [1.9.26] — 2026-11-12
 
 > **1.9.26**：多个 MCP / 多个本地 API 脚本可以分开授权了 —— 客户端标识支持带名字。
