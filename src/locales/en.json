@@ -1064,7 +1064,7 @@
   "settings.apiReveal": "Show",
   "settings.apiHide": "Hide",
   "settings.apiDangerous": "Allow dangerous actions",
-  "settings.apiDangerousSub": "Operations that write into the font library (import, overwrite) are refused by default.",
+  "settings.apiDangerousSub": "Activate/deactivate/rescan, importing font packs and applying snapshots change the library or system font state — refused by default. Once enabled, pick which clients may do them below.",
   "settings.plugins": "Plugins",
   "settings.pluginsSub": "A plugin is a separate process — if it crashes the app keeps running. It talks to us only via the local API and stdin/stdout.",
   "settings.pluginsEmpty": "No plugins yet. Use the button on the right to open the plugin folder and drop a plugin folder in.",
@@ -1149,5 +1149,8 @@
   "key.wheel": "Wheel",
   "online.sourcesLabel": "Source",
   "online.sourcesOpen": "Open",
-  "online.subsetsLabel": "Character set"
+  "online.subsetsLabel": "Character set",
+  "settings.apiDangerousAllow": "Who may run dangerous actions",
+  "settings.apiClientApi": "Local API (scripts)",
+  "settings.apiClientMcp": "MCP"
 }

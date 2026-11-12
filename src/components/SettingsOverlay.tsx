@@ -311,6 +311,15 @@ export function SettingsOverlay() {
     }
   };
 
+  const setDangerousAllow = async (client: string, on: boolean) => {
+    try {
+      await ipc.apiSetDangerousAllow(client, on);
+      setApi(await ipc.apiStatus());
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
   const setDangerous = async (on: boolean) => {
     try {
       await ipc.apiSetDangerous(on);
@@ -1117,6 +1126,33 @@ export function SettingsOverlay() {
                       </div>
                     </div>
                   </div>
+                  {/* 单独授权（1.9.25）：总开关只是「允许这类操作存在」，
+                      真正谁能做还要在这里勾。插件令牌的名字就是插件 id。 */}
+                  {api.dangerous && (
+                    <div className="settings-row settings-col">
+                      <div className="settings-label">{t("settings.apiDangerousAllow")}</div>
+                      <div className="settings-allow-list">
+                        {[
+                          { id: "api", name: t("settings.apiClientApi") },
+                          { id: "mcp", name: t("settings.apiClientMcp") },
+                          ...plugins.map((p) => ({ id: p.id, name: p.name })),
+                        ].map((c) => {
+                          const on = (api.dangerousAllow ?? []).includes(c.id);
+                          return (
+                            <label key={c.id} className="settings-allow-item">
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={(e) => void setDangerousAllow(c.id, e.target.checked)}
+                              />
+                              <span className="settings-allow-name">{c.name}</span>
+                              <code className="settings-allow-id">{c.id}</code>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </section>

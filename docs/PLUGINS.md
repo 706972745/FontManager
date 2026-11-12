@@ -234,6 +234,35 @@ PUT  /api/v1/curation/tags        { "family": "...", "tags": ["衬线", "标题"
 PUT  /api/v1/curation/collection  { "name": "分组名", "families": ["族1", "族2"] }  ← 1.9.24+；整份名单，空数组 = 删掉分组
 ```
 
+### 端点 / 权限 / 是否「重大操作」（1.9.25 起）
+
+| 端点 | 方法 | 权限 | 重大操作 |
+|---|---|---|---|
+| `/health` | GET | 只要令牌 | — |
+| `/fonts`、`/fonts/families` | GET | `read:fonts` | — |
+| `/fonts/activate`、`/fonts/deactivate`、`/fonts/scan` | POST | `write:fonts` | ✅ |
+| `/fonts/apply` | POST | `write:apply` | — |
+| `/apps/active` | GET | `read:apps` | — |
+| `/snapshots` | GET | `read:snapshot` | — |
+| `/snapshots`、`/snapshots/{name}` | POST / DELETE | `write:snapshot` | ✅ |
+| `/snapshots/{name}/apply` | POST | `write:snapshot` | ✅ |
+| `/curation` | GET | `read:curation` | — |
+| `/curation/{rating,favorite,tags,note,collection}` | PUT | `write:curation` | — |
+| `/export/pack`、`/jobs/{id}` | POST / GET | `export` | — |
+| `/import` | POST | `import` | ✅ |
+
+> 端口默认自动挑一个空闲的（`api.json` 里的 `port`），也可以在 设置 → 本地 API 里固定；
+> 只监听 `127.0.0.1`。
+
+**「重大操作」要过两道闸（1.9.25）**：会改字体库或系统字体状态的操作（上表 ✅ 的那些），
+
+1. 设置 → 本地 API 的**「允许危险操作」总开关**必须打开，否则一律 403；
+2. 还要在**「允许谁做重大操作」**里单独勾上这个客户端。
+
+客户端标识：`api`（本地 API 脚本，用主令牌）、`mcp`（MCP，请求头带 `x-zfm-client: mcp`）、
+插件就是它的 **plugin id**（插件令牌的名字，客户端改不了）。
+总开关关着时，单独授权怎么勾都无效 —— 两道闸是「与」的关系。
+
 带 `Authorization: Bearer <apiToken>`。完整示例见 `examples/plugin-specimen-export/`
 （右键字族导出示例图 PNG，启动时自动跑一遍 API/权限自检）。
 

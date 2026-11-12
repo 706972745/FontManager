@@ -1047,7 +1047,7 @@
   "settings.apiReveal": "顯示",
   "settings.apiHide": "隱藏",
   "settings.apiDangerous": "允許危險操作",
-  "settings.apiDangerousSub": "匯入、覆蓋這類會往字型庫寫檔案的操作，預設一律拒絕。",
+  "settings.apiDangerousSub": "啟用 / 停用 / 重掃、匯入字型包、套用快照這類會改字型庫或系統字型狀態的操作，預設一律拒絕。打開後還要在下面單獨勾選「誰能做」。",
   "settings.plugins": "外掛",
   "settings.pluginsSub": "外掛是獨立程式，當掉不影響本軟體；通訊只走本機 API 與標準輸入輸出。",
   "settings.pluginsEmpty": "還沒有外掛。點右側按鈕開啟外掛目錄，把外掛資料夾放進去即可。",
@@ -1132,5 +1132,8 @@
   "key.wheel": "滾輪",
   "online.sourcesLabel": "來源",
   "online.sourcesOpen": "開啟",
-  "online.subsetsLabel": "字元集"
+  "online.subsetsLabel": "字元集",
+  "settings.apiDangerousAllow": "允許誰做重大操作",
+  "settings.apiClientApi": "本地 API（腳本）",
+  "settings.apiClientMcp": "MCP"
 }

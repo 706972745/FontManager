@@ -4,6 +4,23 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.25] — 2026-11-12
+
+> **1.9.25**：所有「重大操作」改成两道闸 —— 总开关 + 单独授权，插件 / 本地 API / MCP 一视同仁。
+
+### 新增
+
+- **「重大操作」双闸**：启用 / 停用 / 重扫（`write:fonts`）、导入字体包（`import`）、
+  应用 / 建 / 删快照（`write:snapshot`）这几类会改字体库或系统字体状态的操作，
+  现在必须同时满足：① 设置 → 本地 API 的「允许危险操作」总开关打开；② 该客户端在
+  「允许谁做重大操作」里被单独勾选。否则一律 **403**，正文写明缺哪一道。
+- **按客户端单独授权**：`api`（本地 API 脚本）、`mcp`、以及每个插件的 **plugin id**。
+  插件令牌的名字就是 id，客户端改不了；`mcp` 靠请求头 `x-zfm-client: mcp` 与脚本区分。
+- 设置页新增勾选列表（总开关打开后才出现），改完立刻生效、不用重启。
+- `api_status` 多返回 `dangerousAllow`；新增命令 `api_set_dangerous_allow(client, on)`。
+- `docs/PLUGINS.md` 补「端点 / 权限 / 是否重大操作」全表，写清默认端口与监听地址。
+- MCP 客户端请求带 `x-zfm-client: mcp`，这样能单独授权 / 收回 MCP 而不影响脚本。
+
 ## [1.9.24] — 2026-11-12
 
 > **1.9.24**：给插件补一个写分组的端点（`PUT /curation/collection`），让「字体库同步」能把分组也备份走。

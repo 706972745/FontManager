@@ -48,6 +48,9 @@ async function call(method, route, body) {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
+      // 主程序 1.9.25 起：危险操作要「总开关 + 单独授权」两道闸，
+      // MCP 靠这个头把自己和「本地 API 脚本」区分开。
+      "x-zfm-client": "mcp",
       "Content-Type": "application/json",
     },
     body: body === undefined ? undefined : JSON.stringify(body),

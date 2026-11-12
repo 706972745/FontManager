@@ -9720,3 +9720,30 @@ body.tour-qb .qb-actions .qb-btn-text {
 .is-font-pending {
   color: var(--font-pending) !important;
 }
+
+/* 设置 → 本地 API →「允许谁做重大操作」的勾选列表（1.9.25）。
+   一行一个客户端：复选框 + 名字 + 客户端标识（插件就是插件 id）。 */
+.settings-allow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+.settings-allow-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.settings-allow-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-allow-id {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+}

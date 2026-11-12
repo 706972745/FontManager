@@ -1055,7 +1055,7 @@
   "settings.apiReveal": "显示",
   "settings.apiHide": "隐藏",
   "settings.apiDangerous": "允许危险操作",
-  "settings.apiDangerousSub": "导入、覆盖这类会往字体库里写文件的操作，默认一律拒绝。",
+  "settings.apiDangerousSub": "启用 / 停用 / 重扫、导入字体包、应用快照这类会改字体库或系统字体状态的操作，默认一律拒绝。打开后还要在下面单独勾选「谁能做」。",
   "settings.plugins": "插件",
   "settings.pluginsSub": "插件是独立程序，崩了不影响本软件；通信只走本地 API 与标准输入输出。",
   "settings.pluginsEmpty": "还没有插件。点右侧按钮打开插件目录，把插件文件夹放进去即可。",
@@ -1140,5 +1140,8 @@
   "key.wheel": "滚轮",
   "online.sourcesLabel": "来源",
   "online.sourcesOpen": "打开",
-  "online.subsetsLabel": "字符集"
+  "online.subsetsLabel": "字符集",
+  "settings.apiDangerousAllow": "允许谁做重大操作",
+  "settings.apiClientApi": "本地 API（脚本）",
+  "settings.apiClientMcp": "MCP"
 }
