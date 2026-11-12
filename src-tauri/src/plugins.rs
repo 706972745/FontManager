@@ -1609,6 +1609,42 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
                                     }
                                 }
                             }
+                            "hint" => {
+                                // 插件要一条**常驻**提示（1.9.14）：速览元信息行整行显示，
+                                // 到点自动清。和 toast 的区别：toast 一两秒就没了，而
+                                // 「点一下要应用到的窗口」这种要一直看得见，用户才知道
+                                // 现在该干什么。`text` 为空串 = 立刻清除。
+                                // 主程序不解释内容、不认识任何具体插件 —— 谁发的都照样渲染。
+                                let text = v
+                                    .get("text")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .chars()
+                                    .take(60)
+                                    .collect::<String>();
+                                let seconds = v
+                                    .get("seconds")
+                                    .and_then(|x| x.as_u64())
+                                    .unwrap_or(15)
+                                    .min(60);
+                                crate::diag::log(&format!("[plugin:{pid}] hint: {text}"));
+                                match APP.get() {
+                                    None => crate::diag::log(&format!(
+                                        "[plugin:{pid}] hint 被忽略（应用句柄未就绪）"
+                                    )),
+                                    Some(app) => {
+                                        let _ = tauri::Emitter::emit(
+                                            app,
+                                            "plugin:hint",
+                                            json!({
+                                                "plugin": pid.clone(),
+                                                "text": text,
+                                                "seconds": seconds
+                                            }),
+                                        );
+                                    }
+                                }
+                            }
                             "progress" => {
                                 // 插件后台任务进度（插件 0.8.9+）：转发到主页面，
                                 // 走底部的贴底进度条（与扫描/打包进度同一个 UI 槽位）。

@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { listen } from "@tauri-apps/api/event";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
   ChevronRight,
@@ -493,6 +494,47 @@ export function QuickBar() {
   // 进入速览的那一下窗口正在形变，列表不要再做逐个入场的动作
   const intro = useIntro();
 
+  /**
+   * 插件要的**常驻**提示（1.9.14，`plugin:hint` 事件）。
+   *
+   * 为什么需要它：插件有时要让用户「现在做一件事」，比如 pick 模式的
+   * 「点一下要应用到的窗口」。toast 一两秒就没了，用户低头找窗口的工夫提示已经消失，
+   * 只剩一个不知道该干什么的面板。这条提示一直挂在元信息行上，到点才自己清。
+   *
+   * 主程序**只负责渲染**：文案、时长都由插件给，不判断是哪个插件、也不猜它想干什么。
+   * `text` 为空串 = 立刻清除（插件收尾时发一条空的就行，不用再发个「取消」消息）。
+   */
+  const [hint, setHint] = useState<string | null>(null);
+  const hintTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen<{ plugin: string; text: string; seconds: number }>("plugin:hint", (e) => {
+      const payload = e.payload;
+      if (!payload || typeof payload.text !== "string") return;
+      window.clearTimeout(hintTimer.current);
+      hintTimer.current = undefined;
+      const text = payload.text.trim();
+      if (!text) {
+        // 空文本 = 插件收尾，立刻收起
+        setHint(null);
+        return;
+      }
+      setHint(text);
+      // 新的 hint 覆盖旧的：重开计时器，不叠加
+      const seconds = Number(payload.seconds) > 0 ? Number(payload.seconds) : 15;
+      hintTimer.current = window.setTimeout(() => setHint(null), seconds * 1000);
+    }).then((un) => {
+      if (cancelled) un();
+      else unlisten = un;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      window.clearTimeout(hintTimer.current);
+    };
+  }, []);
+
   // 速览窗口整段时间都挂 qb-mode：html/body 让出底色，四角交给 .qb-frame 的 CSS 圆角。
   // 不能只按 docked 挂 —— 展开的那一瞬间 docked 变 false，底色会回来，圆角外侧露出直角，
   // 和「系统圆角要等 IPC 才生效」叠在一起就是用户看到的四角闪一下。
@@ -899,19 +941,28 @@ export function QuickBar() {
               <FilterMenu membership />
             </div>
 
-            {/* 元信息行。排序固定写「按启用时间」：速览有自己的口径，
-                不再跟随完整界面的排序控件（1.9.12）。 */}
-            <div className="qb-meta">
-              <span className="qb-meta-l tabular">
-                {families.length} / {enabledCount}
-                <span className="qb-meta-sep" aria-hidden="true">
-                  ·
+            {/* 元信息行。插件有待命提示时整行换成那一句 —— 不新增布局行，
+                窗口高度不变（速览窗口是用户拖好位置常驻的，多一行会把它顶歪）。 */}
+            <div className="qb-meta" data-hint={hint ? "true" : undefined}>
+              {hint ? (
+                <span className="qb-aim" role="status" aria-live="polite">
+                  <span className="qb-aim-dot" aria-hidden="true" />
+                  {hint}
                 </span>
-                {t("sort.activated")}
-              </span>
-              <span className="qb-meta-r tabular">
-                {SIZES[0]}–{SIZES[SIZES.length - 1]} PX
-              </span>
+              ) : (
+                <>
+                  <span className="qb-meta-l tabular">
+                    {families.length} / {enabledCount}
+                    <span className="qb-meta-sep" aria-hidden="true">
+                      ·
+                    </span>
+                    {t("sort.activated")}
+                  </span>
+                  <span className="qb-meta-r tabular">
+                    {SIZES[0]}–{SIZES[SIZES.length - 1]} PX
+                  </span>
+                </>
+              )}
             </div>
           </header>
 
