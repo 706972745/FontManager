@@ -4,6 +4,38 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.5] — 2026-11-12
+
+> **1.9.5 正式版**：修「安装目录不在 C 盘就永远不能一键升级」。
+> 不改变功能与数据格式，可直接覆盖升级。
+
+### 修复
+
+- **把安装目录改到别的盘符后，一键升级退化成「打开发布页」**：设置 → 更新里点「下载并安装」，
+  结果浏览器被顶到前面，软件版本纹丝不动。根因是老判据拿 exe 路径硬比
+  `%LOCALAPPDATA%\FontManager` 前缀（`update.rs::is_current_user_install`），
+  只要用户安装时把目录改到 D 盘（或任何非默认位置），这条恒为假 ——
+  `can_auto_install` 直接为 false，界面连下载都不做就跳浏览器。
+  而这个限制本来就是多余的：NSIS 的 `.onInit` 会 `Call RestorePreviousInstallLocation`
+  读 `HKCU\Software\IIEOzo\FontManager` 的默认值当 `$INSTDIR`，静默 `/S` 升级**换盘符也会装回原目录**。
+  现在判据改成「注册表记录的安装目录 == 当前 exe 所在目录」（大小写 / 斜杠 / `\\?\` 前缀都归一），
+  `%LOCALAPPDATA%\FontManager` 只在读不到安装记录时兜底；装在 `Program Files`（MSI perMachine）
+  与从文件夹直接运行的副本仍拒绝静默装 —— 那两种确实会装出第二份、两套字体关联打架。
+- **「装不了」不再只有一句含糊提示**：`check_update` 新增 `installKind`（`user` / `system` / `portable`）
+  与 `autoInstallBlocked`（`no-asset` / `no-digest` / `system` / `portable`），界面按原因给具体文案
+  （比如「当前这份装在 Program Files，静默升级会装出第二份」），并往 `activation.log` 写一行
+  `[update] 一键安装不可用：install_kind=…, blocked_by=…`。排查这类问题不用再靠猜。
+- **点了「下载并安装」不再擅自打开浏览器**：判定装不了时只弹一条说明 + 把同一个按钮变成
+  「打开发布页」，跳不跳由用户决定；已经知道装不了时再点那个按钮才真的跳。
+- **`install_setup` 补了后端同一道闸**：IPC 不只界面会调（插件 / 脚本都能直接 invoke），
+  以前只在前端拦，现在装之前再判一次安装形态。
+
+### 测试
+
+- `update::same_dir_ignores_case_separators_and_verbatim_prefix`、
+  `update::blocker_names_the_failing_gate`、`update::dev_build_is_not_system_wide`、
+  `update::recorded_install_dir_is_parseable_when_present`（`cargo test --lib update::` 21 项全绿）。
+
 ## [1.9.4] — 2026-11-12
 
 > **1.9.4 正式版**：修复插件设置面板（齿轮 / 插件菜单触发的 `open-url`）永远打不开的问题。

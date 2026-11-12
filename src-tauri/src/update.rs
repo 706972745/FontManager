@@ -70,6 +70,12 @@ pub struct UpdateInfo {
     pub setup_asset_id: u64,
     /// 能不能一键静默安装（直链 + 校验值齐全 + 当前是「按用户安装」的 NSIS 版）
     pub can_auto_install: bool,
+    /// 当前这份程序的安装形态：`user`（NSIS 按用户装，换盘符也算）/ `system`（MSI 按系统装）/ `portable`（目录里直接跑的副本）
+    pub install_kind: String,
+    /// 装不了时**是哪一条**没过（空 = 没有阻塞）。取值见 [`blocker`]。
+    /// 1.9.5 起带上这个字段：以前只有一句「这一版没有可直接安装的包」，
+    /// 分不清是「发布里缺包」还是「你这台机器装法不支持」，排查全靠猜。
+    pub auto_install_blocked: String,
 }
 
 /// 版本号解析：`v1.8.10` / `1.8.10-beta.1` / `1.8` 都接受，只取主.次.修订三段。
@@ -240,18 +246,183 @@ fn pick_setup(assets: &serde_json::Value) -> (String, String, String, u64) {
     }
 }
 
-/// 当前这份程序是不是「按用户安装」的 NSIS 版（`%LOCALAPPDATA%\FontManager`）。
+/// 当前这份程序是哪种装法。静默升级只对 `PerUser` 放行。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InstallKind {
+    /// NSIS 按用户安装（currentUser）。**换盘符也算** —— 安装器把目录记在
+    /// `HKCU\Software\IIEOzo\FontManager` 的默认值里，静默 `/S` 会照着装回同一个目录。
+    PerUser,
+    /// MSI 按系统安装（perMachine，通常在 `Program Files`）。静默装会装出第二份 + 两套字体关联打架。
+    PerMachine,
+    /// 从文件夹里直接跑的副本（注册表里没有对应安装记录）。
+    Portable,
+}
+
+impl InstallKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            InstallKind::PerUser => "user",
+            InstallKind::PerMachine => "system",
+            InstallKind::Portable => "portable",
+        }
+    }
+}
+
+/// NSIS 安装器自己记的安装目录（`installer.nsi` 第 660 行 `WriteRegStr SHCTX "${MANUPRODUCTKEY}" "" $INSTDIR`，
+/// 第 856 行 `RestorePreviousInstallLocation` 又靠它把静默升级装回原目录）。
+const NSIS_DIR_KEY: &str = r"Software\IIEOzo\FontManager";
+/// 兜底：卸载信息里的安装目录（值带引号，读出来要剥）。
+const NSIS_UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\FontManager";
+
+/// 读一个 `REG_SZ` / `REG_EXPAND_SZ` 值；不存在 / 读不到一律 None（调用方按「不知道」处理）。
+#[cfg(target_os = "windows")]
+fn reg_read_str(
+    root: windows_sys::Win32::System::Registry::HKEY,
+    sub: &str,
+    value: &str,
+) -> Option<String> {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, KEY_READ, REG_EXPAND_SZ, REG_SZ,
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    let sub_w = wide(sub);
+    let val_w = wide(value);
+    let mut hkey: HKEY = std::ptr::null_mut();
+    if unsafe { RegOpenKeyExW(root, sub_w.as_ptr(), 0, KEY_READ, &mut hkey) } != ERROR_SUCCESS {
+        return None;
+    }
+    let mut buf = vec![0u8; 2048];
+    let mut len = buf.len() as u32;
+    let mut ty = 0u32;
+    let rc = unsafe {
+        RegQueryValueExW(
+            hkey,
+            val_w.as_ptr(),
+            std::ptr::null_mut(),
+            &mut ty,
+            buf.as_mut_ptr(),
+            &mut len,
+        )
+    };
+    unsafe { RegCloseKey(hkey) };
+    if rc != ERROR_SUCCESS || (ty != REG_SZ && ty != REG_EXPAND_SZ) || len < 2 {
+        return None;
+    }
+    let u16s: Vec<u16> = buf[..len as usize]
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .take_while(|&c| c != 0)
+        .collect();
+    let s = String::from_utf16_lossy(&u16s).trim().trim_matches('"').to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn reg_read_str(_root: usize, _sub: &str, _value: &str) -> Option<String> {
+    None
+}
+
+/// 安装记录里的目录（用户级 NSIS 优先）。
+fn recorded_user_install_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::System::Registry::HKEY_CURRENT_USER;
+        // 安装器写的默认值最干净（不带引号、就是 $INSTDIR 原文）
+        if let Some(p) = reg_read_str(HKEY_CURRENT_USER, NSIS_DIR_KEY, "") {
+            return Some(std::path::PathBuf::from(p));
+        }
+        if let Some(p) = reg_read_str(HKEY_CURRENT_USER, NSIS_UNINSTALL_KEY, "InstallLocation") {
+            return Some(std::path::PathBuf::from(p));
+        }
+        None
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
+/// 两个目录是不是同一处。大小写不敏感、分隔符归一、去掉 `\\?\` 与尾部分隔符 ——
+/// 注册表里存的是 `D:\FontManager`，而 `current_exe()` 可能回 `D:\FontManager\fontmanager.exe`
+/// 的原样或带扩展长度前缀的形态，直接用 `==` 比较会漏判。
+fn same_dir(a: &std::path::Path, b: &std::path::Path) -> bool {
+    fn norm(p: &std::path::Path) -> String {
+        let s = p.to_string_lossy().replace('/', "\\");
+        let s = s.strip_prefix(r"\\?\").unwrap_or(&s).to_string();
+        s.trim_end_matches('\\').to_lowercase()
+    }
+    !a.as_os_str().is_empty() && norm(a) == norm(b)
+}
+
+fn current_exe_dir() -> Option<std::path::PathBuf> {
+    std::env::current_exe().ok()?.parent().map(|p| p.to_path_buf())
+}
+
+/// 目录是否落在系统级安装位置（`Program Files` / `Program Files (x86)`）。
+fn looks_system_wide(dir: &std::path::Path) -> bool {
+    ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+        .iter()
+        .filter_map(|k| std::env::var_os(k))
+        .any(|base| {
+            let s = dir.to_string_lossy().to_lowercase().replace('/', "\\");
+            let b = base.to_string_lossy().to_lowercase().replace('/', "\\");
+            s == b || s.starts_with(&(b + "\\"))
+        })
+}
+
+/// 判定当前安装形态。
 ///
-/// 静默安装走的就是这条路径。装在 Program Files 的 MSI 版如果也走静默安装，
-/// 会装出第二份到用户目录、两套字体关联打架 —— 那种情况只给「打开下载页」。
-fn is_current_user_install() -> bool {
-    let Ok(exe) = std::env::current_exe() else {
-        return false;
+/// **1.9.5 修正**：旧实现是「exe 路径必须以 `%LOCALAPPDATA%\FontManager` 开头」——
+/// 用户把安装目录改到 D 盘后，这条永远为假，一键升级直接退化成「打开发布页」。
+/// 真正的判据是**注册表记录的安装目录 == 当前 exe 所在目录**（NSIS 静默升级会装回同一目录，
+/// 换盘符一样有效），路径在不在 C 盘与此无关。
+pub fn install_kind() -> InstallKind {
+    let Some(dir) = current_exe_dir() else {
+        return InstallKind::Portable;
     };
-    let Some(base) = std::env::var_os("LOCALAPPDATA") else {
-        return false;
-    };
-    exe.starts_with(std::path::Path::new(&base).join("FontManager"))
+    // ① 安装器自己记的目录（放第一：换盘符、改目录都靠它）
+    if let Some(rec) = recorded_user_install_dir() {
+        if same_dir(&rec, &dir) {
+            return InstallKind::PerUser;
+        }
+        // 记录指向别处：说明当前这份是被拷出来的副本，别按「已安装」处理
+    } else if let Some(base) = std::env::var_os("LOCALAPPDATA") {
+        // ② 没有安装记录时退回默认位置判断（老版本 / 注册表读不到）
+        if same_dir(&std::path::Path::new(&base).join("FontManager"), &dir) {
+            return InstallKind::PerUser;
+        }
+    }
+    // ③ 系统级安装（MSI perMachine）
+    if looks_system_wide(&dir) {
+        return InstallKind::PerMachine;
+    }
+    InstallKind::Portable
+}
+
+/// 装不了的**具体**原因（空串 = 没有阻塞）。
+fn blocker(setup_url: &str, sha256: &str, kind: InstallKind) -> &'static str {
+    match kind {
+        InstallKind::PerMachine => "system",
+        InstallKind::Portable => "portable",
+        InstallKind::PerUser => {
+            if setup_url.is_empty() {
+                "no-asset"
+            } else if sha256.is_empty() {
+                "no-digest"
+            } else {
+                ""
+            }
+        }
+    }
 }
 
 async fn from_release_api() -> Result<UpdateInfo, String> {
@@ -278,6 +449,17 @@ async fn from_release_api() -> Result<UpdateInfo, String> {
     let published_at = v.get("published_at").and_then(|x| x.as_str()).unwrap_or("");
     let (setup_url, setup_name, sha256, setup_asset_id) =
         pick_setup(v.get("assets").unwrap_or(&serde_json::Value::Null));
+    let kind = install_kind();
+    let blocked = blocker(&setup_url, &sha256, kind);
+    if !blocked.is_empty() {
+        // 每轮检查都会重算，静默检查一天一次，写一行日志不碍事；
+        // 用户报「点了直接跳浏览器」时，这里能一句话说清是哪条闸。
+        crate::diag::log(&format!(
+            "[update] 一键安装不可用：install_kind={}, blocked_by={}",
+            kind.as_str(),
+            blocked
+        ));
+    }
     Ok(UpdateInfo {
         current: env!("CARGO_PKG_VERSION").to_string(),
         has_update: is_newer(&latest, env!("CARGO_PKG_VERSION")),
@@ -286,7 +468,9 @@ async fn from_release_api() -> Result<UpdateInfo, String> {
         notes: trim_notes(notes),
         published_at: published_at.to_string(),
         source: "github".into(),
-        can_auto_install: !setup_url.is_empty() && !sha256.is_empty() && is_current_user_install(),
+        can_auto_install: blocked.is_empty(),
+        install_kind: kind.as_str().into(),
+        auto_install_blocked: blocked.into(),
         setup_url,
         setup_name,
         sha256,
@@ -318,6 +502,8 @@ async fn from_package_json(url: &str) -> Result<UpdateInfo, String> {
         sha256: String::new(),
         setup_asset_id: 0,
         can_auto_install: false,
+        install_kind: install_kind().as_str().into(),
+        auto_install_blocked: "no-asset".into(),
     })
 }
 
@@ -779,6 +965,17 @@ pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str, want_version: 
     if !sha256_hex_ok(&want) {
         return Err("缺少校验值，拒绝执行安装包".into());
     }
+    // 前端已经拦过一道，这里再拦一次：IPC 可以被插件或脚本直接调用，
+    // 「按系统安装 / 目录副本」的机器上跑 `/S` 会装出第二份。
+    let kind = install_kind();
+    if kind != InstallKind::PerUser {
+        return Err(match kind {
+            InstallKind::PerMachine => {
+                "当前是按系统安装的 MSI 版，静默升级会装出第二份，请到发布页手动下载".to_string()
+            }
+            _ => "当前这份是从文件夹直接运行的副本，没有安装记录，请到发布页手动下载安装包".to_string(),
+        });
+    }
     // 执行前再算一次：下载完到点安装之间，文件可能被替换掉
     if sha256_file(&canon)? != want {
         let _ = std::fs::remove_file(&canon);
@@ -1085,5 +1282,57 @@ mod tests {
             r"C:\Users\a\setup.exe",
             "没前缀的原样返回"
         );
+    }
+
+    // ── 安装形态判定（1.9.5：换盘符也能一键升级）────────────────────
+
+    /// 注册表里存 `D:\FontManager`，exe 路径可能是 `D:\FontManager\fontmanager.exe` 的
+    /// 任意写法（大小写、斜杠、`\\?\`、尾部分隔符）——都要判成同一处。
+    #[test]
+    fn same_dir_ignores_case_separators_and_verbatim_prefix() {
+        let rec = std::path::Path::new(r"D:\FontManager");
+        assert!(same_dir(rec, std::path::Path::new(r"D:\FontManager")));
+        assert!(same_dir(rec, std::path::Path::new(r"d:\fontmanager")));
+        assert!(same_dir(rec, std::path::Path::new(r"\\?\D:\FontManager")));
+        assert!(same_dir(rec, std::path::Path::new("D:/FontManager/")));
+        // 不是同一处：只比前缀会把 D:\FontManager-old 也算进来
+        assert!(!same_dir(rec, std::path::Path::new(r"D:\FontManager-old")));
+        assert!(!same_dir(rec, std::path::Path::new(r"D:\FontManager2")));
+        assert!(!same_dir(rec, std::path::Path::new(r"C:\FontManager")));
+        assert!(!same_dir(std::path::Path::new(""), rec), "空路径不算命中");
+    }
+
+    /// 装不了时必须给出**具体**原因，前端才能说清「为什么点了跳浏览器」。
+    #[test]
+    fn blocker_names_the_failing_gate() {
+        let sha = "a".repeat(64);
+        let url = "https://github.com/x/y-setup.exe";
+        // 按用户安装 + 直链 + 校验值齐 → 放行
+        assert_eq!(blocker(url, &sha, InstallKind::PerUser), "");
+        // 安装形态优先报：这两种它根本没有 `/S` 的机会
+        assert_eq!(blocker(url, &sha, InstallKind::PerMachine), "system");
+        assert_eq!(blocker(url, &sha, InstallKind::Portable), "portable");
+        // 发布侧缺东西
+        assert_eq!(blocker("", &sha, InstallKind::PerUser), "no-asset");
+        assert_eq!(blocker(url, "", InstallKind::PerUser), "no-digest");
+    }
+
+    /// `install_kind()` 在开发机上不该把自己误判成「按系统安装」——
+    /// 测试进程跑在 `rust-target\debug`，既不在 Program Files 也不在安装记录里。
+    #[test]
+    fn dev_build_is_not_system_wide() {
+        assert!(!looks_system_wide(
+            &std::env::current_exe().unwrap().parent().unwrap().to_path_buf()
+        ));
+    }
+
+    /// 注册表里的安装目录能被读出来（读不到就跳过：CI / 没装过的机器上不可能有）。
+    #[test]
+    fn recorded_install_dir_is_parseable_when_present() {
+        if let Some(dir) = recorded_user_install_dir() {
+            let s = dir.to_string_lossy().to_string();
+            assert!(s.contains("FontManager"), "读到的目录不像安装目录：{s}");
+            assert!(!s.starts_with('"'), "引号必须剥掉：{s}");
+        }
     }
 }

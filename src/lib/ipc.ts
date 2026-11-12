@@ -711,10 +711,16 @@ export interface UpdateCheck {
   setupAssetId: number;
   /**
    * 能不能一键下载安装。
-   * 三个条件同时满足才为 true：有直链、有校验值、当前是「按用户安装」的 NSIS 版。
-   * 装在 Program Files 的 MSI 版为 false —— 静默装会装出第二份。
+   * 1.9.5 起判据改成「注册表记录的安装目录 == 当前 exe 目录」——
+   * 安装时把目录改到 D 盘也算「按用户安装」，不再因为不在 `%LOCALAPPDATA%` 而被拒。
+   * 装在 Program Files 的 MSI 版、以及从文件夹直接跑的副本仍为 false（静默装会装出第二份）。
    */
   canAutoInstall: boolean;
+  /** 当前这份的安装形态：user = NSIS 按用户装；system = MSI 按系统装；portable = 目录副本 */
+  installKind: "user" | "system" | "portable";
+  /** 装不了时卡在哪一条：no-asset = 发布里没有 setup.exe；no-digest = 没校验值；
+   *  system / portable = 这台机器的安装形态不支持；空串 = 没有阻塞 */
+  autoInstallBlocked: "" | "no-asset" | "no-digest" | "system" | "portable";
 }
 
 /** `update:progress` 事件（下载安装包） */

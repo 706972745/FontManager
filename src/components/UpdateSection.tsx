@@ -3,9 +3,26 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "../design/primitives/Toast";
 import { PillToggle } from "../design/primitives/PillToggle";
-import { useT } from "../lib/i18n";
+import { useT, type TKey } from "../lib/i18n";
 import { ipc, type UpdateCheck, type UpdateProgress } from "../lib/ipc";
 import { APP_VERSION } from "../lib/version";
+
+/**
+ * 「装不了」的具体原因 → 提示文案。
+ *
+ * 1.9.5 起后端会回报 `autoInstallBlocked`，不再只有一句含糊的「这一版没有可直接安装的包」——
+ * 用户报「点了直接跳浏览器」时，界面能直接说清是哪条闸：发布里缺包 / 这台机器是按系统安装的
+ * MSI 版 / 这份是从文件夹直接跑的副本。
+ */
+const BLOCKED_HINT: Record<string, TKey> = {
+  system: "settings.updateManualHintSystem",
+  portable: "settings.updateManualHintPortable",
+  "no-asset": "settings.updateManualHintNoAsset",
+  "no-digest": "settings.updateManualHintNoAsset",
+};
+
+const blockedHintKey = (code: string): TKey =>
+  BLOCKED_HINT[code] ?? "settings.updateManualHint";
 
 /**
  * 设置 → 更新。
@@ -121,6 +138,12 @@ export function UpdateSection() {
     installLock.current = true;
     setError(null);
     try {
+      // 已经知道这一版装不了：此刻按钮显示的就是「打开发布页」，点它就该跳浏览器
+      //（提示文案就在按钮下方，不用再查一遍）
+      if (info?.hasUpdate && !info.canAutoInstall) {
+        await ipc.openUrl(info.url).catch((e) => toast.error(String(e)));
+        return;
+      }
       const cur = info?.hasUpdate ? info : await check(true, true);
       if (!cur) return;
       if (!cur.hasUpdate) {
@@ -128,8 +151,11 @@ export function UpdateSection() {
         return;
       }
       if (!cur.canAutoInstall) {
-        // MSI / 缺直链：静默装不了，才退回浏览器
-        await ipc.openUrl(cur.url).catch((e) => toast.error(String(e)));
+        // 1.9.5：不再擅自把浏览器顶到前面（用户以为「点了下载」结果跳走很莫名其妙）。
+        // 说清是哪条闸没过，按钮自己会变成「打开发布页」，跳不跳由用户决定。
+        const why = t(blockedHintKey(cur.autoInstallBlocked));
+        setError(why);
+        toast.info(t("settings.updateCantAuto"), why);
         return;
       }
       setProgress({ phase: "download", received: 0, total: 0, percent: 0 });
@@ -227,7 +253,9 @@ export function UpdateSection() {
       )}
       {/* 有新版但这一版装不了：说清楚是为什么，别让用户以为按钮坏了 */}
       {manualOnly && !error && (
-        <div className="settings-sub settings-update-line">{t("settings.updateManualHint")}</div>
+        <div className="settings-sub settings-update-line">
+          {t(blockedHintKey(info.autoInstallBlocked))}
+        </div>
       )}
       {!error && info?.hasUpdate && info.notes.trim() && (
         <pre className="settings-update-notes">{info.notes}</pre>
