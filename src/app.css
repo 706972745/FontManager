@@ -9757,3 +9757,61 @@ body.tour-qb .qb-actions .qb-btn-text {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   「导入文件夹 / 重新扫描」迁到标题栏（2026-11）
+   ════════════════════════════════════════════════════════════════════
+   两个按钮的 DOM 从 `TopBar`（工具栏）搬到了 `Titlebar` 的
+   `.titlebar-controls` 里，「设置」之后、`.titlebar-sep` 之前。
+   组件本身一字未改，只把标题栏变体参数用 `.tb-action` 叠上去。
+
+   为什么是「叠变体」而不是改 `.rescan-btn`：
+   `.rescan-btn` 的 36×36 + 1px 描边 + `--e1` 底是**工具栏**那套语言（一片
+   浅色凹槽），标题栏里则是「无边框透明图标按钮、hover 才出 `--e2`」。
+   改基础规则等于把工具栏那套拆了；这里只覆盖标题栏需要的四件事。
+
+   尺度遵循 R8：圆角 4（控件档），尺寸 30 = 标题栏按钮档，颜色全走变量。
+   ──────────────────────────────────────────────────────────────────── */
+
+/* ① 尺寸 / 盒模型：38×30 的兄弟按钮里，这两个收成 30×30 的方形：
+   顶栏那套 36 + 描边在 30px 高的按钮堆里会顶破行高，视觉上比兄弟按钮大一圈。 */
+.rescan-btn.tb-action {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex: none;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  /* 与 `.titlebar-controls button` 同一条时长令牌，hover 时整排按钮同时变色 */
+  transition: background var(--t-quick) ease, color var(--t-quick) ease;
+}
+/* ② hover：与标题栏兄弟按钮完全一致（`--e2` + 主文字色）。
+   基础规则的 `.rescan-btn:hover:not(:disabled)` 特异性 (0,3,0)，
+   这条 (0,4,0) 后写胜；`:not(:disabled)` 是要挡住「扫描中」还亮一块底。 */
+.rescan-btn.tb-action:hover:not(:disabled) {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+/* ③ 禁用：扫描中 / 导入中。透明度取 .45（比全局 button 的 .4 略实一点，
+   30px 的小图标 .4 会灰到看不清还有这个动作）；焦点仍可停留，所以不改 outline。 */
+.rescan-btn.tb-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+/* ④ 「导入」与「设置」之间多 4px 呼吸：`.titlebar-controls` 的 gap 只有 1px，
+   四个动作会连成一条；这一档把「窗口动作 / 库级动作」分成两组，
+   分组边界正好落在导入按钮左边（右侧已有 `.titlebar-sep` 兜住）。 */
+.rescan-btn.tb-action-first {
+  margin-left: 4px;
+}
+
+/* 顶栏少了两个按钮之后，右侧只剩「视图切换」一组。
+   宽窗口下搜索 / 示例两个输入框会把剩余空间吃满，`margin-left: auto` 不起作用；
+   窗口窄到换行时，它让这一组仍靠右吸附，而不是孤零零贴在第二行行首。 */
+.topbar > .view-toggle {
+  margin-left: auto;
+}

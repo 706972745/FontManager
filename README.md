@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.26-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.0.0-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -100,7 +100,9 @@ one-click activation, and the iron rule that **your font files stay on your mach
 ### 1. First launch: get fonts into the library
 
 1. Drag a **font folder** or a **ZIP** straight onto the app window
-   (or: Settings → Library folders → "Add folder…" and pick a folder)
+   (or click **import a folder** in the title bar — the fonts are copied into the
+   library and the original folder is left exactly as it was; or: Settings →
+   Library folders → "Add folder…" and pick a folder)
 2. The scan runs, and every card is then previewed in the font's **own letterforms**
 3. Want a second library? Settings → Library folders → "Add folder…"; click a row to
    change its directory, and the "switch" button at the end of a row makes it the
@@ -117,9 +119,9 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 | Region | Where | What you can do there |
 |---|---|---|
-| **Title bar** | the thin strip on top | drag the window · minimize / maximize / close · **Settings** · **send it to the QuickBar** (<kbd>Alt</kbd>+<kbd>`</kbd>) |
+| **Title bar** | the thin strip on top | drag the window · minimize / maximize / close · **Settings** · **send it to the QuickBar** (<kbd>Alt</kbd>+<kbd>`</kbd>) · **import a folder** · **rescan the library** |
 | **Sidebar** | the left column | switch views: Library / Favorites / Recent imports / Activated / Activate-until-quit / Deactivated / System fonts / Collections / Snapshots; at the bottom: Online · Trash · About · Shortcuts |
-| **Toolbar** | above the content | search · preview text · size slider · filter · sort · compare · rescan · **three view switches** |
+| **Toolbar** | above the content | search · preview text · size slider · filter · sort · compare · **three view switches** |
 | **Content** | the middle | cards / list / specimen views; click a card to select, right-click for the full menu, drag into a collection |
 | **Detail panel** | slides in from the right when a card is clicked | multi-size specimen · metadata · license · notes & tags · export · drag its left edge to resize |
 
@@ -139,8 +141,12 @@ one-click activation, and the iron rule that **your font files stay on your mach
 | Online / Trash / About / Shortcuts | downloads · removed fonts · about · key list |
 
 **Toolbar**: search · preview-text box (type anything, the whole library previews
-it) · size slider (8–96px, eight steps) · filter · sort · compare · refresh ·
+it) · size slider (8–96px, eight steps) · filter · sort · compare ·
 **three view buttons (cards / list / specimen)**.
+
+> Two actions moved up to the **title bar** in 2.0: **import a folder** and
+> **rescan**. They act on the whole library rather than on what you are looking
+> at, so they now sit next to Settings instead of among the view controls.
 
 **A font card**: format badge (TTF / OTF / VAR = variable) · family name · live
 preview line · **license badge** (free-commercial / personal / unknown…) ·
@@ -607,7 +613,7 @@ npx vite build
 npx tauri build --bundles nsis,msi
 ```
 
-Rust (MSVC) 1.85+ and Node 20+ are required. Rust unit tests run with
+Rust (MSVC) 1.85+ and Node 24+ are required (see `engines` in `package.json`). Rust unit tests run with
 `cargo test --lib`, interface tests with `npm test`.
 
 ---

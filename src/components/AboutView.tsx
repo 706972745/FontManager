@@ -2,7 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { motion } from "motion/react";
 import {
   ArrowUpRight,
+  Columns2,
+  FolderOpen,
   Globe,
+  Paintbrush,
   Puzzle,
   Search,
   ShieldCheck,
@@ -79,11 +82,20 @@ function LinkCard({ item, delay }: { item: LinkItem; delay: number }) {
 
 const STACK = ["Tauri v2", "Rust", "React 19", "TypeScript", "Vite", "pnpm"];
 
-/** 这款软件现在真正有的能力（2026-11-05 重写口径：与 README 功能导览一致） */
+/** 这款软件现在真正有的能力（2026-11-05 重写口径：与 README 功能导览一致）
+ *
+ * 2.0.0 补三条，正好凑成 9 条 —— `.about-features` 是 3 列网格（`repeat(3, …)`），
+ * 6 条时是 2×3，补到 9 条是 3×3，不会留半行空位。
+ * 补的三条都是 1.6–1.9 已经落地、但「关于」页一直没写的：
+ * 套用到设计软件（`apply in app` 那套 COM 自动化）、对比视图、多字体库。
+ */
 const FEATURES: { key: TKey; icon: React.ReactNode }[] = [
   { key: "about.featPreview", icon: <Search size={14} strokeWidth={1.5} /> },
   { key: "about.featToggle", icon: <SlidersHorizontal size={14} strokeWidth={1.5} /> },
+  { key: "about.featApply", icon: <Paintbrush size={14} strokeWidth={1.5} /> },
   { key: "about.featOrganize", icon: <Star size={14} strokeWidth={1.5} /> },
+  { key: "about.featCompare", icon: <Columns2 size={14} strokeWidth={1.5} /> },
+  { key: "about.featLibraries", icon: <FolderOpen size={14} strokeWidth={1.5} /> },
   { key: "about.featAutomation", icon: <Puzzle size={14} strokeWidth={1.5} /> },
   { key: "about.featOnline", icon: <Globe size={14} strokeWidth={1.5} /> },
   { key: "about.featPrivacy", icon: <ShieldCheck size={14} strokeWidth={1.5} /> },

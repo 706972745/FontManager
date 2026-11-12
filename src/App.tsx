@@ -485,6 +485,7 @@ export default function App() {
   // 不管此刻停在速览细线、最小化还是托盘里，都回到已经在开着的那个「完整界面」。
   useEffect(() => {
     let un: (() => void) | undefined;
+    let dead = false;
     void listen("app://activate", async () => {
       const st = useFontStore.getState();
       // 速览 → 完整界面走它自己的还原流程（还原窗口几何、取消置顶、再显示出来）
@@ -495,16 +496,26 @@ export default function App() {
       await win.setFocus().catch(() => {});
     })
       .then((f) => {
+        if (dead) {
+          void f();
+          return;
+        }
         un = f;
       })
       .catch((e) => console.warn("[single-instance] 监听唤起事件失败", e));
-    return () => un?.();
+    return () => {
+      dead = true;
+      un?.();
+    };
   }, []);
 
   // 软件已经开着时双击 .S-/.P-/.L-FontManager：第二个进程把路径写到请求文件后退出，
   // 首实例在这里收到路径，统一走「内容嗅探 → 分发导入」。
   useEffect(() => {
     let un: (() => void) | undefined;
+    // StrictMode 双调用 / 热重载时 cleanup 会早于 listen 完成，那时 un 还是 undefined，
+    // 监听器就永远解绑不掉。用 dead 记住「已经卸载过」，resolve 后补一次解绑。
+    let dead = false;
     void listen<string>("app://open-file", (e) => {
       const path = e.payload;
       if (typeof path === "string" && path) {
@@ -512,16 +523,24 @@ export default function App() {
       }
     })
       .then((f) => {
+        if (dead) {
+          void f();
+          return;
+        }
         un = f;
       })
       .catch((e) => console.warn("[open-file] 监听文件打开事件失败", e));
-    return () => un?.();
+    return () => {
+      dead = true;
+      un?.();
+    };
   }, []);
 
   // 系统级 Alt+`：即使软件在后台、鼠标在别的软件里，也能把速览面板叫出来。
   // 停在完整界面时按它 = 切进速览，并立刻把面板展开（默认进入是收成顶部一条）。
   useEffect(() => {
     let un: (() => void) | undefined;
+    let dead = false;
     void listen("quickbar://hotkey", async () => {
       const st = useFontStore.getState();
       if (st.quickbar) return; // 已经在速览里：交给速览自己的监听处理展开 / 收起
@@ -537,24 +556,39 @@ export default function App() {
       await expandQuickbarPanel().catch(() => {});
     })
       .then((f) => {
+        if (dead) {
+          void f();
+          return;
+        }
         un = f;
       })
       .catch((e) => console.warn("[hotkey] 监听全局快捷键失败", e));
-    return () => un?.();
+    return () => {
+      dead = true;
+      un?.();
+    };
   }, []);
 
   // 系统级热键注册失败（多半是撞了别的软件 / 输入法）：明确告诉用户，
   // 否则「按了没反应」根本无从排查。payload 是被占用的那组键。
   useEffect(() => {
     let un: (() => void) | undefined;
+    let dead = false;
     void listen<string>("quickbar://hotkey-error", (e) => {
       toast.error(t("toast.hotkeyFailed"), String(e.payload ?? ""));
     })
       .then((f) => {
+        if (dead) {
+          void f();
+          return;
+        }
         un = f;
       })
       .catch(() => {});
-    return () => un?.();
+    return () => {
+      dead = true;
+      un?.();
+    };
   }, [t]);
 
   useEffect(() => {
