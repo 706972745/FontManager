@@ -13,11 +13,12 @@ All notable changes to FontManager are documented here. The format follows
 ### 新增
 
 - **双击 = 套用到最近在用的设计软件**。四处「点击复制」都能用：速览整行、字重行、
-  样张视图的样张格、详情面板的标题。目标是主程序自己判断的 —— 前台是 FontManager 自己
-  或任务栏 / 桌面时，沿窗口 Z 序往下翻第一个 Photoshop / Illustrator / CorelDRAW 窗口
-  （所以「点任务栏切过去」也认）；一个都没开就提示「没找到正在运行的设计软件（PS / AI / CDR）」。
-  与插件 `font-apply` 的「自动」项走的是同一条链路、同一个引擎。
-- 新增命令 `active_app`（返回 `{app, exe}` 或 `null`），前端封装在 `lib/applyActive.ts`。
+  样张视图的样张格、详情面板的标题。主程序**只转发手势**：双击时把
+  `{family, menu, faceId}` 交给「字体套用（PS / AI / CDR）」插件的「自动」项，
+  与右键点「自动」走同一条路径、同一个引擎 —— 套用业务（选字重、认目标软件、
+  9 种 outcome 的提示）留在插件里，主程序不重复实现一份。
+  双击带 `faceId`，插件 1.0.1+ 会套用被双击的那一行字重。
+  插件没装 / 没启用时提示「没找到「字体套用（PS / AI / CDR）」插件 —— 到 设置 → 插件 里启用它」。
 
 ### 变更
 

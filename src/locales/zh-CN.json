@@ -8,7 +8,7 @@
   "adobe.coreldraw": "CorelDRAW",
   "adobe.illustrator": "Illustrator",
   "adobe.photoshop": "Photoshop",
-  "apply.noTarget": "没找到正在运行的设计软件（PS / AI / CDR）",
+  "apply.pluginMissing": "没找到「字体套用（PS / AI / CDR）」插件 —— 到 设置 → 插件 里启用它",
   "axis.GRAD": "灰度等级",
   "axis.ital": "斜体",
   "axis.opsz": "光学字号",

@@ -16,7 +16,7 @@ import { spring, staggerDelay } from "../design/springs";
 import { useScriptStatus } from "../lib/scriptCoverage";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import type { FontFace } from "../lib/ipc";
-import { applyToActiveApp } from "../lib/applyActive";
+import { applyViaPlugin } from "../lib/applyViaPlugin";
 import { useFontStore, type Family } from "../state/fontStore";
 import { ScriptChip } from "./ScriptChip";
 import { MemberChip } from "./MemberChip";
@@ -154,7 +154,7 @@ export function FaceLine({
     if (isOwnActionTarget(e.target)) return;
     e.stopPropagation();
     copyFaceName();
-    void applyToActiveApp(family.name, face.id);
+    applyViaPlugin(family.name, face.id);
   };
   const onLinePointerDown = (e: ReactMouseEvent) => {
     if (isOwnActionTarget(e.target)) return;

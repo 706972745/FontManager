@@ -8,7 +8,7 @@
   "adobe.coreldraw": "CorelDRAW",
   "adobe.illustrator": "Illustrator",
   "adobe.photoshop": "Photoshop",
-  "apply.noTarget": "No running design app found (PS / AI / CDR)",
+  "apply.pluginMissing": "The “Font Apply (PS / AI / CDR)” plugin isn’t running — enable it in Settings → Plugins",
   "axis.GRAD": "Grade",
   "axis.ital": "Italic",
   "axis.opsz": "Optical size",
