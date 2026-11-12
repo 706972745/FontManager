@@ -9,6 +9,7 @@ import { prefetchFace } from "../lib/fontLoader";
 import { prefetchIndices, type ScrollDir } from "../lib/prefetch";
 import type { Family } from "../state/fontStore";
 import { SIZES, useFontStore } from "../state/fontStore";
+import { useRevealFamily } from "../lib/useReveal";
 
 /**
  * 实验开关（见交接文档 §11.1）。默认值 = 0.9.9-25 的现状，不传参数时行为完全不变。
@@ -88,6 +89,20 @@ export function FontGrid({ families }: { families: Family[] }) {
     if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "auto" });
   }, [selectedFamily]);
 
+  /**
+   * 搜索建议跳转（2026-11-12）：滚到可视区**中间** + 约 1.7s 的跳转高亮。
+   * 上面那条按 selectedFamily 的滚动是「用户自己点了一行」，贴边即可；这条是
+   * 「从搜索结果跳过来」，必须落在视线正中。两条同时触发时这条后执行（center 胜）。
+   */
+  const { revealed, jump } = useRevealFamily();
+  useEffect(() => {
+    if (!jump) return;
+    const idx = families.findIndex((f) => f.name === jump.name);
+    // 目标被筛选挡掉时不动（跳到的族不在当前视图里）
+    if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jump]);
+
   // 窗口形变期间不播卡片入场动画：内容必须是静止的，动的东西只有窗口
   const intro = useIntro();
   const arriving = intro && Date.now() - mountedAt.current < 1200;
@@ -119,7 +134,10 @@ export function FontGrid({ families }: { families: Family[] }) {
                 ? { ...spring, delay: arriving ? staggerDelay(item.index) : 0 }
                 : INTRO_OFF}
             >
-              <FamilyCard family={families[item.index]} />
+              <FamilyCard
+                family={families[item.index]}
+                revealed={revealed === families[item.index].name}
+              />
             </motion.div>
           </div>
         ))}

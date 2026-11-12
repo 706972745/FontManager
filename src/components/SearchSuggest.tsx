@@ -29,7 +29,18 @@ export type Suggestion = {
   kind: "family" | "tag" | "collection" | "snapshot" | "plugin";
   /** 唯一键：`kind:name` */
   key: string;
+  /** 给用户看的文字；字体这一类是**显示名**（可能是「微软雅黑」，而族名键是 `Microsoft YaHei`） */
   label: string;
+  /**
+   * 点下去要「跳转到哪一个」的真值（2026-11-12）。字体类 = `family.name` 族名键。
+   *
+   * 为什么必须单列：`label` 是本地化显示名，而选中 / 滚动 / 高亮全靠 `family.name`
+   * （`selection.includes(...)`、`families.findIndex(f => f.name === ...)`）。
+   * 以前父组件拿 `label` 去当族名用 —— 中文界面里点「微软雅黑」等于在找一款叫
+   * 「微软雅黑」的族，找不到，于是「点了没反应」。标签 / 分组 / 快照的 label 本身就是
+   * 名字，不填即可，父组件按 `value ?? label` 取。
+   */
+  value?: string;
   /** 右侧灰色小字（条数 / 类型） */
   meta?: string;
   /** kind = plugin 时带上完整信息，父组件据此决定点下去干什么 */
@@ -41,10 +52,18 @@ const LIMIT_PER_KIND = { plugin: 6, tag: 6, collection: 6, snapshot: 6, family: 
 export function SearchSuggest({
   query,
   onPick,
+  onDismiss,
   onlyActive = false,
 }: {
   query: string;
   onPick: (s: Suggestion) => void;
+  /**
+   * 「焦点已经从下拉里离开了，请把下拉关掉」（2026-11-12）。
+   *
+   * 键盘路径需要它：输入框的 `onBlur` 为了不打断「Tab 到建议项」会放过一次关闭，
+   * 于是用户从建议项再 Tab 到页面别处时，再没有任何东西负责收面板 —— 下拉会挂在屏幕上。
+   */
+  onDismiss?: () => void;
   /**
    * 「只搜已启用的字体」（速览界面）。
    *
@@ -161,7 +180,7 @@ export function SearchSuggest({
     familyHits.sort((a, b) => rank(a) - rank(b));
     for (const f of familyHits) {
       if (n >= LIMIT_PER_KIND.family) break;
-      out.push({ kind: "family", key: `fam:${f.name}`, label: f.label });
+      out.push({ kind: "family", key: `fam:${f.name}`, label: f.label, value: f.name });
       n++;
     }
     return out;
@@ -174,6 +193,16 @@ export function SearchSuggest({
       className="suggest-list"
       role="listbox"
       aria-label={t("search.suggestAria")}
+      /*
+       * 焦点离开整个下拉（焦点不在下拉里的任何一项上）→ 让父组件收面板。
+       * 键盘路径专用：输入框的 onBlur 为了不打断「Tab 到建议项」放过了关闭，
+       * 这里补上收尾，否则从建议项 Tab 到页面别处后下拉会一直挂着。
+       * React 的 onBlur 走 focusout，会冒泡，挂在 <ul> 上就能收到子项的失焦。
+       */
+      onBlur={(e) => {
+        const next = e.relatedTarget as Element | null;
+        if (!next?.closest?.(".suggest-list")) onDismiss?.();
+      }}
       /*
        * 这是全项目触发最频繁的浮层（每敲一个字就出现 / 消失），原来**一点动画都没有**，
        * 而同位置的排序 / 筛选菜单有 springSnappy + 0.13s 出场（审计 P1-9）。
@@ -204,6 +233,15 @@ export function SearchSuggest({
                 if (e.button !== 0) return;
                 e.preventDefault();
                 onPick(it);
+              }}
+              /**
+               * 键盘可达（2026-11-12）：Tab 到这一项上按 Enter / Space 也要能选中 ——
+               * 原来只有 onMouseDown，键盘用户永远打不开任何一条。
+               * 只在 `detail === 0`（键盘合成的 click）时动手，鼠标那一下已经由
+               * mousedown 处理过，再补一遍就成了「连点两次」。
+               */
+              onClick={(e) => {
+                if (e.detail === 0) onPick(it);
               }}
               // 插件项右键 = 设置页插件行那一套菜单（1.8.1）
               onContextMenu={

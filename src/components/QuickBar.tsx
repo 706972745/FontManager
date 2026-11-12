@@ -725,7 +725,15 @@ export function QuickBar() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onFocus={() => setQueryFocus(true)}
-                  onBlur={() => window.setTimeout(() => setQueryFocus(false), 120)}
+                  /* 与完整界面同一套（2026-11-12）：到点先看焦点在不在建议下拉里 ——
+                     Tab 到建议项时不能关，否则键盘用户按不到 Enter */
+                  onBlur={() =>
+                    window.setTimeout(() => {
+                      const active = document.activeElement;
+                      if (active?.closest?.(".suggest-list")) return;
+                      setQueryFocus(false);
+                    }, 120)
+                  }
                   onKeyDown={(e) => {
                     if (e.key === "Escape") setQueryFocus(false);
                   }}
@@ -742,6 +750,8 @@ export function QuickBar() {
                       key="suggest"
                       query={query}
                       onlyActive
+                      /* 焦点从下拉里 Tab 走时收尾（输入框那侧为「焦点进下拉」放过了一次） */
+                      onDismiss={() => setQueryFocus(false)}
                       onPick={(sg: Suggestion) => {
                         // 插件（1.8.1）：直接把它的设置面板弹出来，速览这边收起建议即可
                         if (sg.kind === "plugin") {

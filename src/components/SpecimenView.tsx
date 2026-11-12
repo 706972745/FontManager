@@ -7,6 +7,8 @@ import { PillToggle } from "../design/primitives/PillToggle";
 import { springSnappy } from "../design/springs";
 import { useMarquee } from "../design/primitives/useMarquee";
 import { useListFontCss } from "../lib/fontLoader";
+import { faceStyleLabel } from "../lib/faceName";
+import { useRevealFamily } from "../lib/useReveal";
 import { listChars } from "../lib/listChars";
 import { copyrightExpired, familyCopyrightClass } from "../lib/license";
 import { buildFamilyMenu, copyText } from "../lib/menus";
@@ -85,9 +87,12 @@ function rememberFace(family: string, faceId: string) {
 const SpecimenTile = memo(function SpecimenTile({
   family,
   size,
+  revealed,
 }: {
   family: Family;
   size: number;
+  /** 搜索建议跳转落点：约 1.7s 的临时高亮（不是选中态，见 useReveal） */
+  revealed: boolean;
 }) {
   const t = useT();
   const displayName = useDisplayName();
@@ -170,7 +175,11 @@ const SpecimenTile = memo(function SpecimenTile({
         rect.bottom + 4,
         pickable.map((face) => ({
           kind: "check" as const,
-          label: face.style || face.postscriptName || "Regular",
+          // 必须和按钮（下面 `.specimen-weight` 里那个 `faceStyleLabel(previewFace)`）同口径：
+          // 原来这里写的 `face.style || face.postscriptName || "Regular"` 没 trim，
+          // `"   "` 在 `||` 下是真值 —— 同一个字面会出现「按钮显示 PostScript 名、
+          // 菜单里却是一行空白」的两种结果（2026-11-12 QA 指出）。
+          label: faceStyleLabel(face),
           checked: face.id === previewFace?.id,
           action: () => {
             setFaceId(face.id);
@@ -183,10 +192,18 @@ const SpecimenTile = memo(function SpecimenTile({
   );
 
   const stylesCount = pickable.length;
+  /**
+   * 只有一个字重 = 没有可选项（用户 2026-11-06）。
+   *
+   * 用 `aria-disabled` 而不是 `disabled`：`disabled` 的按钮收不到 pointer 事件，
+   * 「这个字族只有 1 个字重」那句说明（`data-hint` + `aria-label`）就永远弹不出来，
+   * 用户只会觉得「点了没反应」。点击是在 `pickWeight` 之前拦掉的，功能上等同禁用。
+   */
+  const singleWeight = stylesCount <= 1;
 
   return (
     <motion.article
-      className={`specimen-tile ${selected && picking ? "card-selected" : ""} ${copied ? "is-copied" : ""}`}
+      className={`specimen-tile ${selected && picking ? "card-selected" : ""} ${copied ? "is-copied" : ""} ${revealed ? "tile-revealed" : ""}`}
       data-family={family.name}
       tabIndex={0}
       role="button"
@@ -271,13 +288,16 @@ const SpecimenTile = memo(function SpecimenTile({
       <div className="specimen-tools" onClick={(e) => e.stopPropagation()}>
         <button
           className="specimen-weight"
-          data-hint="hint.specimenWeight"
-          aria-label={t("hint.specimenWeight")}
+          data-hint={singleWeight ? "hint.specimenWeightSingle" : "hint.specimenWeight"}
+          aria-label={t(singleWeight ? "hint.specimenWeightSingle" : "hint.specimenWeight")}
+          /* 单字重：语义上禁用（点击已拦掉），但不加 `disabled` —— 见 singleWeight 的注释 */
+          aria-disabled={singleWeight || undefined}
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={pickWeight}
+          onClick={singleWeight ? undefined : pickWeight}
         >
-          <span>{previewFace?.style || previewFace?.postscriptName || "Regular"}</span>
-          <ChevronDown size={11} strokeWidth={2} />
+          <span>{previewFace ? faceStyleLabel(previewFace) : "Regular"}</span>
+          {/* 单字重时连箭头一起收掉：没有可选项还画一个下拉箭头，等于叫用户去点一个死按钮 */}
+          {!singleWeight && <ChevronDown size={11} strokeWidth={2} />}
         </button>
         {stylesCount > 1 && (
           <span className="specimen-styles tabular">
@@ -444,6 +464,23 @@ export function SpecimenView({ families }: { families: Family[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFamily]);
 
+  /**
+   * 搜索建议跳转（2026-11-12）：这是**唯一**会主动居中的路径。
+   *
+   * 上面那条只在目标「不在可视区」时才动，而且是 `align: "auto"`（贴边）——
+   * 从搜索结果跳过来时用户根本不知道目标落在哪一侧，所以必须居中。
+   * 容器是按**行**虚拟化的（`rowCount = ceil(families.length / cols)`），
+   * 所以索引得先换算成行号：`Math.floor(idx / cols)`。
+   */
+  const { revealed, jump } = useRevealFamily();
+  useEffect(() => {
+    if (!jump) return;
+    const idx = families.findIndex((f) => f.name === jump.name);
+    // 目标被筛选挡掉时不动（跳到的族不在当前视图里）
+    if (idx >= 0) virtualizer.scrollToIndex(Math.floor(idx / cols), { align: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jump]);
+
   return (
     <div className="specimen-scroll" ref={scrollRef}>
       <div className="specimen-inner" style={{ height: virtualizer.getTotalSize() }}>
@@ -461,7 +498,12 @@ export function SpecimenView({ families }: { families: Family[] }) {
               }}
             >
               {rowFamilies.map((family) => (
-                <SpecimenTile key={family.name} family={family} size={size} />
+                <SpecimenTile
+                  key={family.name}
+                  family={family}
+                  size={size}
+                  revealed={revealed === family.name}
+                />
               ))}
               {rowFamilies.length < cols &&
                 Array.from({ length: cols - rowFamilies.length }, (_, i) => (

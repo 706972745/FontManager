@@ -9516,3 +9516,117 @@ body.tour-qb .qb-actions .qb-btn-text {
 
 /* ─── ② .settings-data-btn 的禁用态 ────────────────────────────────────
    规则写在 .settings-data-btn 本体旁边（约 4360 行），这里不重复。 */
+
+/* ════════════════════════════════════════════════════════════════════════
+   2026-11-12 · 三处交互补全
+   ① 字重名点击复制（FaceLine，完整界面 + 速览共用）
+   ② 搜索建议跳转的「我在这儿」高亮（网格 / 列表 / 样张三个视图）
+   ③ 样张视图单字重时样式按钮不可点（划删除线）
+   风格照旧：原样式不动，靠后写覆盖；删掉本段即回滚。
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ─── ① 字重名 = 按钮 ───────────────────────────────────────────────────
+   2026-11-12 把 `.face-line-name` 从 <span> 换成 <button>（点击复制字体名，键盘可达）。
+   外观那条规则（7128 行起）本来就是按「按钮」写的（padding / 边框 / 背景 / 左对齐），
+   所以这里只抹掉 button 自己带来的三样东西，尺寸与文字一条都不改：
+   · `appearance` —— 否则 Chromium 会套一层系统按钮外壳（浅色主题下尤其明显）；
+   · `font-family: inherit` —— 按钮默认用系统 UI 字体，不继承字重行的字体族；
+   · `margin: 0` —— UA 给 button 的 `margin: 0 2px` 会把名字从行首推开 2px。
+   注意**不要**加 `font: inherit`：那会把上面那条的 `font-size: --face-line-size`
+   和 `line-height: 1.3` 一起顶掉，字重区的缩放就废了。
+
+   `flex: 0 1 auto` 覆盖基础规则的 `flex: 1`（2026-11-12 真机验收打回）：
+   名字按**内容宽度**站住，「已复制」才能紧跟在名字后面；长名字照旧靠基础规则的
+   `min-width: 0` + `overflow: hidden` + `text-overflow: ellipsis` 收缩省略。
+   剩余空间交给 `.face-line-spacer` —— 否则「已复制」会被顶到行尾、贴着眼睛按钮，
+   中间空出一大片（用户要求的是「在点击的字重名后面」）。 */
+.face-line-name {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  margin: 0;
+  flex: 0 1 auto;
+}
+/* 占位条：吃掉名字与右侧那些固定宽度元素之间的剩余空间，眼睛按钮仍在行尾。
+   空元素 + `aria-hidden`，不参与可访问性树、不可点（点击它不复制 —— 用户点的是名字）。 */
+.face-line-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* 「已复制」：视觉参数与样张视图 `.specimen-copied`（3436 行起）**同一套**
+   （9px / `--accent-a` / 常驻 DOM 只切 opacity），刻意只留两处差异，别当成两份样式：
+   · `line-height: 1.3` —— 字重行的高度由它撑，不写会和 11px 的名字错开半像素；
+   · 时长走 `--t-quick` 令牌，而不是样张那边的写死 0.2s ——
+     `tokens.css` 的「减少动效」是按 `--t-*` 统一压的，写死就要往那张例外名单里再加一条。 */
+.face-line-copied {
+  flex: none;
+  /* 与名字之间留 2px（行本身还有 `gap: 6px`，视觉上是 8px）：贴死会像名字的一部分 */
+  margin-left: 2px;
+  font-size: var(--fs-9);
+  line-height: 1.3;
+  color: var(--accent-a);
+  white-space: nowrap;
+  opacity: 0;
+  /* 用令牌而不是写死 0.2s：tokens.css「减少动效」那套按 --t-* 统一压到 1ms */
+  transition: opacity var(--t-quick) linear;
+}
+.face-line-copied.is-shown {
+  opacity: 1;
+}
+/* 复制态必须盖住悬停态：两者画的是同一条左竖线（悬停灰 `--ink-rgb` / 复制强调色）。
+   同特异性 (0,2,0)、写在 `.face-line:hover` 之后，所以后写胜；
+   到点由 JS 摘掉 `.is-copied`，「已复制」淡出与竖线回灰同时发生。 */
+.face-line.is-copied,
+.face-line.is-copied:hover {
+  box-shadow: inset 2px 0 0 var(--accent-a);
+}
+
+/* ─── ② 搜索建议跳转的「我在这儿」高亮 ─────────────────────────────────
+   跳转 = 真选中（单选）+ 滚动到中间 + 约 1.7s 的临时高亮。
+   选中本身已经是**常驻**表达（列表/网格 = 行首蓝线，样张 = 蓝色描边），
+   所以临时态只能用别的手段画「刚跳到这儿」，否则和「本来就在这儿」看不出区别。
+   三个视图统一用「一层很淡的强调色底」：出现 / 淡出一致，也都不碰线的语义。
+   类名由 `lib/useReveal.ts` 在 1.7s 后摘掉；CSS 只负责让底色可过渡。 */
+.list-row.row-revealed {
+  /* `.list-row` 本体已声明 background 的 transition（app.css:1198 附近），淡出免费 */
+  background: color-mix(in srgb, var(--accent-a) 12%, transparent);
+}
+.specimen-tile.tile-revealed {
+  /* 同上：`.specimen-tile` 本体的 transition 已含 background。
+     注意这里**只有底色真正生效**：1.9.0 起 `.specimen-tile` 是 `border: 0`，
+     下面那条 `border-color` 是历史残留（当年格子还有 1px 描边）。故意不删、也不给格子
+     补边框宽度来「救活」它 —— 那会改掉样张格子的盒模型与间距，为一个高亮不值当。 */
+  background: color-mix(in srgb, var(--accent-a) 8%, transparent);
+  border-color: color-mix(in srgb, var(--accent-a) 45%, transparent);
+}
+/* 卡片行的底色在纸墨体系里是「透明」（1.9.0 起不铺底），但过渡里没有 background：
+   这里把 shorthand 整条补一遍再加 background-color，否则这一条会把底层
+   （app.css:983）的 filter / border-color / box-shadow 三条过渡一起顶掉。 */
+.family-card {
+  transition:
+    filter var(--t-state) ease,
+    border-color var(--t-quick) ease,
+    box-shadow var(--t-state) ease,
+    background-color var(--t-state) ease;
+}
+.family-card.card-revealed {
+  /* 比列表更淡：卡片是整行大色块，12% 会糊成一块蓝底 */
+  background: color-mix(in srgb, var(--accent-a) 6%, transparent);
+}
+
+/* ─── ③ 样张视图：单字重时样式按钮不可点 ───────────────────────────────
+   只有一个字重 = 菜单里只有一行「自己」，点开毫无意义（用户 2026-11-06）。
+   删除线画在内部 <span> 上，不画在按钮上 —— 画在按钮上会把右侧留白也划掉，
+   而且一旦将来重新加箭头，箭头也会被一起划。
+   `aria-disabled` 由 SpecimenView 给（不用 disabled：那样连「只有 1 个字重」
+   这句说明都弹不出来），所以这里接管 hover 的两个颜色，别让按钮看着仍然可点。 */
+.specimen-weight[aria-disabled="true"],
+.specimen-weight[aria-disabled="true"]:hover {
+  color: var(--text-tertiary);
+  border-color: rgba(var(--ink-rgb), 0.08);
+  cursor: default;
+}
+.specimen-weight[aria-disabled="true"] > span {
+  text-decoration: line-through;
+}
+

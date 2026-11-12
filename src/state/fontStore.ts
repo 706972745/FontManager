@@ -422,6 +422,18 @@ interface FontStore {
   nav: Nav;
   selectedFamily: string | null;
 
+  /**
+   * 搜索建议跳转的「信标」：目标字族名 + 每次跳转自增的序号（2026-11-12）。
+   *
+   * 为什么需要它：跳转 = 真选中 + 滚动到可视区中间 + 一个约 1.7s 的「我在这儿」高亮。
+   * 选中本身用 `selection` 表达（三个视图判断选中读的都是它），但**重复点同一个建议**时
+   * `selectedFamily` 不变，靠它触发的高亮就永远不会再亮一次 —— 所以另存一个自增的
+   * `revealTick`，视图订阅它，同名重复点击也能重新触发。
+   * 不复用 `comparePicking` / `card-selected`：那是「对比挑选」的语义，两回事。
+   */
+  revealFamily: string | null;
+  revealTick: number;
+
   pendingCollectionFor: string | null;
   /** 从字重菜单「新建分组…」进来的那个字重（faceKey）：建组时只放它，不放整族 */
   pendingCollectionFace: string | null;
@@ -542,6 +554,11 @@ interface FontStore {
   applyFaceInApp: (family: string, faceId: string, app: AdobeApp) => Promise<void>;
   setPanelWidth: (w: number) => void;
   selectWith: (family: string, mode: "single" | "toggle" | "range", order: string[]) => void;
+  /**
+   * 跳转到某个字族（搜索建议点了字体）：选中它（单选）+ 打一个跳转信标，
+   * 三个视图据此滚动到可视区中间并给一个短时高亮。细节见 `revealFamily`。
+   */
+  jumpToFamily: (family: string) => void;
   selectAll: () => void;
   openCompare: (families: string[]) => void;
   closeCompare: () => void;
@@ -1734,6 +1751,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   copyrightExpiry: {},
   nav: { kind: "library" },
   selectedFamily: null,
+  revealFamily: null,
+  revealTick: 0,
   pendingCollectionFor: null,
   pendingCollectionFace: null,
   pendingSnapshotFor: null,
@@ -3708,6 +3727,28 @@ export const useFontStore = create<FontStore>((set, get) => ({
       }
     }
     set({ selection: [family], selectedFamily: family, rangeAnchor: null });
+  },
+
+  /**
+   * 搜索建议点了某个字体 = 真选中 + 打跳转信标（2026-11-12）。
+   *
+   * 为什么不能只 setState({ selectedFamily })（2026-11-12 之前的写法）：三个视图判断
+   * 「选中」读的都是 `selection` 数组（`FontList.tsx` / `SpecimenView.tsx` 的
+   * `selection.includes(...)`），只改 selectedFamily 永远画不出任何标记 ——
+   * 用户看到的就是「点了搜索建议，界面什么反应都没有」。
+   *
+   * 选中仍然走 `selectWith`，不另起一套选区逻辑；只是把它的 single 语义补一刀：
+   * selectWith 的 single 是「点已选中的那个 = 取消选中」，而从搜索跳过来的意思永远
+   * 是「就要它」，被取消掉就再补一次（否则重复点同一个建议 = 反而取消选中）。
+   */
+  jumpToFamily: (family) => {
+    get().selectWith(family, "single", get().visibleOrder);
+    const after = get();
+    if (after.selectedFamily !== family || !after.selection.includes(family)) {
+      set({ selection: [family], selectedFamily: family, rangeAnchor: null });
+    }
+    // 信标最后打：视图用它触发「居中滚动 + 短时高亮」，与选中状态互不依赖
+    set((s) => ({ revealFamily: family, revealTick: s.revealTick + 1 }));
   },
 
   selectAll: () => {

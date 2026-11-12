@@ -61,7 +61,18 @@ function FacePreview({
   );
 }
 
-export const FamilyCard = memo(function FamilyCard({ family }: { family: Family }) {
+/**
+ * 一行一族。`revealed` 是**跳转**专用的临时态（搜索建议点了这个族）：1.7s 内给整行
+ * 铺一层很淡的强调色底，到点由 `useRevealFamily` 撤掉。它和 `selected` 是两件事 ——
+ * 选中是常驻蓝线，跳转是「刚落到这儿」的瞬时提示，两者可以同时成立。
+ */
+export const FamilyCard = memo(function FamilyCard({
+  family,
+  revealed = false,
+}: {
+  family: Family;
+  revealed?: boolean;
+}) {
   const t = useT();
   // 显示名按界面语言取（有中文名就显示中文名），family.name 仍然是数据主键
   const displayName = useDisplayName();
@@ -202,7 +213,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: { family: Family 
 
   return (
     <motion.article
-      className={`family-card ${selected ? "card-selected" : ""}`}
+      className={`family-card ${selected ? "card-selected" : ""} ${revealed ? "card-revealed" : ""}`}
       data-family={family.name}
       tabIndex={0}
       role="button"

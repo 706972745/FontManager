@@ -1,9 +1,16 @@
 import { Eye, EyeOff } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { useT } from "../lib/i18n";
-import { useDisplayName } from "../lib/displayName";
-import { buildFaceMenu, canToggleFace } from "../lib/menus";
+import { buildFaceMenu, canToggleFace, copyText } from "../lib/menus";
+import { faceFullName, faceStyleLabel } from "../lib/faceName";
 import { openContextMenu, openContextMenuAt } from "../design/primitives/ContextMenu";
 import { spring, staggerDelay } from "../design/springs";
 import { useScriptStatus } from "../lib/scriptCoverage";
@@ -44,6 +51,9 @@ export function faceLineFontSize(previewSize: number, divisor: 4 | 8): string {
   return `${Math.max(11, Math.round(previewSize / divisor))}px`;
 }
 
+/** 「已复制」亮多久（毫秒）。与样张视图 / 速览那句 `copyName` 同一个时长，三处观感一致 */
+const COPIED_MS = 1500;
+
 /**
  * 一个字重行：字重名 + 缺字提示 + 操作按钮。
  *
@@ -70,15 +80,41 @@ export function FaceLine({
   index?: number;
 }) {
   const t = useT();
-  // 字重行的提示里用界面语言的字体名
-  const displayName = useDisplayName();
   const intro = useIntro();
   const scriptStatus = useScriptStatus(face, probeText);
   // style 为空时退回 PostScript 名，不然整行只有一个空白按钮
-  const styleLabel = face.style?.trim() || face.postscriptName || "Regular";
-  const fullName = `${displayName(family)} ${styleLabel}`.trim();
+  const styleLabel = faceStyleLabel(face);
+  /**
+   * 提示气泡里写的就是**将要复制的那一串**（`faceFullName`，原始族名 + 样式）。
+   *
+   * 2026-11-12 之前这里用的是界面语言的族名（`useDisplayName`）：「提示说复制『微软雅黑
+   * Bold』，粘出来却是 `Microsoft YaHei Bold`」—— 提示与结果对不上，用户会以为复制错了。
+   * 现在三处同口径：气泡文案 = 剪贴板内容 = 右键菜单的标题。
+   */
+  const fullName = faceFullName(family.name, face);
 
-  const title = t("quickbar.previewFaceHint", { name: fullName });
+  /**
+   * 点字重名 = 复制它的字体全名（2026-11-12）。
+   *
+   * 为什么加这个：字重名原来只是个 `<span>`，点了没反应，而右键菜单里明明有
+   * 「复制名字」—— 想复制一个 Bold 的名字得先右键。复制内容和菜单走同一个
+   * `faceFullName`，toast + tick 音效也仍由 `copyText` 统一发。
+   *
+   * 「已复制」照抄样张视图那套（`.specimen-copied`）：文字**一直占位、只切 opacity**，
+   * 出现 / 消失时不会把右边的缺字提示、归属胶囊、眼睛按钮推来推去；连点同一行靠
+   * 重置计时器解决，而不是叠加一堆定时器。
+   */
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
+  const copyFaceName = useCallback(() => {
+    copyText(faceFullName(family.name, face), t("copy.faceName"));
+    setCopied(true);
+    window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(false), COPIED_MS);
+  }, [family.name, face, t]);
+
+  const title = t("hint.copyFaceName", { name: fullName });
   const onContext = (e: ReactMouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -98,9 +134,42 @@ export function FaceLine({
   const containers = useFaceContainers(family, face);
   const body = (
     <>
-      <span className="face-line-name" data-hint-text={title}>
+      {/* 字重名是**按钮**（2026-11-12）：点一下复制字体全名，键盘 Enter / Space 同样可达。
+          拦截分三层，各有各的理由，别合并成一句「都拦」：
+          · `onClick` —— 完整界面里这一行在卡片内部，冒泡上去就成了「选中 / 取消选中整张卡」，
+            详情面板会跟着开关（0.9.9-13 踩过一次同样的坑）；
+          · `onPointerDown` —— 卡片本体有 `whileTap`（FamilyCard.tsx:258，整卡透明度掉到 0.9），
+            按一下字重名不该连整卡一起暗一下（与 PillToggle.tsx:33、星标按钮同一套处理）；
+          · `onKeyDown` —— **只吞 Enter / Space**。⚠️ 这里绝不能无差别 stopPropagation：
+            全局快捷键挂在 `window` 的**冒泡**阶段（App.tsx:755），在按钮里拦掉就再也到不了
+            那边 —— 点过任意一个字重名之后，Delete / Escape / 方向键 / Ctrl+A 会全部失效，
+            直到用户用鼠标把焦点点走。这两个键才是按钮自己消费的
+            （项目约定见 App.tsx 的 `spaceTakenByTarget`：「按钮只消费 Space / Enter」）。 */}
+      <button
+        type="button"
+        className="face-line-name"
+        data-hint-text={title}
+        aria-label={title}
+        onClick={(e) => {
+          e.stopPropagation();
+          copyFaceName();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         {styleLabel}
+      </button>
+      {/* 「已复制」紧跟在名字后面就地出现：一直占位、只切 opacity，见 copyFaceName 的注释。
+          ⚠️ 位置全靠下面这条 `.face-line-spacer`：名字不再是 `flex: 1`（那样它会吃掉整行剩余
+          空间，「已复制」被顶到行尾贴着眼睛按钮，中间空出一大片），剩余空间改由占位条吃掉。 */}
+      <span className={`face-line-copied ${copied ? "is-shown" : ""}`} aria-hidden={!copied}>
+        {t("copy.done")}
       </span>
+      {/* 纯占位：把 ScriptChip / 归属胶囊 / 眼睛按钮照旧推到行尾。空元素、`aria-hidden`，
+          不参与可访问性树，也不可点。 */}
+      <span className="face-line-spacer" aria-hidden="true" />
       <ScriptChip status={scriptStatus} />
       {/* 这个字重本身损坏 / 不完整：直接标在字重行上，别让用户点进去才发现 */}
       {face.incomplete && (
@@ -160,7 +229,7 @@ export function FaceLine({
   if (!animate) {
     return (
       <div
-        className="face-line"
+        className={`face-line ${copied ? "is-copied" : ""}`}
         onMouseEnter={() => onHover(face.id)}
         onMouseLeave={() => onHover(null)}
         onContextMenu={onContext}
@@ -171,7 +240,7 @@ export function FaceLine({
   }
   return (
     <motion.div
-      className="face-line"
+      className={`face-line ${copied ? "is-copied" : ""}`}
       onMouseEnter={() => onHover(face.id)}
       onMouseLeave={() => onHover(null)}
       onContextMenu={onContext}
