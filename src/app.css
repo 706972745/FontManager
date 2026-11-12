@@ -9747,3 +9747,13 @@ body.tour-qb .qb-actions .qb-btn-text {
   color: var(--text-tertiary);
   font-size: var(--fs-11);
 }
+
+/* 「允许谁做重大操作」下面那一行：输入 mcp:claude 这类带名字的客户端（1.9.26） */
+.settings-allow-add {
+  gap: 8px;
+  margin-top: 10px;
+}
+.settings-allow-add .settings-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}

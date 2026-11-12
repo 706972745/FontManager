@@ -311,6 +311,18 @@ export function SettingsOverlay() {
     }
   };
 
+  /** 「添加带名字的客户端」输入框（mcp:claude / api:backup 这类） */
+  const [allowDraft, setAllowDraft] = useState("");
+  const addAllowClient = async () => {
+    const id = allowDraft.trim().toLowerCase();
+    if (!/^[a-z0-9._-]+:[a-z0-9._-]+$/.test(id)) {
+      toast.error(t("settings.apiClientAddBad"));
+      return;
+    }
+    await setDangerousAllow(id, true);
+    setAllowDraft("");
+  };
+
   const setDangerousAllow = async (client: string, on: boolean) => {
     try {
       await ipc.apiSetDangerousAllow(client, on);
@@ -1132,11 +1144,18 @@ export function SettingsOverlay() {
                     <div className="settings-row settings-col">
                       <div className="settings-label">{t("settings.apiDangerousAllow")}</div>
                       <div className="settings-allow-list">
-                        {[
-                          { id: "api", name: t("settings.apiClientApi") },
-                          { id: "mcp", name: t("settings.apiClientMcp") },
-                          ...plugins.map((p) => ({ id: p.id, name: p.name })),
-                        ].map((c) => {
+                        {(() => {
+                          // 通用两类 + 每个插件 + 已经存在的「带名字的客户端」（mcp:claude 这类）
+                          const named = (api.dangerousAllow ?? []).filter(
+                            (id) => id.startsWith("api:") || id.startsWith("mcp:"),
+                          );
+                          return [
+                            { id: "api", name: t("settings.apiClientApi") },
+                            { id: "mcp", name: t("settings.apiClientMcp") },
+                            ...plugins.map((p) => ({ id: p.id, name: p.name })),
+                            ...named.map((id) => ({ id, name: id })),
+                          ];
+                        })().map((c) => {
                           const on = (api.dangerousAllow ?? []).includes(c.id);
                           return (
                             <label key={c.id} className="settings-allow-item">
@@ -1151,6 +1170,21 @@ export function SettingsOverlay() {
                           );
                         })}
                       </div>
+                      <div className="settings-row settings-allow-add">
+                        <input
+                          className="settings-input"
+                          value={allowDraft}
+                          placeholder={t("settings.apiClientAddHint")}
+                          onChange={(e) => setAllowDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void addAllowClient();
+                          }}
+                        />
+                        <button className="settings-library-switch" onClick={() => void addAllowClient()}>
+                          {t("settings.apiClientAdd")}
+                        </button>
+                      </div>
+                      <div className="settings-hint">{t("settings.apiDangerousAllowHint")}</div>
                     </div>
                   )}
                 </>

@@ -1152,5 +1152,9 @@
   "online.subsetsLabel": "Character set",
   "settings.apiDangerousAllow": "Who may run dangerous actions",
   "settings.apiClientApi": "Local API (scripts)",
-  "settings.apiClientMcp": "MCP"
+  "settings.apiClientMcp": "MCP",
+  "settings.apiClientAdd": "Add",
+  "settings.apiClientAddHint": "mcp:claude",
+  "settings.apiClientAddBad": "Use a form like mcp:claude or api:backup (prefix must be api / mcp)",
+  "settings.apiDangerousAllowHint": "Ticking api / mcp allows the whole class (including named clients); to allow just one, add it as mcp:name."
 }

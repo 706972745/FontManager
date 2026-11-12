@@ -26,6 +26,22 @@
 ```
 
 - WorkBuddy：连接器管理 → 自定义 MCP → 粘贴上面的配置 → 点「信任」启用。
+
+### 同时接多个 MCP 客户端？
+
+主程序 1.9.26 起可以**按实例**授权危险操作。在各自的配置里加一个环境变量，
+名字会出现在请求头 `x-zfm-client: mcp:<名字>` 里：
+
+```json
+{ "mcpServers": { "fontmanager": {
+    "command": "node",
+    "args": ["<index.mjs 绝对路径>"],
+    "env": { "ZFM_CLIENT_NAME": "claude" }
+} } }
+```
+
+设置 → 本地 API →「允许谁做重大操作」里就能分别勾选 `mcp:claude` / `mcp:cursor`。
+不设这个变量 = 通用 `mcp`（勾了 `mcp` 就等于允许所有 MCP）。
 - Claude Desktop：`claude_desktop_config.json` 同上。
 - Cursor：MCP 设置页同上。
 

@@ -458,12 +458,48 @@ pub fn client_name(scope: &Scope, headers: &axum::http::HeaderMap) -> String {
     if scope.name != "app" {
         return scope.name.clone();
     }
-    headers
+    let raw = headers
         .get("x-zfm-client")
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.trim().to_ascii_lowercase())
-        .filter(|v| v == "mcp")
-        .unwrap_or_else(|| "api".to_string())
+        .unwrap_or("");
+    match normalize_client(raw) {
+        // 带名字的：`mcp:claude` / `api:backup-script`，可以逐个授权
+        Some(name) if name == "mcp" || name.starts_with("mcp:") => name,
+        Some(name) if name == "api" || name.starts_with("api:") => name,
+        // 没带 / 带了不认识的值：算「本地 API 脚本」
+        _ => "api".to_string(),
+    }
+}
+
+/// 客户端标识只允许小写字母数字与 `- _ . :`，最长 48 —— 它会进 prefs、进日志、进设置页，
+/// 不洗一遍就可能带着控制字符或超长串进去。
+fn normalize_client(raw: &str) -> Option<String> {
+    let s = raw.trim().to_ascii_lowercase();
+    if s.is_empty() || s.chars().count() > 48 {
+        return None;
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+    {
+        return None;
+    }
+    Some(s)
+}
+
+/// 这个客户端被授权了吗。
+///
+/// - 精确命中：`mcp:claude` 勾了就是它；
+/// - **类级别**：勾了 `mcp` 或 `mcp:*` = 允许所有 MCP（含带名字的），
+///   这样「好几个 MCP 客户端」默认一个开关全管住，想细分再单独勾名字。
+fn client_allowed(cfg: &Cfg, who: &str) -> bool {
+    if cfg.allow.contains(who) {
+        return true;
+    }
+    if let Some((class, _)) = who.split_once(':') {
+        return cfg.allow.contains(class) || cfg.allow.contains(&format!("{class}:*"));
+    }
+    false
 }
 
 fn dangerous_gate(scope: &Scope, headers: &axum::http::HeaderMap) -> Result<(), Response> {
@@ -478,7 +514,7 @@ fn dangerous_gate(scope: &Scope, headers: &axum::http::HeaderMap) -> Result<(), 
         ));
     }
     let who = client_name(scope, headers);
-    if cfg.allow.contains(&who) {
+    if client_allowed(&cfg, &who) {
         return Ok(());
     }
     Err(fail(
@@ -1497,6 +1533,35 @@ mod tests {
         assert_eq!(client_name(&app, &headers), "mcp");
         headers.insert("x-zfm-client", "whatever".parse().unwrap());
         assert_eq!(client_name(&app, &headers), "api");
+
+        // 带名字的客户端：多个 MCP / 多个脚本可以分开授权
+        headers.insert("x-zfm-client", "mcp:claude".parse().unwrap());
+        assert_eq!(client_name(&app, &headers), "mcp:claude");
+        headers.insert("x-zfm-client", "API:Backup".parse().unwrap());
+        assert_eq!(client_name(&app, &headers), "api:backup");
+        // 非法值（空格 / 超长 / 怪字符）一律退回 api
+        headers.insert("x-zfm-client", "mcp: bad name".parse().unwrap());
+        assert_eq!(client_name(&app, &headers), "api");
+
+        // 类级别授权：勾了 mcp 就等于允许所有 MCP（含 mcp:claude）
+        let mut cfg = Cfg::default();
+        cfg.allow.insert("mcp".into());
+        assert!(client_allowed(&cfg, "mcp"));
+        assert!(client_allowed(&cfg, "mcp:claude"));
+        assert!(!client_allowed(&cfg, "api"));
+        assert!(!client_allowed(&cfg, "api:backup"));
+
+        // 通配符写法同样成立
+        let mut cfg2 = Cfg::default();
+        cfg2.allow.insert("api:*".into());
+        assert!(client_allowed(&cfg2, "api:backup"));
+        assert!(!client_allowed(&cfg2, "mcp:claude"));
+
+        // 插件 id 只认精确匹配
+        let mut cfg3 = Cfg::default();
+        cfg3.allow.insert("com.example.p".into());
+        assert!(client_allowed(&cfg3, "com.example.p"));
+        assert!(!client_allowed(&cfg3, "com.example.q"));
     }
 
     #[test]

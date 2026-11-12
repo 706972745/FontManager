@@ -263,6 +263,29 @@ PUT  /api/v1/curation/collection  { "name": "分组名", "families": ["族1", "�
 插件就是它的 **plugin id**（插件令牌的名字，客户端改不了）。
 总开关关着时，单独授权怎么勾都无效 —— 两道闸是「与」的关系。
 
+**多个 MCP / 多个脚本怎么办（1.9.26）**：标识可以带名字 —— 请求头写
+`x-zfm-client: mcp:claude`、`x-zfm-client: api:backup`，就能按实例单独授权。
+MCP 端不用改代码，在客户端配置里加一个环境变量即可：
+
+```json
+{ "mcpServers": { "fontmanager": {
+    "command": "node",
+    "args": ["<index.mjs 绝对路径>"],
+    "env": { "ZFM_CLIENT_NAME": "claude" }
+} } }
+```
+
+授权规则（`api` / `mcp` 勾上 = **这一类全部允许**，含带名字的）：
+
+| 勾了 | `mcp` | `mcp:claude` | `api:backup` |
+|---|---|---|---|
+| `mcp` | ✅ | ✅ | ❌ |
+| `mcp:claude` | ❌ | ✅ | ❌ |
+| `mcp:*` | ✅ | ✅ | ❌ |
+| `api:*` | ❌ | ❌ | ✅ |
+
+插件 id 只认精确匹配（没有类级别）。
+
 带 `Authorization: Bearer <apiToken>`。完整示例见 `examples/plugin-specimen-export/`
 （右键字族导出示例图 PNG，启动时自动跑一遍 API/权限自检）。
 
