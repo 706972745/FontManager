@@ -691,14 +691,22 @@ fn is_error_line(body: &str) -> bool {
 
 /// 把 traceback 的帧行收拾成一句可读前缀：`File "…", line 20, in <module>` → `File "…", line 20`。
 ///
-/// 只认 `, in <module>`（模块级报错，真实故障就是这种）；其它帧不动，
-/// 免得把 `, in handler` 这种内部函数名塞进界面上的小字里。
-fn traceback_frame(prev: &str) -> Option<String> {
-    let at = prev.find(", in <module>")?;
-    let head = prev[..at].trim();
-    if !head.starts_with("File ") {
+/// 只认 Python 帧行的形状：`File "` 开头 + `, line <数字>`。函数名（`in <module>` /
+/// `in handler`）整段丢掉 —— 界面上那行小字要的是「哪个文件第几行」。
+///
+/// **不限定 `in <module>`**：报错在函数里时，最内层帧是 `in handler`，硬要 `<module>`
+/// 只能退到外层帧，指错文件。调用处取的是**最后**一个帧（最内层），这才准。
+fn traceback_frame(body: &str) -> Option<String> {
+    if !body.starts_with("File ") {
         return None;
     }
+    let line_at = body.find(", line ")?;
+    let after = &body[line_at + ", line ".len()..];
+    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    let head = body[..line_at + ", line ".len() + digits.len()].trim();
     Some(head.to_string())
 }
 
@@ -714,7 +722,7 @@ fn clamp_error(line: &str) -> String {
 
 /// 从 activation.log 全文中，取这个插件**最后一条** stderr 错误行的可读摘要。
 /// 返回形如 `ModuleNotFoundError: No module named 'meta'`，
-/// 若该行前一行是 `File "…", line N, in <module>`，则拼成 `File "…", line N → ModuleNotFoundError: …`。
+/// 若这次 traceback 里有帧行 `File "…", line N, in …`，则拼成 `File "…", line N → ModuleNotFoundError: …`。
 /// 取不到返回 None。超过 240 字符截断并加 `…`。
 ///
 /// 纯函数：不碰文件系统，方便单测直接喂字符串。
@@ -723,39 +731,57 @@ pub(crate) fn parse_last_error(log_text: &str, id: &str) -> Option<String> {
     // 结尾的 `] ` 很关键：id 是 `a.b` 时不会误配到 `[plugin:a.b-extra]`。
     let prefix = format!("[plugin:{id}] ");
     let mut found: Option<String> = None;
-    // 上一行本插件的 stderr 正文（traceback 的帧行要拼给下一行用）
-    let mut prev_stderr: Option<String> = None;
+    // 本插件**这次 traceback 里最近见过的帧行**（也就是最内层那一帧）。
+    //
+    // 不能拿「上一行 stderr」当帧：Python 真实 traceback 里帧行和错误行之间永远夹着
+    // 那行源码（`import meta`）和 `^^^^` 下划线，帧行从不紧挨错误行 —— 真实日志
+    // （见测试 `parse_last_error_real_activation_log_font_sync_crash`）就是这样，
+    // 早先按「上一行」实现时会把 `File … line 20` 整个丢掉。
+    //
+    // 只有三种情况清掉它：新的一次 `Traceback`、本插件进程退出（噪音行）、
+    // 以及根本没出现过帧。源码行 / `^^^` 都不清。
+    let mut last_frame: Option<String> = None;
 
     for raw in log_text.lines() {
         let Some(at) = raw.find(&prefix) else {
-            // 别的插件的行：**不清** prev_stderr。多个插件同时往一份日志里写，
-            // 帧行和错误行之间被插一行别人的日志是常态；prev_stderr 只由本插件的行写入，
-            // 跨过去也不会串到别人身上（测试 `parse_last_error_isolates_target_plugin`）。
+            // 别的插件的行：**不清** last_frame。多个插件同时往一份日志里写，
+            // 我们的帧行和错误行之间被插一行别人的日志是常态；last_frame 只由本插件的
+            // 行写入，跨过去也不会串到别人身上（测试 `parse_last_error_isolates_target_plugin`）。
             continue;
         };
         let rest = raw[at + prefix.len()..].trim();
         if is_log_noise(rest) {
-            prev_stderr = None;
+            // 进程收尾了（stdout 结束 / 令牌已回收 / 已就绪…）：
+            // 下一次报错属于新起的进程，旧帧不能借过来。
+            last_frame = None;
             continue;
         }
         let Some(body) = rest.strip_prefix("stderr:") else {
             // `启动 1 秒内就退出了（exit=…）` 这类行没有 stderr 标记，不是插件自己喊的错
-            prev_stderr = None;
             continue;
         };
         let body = body.trim();
         if body.is_empty() {
-            prev_stderr = None;
+            continue;
+        }
+        if body.starts_with("Traceback") {
+            // 新的一次 traceback：上一次的帧作废，免得挂到不相干的错误上
+            last_frame = None;
+            continue;
+        }
+        // 帧行要**先于**错误行判定：路径里带 `Error` 的（`error_view.py`）帧行
+        // 会被 is_error_line 误判成错误本身。帧行只负责记下来，不当结论。
+        if let Some(frame) = traceback_frame(body) {
+            last_frame = Some(frame);
             continue;
         }
         if is_error_line(body) {
-            let text = match prev_stderr.as_deref().and_then(traceback_frame) {
+            let text = match last_frame.as_deref() {
                 Some(frame) => format!("{frame} → {body}"),
                 None => body.to_string(),
             };
             found = Some(clamp_error(&text));
         }
-        prev_stderr = Some(body.to_string());
     }
 
     found
@@ -2364,8 +2390,12 @@ mod tests {
 
     const FS_ID: &str = "com.fontmanager.font-sync";
 
-    /// 真实日志样本（1.5.x 用户机器上那份）：缺 `meta.py` 秒退。
-    /// 帧行 + 错误行要拼成一句「File …, line 20 → ModuleNotFoundError: …」。
+    /// 最小 traceback 样本：帧行 + 错误行要拼成一句「File …, line 20 → ModuleNotFoundError: …」。
+    ///
+    /// 注意中间那两行：Python 打 traceback 时帧行和错误行之间**一定**夹着源码行与
+    /// `^^^^` 下划线（真实日志见下面 `REAL_LOG_TAIL` 的回放测试）。早先这份样本把
+    /// 中间两行删掉了，于是「帧行紧挨错误行」这种不存在的理想形态被测成了绿的，
+    /// 真日志上却丢帧 —— 这里保留源码行，别再退回去。
     #[test]
     fn parse_last_error_reads_typical_traceback() {
         let log = "\
@@ -2373,6 +2403,8 @@ mod tests {
 2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] 已启用 com.fontmanager.font-sync v0.8.2
 2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: Traceback (most recent call last):
 2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr:   File \"C:\\Users\\u\\FontManager\\plugins\\font-sync\\syncer.py\", line 20, in <module>
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr:     import meta
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr:     ^^^^^^^^^^^
 2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: ModuleNotFoundError: No module named 'meta'
 2026-11-12 17:26:42Z [plugin:com.fontmanager.font-sync] stdout 结束，插件可能已退出
 ";
@@ -2497,6 +2529,128 @@ mod tests {
         assert!(old_dir.join("state.json").exists(), "数据文件保留");
         assert!(!base.join("com.fontmanager.font-sync").exists(), "不得新建并存目录");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// 两条「别把旧帧接上去」的守卫：
+    /// 1. 新的一次 `Traceback` 会把上一次的帧清掉 —— 第二次没帧时不能借第一次的；
+    /// 2. 函数级报错取**最内层**帧（`in handle`），不是外层 `<module>`。
+    #[test]
+    fn parse_last_error_drops_stale_frame_and_takes_innermost() {
+        // ① 连续两次 traceback，第二次没有帧行
+        let log = format!(
+            "\
+2026-11-12 17:00:00Z [plugin:{id}] stderr: Traceback (most recent call last):
+2026-11-12 17:00:00Z [plugin:{id}] stderr:   File \"C:\\a\\old.py\", line 7, in <module>
+2026-11-12 17:00:00Z [plugin:{id}] stderr: ModuleNotFoundError: old one
+2026-11-12 17:05:00Z [plugin:{id}] stderr: Traceback (most recent call last):
+2026-11-12 17:05:00Z [plugin:{id}] stderr: RuntimeError: no frame here
+",
+            id = FS_ID
+        );
+        let got = parse_last_error(&log, FS_ID).expect("应该捞到最后一条");
+        assert!(got.contains("RuntimeError"), "没取最后一条：{got}");
+        assert!(!got.contains("old.py"), "把上一次 traceback 的帧借过来了：{got}");
+        assert!(!got.contains(" → "), "没有帧就不该有箭头：{got}");
+
+        // ② 最内层是函数帧
+        let log = format!(
+            "\
+2026-11-12 17:00:00Z [plugin:{id}] stderr: Traceback (most recent call last):
+2026-11-12 17:00:00Z [plugin:{id}] stderr:   File \"C:\\a\\main.py\", line 46, in <module>
+2026-11-12 17:00:00Z [plugin:{id}] stderr:     run()
+2026-11-12 17:00:00Z [plugin:{id}] stderr:   File \"C:\\a\\main.py\", line 12, in run
+2026-11-12 17:00:00Z [plugin:{id}] stderr:     int('x')
+2026-11-12 17:00:00Z [plugin:{id}] stderr: ValueError: invalid literal
+",
+            id = FS_ID
+        );
+        let got = parse_last_error(&log, FS_ID).expect("应该捞到");
+        assert!(got.contains("line 12"), "应当取最内层帧 line 12：{got}");
+        assert!(!got.contains("line 46"), "不该退到外层帧：{got}");
+        assert!(got.contains("ValueError"), "丢了错误本身：{got}");
+    }
+
+    // ══════════════ 真数据回放：%APPDATA%\FontManager\activation.log 原文 ══════════════
+    //
+    // 下面这段是**逐字节抄**自 87557 这台机器 2026-11-12 17:26:40Z–17:39:52Z 的真实日志
+    // （`ModuleNotFoundError: No module named 'meta'` 那几次秒退，含随后换 v0.9.3 起来成功的那次）。
+    // 要命的地方：Python 打 traceback 时，帧行 `File …, line N, in <module>` 和错误行之间
+    // **还夹着那行源码**（`import panel` / `import syncer`）和 `^^^^` 下划线，帧行从不紧挨错误行。
+    //
+    // 这条测试是这次修复唯一真正的验收点：换真实日志必须还能解析出文件:行号。
+    // 之前按「上一行 stderr 当帧」实现时，这里只剩 `ModuleNotFoundError: …`，帧行整个丢掉。
+    const REAL_LOG_TAIL: &str = r#"2026-11-12 17:26:40Z [plugin] com.fontmanager.font-sync 工作目录 C:\Users\87557\AppData\Local\FontManager\plugins\com.fontmanager.font-sync，入口 C:\Users\87557\AppData\Local\FontManager\plugins\com.fontmanager.font-sync\main.py
+2026-11-12 17:26:40Z [plugin] com.fontmanager.font-sync 用解释器 C:\Users\87557\.workbuddy\binaries\python\versions\3.13.12\python.exe 3.13.14
+2026-11-12 17:26:40Z [plugin] 已启用 com.fontmanager.font-sync v0.9.2
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: Traceback (most recent call last):
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: File "C:\Users\87557\AppData\Local\FontManager\plugins\com.fontmanager.font-sync\main.py", line 46, in <module>
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: import panel  # noqa: E402
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: ^^^^^^^^^^^^
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: File "C:\Users\87557\AppData\Local\FontManager\plugins\com.fontmanager.font-sync\panel.py", line 33, in <module>
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: import syncer
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: File "C:\Users\87557\AppData\Local\FontManager\plugins\com.fontmanager.font-sync\syncer.py", line 20, in <module>
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: import meta
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: ModuleNotFoundError: No module named 'meta'
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stdout 结束，插件可能已退出
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] 进程已退出，运行时与令牌已回收
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] 启动 1 秒后运行时表里已经没它了
+2026-11-12 17:39:51Z [plugin] com.fontmanager.font-sync 工作目录 C:\Users\87557\AppData\Local\FontManager\plugins\com.fontmanager.font-sync，入口 C:\Users\87557\AppData\Local\FontManager\plugins\com.fontmanager.font-sync\main.py
+2026-11-12 17:39:51Z [plugin] com.fontmanager.font-sync 用解释器 C:\Users\87557\.workbuddy\binaries\python\versions\3.13.12\python.exe 3.13.14
+2026-11-12 17:39:51Z [plugin] 已启用 com.fontmanager.font-sync v0.9.3
+2026-11-12 17:39:52Z [plugin:com.fontmanager.font-sync] 字体库同步插件已就绪（首次使用先在设置里配好 GitHub 账号与库）
+2026-11-12 17:39:52Z [plugin:com.fontmanager.font-sync] 已握手：apiLevel=1 apiBase=http://127.0.0.1:57029/api/v1
+"#;
+
+    /// 真实日志原文回放：必须还能拿到「文件:行号 → 错误」。
+    ///
+    /// 失败几乎一定意味着 `parse_last_error` 只认「帧行紧挨错误行」，
+    /// 而 Python 真实 traceback 中间永远隔着那行源码。
+    #[test]
+    fn parse_last_error_real_activation_log_font_sync_crash() {
+        let got = parse_last_error(REAL_LOG_TAIL, FS_ID).expect("真实日志里必须捞得到死因");
+        eprintln!("[真数据回放] parse_last_error 实际输出 = {got:?}");
+
+        // ── 底线要求（这几条现在就该过）──
+        assert!(
+            got.contains("ModuleNotFoundError: No module named 'meta'"),
+            "丢了真正的死因：{got:?}"
+        );
+        assert!(!got.contains("2026-11-12"), "时间戳没剥干净：{got:?}");
+        assert!(!got.contains("[plugin:"), "插件前缀没剥干净：{got:?}");
+        assert!(!got.contains("stderr:"), "stderr 标记没剥干净：{got:?}");
+
+        // ── 验收要求：带上 traceback 的「文件:行号」和箭头 ──
+        // 只显示 `ModuleNotFoundError: No module named 'meta'` 用户仍然不知道**哪个文件**缺 meta，
+        // 真实故障里三个文件都叫 import，只有行号能定位。
+        assert!(
+            got.starts_with("File \""),
+            "没有以 File 片段开头，用户看不到是哪个文件出错。实际：{got:?}"
+        );
+        assert!(
+            got.contains("line 20"),
+            "没有带出最后一帧的行号（应为 syncer.py 的 line 20）。实际：{got:?}"
+        );
+        assert!(
+            got.contains(" → "),
+            "帧行与错误行之间没有箭头。实际：{got:?}"
+        );
+    }
+
+    /// 反向守卫：帧行与错误行之间隔着源码行时，帧行**不能**丢。
+    /// 这是上一条测试失败的最小复现，单独留着方便定位。
+    #[test]
+    fn parse_last_error_keeps_frame_across_source_lines() {
+        let log = "\
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: Traceback (most recent call last):
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr:   File \"C:\\a\\syncer.py\", line 20, in <module>
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: import meta
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: ModuleNotFoundError: No module named 'meta'
+";
+        let got = parse_last_error(log, FS_ID).expect("应该捞到");
+        assert!(
+            got.contains("line 20") && got.contains(" → "),
+            "帧行被中间的源码行冲掉了：{got:?}"
+        );
     }
 }
 
