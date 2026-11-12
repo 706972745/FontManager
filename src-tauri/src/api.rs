@@ -94,6 +94,9 @@ pub struct Cfg {
     pub want_port: u16,
     pub token: String,
     pub dangerous: bool,
+    /// 被单独授权做「重大操作」的客户端：`api`（本地脚本）/ `mcp` / 插件 id。
+    /// 总开关 `dangerous` 关着时这里一律无效 —— 两道闸是「与」的关系。
+    pub allow: std::collections::HashSet<String>,
 }
 
 pub struct Hub {
@@ -185,6 +188,17 @@ pub fn apply_prefs() {
     let prefs = prefs_of(&hub);
     let enabled = prefs_bool(&prefs, "apiEnabled");
     let dangerous = prefs_bool(&prefs, "apiDangerous");
+    let allow: std::collections::HashSet<String> = prefs
+        .get("apiDangerousAllow")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str())
+                .map(|x| x.trim().to_ascii_lowercase())
+                .filter(|x| !x.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
     let want_port = prefs_port(&prefs, "apiPort");
     let token = prefs_str(&prefs, "apiToken").unwrap_or_default();
     let token = if token.is_empty() {
@@ -209,6 +223,7 @@ pub fn apply_prefs() {
             cfg.port == 0 || cfg.token != token || cfg.enabled != enabled || cfg.want_port != want_port;
         cfg.enabled = enabled;
         cfg.dangerous = dangerous;
+        cfg.allow = allow;
         cfg.want_port = want_port;
         if cfg.token != token {
             cfg.token = token.clone();
@@ -423,6 +438,57 @@ fn perm_for(method: &str, path: &str) -> Option<&'static str> {
     }
 }
 
+/// 「重大操作」：会改字体库或系统字体状态的那些权限。
+///
+/// 读、导出、套用到设计软件、写标签/评分这些都不算 —— 它们要么只读，
+/// 要么可逆、不碰字体文件本身。真正要拦的是：启用/停用/重扫（改系统字体表）、
+/// 导入（往库里写文件）、应用快照（批量改启用状态）。
+pub const DANGEROUS_PERMS: &[&str] = &["write:fonts", "import", "write:snapshot"];
+
+pub fn is_dangerous(perm: &str) -> bool {
+    DANGEROUS_PERMS.contains(&perm)
+}
+
+/// 请求是谁发的。
+///
+/// 插件令牌的名字就是插件 id（签发时写死的，客户端改不了）；
+/// 本地 API 脚本和 MCP 共用主令牌，靠 `x-zfm-client: mcp` 这个请求头区分 ——
+/// 头可以伪造，但它只影响「单独授权」这一层，总开关仍然拦在前面。
+pub fn client_name(scope: &Scope, headers: &axum::http::HeaderMap) -> String {
+    if scope.name != "app" {
+        return scope.name.clone();
+    }
+    headers
+        .get("x-zfm-client")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().to_ascii_lowercase())
+        .filter(|v| v == "mcp")
+        .unwrap_or_else(|| "api".to_string())
+}
+
+fn dangerous_gate(scope: &Scope, headers: &axum::http::HeaderMap) -> Result<(), Response> {
+    let Some(hub) = hub() else {
+        return Err(fail(StatusCode::INTERNAL_SERVER_ERROR, "本地 API 还没初始化"));
+    };
+    let cfg = hub.cfg.lock().map(|c| c.clone()).unwrap_or_default();
+    if !cfg.dangerous {
+        return Err(fail(
+            StatusCode::FORBIDDEN,
+            "这是「重大操作」，当前被拦下了：先在 设置 → 本地 API 里打开「允许危险操作」",
+        ));
+    }
+    let who = client_name(scope, headers);
+    if cfg.allow.contains(&who) {
+        return Ok(());
+    }
+    Err(fail(
+        StatusCode::FORBIDDEN,
+        format!(
+            "「{who}」没有重大操作授权 —— 到 设置 → 本地 API →「允许谁做重大操作」里单独勾选它"
+        ),
+    ))
+}
+
 /// 权限闸门：`auth` 之后跑，handler 之前跑
 async fn require_perm(req: Request, next: Next) -> Response {
     let Some(scope) = req.extensions().get::<Scope>().cloned() else {
@@ -438,6 +504,12 @@ async fn require_perm(req: Request, next: Next) -> Response {
                     scope.name
                 ),
             );
+        }
+        // 重大操作：总开关 + 单独授权，两道闸都要过
+        if is_dangerous(need) {
+            if let Err(r) = dangerous_gate(&scope, req.headers()) {
+                return r;
+            }
         }
     }
     next.run(req).await
@@ -1403,6 +1475,30 @@ mod tests {
     /// `perm_for` 末尾的 `_ => None` 是**默认放行**：以后加接口忘了登记，就是一条无声的
     /// 越权通道 —— 受限令牌照样能打通。这条单测直接读本文件源码里的路由声明，
     /// 新增端点不写权限会立刻变红，不需要人去记「记得同步权限表」。
+    #[test]
+    fn dangerous_perms_and_client_names() {
+        // 只有「改字体库 / 改系统字体状态」这三类算重大操作
+        for perm in ["write:fonts", "import", "write:snapshot"] {
+            assert!(is_dangerous(perm), "{perm} 应该是重大操作");
+        }
+        for perm in ["read:fonts", "write:apply", "read:curation", "write:curation", "export"] {
+            assert!(!is_dangerous(perm), "{perm} 不该被拦");
+        }
+
+        let mut headers = axum::http::HeaderMap::new();
+        // 插件令牌：名字就是插件 id，改不了
+        let plugin = Scope { name: "com.example.p".into(), perms: vec!["*".into()] };
+        assert_eq!(client_name(&plugin, &headers), "com.example.p");
+
+        // 主令牌：默认算「本地 API 脚本」，带 x-zfm-client: mcp 才算 MCP
+        let app = Scope::full("app");
+        assert_eq!(client_name(&app, &headers), "api");
+        headers.insert("x-zfm-client", "MCP".parse().unwrap());
+        assert_eq!(client_name(&app, &headers), "mcp");
+        headers.insert("x-zfm-client", "whatever".parse().unwrap());
+        assert_eq!(client_name(&app, &headers), "api");
+    }
+
     #[test]
     fn every_route_is_gated() {
         // 只需令牌、不需要额外权限的路由（目前只有探活）

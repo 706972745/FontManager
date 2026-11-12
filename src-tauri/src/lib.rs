@@ -2205,6 +2205,9 @@ fn api_status() -> serde_json::Value {
     match crate::api::hub() {
         Some(hub) => {
             let cfg = hub.cfg.lock().map(|c| c.clone()).unwrap_or_default();
+            // json! 里塞不了带 let 的块，先算好
+            let mut allow_list: Vec<String> = cfg.allow.iter().cloned().collect();
+            allow_list.sort();
             serde_json::json!({
                 "enabled": cfg.enabled,
                 "running": crate::api::is_running(),
@@ -2212,6 +2215,7 @@ fn api_status() -> serde_json::Value {
                 "requestedPort": cfg.want_port,
                 "token": cfg.token,
                 "dangerous": cfg.dangerous,
+                "dangerousAllow": allow_list,
                 "base": if cfg.port == 0 { String::new() } else { format!("http://127.0.0.1:{}/api/v1", cfg.port) },
                 "version": env!("CARGO_PKG_VERSION"),
             })
@@ -2273,6 +2277,50 @@ fn api_set_dangerous(on: bool) -> Result<(), String> {
         let mut state = hub.store.0.lock().map_err(|e| e.to_string())?;
         if let Some(p) = state.prefs.as_object_mut() {
             p.insert("apiDangerous".into(), serde_json::json!(on));
+        }
+        store::save_prefs(&state)?;
+    }
+    crate::api::apply_prefs();
+    Ok(())
+}
+
+/// 单独授权 / 收回某个客户端做「重大操作」。
+///
+/// 客户端标识：`api`（本地 API 脚本）、`mcp`、或插件 id（插件令牌的名字就是 id）。
+/// 总开关关着时这里怎么勾都没用 —— 两道闸是「与」的关系。
+#[tauri::command]
+fn api_set_dangerous_allow(client: String, on: bool) -> Result<(), String> {
+    let Some(hub) = crate::api::hub() else {
+        return Err("本地 API 还没初始化".into());
+    };
+    let who = client.trim().to_ascii_lowercase();
+    if who.is_empty() {
+        return Err("客户端标识不能为空".into());
+    }
+    {
+        let mut state = hub.store.0.lock().map_err(|e| e.to_string())?;
+        let mut list: Vec<String> = state
+            .prefs
+            .get("apiDangerousAllow")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_str())
+                    .map(|x| x.trim().to_ascii_lowercase())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        list.retain(|x| x != &who);
+        if on {
+            list.push(who);
+        }
+        list.sort();
+        list.dedup();
+        if let Some(p) = state.prefs.as_object_mut() {
+            p.insert("apiDangerousAllow".into(), serde_json::json!(list));
+        } else {
+            state.prefs = serde_json::json!({ "apiDangerousAllow": list });
         }
         store::save_prefs(&state)?;
     }
@@ -2869,6 +2917,7 @@ pub fn run() {
             api_status,
             api_set_enabled,
             api_set_dangerous,
+            api_set_dangerous_allow,
             api_set_port,
             api_reset_token,
             check_update,
