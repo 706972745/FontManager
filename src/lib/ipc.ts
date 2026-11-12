@@ -385,6 +385,14 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    * 点库地址旁的文件夹按钮会落到桌面上，而不是进到字体库里。
    */
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
+  /**
+   * 用系统默认程序打开**一个文件**（不走资源管理器，直接交给关联程序）。
+   * 目前只有 activation.log 用：插件崩了、界面上那行小字说不清时，用户能自己点开看全文。
+   * 路径不存在时 Rust 侧返回 `Err("not a file: …")`。
+   */
+  openFile: (path: string) => invoke<void>("open_file", { path }),
+  /** `activation.log` 的完整路径（`%APPDATA%\FontManager\activation.log`），给「查看日志」按钮用 */
+  logFilePath: () => invoke<string>("log_file_path"),
   /** 给字体库文件夹挂上软件专属图标（灰底文件夹 + 抽出的纸 + 黑 F） */
   applyLibraryFolderIcon: (dir: string) =>
     invoke<void>("apply_library_folder_icon", { dir }),
@@ -804,6 +812,11 @@ export interface PluginInfo {
   runtimeReady: boolean;
   /** 插件自述的运行环境；老插件没写就是 null */
   requirements: PluginRequirements | null;
+  /**
+   * 崩溃/启动失败时，activation.log 里这个插件的最后一条错误（已剥掉时间戳与前缀）。
+   * 只在 `error` 非空时才有值；日志里没线索就是 null，界面回落到一句通用的提示。
+   */
+  lastLog?: string | null;
 }
 
 /** 插件在 plugin.json 里自述的运行环境（技术名词，不翻译） */

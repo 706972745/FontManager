@@ -9815,3 +9815,14 @@ body.tour-qb .qb-actions .qb-btn-text {
 .topbar > .view-toggle {
   margin-left: auto;
 }
+
+/* 插件崩溃原因：一行小字，超长省略，悬停看全 */
+.settings-plugin-crash {
+  margin-top: 2px;
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace); /* 只有这一行用等宽，错误信息对字符敏感 */
+}

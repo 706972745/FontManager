@@ -318,6 +318,8 @@ pub struct PluginInfo {
     pub runtime_ready: bool,
     /// 插件自述的运行环境；老插件没写就是 None，界面按推断结果兜底
     pub requirements: Option<PluginRequirements>,
+    /// 崩溃/启动失败时，日志里最后一条错误（界面上直接显示，省得用户去翻 activation.log）
+    pub last_log: Option<String>,
 }
 
 // ───────────────────────────── 运行时 ─────────────────────────────
@@ -650,6 +652,141 @@ fn runtime_ready(dir: &Path, m: &PluginManifest, kind: &str) -> bool {
     }
 }
 
+// ─────────────── 崩溃原因的归档（1.9.x：把日志里那句话搬到界面上） ───────────────
+//
+// 真实故障：插件包漏了 `meta.py`，一启动就 `ModuleNotFoundError` 秒退。
+// 界面上只有一句「上次运行中退出了（崩溃或被结束），重新打开一次试试」，
+// 用户完全无法自助排查，真实原因躺在 `%APPDATA%\FontManager\activation.log` 里。
+// 这里把那条错误捞出来，直接显示在插件行上。
+
+/// 只读日志尾部这么多字节：日志能长到几十 MB，设置页打开时不该整份读。
+const LOG_TAIL_BYTES: u64 = 64 * 1024;
+/// 界面上那行小字最多显示这么多字符（超出截断，悬停能看全）。
+const MAX_ERROR_CHARS: usize = 240;
+
+/// 这些行挂着 `[plugin:<id>]` 前缀但**不是**错误，纯噪音，不能当成崩溃原因。
+const LOG_NOISE: [&str; 5] = [
+    "stdout 结束，插件可能已退出",
+    "进程已退出，运行时与令牌已回收",
+    "启动 1 秒后运行时表里已经没它了",
+    "已握手",
+    "已就绪",
+];
+
+fn is_log_noise(line: &str) -> bool {
+    LOG_NOISE.iter().any(|noise| line.contains(noise))
+}
+
+/// 这一行（去掉前缀后的 stderr 正文）算不算错误行。
+///
+/// 插件五花八门：Python 抛 `ModuleNotFoundError`、Node 抛 `TypeError`、
+/// 还有的直接 `error: xxx`。宁可多认一点，也别漏掉真正的死因。
+fn is_error_line(body: &str) -> bool {
+    body.starts_with("Traceback")
+        || body.contains("Error")
+        || body.contains("Exception")
+        || body.contains("Traceback")
+        || body.contains("error:")
+}
+
+/// 把 traceback 的帧行收拾成一句可读前缀：`File "…", line 20, in <module>` → `File "…", line 20`。
+///
+/// 只认 `, in <module>`（模块级报错，真实故障就是这种）；其它帧不动，
+/// 免得把 `, in handler` 这种内部函数名塞进界面上的小字里。
+fn traceback_frame(prev: &str) -> Option<String> {
+    let at = prev.find(", in <module>")?;
+    let head = prev[..at].trim();
+    if !head.starts_with("File ") {
+        return None;
+    }
+    Some(head.to_string())
+}
+
+/// 超长错误行截断到 [`MAX_ERROR_CHARS`] 个字符并加省略号（按字符截，不会切坏多字节）。
+fn clamp_error(line: &str) -> String {
+    if line.chars().count() <= MAX_ERROR_CHARS {
+        return line.to_string();
+    }
+    let mut out: String = line.chars().take(MAX_ERROR_CHARS).collect();
+    out.push('…');
+    out
+}
+
+/// 从 activation.log 全文中，取这个插件**最后一条** stderr 错误行的可读摘要。
+/// 返回形如 `ModuleNotFoundError: No module named 'meta'`，
+/// 若该行前一行是 `File "…", line N, in <module>`，则拼成 `File "…", line N → ModuleNotFoundError: …`。
+/// 取不到返回 None。超过 240 字符截断并加 `…`。
+///
+/// 纯函数：不碰文件系统，方便单测直接喂字符串。
+pub(crate) fn parse_last_error(log_text: &str, id: &str) -> Option<String> {
+    // id 里带 `.`（`com.fontmanager.font-sync`），不能进正则，直接拼字面量。
+    // 结尾的 `] ` 很关键：id 是 `a.b` 时不会误配到 `[plugin:a.b-extra]`。
+    let prefix = format!("[plugin:{id}] ");
+    let mut found: Option<String> = None;
+    // 上一行本插件的 stderr 正文（traceback 的帧行要拼给下一行用）
+    let mut prev_stderr: Option<String> = None;
+
+    for raw in log_text.lines() {
+        let Some(at) = raw.find(&prefix) else {
+            // 别的插件的行：**不清** prev_stderr。多个插件同时往一份日志里写，
+            // 帧行和错误行之间被插一行别人的日志是常态；prev_stderr 只由本插件的行写入，
+            // 跨过去也不会串到别人身上（测试 `parse_last_error_isolates_target_plugin`）。
+            continue;
+        };
+        let rest = raw[at + prefix.len()..].trim();
+        if is_log_noise(rest) {
+            prev_stderr = None;
+            continue;
+        }
+        let Some(body) = rest.strip_prefix("stderr:") else {
+            // `启动 1 秒内就退出了（exit=…）` 这类行没有 stderr 标记，不是插件自己喊的错
+            prev_stderr = None;
+            continue;
+        };
+        let body = body.trim();
+        if body.is_empty() {
+            prev_stderr = None;
+            continue;
+        }
+        if is_error_line(body) {
+            let text = match prev_stderr.as_deref().and_then(traceback_frame) {
+                Some(frame) => format!("{frame} → {body}"),
+                None => body.to_string(),
+            };
+            found = Some(clamp_error(&text));
+        }
+        prev_stderr = Some(body.to_string());
+    }
+
+    found
+}
+
+/// 只读日志尾部 64 KiB，避免日志涨到几十 MB 时拖慢设置页。
+///
+/// 只在**确实有错**时调用（`Ok` 分支要 `err.is_some()`），正常插件一次 IO 都不多做。
+fn last_error_for(id: &str) -> Option<String> {
+    let path = crate::diag::log_path();
+    let mut file = std::fs::File::open(&path).ok()?;
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut buf: Vec<u8> = Vec::new();
+
+    if len > LOG_TAIL_BYTES {
+        use std::io::{Seek, SeekFrom};
+        // 文件比 64 KiB 小时 seek 到负数会失败，那就退回去从头读
+        if file.seek(SeekFrom::End(-(LOG_TAIL_BYTES as i64))).is_ok() {
+            let _ = file.read_to_end(&mut buf);
+        }
+    }
+    if buf.is_empty() {
+        // 从头读：文件不够大，或者 seek 失败。（重新 open，位置指针更干净）
+        let mut whole = std::fs::File::open(&path).ok()?;
+        whole.read_to_end(&mut buf).ok()?;
+    }
+
+    let text = String::from_utf8_lossy(&buf);
+    parse_last_error(&text, id)
+}
+
 /// 扫描插件目录（不启动任何东西）
 pub fn list() -> Vec<PluginInfo> {
     let root = plugins_dir();
@@ -694,6 +831,13 @@ pub fn list() -> Vec<PluginInfo> {
                         "上次是启用状态，这次没能启动（多半是缺解释器），重新打开一次试试".into()
                     });
                 }
+                // 有错才去翻日志：正常插件不该为了一次设置页刷新多读一遍 64 KiB。
+                // 必须在 `m.id` 被 move 进结构体之前算。
+                let last_log = if err.is_some() {
+                    last_error_for(&m.id)
+                } else {
+                    None
+                };
                 out.push(PluginInfo {
                     enabled: running.contains(&m.id),
                     running: running.contains(&m.id),
@@ -714,33 +858,37 @@ pub fn list() -> Vec<PluginInfo> {
                     bundled,
                     runtime_ready: ready,
                     requirements: m.requirements,
+                    last_log,
                 });
             }
-            Err(e) => out.push(PluginInfo {
-                id: dir
+            Err(e) => {
+                // manifest 都读不出来时没有 id，只能拿目录名当 id 去日志里找
+                let id = dir
                     .file_name()
                     .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                name: dir
-                    .file_name()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                version: String::new(),
-                summary: None,
-                description: None,
-                permissions: Vec::new(),
-                hooks: Vec::new(),
-                menus: Vec::new(),
-                settings: None,
-                dir: dir.to_string_lossy().into_owned(),
-                enabled: false,
-                running: false,
-                error: Some(e),
-                interpreter: "unknown".into(),
-                bundled: false,
-                runtime_ready: false,
-                requirements: None,
-            }),
+                    .unwrap_or_default();
+                let last_log = last_error_for(&id);
+                out.push(PluginInfo {
+                    id: id.clone(),
+                    name: id,
+                    version: String::new(),
+                    summary: None,
+                    description: None,
+                    permissions: Vec::new(),
+                    hooks: Vec::new(),
+                    menus: Vec::new(),
+                    settings: None,
+                    dir: dir.to_string_lossy().into_owned(),
+                    enabled: false,
+                    running: false,
+                    error: Some(e),
+                    interpreter: "unknown".into(),
+                    bundled: false,
+                    runtime_ready: false,
+                    requirements: None,
+                    last_log,
+                });
+            }
         }
     }
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -1813,6 +1961,8 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
             bundled,
             runtime_ready: ready,
             requirements: m.requirements,
+            // 这个兜底分支只在「插件刚起来、list() 里还没出现」时走，不可能有崩溃日志
+            last_log: None,
         }
     }))
 }
@@ -2192,6 +2342,95 @@ mod tests {
         // javascript: 伪协议尤其不能放
         assert_eq!(super::classify_open_url("javascript:alert(1)"), super::UrlTarget::Reject);
     }
+    // ── 崩溃原因：parse_last_error（纯函数，直接喂字符串，不碰真文件） ──
+
+    const FS_ID: &str = "com.fontmanager.font-sync";
+
+    /// 真实日志样本（1.5.x 用户机器上那份）：缺 `meta.py` 秒退。
+    /// 帧行 + 错误行要拼成一句「File …, line 20 → ModuleNotFoundError: …」。
+    #[test]
+    fn parse_last_error_reads_typical_traceback() {
+        let log = "\
+2026-11-12 17:26:40Z ---- FontManager 1.9.30 on windows ----
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] 已启用 com.fontmanager.font-sync v0.8.2
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: Traceback (most recent call last):
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr:   File \"C:\\Users\\u\\FontManager\\plugins\\font-sync\\syncer.py\", line 20, in <module>
+2026-11-12 17:26:41Z [plugin:com.fontmanager.font-sync] stderr: ModuleNotFoundError: No module named 'meta'
+2026-11-12 17:26:42Z [plugin:com.fontmanager.font-sync] stdout 结束，插件可能已退出
+";
+        let got = parse_last_error(log, FS_ID).expect("应该捞到崩溃原因");
+        assert!(got.contains("ModuleNotFoundError"), "实际：{got}");
+        assert!(got.contains("line 20"), "应当带上 traceback 的帧行：{got}");
+        assert!(got.starts_with("File \""), "应当以 File 片段开头：{got}");
+        assert!(got.contains(" → "), "帧行与错误行之间要有箭头：{got}");
+        // 时间戳与 `[plugin:…] stderr: ` 前缀必须被剥掉
+        assert!(!got.contains("2026-11-12"), "时间戳没剥干净：{got}");
+        assert!(!got.contains("[plugin:"), "插件前缀没剥干净：{got}");
+        assert!(!got.contains("stderr:"), "stderr 标记没剥干净：{got}");
+    }
+
+    /// 日志里压根没有这个插件 → None。
+    #[test]
+    fn parse_last_error_none_when_plugin_absent() {
+        let log = "\
+2026-11-12 17:26:41Z [plugin:other.plugin] stderr: ValueError: boom
+2026-11-12 17:26:41Z [plugin] 已启用 other.plugin v1.0.0
+";
+        assert_eq!(parse_last_error(log, FS_ID), None);
+    }
+
+    /// 只有噪音行（进程正常收尾的几种写法）→ None，不能把「正常退出」当死因。
+    #[test]
+    fn parse_last_error_ignores_noise_lines() {
+        let log = format!(
+            "\
+2026-11-12 17:26:41Z [plugin:{id}] stdout 结束，插件可能已退出
+2026-11-12 17:26:41Z [plugin:{id}] 进程已退出，运行时与令牌已回收
+2026-11-12 17:26:41Z [plugin:{id}] 启动 1 秒后运行时表里已经没它了
+2026-11-12 17:26:41Z [plugin:{id}] 已握手
+2026-11-12 17:26:41Z [plugin:{id}] 已就绪
+",
+            id = FS_ID
+        );
+        assert_eq!(parse_last_error(&log, FS_ID), None);
+    }
+
+    /// 两个插件交错写日志：只取目标插件的那条，别的插件的帧行不能拼过来。
+    #[test]
+    fn parse_last_error_isolates_target_plugin() {
+        let log = format!(
+            "\
+2026-11-12 17:26:41Z [plugin:{id}] stderr:   File \"C:\\a\\syncer.py\", line 20, in <module>
+2026-11-12 17:26:41Z [plugin:other.plugin] stderr: TypeError: cannot read property 'x'
+2026-11-12 17:26:41Z [plugin:{id}] stderr: ModuleNotFoundError: No module named 'meta'
+2026-11-12 17:26:41Z [plugin:other.plugin] stderr: KeyError: 'y'
+",
+            id = FS_ID
+        );
+        let got = parse_last_error(&log, FS_ID).expect("应该只有一条");
+        assert!(got.contains("ModuleNotFoundError"), "实际：{got}");
+        assert!(!got.contains("TypeError"), "混进了别的插件的错误：{got}");
+        assert!(!got.contains("KeyError"), "混进了别的插件的错误：{got}");
+        // 中间被别的插件插了一行，`<module>` 帧行仍属本插件 → 仍可拼上
+        assert!(got.contains("line 20"), "帧行丢了：{got}");
+    }
+
+    /// 超长错误行：截断到 240 字符 + `…`，且不切坏多字节字符。
+    #[test]
+    fn parse_last_error_clamps_long_line() {
+        let long = "E".repeat(5000);
+        let log = format!("2026-11-12 17:26:41Z [plugin:{FS_ID}] stderr: Error: {long}\n");
+        let got = parse_last_error(&log, FS_ID).expect("应该捞到");
+        assert!(got.chars().count() <= MAX_ERROR_CHARS + 1, "长度 {}", got.chars().count());
+        assert!(got.ends_with('…'), "应当以省略号结尾");
+        // 中文错误（多字节）也不能被切坏
+        let cjk = "错误".repeat(1000);
+        let log = format!("2026-11-12 17:26:41Z [plugin:{FS_ID}] stderr: Error: {cjk}\n");
+        let got = parse_last_error(&log, FS_ID).expect("应该捞到");
+        assert!(got.chars().count() <= MAX_ERROR_CHARS + 1);
+        assert!(got.ends_with('…'));
+    }
+
     #[test]
     fn install_zip_updates_existing_dir_with_same_id() {
         // 目录名 font-sync != id com.fontmanager.font-sync：更新必须落进旧目录，

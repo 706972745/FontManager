@@ -2063,6 +2063,57 @@ fn open_folder(path: String) -> Result<(), String> {
     }
 }
 
+/// activation.log 的完整路径（`%APPDATA%\FontManager\activation.log`）。
+///
+/// 界面上「查看日志」按钮先问它要路径，再交给 [`open_file`] 打开。
+/// 只返回路径、不保证文件存在：首次启动还没写过日志时前端仍能把话说全。
+#[tauri::command]
+fn log_file_path() -> Result<String, String> {
+    Ok(diag::log_path().to_string_lossy().into_owned())
+}
+
+/// 用系统默认程序打开**一个文件**（现在只有 activation.log 用）。
+///
+/// 与 [`open_folder`] 的区别：那个要求是目录，这个要求是文件，路径不存在就报错。
+/// 同样走 ShellExecuteW 的 "open" 动词 —— 用户机器上大概率没有绑定 `.log`
+/// 关联程序时，Windows 会自己弹「选择打开方式」，比我们猜编辑器靠谱。
+#[tauri::command]
+fn open_file(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+
+        let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let op: Vec<u16> = "open\0".encode_utf16().collect();
+        // SW_SHOWNORMAL
+        let ret = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                wide.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+            )
+        };
+        // ShellExecute 的返回值 <= 32 都是错误码，> 32 才算成功
+        if ret as isize > 32 {
+            Ok(())
+        } else {
+            Err(format!("ShellExecuteW failed: {}", ret as isize))
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())
+    }
+}
+
 fn allow_dir(app: &tauri::AppHandle, dir: &std::path::Path) {
     let dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     let _ = app.asset_protocol_scope().allow_directory(&dir, true);
@@ -2936,6 +2987,8 @@ pub fn run() {
             set_settings,
             default_library_dir,
             open_folder,
+            log_file_path,
+            open_file,
             apply_library_folder_icon,
             open_url,
             adobe_available,
