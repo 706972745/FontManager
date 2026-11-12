@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.7-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.9.8-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -62,13 +62,11 @@ and MCP when you want your tools to join in.
 
 ## 💡 Why FontManager?
 
-FontManager began life as [ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) —
-TheHolyOneZ's answer to the simple frustration that a proper font manager was missing on
-Linux, and the good ones elsewhere cost money. **This project is that software, iterated:**
-a customized line of builds that started from ZFontManager 0.8.0 and grew into its own
-release track, with credit and gratitude to the original author in both directions.
+FontManager started from **ZFontManager 0.8.0** and has since grown into a project
+of its own: its own code, its own release track, its own plugin platform. Beyond that
+starting point it has no shared roadmap, maintenance, or upstream.
 
-What this fork adds on top of that foundation:
+What FontManager adds:
 
 - **Automation, first-class.** An opt-in local HTTP API, an out-of-process plugin system
   with per-plugin permission tokens, and an MCP server — so agents and scripts can query
@@ -554,7 +552,7 @@ The NSIS uninstaller's confirmation page has a **"Delete app data"** checkbox:
   reinstall picks up right where you left off.
 - **Checked** — everything this app created is removed as well: `字体库`,
   `plugins`, `python-runtime` and `node-runtime` inside the install folder,
-  `%APPDATA%\FontManager` (plus the legacy `ZFontManager` folder),
+  `%APPDATA%\FontManager` (plus the `ZFontManager` folder left behind by 0.8.x),
   `%LOCALAPPDATA%\FontManager\字体库`, the three file-association registry keys,
   and HKCU font-registry values whose data points into those font libraries.
 
@@ -567,8 +565,8 @@ trigger cleanup. MSI uninstalls have no such checkbox and always keep the data.
 
 ## 🪟 Platform notes
 
-FontManager is built on Tauri v2 and inherits a cross-platform codebase, but
-this fork **ships Windows binaries** (NSIS + MSI) and is tested on Windows.
+FontManager is built on Tauri v2 and **ships Windows binaries** (NSIS + MSI),
+tested on Windows.
 System-font protection, activation and the trash all use Windows' own
 mechanisms (registry + GDI) — never by modifying font files.
 
@@ -606,33 +604,32 @@ Rust (MSVC) 1.85+ and Node 20+ are required. Rust unit tests run with
 
 ## 🙏 Credits
 
-FontManager is built by **IIEOzo**, iterated from
-**[ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) 0.8.0** by
-**[TheHolyOneZ](https://github.com/TheHolyOneZ)** — none of this exists
-without that foundation. Thank you.
+FontManager is built by **IIEOzo**, and started from **ZFontManager 0.8.0**.
+That starting point is the only thing the two projects share today.
 
 <div align="center">
 
 | | |
 |---:|:---|
-| 🧬 **Upstream project** | github.com/TheHolyOneZ/ZFontManager |
-| 👤 **Original developer** | github.com/TheHolyOneZ |
-| 🌐 **Original website** | zsync.eu |
-| 🍴 **This fork's source** | github.com/706972745/FontManager |
+| 📦 **Source** | github.com/706972745/FontManager |
+| 🔌 **Plugins** | github.com/706972745/FontManager-Plugin |
 
 </div>
 
-Found either project useful? A ⭐ genuinely helps others discover it.
+If FontManager is useful to you, a ⭐ genuinely helps others discover it.
 
 ---
 
 ## 📄 License
 
 FontManager is free software, released under the
-**GNU General Public License v3.0** — same as upstream.
+**GNU General Public License v3.0**.
 
 In human terms: you may use it, share it, and change it — and if you
 distribute a changed version, it must stay just as free for the next person.
+
+The copyright notice of the 0.8.0 code FontManager started from is kept in
+[LICENSE](LICENSE), as the GPL requires.
 
 ---
 
@@ -643,8 +640,7 @@ distribute a changed version, it must stay just as free for the next person.
 
 **FontManager** · your fonts, your machine, your rules
 
-<sub>Iterated from ZFontManager by
-<a href="https://github.com/TheHolyOneZ">TheHolyOneZ</a> · fork maintained by
-<a href="https://github.com/706972745">IIEOzo</a></sub>
+<sub>Built and maintained by <a href="https://github.com/706972745">IIEOzo</a>
+· started from ZFontManager 0.8.0</sub>
 
 </div>

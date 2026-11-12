@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.7-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-1.9.8-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -62,12 +62,11 @@
 
 ## 💡 为什么是 FontManager？
 
-FontManager 始于 [ZFontManager](https://github.com/TheHolyOneZ/ZFontManager)——
-TheHolyOneZ 对「Linux 上没有像样的字体管理器、别家好用的还要收费」这个简单苦恼的回应。
-**本项目就是这款软件的迭代版**：从 ZFontManager 0.8.0 出发的一支定制构建，
-长出了自己的发版路线。对原作者的感谢，两个方向都是真诚的。
+FontManager 从 **ZFontManager 0.8.0** 迭代而来，此后已经长成自己的项目：
+自己的代码、自己的发版路线、自己的插件平台。除了这个起点，两者不再共享任何
+路线图、维护关系或上游依赖。
 
-在这个地基之上，本分支加了什么：
+FontManager 在这个起点上加了什么：
 
 - **自动化是一等公民。** 可选开启的本地 HTTP API、带独立权限令牌的进程外插件系统、
   以及一个 MCP 服务器——Agent 和脚本无需碰界面，就能查字体、启停字族、管理快照。
@@ -482,7 +481,7 @@ Release 说明中的 SHA-256。
   备注、快照全部保留，重装后接着用。
 - **勾选**：除程序本体外，把本软件自己创建／下载的内容按白名单清干净 ——
   安装目录下的 `字体库`、`plugins`、`python-runtime`、`node-runtime`，
-  `%APPDATA%\FontManager`（及旧目录 `ZFontManager`），
+  `%APPDATA%\FontManager`（及 0.8.x 留下的 `ZFontManager` 目录），
   `%LOCALAPPDATA%\FontManager\字体库`，三个文件关联注册键，以及 HKCU 字体表里
   **值数据指向本软件字体库**的注册项；恢复到像没装过的状态。
 
@@ -531,32 +530,30 @@ npx tauri build --bundles nsis,msi
 
 ## 🙏 致谢
 
-FontManager 由 **IIEOzo** 构建，迭代自
-**[TheHolyOneZ](https://github.com/TheHolyOneZ)** 的
-**[ZFontManager](https://github.com/TheHolyOneZ/ZFontManager) 0.8.0**——
-没有那个地基，就没有这里的一切。谢谢。
+FontManager 由 **IIEOzo** 构建，从 **ZFontManager 0.8.0** 迭代而来。
+今天两者之间只剩这个起点这一层关系。
 
 <div align="center">
 
 | | |
 |---:|:---|
-| 🧬 **上游项目** | github.com/TheHolyOneZ/ZFontManager |
-| 👤 **原作者** | github.com/TheHolyOneZ |
-| 🌐 **原作者网站** | zsync.eu |
-| 🍴 **本分支源码** | github.com/706972745/FontManager |
+| 📦 **源码** | github.com/706972745/FontManager |
+| 🔌 **插件** | github.com/706972745/FontManager-Plugin |
 
 </div>
 
-觉得哪个项目有用？一个 ⭐ 都能实实在在帮到后来的人。
+觉得 FontManager 有用？一个 ⭐ 都能实实在在帮到后来的人。
 
 ---
 
 ## 📄 许可证
 
-FontManager 是自由软件，遵循 **GNU General Public License v3.0**——与上游一致。
+FontManager 是自由软件，遵循 **GNU General Public License v3.0**。
 
 用人话说：你可以使用、分享和修改它；但如果你分发修改后的版本，
 必须让下一个人获得同样的自由。
+
+迭代起点那部分代码的版权声明保留在 [LICENSE](LICENSE) 里（GPL 的要求）。
 
 ---
 
@@ -567,7 +564,7 @@ FontManager 是自由软件，遵循 **GNU General Public License v3.0**——�
 
 **FontManager** · 你的字体，你的电脑，你说了算
 
-<sub>迭代自 <a href="https://github.com/TheHolyOneZ">TheHolyOneZ</a> 的 ZFontManager ·
-由 <a href="https://github.com/706972745">IIEOzo</a> 维护</sub>
+<sub>由 <a href="https://github.com/706972745">IIEOzo</a> 构建与维护 ·
+从 ZFontManager 0.8.0 迭代而来</sub>
 
 </div>

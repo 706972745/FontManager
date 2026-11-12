@@ -28,7 +28,7 @@ const IS_LINUX = navigator.platform.toUpperCase().includes("LINUX");
 /**
  * 语言相关的两个入口都指向**本项目自己的**仓库（2026-11-08 用户要求）：
  * 「申请添加语言」直接落到 FontManager 的 issue 新建页 —— 就是「给我的 GitHub 留言」，
- * 用户不用再自己找仓库。旧地址写的是上游 TheHolyOneZ/ZFontManager，留言会跑到别人那儿去。
+ * 用户不用再自己找仓库。别改成任何旧项目的地址：留言会跑到别人那儿去。
  */
 const TRANSLATE_GUIDE_URL =
   "https://github.com/706972745/FontManager/blob/main/docs/TRANSLATING.md";

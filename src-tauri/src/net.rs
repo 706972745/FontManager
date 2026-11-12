@@ -6,7 +6,7 @@ use std::time::Duration;
 pub const USER_AGENT: &str = concat!(
     "FontManager/",
     env!("CARGO_PKG_VERSION"),
-    " (+https://zsync.eu/fontmanager/)"
+    " (+https://github.com/706972745/FontManager)"
 );
 
 pub const ALLOWED_HOSTS: [&str; 6] = [
