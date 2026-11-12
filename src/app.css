@@ -1887,7 +1887,7 @@ h2.detail-title.copy-name {
   min-width: 0;
 }
 
-/* 链接区标题：血缘说明（从 ZFontManager 迭代而来 + 链接指向原作者） */
+/* 链接区下方那句出处说明（从 ZFontManager 0.8.0 迭代而来） */
 .about-links-head {
   margin-top: 30px;
   width: min(560px, 100%);

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "FontManager",
-  "version": "1.9.7",
-  "identifier": "com.theholyonez.fontmanager",
+  "version": "1.9.8",
+  "identifier": "com.iieozo.fontmanager",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -51,7 +51,7 @@
     "publisher": "IIEOzo",
     "copyright": "Copyright © 2026 IIEOzo",
     "category": "Utility",
-    "homepage": "https://zsync.eu/fontmanager/",
+    "homepage": "https://github.com/706972745/FontManager",
     "shortDescription": "The free, open-source font manager for Linux, Windows and macOS.",
     "longDescription": "FontManager by IIEOzo — preview, tag, activate/deactivate, and install fonts across Linux, Windows and macOS from one clean native app. Free software under GPL-3.0.",
     "license": "GPL-3.0-only",

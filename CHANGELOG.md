@@ -4,6 +4,34 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.8] — 2026-11-12
+
+> **1.9.8 正式版**：把「上一个项目」的痕迹清干净。本项目从 ZFontManager 0.8.0 迭代而来，
+> 此后与它没有关系 —— 界面上、元信息里、应用标识里不再出现旧名字和旧作者信息，
+> 只保留一句出处说明。不改变数据格式，可直接覆盖升级（升级时会自动搬一次 WebView 数据目录）。
+
+### 变更
+
+- **关于页不再列「上游」那组卡片**：原来有四张卡（上游仓库、原作者 GitHub、原作者网站、
+  本项目源码），现在只留本项目自己的两个仓库（应用 + 插件），下面一句「从 ZFontManager 0.8.0
+  迭代而来」。旧的四张卡里有两张会把读者带到别的项目去，与「去哪儿看代码」冲突。
+- **两份 README**：致谢段与页脚重写，去掉上游仓库链接、原作者主页与 zsync.eu；
+  许可证段改为说明「0.8.0 那部分代码的版权声明保留在 LICENSE 里」（GPL 要求），
+  不再把本项目称作 fork。
+- **应用标识换成 `com.iieozo.fontmanager`**（原 `com.theholyonez.fontmanager`）：
+  标识会出现在 `%LOCALAPPDATA%`、注册表与通知身份里，带着上一个项目的作者名。
+  升级时**自动把旧标识的 WebView 数据目录整目录改名**，主题 / 缩放 / 面板布局不丢；
+  卸载勾选「删除应用数据」时会一并清掉旧目录。
+- **包元信息**：`package.json`、`Cargo.toml`、`tauri.conf.json` 的 homepage 从
+  `zsync.eu/fontmanager/` 改为本项目仓库；HTTP 请求的 User-Agent 同步改。
+- 删除误上传到仓库根的 `zfontmanager.mp4`（6MB，全库无引用，文件名还是旧项目名）。
+
+### 说明
+
+- `LICENSE` 里 0.8.0 起点的版权声明（TheHolyOneZ）保留 —— GPL-3.0 的要求，删掉会违反许可。
+- 安装/卸载钩子里仍认得 `%APPDATA%\ZFontManager` 和旧标识目录：那是**旧版本留下的数据路径**，
+  只用于迁移与清理，不代表与本项目有任何关系。
+
 ## [1.9.7] — 2026-11-12
 
 > **1.9.7 正式版**：字重行改成**整条都能点**。1.9.6 里只有字重名那几个字能点，

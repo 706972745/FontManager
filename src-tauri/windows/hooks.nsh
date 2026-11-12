@@ -3,8 +3,8 @@
 ; Tauri 内置卸载确认页已经有「删除应用数据」复选框：
 ;   $DeleteAppDataCheckboxState = 1  -> 用户勾选「同时删除全部数据」
 ; 内置脚本只清 $APPDATA\<bundleId> / $LOCALAPPDATA\<bundleId>（WebView2 缓存），
-; 但本软件的数据在 %APPDATA%\FontManager、旧目录 ZFontManager、以及安装目录下的
-; 字体库 / plugins / *-runtime，还有 HKCU 字体表与文件关联，这里补齐。
+; 但本软件的数据在 %APPDATA%\FontManager、0.8.x 一路用下来的旧目录 ZFontManager、
+; 以及安装目录下的字体库 / plugins / *-runtime，还有 HKCU 字体表与文件关联，这里补齐。
 ;
 ; 原则（重要）：白名单精确删除。
 ;   - 只删本软件自己创建 / 下载的目录、文件与注册表值；
@@ -81,7 +81,7 @@
       RMDir /r "$APPDATA\FontManager"
     ${EndIf}
 
-    ; 1.2.4 改名前的旧品牌目录，同样只删确认属于本软件的
+    ; 1.2.4 改名前的旧数据目录（0.8.x 一路沿用下来的），同样只删确认属于本软件的
     ${If} ${FileExists} "$APPDATA\ZFontManager\state.json"
     ${OrIf} ${FileExists} "$APPDATA\ZFontManager\font-cache.json"
     ${OrIf} ${FileExists} "$APPDATA\ZFontManager\api.json"
@@ -93,6 +93,12 @@
     ;     绝不触碰 %LOCALAPPDATA%\Microsoft\Windows\Fonts（系统/用户字体目录）。
     RMDir /r "$LOCALAPPDATA\FontManager\字体库"
     RMDir /r "$LOCALAPPDATA\FontManager\plugins"
+
+    ; 2.3b 1.9.8 之前应用标识是 com.theholyonez.fontmanager，WebView2 的用户数据目录
+    ;      就在这个旧名字下。新版启动时会把整目录改名搬走，但「从没跑过 1.9.8 就卸载」
+    ;      的机器上它还在原地 —— 勾了「删除应用数据」就该一并清掉。
+    ;      只认这个确切路径，不扫别的目录。
+    RMDir /r "$LOCALAPPDATA\com.theholyonez.fontmanager"
     RMDir /r "$LOCALAPPDATA\FontManager\python-runtime"
     RMDir /r "$LOCALAPPDATA\FontManager\node-runtime"
     RMDir "$LOCALAPPDATA\FontManager"

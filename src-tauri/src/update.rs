@@ -18,7 +18,11 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
-const UA: &str = concat!("FontManager/", env!("CARGO_PKG_VERSION"), " (+https://zsync.eu/fontmanager/)");
+const UA: &str = concat!(
+    "FontManager/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/706972745/FontManager)"
+);
 
 const API_URL: &str = "https://api.github.com/repos/706972745/FontManager/releases/latest";
 const RAW_PKG_URL: &str = "https://raw.githubusercontent.com/706972745/FontManager/main/package.json";
@@ -104,8 +108,8 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
     }
 }
 
-/// 允许落地的站点。仓库改名（本项目从 ZFontManager 改成 FontManager 就改过一次）
-/// 会让 GitHub 回 301，所以这里跟随**有限次**重定向，但落点必须还在白名单里。
+/// 允许落地的站点。仓库改过名会让 GitHub 回 301，所以这里跟随**有限次**重定向，
+/// 但落点必须还在白名单里。
 const ALLOWED_HOSTS: [&str; 5] = [
     "api.github.com",
     "raw.githubusercontent.com",

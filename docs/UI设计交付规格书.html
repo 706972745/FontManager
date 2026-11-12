@@ -272,7 +272,7 @@ a { color:#1B4FE0; }
 <h3 id="7-1-当前候选方向-按时间">7.1 当前候选方向（按时间）</h3>
 <table><thead><tr><th>方向</th><th>风格</th><th>状态</th></tr></thead><tbody><tr><td>v1 拼贴纸片</td><td>撕纸 + 胶带 + 衬线 Aa + 手写体</td><td>初稿，已存档可回退（<code>handoff/icons-final/</code>）</td></tr><tr><td>v2 深色衬线</td><td>深炭圆角卡 + 白衬线大字母 + 墨绿渐变 + 底部标签</td><td>候选，已生成全套</td></tr><tr><td><strong>v3 颗粒做旧·绿渐变</strong>（最新）</td><td>深炭圆角卡 <code>#141414</code> + 粗字母绿→深绿渐变（<code>#2e7d4f</code>→<code>#0c2018</code>）+ 颗粒做旧 + 底部 40% 白标签</td><td><strong>当前推荐候选，尚未在代码落地</strong></td></tr></tbody></table>
 <h3 id="7-2-v3-落位-当前推荐候选">7.2 v3 落位（当前推荐候选）</h3>
-<ul><li>主图标：<strong>Z</strong>（对应 ZFontManager 品牌字母），底部标签 <code>FONTMANAGER</code></li><li>四枚文件图标：<strong>S</strong> / <strong>P</strong> / <strong>L</strong> / <strong>F</strong>（Snapshot / Pack / Library / Folder），以主图标为母版图生图生成，</li></ul>
+<ul><li>主图标：<strong>Z</strong> 字形（0.8.0 时代留下的表征字母），底部标签 <code>FONTMANAGER</code></li><li>四枚文件图标：<strong>S</strong> / <strong>P</strong> / <strong>L</strong> / <strong>F</strong>（Snapshot / Pack / Library / Folder），以主图标为母版图生图生成，</li></ul>
 <p>底板、圆角、字母大小、标签位共用一套，保证统一 - 统一规则：深炭圆角卡（<code>#141414</code>，圆角比例 22.5%，四角透明）+ 绿→深绿渐变（全套唯一彩色）+ 单行 40% 白字距标签 - 成品：<code>handoff/icons-v3-final/</code>，五枚，每枚 9 个文件：<code>512 + 256/128/64/48/32/24/16</code> 七档 PNG + 一个 <code>.ico</code>（七帧） - 预览板：<code>handoff/_bgtest/v3-delivery-board.png</code>、<code>handoff/_bgtest/v3-final4-preview.png</code></p>
 <h3 id="7-3-替换硬约束-无论采用哪个方向都不变">7.3 替换硬约束（无论采用哪个方向都不变）</h3>
 <ul><li>产品图标是否替换、何时替换，由编程同事按功能优先级决定；本文仅是 <strong>UI 视觉建议 / 设计参考</strong>，不构成覆盖现有实现的规范。</li><li><code>.ico</code> 必须七帧（16/24/32/48/64/128/256）；换图标后必须通知资源管理器刷新，</li></ul>

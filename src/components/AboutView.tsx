@@ -29,19 +29,14 @@ function openUrl(url: string) {
 type LinkItem = { key: TKey; sub: string; url: string; icon: React.ReactNode };
 
 /**
- * 链接区分上下两层（2026-11-10 定）。
+ * 链接区只有一层：**本项目自己的两个仓库**（应用 + 插件）。
  *
- * 这一页的信息其实是两件事，原来压在同一个列表里，读者分不出来：
- *   ① 「这个版本是谁做的、代码在哪」—— 本项目自己的两个仓库；
- *   ② 「它从哪来」—— 上游原作者的主页与仓库。
+ * 2026-11-12 用户定：本项目与迭代起点（ZFontManager 0.8.0）早已没有关系，
+ * 页面上不再出现上游仓库 / 作者 / 网站那组卡片 —— 只留一句「从 0.8.0 迭代而来」
+ * 的说明（`about.linksTitle`），既不误导读者以为还要去别处看代码，也守住了出处。
+ * 原来那层「② 上游项目」是按 2026-11-10 的参考图排的，现在整组删掉。
  *
- * 版式照用户给的参考图统一：**圆角玻璃卡、两列铺开、左图标 + 标题 + 一行描述**。
- * 两层各用一个小分组标题分开（9px 等宽强调蓝，R4 第 4 级的做法），
- * 不再用「整个列表一根分隔线」那种把两类信息混在一起的做法。
- *
- * 顺带说明一处**故意不改**的地方：`about.source` 的仓库名仍是 `ZFontManager`。
- * 上游原名就是它，本项目后来才改名 FontManager，这条链接必须指向上游原名，
- * 跟着改名会 404。
+ * 版式不变：**圆角玻璃卡、两列铺开、左图标 + 标题 + 一行描述**（R4 那套）。
  */
 const LOCAL_LINKS: LinkItem[] = [
   {
@@ -59,22 +54,7 @@ const LOCAL_LINKS: LinkItem[] = [
   },
 ];
 
-const UPSTREAM_LINKS: LinkItem[] = [
-  {
-    key: "about.source",
-    sub: "github.com/TheHolyOneZ/ZFontManager",
-    url: "https://github.com/TheHolyOneZ/ZFontManager",
-    icon: <GithubGlyph />,
-  },
-  {
-    key: "about.githubUser",
-    sub: "github.com/TheHolyOneZ",
-    url: "https://github.com/TheHolyOneZ",
-    icon: <GithubGlyph />,
-  },
-];
-
-/** 一张链接卡。两层共用，保证两张网格长得完全一样 */
+/** 一张链接卡。 */
 function LinkCard({ item, delay }: { item: LinkItem; delay: number }) {
   const t = useT();
   return (
@@ -149,7 +129,7 @@ export function AboutView() {
         ))}
       </div>
 
-      {/* ① 本项目仓库 —— 这两张是本版真正的「去哪儿看代码」，放上面 */}
+      {/* ① 本项目仓库 —— 只留这一层（2026-11-12 删掉上游那组卡片） */}
       <div className="about-section">
         <span className="about-section-title">{t("about.localTitle")}</span>
       </div>
@@ -158,16 +138,8 @@ export function AboutView() {
           <LinkCard key={l.url} item={l} delay={staggerDelay(i)} />
         ))}
       </div>
-
-      {/* ② 上游项目 —— 说清血缘，用同一套卡片，避免两类链接混在一张网格里 */}
-      <div className="about-section">
-        <span className="about-section-title">{t("about.upstreamTitle")}</span>
-      </div>
-      <div className="about-links">
-        {UPSTREAM_LINKS.map((l, i) => (
-          <LinkCard key={l.url} item={l} delay={staggerDelay(i + LOCAL_LINKS.length)} />
-        ))}
-      </div>
+      {/* 出处只写这一句：从 ZFontManager 0.8.0 迭代而来。不再给上游链接与作者卡片 ——
+          两个项目现在没有关系，放一排「去上游看代码」的卡片只会让人以为代码在别处。 */}
       <p className="about-upstream-note">{t("about.linksTitle")}</p>
     </motion.div>
   );

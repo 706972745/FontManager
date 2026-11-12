@@ -2542,8 +2542,50 @@ pub fn log_panic(msg: &str) {
     eprintln!("[panic] {msg}");
 }
 
+/// 旧标识 → 新标识：把 `old` 整个搬到 `new`，`new` 已存在时什么都不做。
+///
+/// 抽出来是为了能单测（`migrate_webview_data_dir` 本身要读 `%LOCALAPPDATA%`，没法在测试里造）。
+fn move_dir_if_absent(old: &std::path::Path, new: &std::path::Path) -> std::io::Result<bool> {
+    if !old.is_dir() || new.exists() {
+        return Ok(false);
+    }
+    std::fs::rename(old, new)?;
+    Ok(true)
+}
+
+/// 应用标识从 `com.theholyonez.fontmanager` 换成 `com.iieozo.fontmanager`（1.9.8）。
+///
+/// WebView2 的用户数据目录名跟着标识走（`%LOCALAPPDATA%\<identifier>\EBWebView`）。
+/// 换标识却不搬目录，老用户第一次打开时会「界面回到初始状态」（主题、缩放、面板布局
+/// 都存在这里）。所以**建窗口之前**先把旧目录整目录改名。
+///
+/// 失败就算了：最坏是界面回默认，不能因为搬目录把程序卡在启动。
+/// 为什么值得换：标识会出现在 `%LOCALAPPDATA%`、注册表与通知身份里，带着上一个项目的
+/// 作者名，和现在的署名（IIEOzo）对不上。
+#[cfg(windows)]
+fn migrate_webview_data_dir() {
+    let Some(base) = std::env::var_os("LOCALAPPDATA") else {
+        return;
+    };
+    let base = std::path::PathBuf::from(base);
+    let old = base.join("com.theholyonez.fontmanager");
+    let new = base.join("com.iieozo.fontmanager");
+    match move_dir_if_absent(&old, &new) {
+        Ok(true) => crate::diag::log("[migrate] WebView 数据目录已搬到 com.iieozo.fontmanager"),
+        Ok(false) => {}
+        Err(e) => crate::diag::log(&format!(
+            "[migrate] WebView 数据目录改名失败（界面会回默认）：{e}"
+        )),
+    }
+}
+
+#[cfg(not(windows))]
+fn migrate_webview_data_dir() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 应用标识换了名字（1.9.8），WebView2 的数据目录跟着标识走，必须**在建窗口之前**搬过去
+    migrate_webview_data_dir();
     // 资源管理器双击 `.S-/.P-/.L-FontManager` 时，Windows 会把文件路径当 argv[1] 传进来。
     let opened_file = startup_file_arg();
     // 已经有一个实例在跑：把它正开着的那个窗口（哪怕正收在屏幕顶端一根细线里）
@@ -2913,6 +2955,32 @@ mod session_tests {
         assert!(!path_in_library(Some(lib), r"E:\Users\someone\字体库2\a.ttf"));
         // 没配库目录 → 用默认 managed 目录，外部路径一律不算库内
         assert!(!path_in_library(None, r"D:\downloads\a.ttf"));
+    }
+
+    /// 应用标识换名（1.9.8）时的目录搬家：旧目录在、新目录不在 → 搬过去；
+    /// 新目录已存在（已经搬过 / 用户自己建过）→ 一个字节都不动。
+    #[test]
+    fn webview_data_dir_is_moved_once_and_never_overwritten() {
+        let root = std::env::temp_dir().join(format!("zfm-migrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let old = root.join("com.theholyonez.fontmanager");
+        let new = root.join("com.iieozo.fontmanager");
+        std::fs::create_dir_all(old.join("EBWebView")).unwrap();
+        std::fs::write(old.join("EBWebView").join("marker.txt"), b"keep me").unwrap();
+
+        assert_eq!(move_dir_if_absent(&old, &new).unwrap(), true);
+        assert!(!old.exists() && new.join("EBWebView").join("marker.txt").is_file());
+
+        // 再跑一次：旧目录已经没了，无事可做
+        assert_eq!(move_dir_if_absent(&old, &new).unwrap(), false);
+
+        // 旧、新同时存在（比如用户先跑了新版又回了旧版）：不许覆盖新目录
+        std::fs::create_dir_all(old.join("EBWebView")).unwrap();
+        std::fs::write(new.join("EBWebView").join("keep.txt"), b"new").unwrap();
+        assert_eq!(move_dir_if_absent(&old, &new).unwrap(), false);
+        assert!(new.join("EBWebView").join("keep.txt").is_file());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
