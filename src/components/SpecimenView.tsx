@@ -12,7 +12,7 @@ import { useRevealFamily } from "../lib/useReveal";
 import { listChars } from "../lib/listChars";
 import { copyrightExpired, familyCopyrightClass } from "../lib/license";
 import { buildFamilyMenu, copyText } from "../lib/menus";
-import { applyViaPlugin } from "../lib/applyViaPlugin";
+import { applyToActiveApp } from "../lib/applyActive";
 import { useFamilyMembership } from "../lib/membership";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
 import { StarRating } from "./StarRating";
@@ -237,7 +237,7 @@ const SpecimenTile = memo(function SpecimenTile({
       onDoubleClick={(e) => {
         e.stopPropagation();
         copyName();
-        applyViaPlugin(family.name, lead.id);
+        applyToActiveApp(family.name, lead.id);
       }}
       onMouseEnter={previewMarquee.enter}
       onMouseLeave={previewMarquee.leave}

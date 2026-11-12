@@ -63,7 +63,7 @@ import {
 const QB_OVERSCAN = experiment.quickbarOverscan();
 const QB_ROOT_MARGIN = experiment.quickbarRootMargin();
 import type { FontFace } from "../lib/ipc";
-import { applyViaPlugin } from "../lib/applyViaPlugin";
+import { applyToActiveApp } from "../lib/applyActive";
 import { buildFaceIndexCached, entryFaceIds, faceKey } from "../lib/snapshotKey";
 import { FilterMenu } from "./TopBar";
 import { SearchSuggest, type Suggestion } from "./SearchSuggest";
@@ -218,7 +218,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       onDoubleClick={(e) => {
         e.stopPropagation();
         copyName();
-        applyViaPlugin(family.name, previewFace.id);
+        applyToActiveApp(family.name, previewFace.id);
       }}
       onKeyDown={(e) => {
         // div[role=button] 不会自己响应键盘：Enter / Space 得手动接（§5 第 31 条）。
