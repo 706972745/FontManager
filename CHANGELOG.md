@@ -4,6 +4,35 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.16] — 2026-11-12
+
+> **1.9.16 修复版**：CorelDRAW 套用字重时不再被族名抢先命中、把 Light/Negreta 悄悄降级成 Regular。
+
+### 修复
+
+- **`corel_font_names()` 的候选名顺序**：带字重的名字（显示名、PostScript 名、`Microsoft JhengHei Light`
+  这类本地化全名）现在**全部排在族名之前**，族名与「等于族名的别名」挪到最后。
+  - 老顺序是 `[label, postscript, 族名, 别名…]`，而 CorelDRAW 的别名列表是
+    `['微軟正黑體', 'Microsoft JhengHei', '微軟正黑體 Light', 'Microsoft JhengHei Light']`，
+    族名排在 Light 专属名前面 → `Story.Font = "Microsoft JhengHei"` 先成功，
+    字重被降级成 Regular，用户看到的就是「双击 Light，画布上还是 Regular」。
+  - 现在只有精确字重名都命中不了时才用族名兜底（此时降级无法避免，但至少不是首选）。
+
+## [1.9.15] — 2026-11-12
+
+> **1.9.15 修复版**：`GET /apps/active` 换成「从 Z 序最顶上往下扫」，修掉「自动应用一直说没找到设计软件」。
+
+### 修复
+
+- **`aim::active_target()` 的目标识别改为从 Z 序顶部向下扫描**（最多 200 个窗口，
+  跳过不可见 / 带 owner 的窗口，跳过自己），第一轮跳过最小化窗口，找不到再来一轮允许最小化。
+  - 老逻辑从「前台窗口往下翻」，实测两个坑：① 用户刚在速览里双击时前台有时不是我们自己
+    （热键唤出 / 焦点没跟过来），老逻辑遇到「前台是别的软件」直接返回 `None`，于是自动应用
+    永远提示「没找到正在运行的设计软件」；② 就算前台是我们，CorelDRAW 的主窗口常常压在速览
+    **上面**（Z 序更靠前），往下翻永远翻不到。
+  - 新逻辑不依赖前台：窗口被激活就会升到 Z 序顶部，所以「最上面的那个设计软件」就是最近用过的。
+- `GET /api/v1/apps/active` 的响应形状不变，插件不需要改。
+
 ## [1.9.14] — 2026-11-12
 
 > **1.9.14 正式版**：给插件开了一条 `hint` 消息通道，速览的元信息行重新能显示**常驻**提示。
