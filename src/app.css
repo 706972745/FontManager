@@ -8577,10 +8577,27 @@ body.ui-fade-out .app-frame {
     border-color var(--t-quick) ease,
     box-shadow var(--t-quick) ease;
 }
-/* 行首锚点：与主列表同一套（点 → 悬停变 2px 竖线），只是卡片矮，竖线取 64 */
+/* 行首锚点：与主列表（.family-card::before / ::after）、速览（.qb-anchor-dot /
+   .qb-anchor）、样张（.specimen-tile::before / ::after）同一套两层方案 ——
+   ::before 是圆点（只切 transform + opacity），::after 是竖线（只切 scaleY）。
+   在线卡矮，竖线取满 64px，不再算 0.8333 之类的比例。
+
+   ⚠️ 为什么必须显式写 `::after`：在线卡的 class 是 `family-card online-card`，
+   它继承了主列表那套锚点（app.css:7782-7829）。2026-11-11 主列表改成「两层」后，
+   在线卡只覆盖了 ::before、没覆盖 ::after，于是悬停时会多画一条继承来的
+   2×80 灰线，落在 left:26 / top:24 —— 比卡片内容的 22px 缩进还靠右，
+   看着像从别处裁下来的一条；同时 `.family-card:hover::before { transform: scale(0) }`
+   把在线卡自己的圆点压成 0，而它旧的 `:hover::before` 只改宽高、不恢复 transform，
+   圆点长成线的语义就整段失效了，只剩那条错位的继承线。
+
+   ⚠️ 下面四条能压过 app.css:7813-7829 靠的是「同特异性 + 源顺序在后」，
+   千万不要把这一段挪到 .family-card 锚点之前，否则错位线立刻回归。
+
+   （动效减弱：主列表 / 样张的锚点都没有 prefers-reduced-motion 分支，这里保持一致，
+   不单独自创一套。） */
 .online-card::before {
+  /* 圆点：静止时的形态 */
   content: "";
-  display: block;
   position: absolute;
   left: 14px;
   top: 17px;
@@ -8589,16 +8606,32 @@ body.ui-fade-out .app-frame {
   border-radius: 3px;
   background: var(--ui-dot);
   transition:
-    width var(--t-quick) ease-out,
-    height var(--t-quick) ease-out,
-    border-radius var(--t-quick) ease-out,
-    background-color var(--t-quick) ease-out;
+    transform var(--t-quick) ease-out,
+    opacity var(--t-quick) ease-out;
 }
-.online-card:hover::before {
+.online-card::after {
+  /* 竖线：左沿 / 顶端沿用旧圆点的 14 / 17，落点逐像素不变。
+     线高固定 64px（卡片矮），默认缩成 0，hover 长满。 */
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 17px;
   width: 2px;
   height: 64px;
   border-radius: 1px;
   background: var(--ui-line-hover);
+  transform: scaleY(0);
+  transform-origin: top center;
+  transition:
+    transform var(--t-quick) ease-out,
+    background-color var(--t-quick) ease-out;
+}
+.online-card:hover::before {
+  transform: scale(0);
+  opacity: 0;
+}
+.online-card:hover::after {
+  transform: scaleY(1);
 }
 /* 族名给锚点让位 22；下面的小字跟族名同一个左缘（用户要的就是这两行对齐） */
 .online-card .card-head {
