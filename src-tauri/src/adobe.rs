@@ -462,25 +462,38 @@ fn coreldraw_script(family_name: &str, postscript: &str, label: &str, aliases: &
         .replace("{LABEL}", &ps_quote(label))
 }
 
-/// 候选字体名：先显示名，再 PostScript 名（CorelDRAW 认哪个用哪个）
+/// 候选字体名：**带字重的名字一律排在族名前面**（CorelDRAW 认哪个用哪个）。
+///
+/// 顺序是 1.9.16 修的：老顺序是 [label, postscript, 族名, 别名…]，而 CorelDRAW 对
+/// 「微軟正黑體」这类字族的别名列表是 `['微軟正黑體', 'Microsoft JhengHei',
+/// '微軟正黑體 Light', 'Microsoft JhengHei Light']` —— 族名排在 Light 专属名**前面**，
+/// 于是 `Story.Font = "Microsoft JhengHei"` 先成功，字重被悄悄降级成 Regular，
+/// 结果就是「双击 Light，画布上还是 Regular」。
+/// 现在把族名与「等于族名的别名」挪到最后，只在没有精确字重名时才降级。
 #[cfg(target_os = "windows")]
 fn corel_font_names(family_name: &str, postscript: &str, label: &str, aliases: &[String]) -> Vec<String> {
-    let mut fonts = vec![label.to_string()];
-    if !postscript.is_empty() && postscript != label {
-        fonts.push(postscript.to_string());
+    fn push_unique(fonts: &mut Vec<String>, name: &str) {
+        let n = name.trim();
+        if !n.is_empty() && !fonts.iter().any(|x| x.eq_ignore_ascii_case(n)) {
+            fonts.push(n.to_string());
+        }
     }
-    // 字族名：PS / AI / CorelDRAW 里很多字体就是以族名登记的，
-    // 而字重级调用时 label 是「族名 字重」这种组合串，用它回退必然找不到。
-    if !family_name.is_empty() && family_name != label && family_name != postscript {
-        fonts.push(family_name.to_string());
-    }
-    // 本地化名：CorelDRAW 对中文字体一律用中文名登记（「思源宋体 CN Light」），
-    // 只试英文族名会成片地 font-not-found（实测库里 5751 个已激活字面里有 1084 个失败，
-    // 其中一多半就是这一条）。
+
+    let mut fonts: Vec<String> = Vec::new();
+    // 1) 精确字重名：显示名（「微軟正黑體 Light」）与 PostScript 名（MicrosoftJhengHeiLight）
+    push_unique(&mut fonts, label);
+    push_unique(&mut fonts, postscript);
+    // 2) 带字重的本地化名（「Microsoft JhengHei Light」这类）：同样精确，排在族名之前
     for alias in aliases {
-        let a = alias.trim();
-        if !a.is_empty() && !fonts.iter().any(|x| x.eq_ignore_ascii_case(a)) {
-            fonts.push(a.to_string());
+        if !alias.trim().eq_ignore_ascii_case(family_name) {
+            push_unique(&mut fonts, alias);
+        }
+    }
+    // 3) 族名兜底：只有前面都没命中才用它，此时字重必然降级成 Regular
+    push_unique(&mut fonts, family_name);
+    for alias in aliases {
+        if alias.trim().eq_ignore_ascii_case(family_name) {
+            push_unique(&mut fonts, alias);
         }
     }
     fonts
