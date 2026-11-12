@@ -4,6 +4,33 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.9] — 2026-11-12
+
+> **1.9.9 正式版**：修掉在线视图字体小卡悬停时那条**错位的灰线**。鼠标扫过卡片时，
+> 左侧会同时冒出两条竖线（一条在 14px 缩进处、一条在 26px 处），过渡途中还会露出一截
+> 2~4px 宽的圆头短棒。不改变数据格式，可直接覆盖升级。
+
+### 修复
+
+- **在线视图：卡片行首锚点回到「一个圆点 → 一条竖线」**。在线卡复用了主列表卡片的样式
+  （class 是 `family-card online-card`）。1.9.3 把主列表的行首锚点改成「圆点 + scaleY 竖线」
+  两层结构时，在线卡只覆盖了圆点、没覆盖竖线，于是悬停时多继承了主列表那条
+  `left:26px / top:24px` 的 80px 灰线 —— 它比卡片内容的 22px 缩进还靠右，看着像从别处
+  裁下来的一条；同时主列表「悬停收起圆点」的规则把在线卡自己的圆点也压成 0，
+  「圆点长成竖线」的动效整段失效，屏幕上只剩那条错位的继承线。
+- **给在线卡补上自己的竖线**（`left:14 / top:17 / 2×64`），圆点与竖线都只切
+  `transform` / `opacity`，与字体库列表、速览、样张三处同一套机制；静态圆点位置、
+  族名与小字的 22px 缩进逐像素不变。
+- **过渡不再用布局属性**：锚点原来靠 `width` / `height` / `border-radius` 做过渡，
+  每帧都要重排卡片内容，而且圆点是从左上角「长」出来的，中途会出现 2~4px 宽的圆头小棒。
+  现在线是固定尺寸、只切 `scaleY`，圆点只切 `transform` + `opacity`，全程走合成器。
+
+### 说明
+
+- 只改 `src/app.css`，不涉及数据格式与接口，可直接覆盖升级。
+- 字体库列表（`.family-card`）、速览（`.qb-anchor`）、样张（`.specimen-tile`）的锚点规则
+  一行未动，仅在线视图（`.online-card`）补齐缺失的那一半。
+
 ## [1.9.8] — 2026-11-12
 
 > **1.9.8 正式版**：把「上一个项目」的痕迹清干净。本项目从 ZFontManager 0.8.0 迭代而来，
