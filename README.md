@@ -293,6 +293,15 @@ Right-click a family → "Apply in {app}…":
 - **Affinity** — with auto-activation on, fonts missing from your open documents
   are activated from the library automatically
 
+With the official **“Font Apply (PS / AI / CDR)”** plugin installed there are two
+faster routes:
+
+- **Double-click any copyable spot in the QuickBar** (a whole row or an expanded
+  face row) — the font is applied to the design app you used last;
+- Right-click the plugin row → “Double-click: pick a window” → after the
+  double-click, click the target window (within 15s; the taskbar counts too).
+  Switch between the two modes right from the plugin's context menu.
+
 ### 14. ⚡ The QuickBar: switch fonts in 1 second, anywhere
 
 ![QuickBar: the docked panel of activated fonts](quickbar.png?v=1.9.3)
@@ -300,7 +309,8 @@ Right-click a family → "Apply in {app}…":
 1. Press <kbd>Alt</kbd>+<kbd>`</kbd> anywhere — the main window collapses into the
    **docked QuickBar** (change the hotkey under Settings → System → "QuickBar
    hotkey", see below)
-2. It lists only **activated** fonts: click a name to copy, ★ to favorite,
+2. It lists only **activated** fonts: click a name to copy, **double-click to apply
+   it to your design app** (needs the “Font Apply” plugin), ★ to favorite,
    the toggle to switch off, "> 3" to expand a family's faces, right-click for
    the full menu (type right in that menu to search fonts — enabled by
    default, <kbd>Tab</kbd> for all; see section 16)
