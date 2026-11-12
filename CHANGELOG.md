@@ -4,6 +4,32 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.23] — 2026-11-12
+
+> **1.9.23 修复**：卡片视图的「未渲染」偏红没生效 —— CSS 优先级问题。
+
+### 修复
+
+- `.preview-pending` / `.preview-failed` 改成 `.preview-text.preview-pending` / `.preview-text.preview-failed`。
+  文件后段还有一条 `.preview-text { color: var(--ui-fg) }`，同特异性、源顺序在后，
+  单类选择器被它压掉 —— 所以速览 / 样张 / 在线都变红了，只有卡片视图没变。
+
+## [1.9.22] — 2026-11-12
+
+> **1.9.22 可读性**：示例文字还没用真字体渲染出来时（还在加载 / 加载失败），文字改成偏红色。
+
+### 新增
+
+- 新增令牌 `--font-pending`（亮色 `#b4472f` / 暗色 `#e08a72`）与通用类 `.is-font-pending`。
+  这套配色本来刻意没有红色（纸/墨 + 单一蓝），这里只为「你看到的字不是这款字体本身」开一个例外。
+- 覆盖所有「用字体现场渲染」的位置：
+  - 完整界面卡片（`.preview-pending` / `.preview-failed`）；
+  - 样张视图（`.specimen-text-pending` / `.specimen-text-failed`）；
+  - 速览列表（`.qb-item-sample.is-font-pending`）；
+  - 详情面板的 `Aa` 与字符条、对比视图的 `Aa` 与大字号行；
+  - 在线视图的卡片族名（在线字体还没下载 / 还没加载时）与详情预览的「加载中」。
+- 加载完成的那一刻颜色自动回到正常墨色 —— 红 = 现在这行字不是它本身。
+
 ## [1.9.21] — 2026-11-12
 
 > **1.9.21 手感修复**：滚轮「手停了还在滚一屏」。把「滚动」和「滑行」拆成两段，按手机那套模型重写。

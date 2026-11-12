@@ -1123,9 +1123,9 @@ body,
   display: flex;
   align-items: center;
 }
-.preview-failed {
+.preview-text.preview-failed {
   font-size: var(--fs-13);
-  color: var(--text-tertiary);
+  color: var(--font-pending);
   font-style: italic;
 }
 .preview-skeleton {
@@ -1137,9 +1137,11 @@ body,
 /* E1 占位（2026-11-01）：字体还在排队/解码时，先用界面字体把示例文字顶上，
    加载完成换成真字体。淡色 + 半透明，和真字体的视觉差异一眼可辨，
    用户知道「马上要换」，不会当成最终效果 */
-.preview-pending {
-  color: var(--text-tertiary);
-  opacity: 0.6;
+.preview-text.preview-pending {
+  /* 还没用真字体渲染：偏红，提示「这不是这款字体本身」。
+     必须带 .preview-text 一起写：文件后段还有一条 `.preview-text { color: var(--ui-fg) }`，
+     同特异性、源顺序在后，单类选择器会被它压掉（卡片界面就是这样失效的）。 */
+  color: var(--font-pending);
 }
 
 .card-styles {
@@ -3611,12 +3613,12 @@ h2.detail-title.copy-name {
 }
 /* 字体还没到 / 加载失败：用界面字体占位，位置不跳 */
 .specimen-text-pending {
-  color: var(--text-tertiary);
-  opacity: 0.5;
+  /* 还没用真字体渲染：偏红 */
+  color: var(--font-pending);
 }
 .specimen-text-failed {
   font-size: var(--fs-12);
-  color: var(--text-tertiary);
+  color: var(--font-pending);
 }
 
 .compare-backdrop {
@@ -5408,7 +5410,7 @@ h2.detail-title.copy-name {
 }
 .online-preview-pending {
   font-size: var(--fs-11);
-  color: var(--text-tertiary);
+  color: var(--font-pending);
 }
 .online-licence {
   display: flex;
@@ -7688,6 +7690,9 @@ body.ui-fade-out .app-frame {
   --text-secondary: #9a9a94;
   --text-tertiary: #666660;
   --glass-border: #2a2a27;
+  /* 「这一格还不是真字体」的提示色。整套 token 刻意没有红色（纸/墨 + 单一蓝），
+     这里只为「示例文字还没用真字体渲染」开一个例外：偏红 = 你现在看到的字不是它本身。 */
+  --font-pending: #e08a72;
   --hero-grad: linear-gradient(180deg, currentColor, currentColor);
 }
 :root[data-theme="light"] {
@@ -7698,6 +7703,7 @@ body.ui-fade-out .app-frame {
   --text-secondary: #6b6b66;
   --text-tertiary: #9b9b95;
   --glass-border: #e2e2dd;
+  --font-pending: #b4472f;
   --hero-grad: linear-gradient(180deg, currentColor, currentColor);
 }
 
@@ -9707,3 +9713,10 @@ body.tour-qb .qb-actions .qb-btn-text {
   text-decoration: line-through;
 }
 
+
+
+/* 通用：本该用字体本身渲染、但字体还没就绪（或加载失败）的示例文字。
+   速览列表、详情面板、对比视图、在线卡片都用这一个类，避免每个组件各写一档颜色。 */
+.is-font-pending {
+  color: var(--font-pending) !important;
+}
