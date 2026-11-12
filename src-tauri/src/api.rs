@@ -468,6 +468,8 @@ fn routes() -> Router<Arc<Hub>> {
         .route("/api/v1/curation/rating", put(set_rating))
         .route("/api/v1/curation/favorite", put(set_favorite))
         .route("/api/v1/curation/tags", put(set_tags))
+        // 1.9.24：写一个分组的完整成员名单（插件同步分组用；空名单 = 删掉这个分组）
+        .route("/api/v1/curation/collection", put(set_collection_api))
         .route("/api/v1/curation/note", put(set_note))
         .route("/api/v1/export/pack", post(export_pack))
         .route("/api/v1/jobs/{id}", get(job_status))
@@ -1018,6 +1020,32 @@ async fn set_tags(
     }
     match services::curation::set_tags(&hub.store, &body.family, &body.tags) {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(e) => map_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct CollectionBody {
+    /// 分组名
+    name: String,
+    /// 这个分组的**完整**成员名单（空 = 删掉分组）。
+    /// 为什么要整份而不是「加一个 / 删一个」：插件那边是「本地 ∪ 远端」算出来的，
+    /// 整份写回才不会把别人刚加的成员漏掉；代价是同一分组并发写会后者覆盖前者。
+    #[serde(default)]
+    families: Vec<String>,
+}
+
+async fn set_collection_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<CollectionBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    match services::curation::set_collection(&hub.store, &body.name, &body.families) {
+        Ok(()) => Json(json!({ "ok": true, "name": body.name, "families": body.families.len() }))
+            .into_response(),
         Err(e) => map_err(e),
     }
 }

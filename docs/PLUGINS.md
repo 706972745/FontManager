@@ -230,6 +230,8 @@ GET  /api/v1/curation
 PUT  /api/v1/curation/note        { "family": "...", "note": "..." }
 PUT  /api/v1/curation/rating      { "family": "...", "stars": 3 }   ← 字段名是 stars，不是 rating
 PUT  /api/v1/curation/favorite    { "family": "...", "favorite": true }
+PUT  /api/v1/curation/tags        { "family": "...", "tags": ["衬线", "标题"] }
+PUT  /api/v1/curation/collection  { "name": "分组名", "families": ["族1", "族2"] }  ← 1.9.24+；整份名单，空数组 = 删掉分组
 ```
 
 带 `Authorization: Bearer <apiToken>`。完整示例见 `examples/plugin-specimen-export/`
