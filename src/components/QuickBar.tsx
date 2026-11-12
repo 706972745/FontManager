@@ -89,15 +89,26 @@ function QuickFaceRow({
   face,
   probeText,
   onHover,
+  onApply,
 }: {
   family: Family;
   face: FontFace;
   /** 用户输入的示例文字（空串 = 不标注） */
   probeText: string;
   onHover: (faceId: string | null) => void;
+  /** 双击这一行套用这个字重（1.9.13：只有速览界面传，见 FaceLine 的同名 prop） */
+  onApply?: (faceId: string) => void;
 }) {
   // 和完整界面展开后的字重行是同一个组件（0.9.3-5 起两处完全一致）
-  return <FaceLine family={family} face={face} probeText={probeText} onHover={onHover} />;
+  return (
+    <FaceLine
+      family={family}
+      face={face}
+      probeText={probeText}
+      onHover={onHover}
+      onApply={onApply}
+    />
+  );
 }
 
 function QuickItem({ family, index }: { family: Family; index: number }) {
@@ -370,6 +381,9 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
                 face={face}
                 probeText={probeText}
                 onHover={setHoverFaceId}
+                /* 速览展开的字重行同样支持双击套用（1.9.13）——
+                   与整行双击同一条链路，只是把字重换成这一行的 */
+                onApply={(id) => applyToActiveApp(family.name, id)}
               />
             ))}
           </motion.div>

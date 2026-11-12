@@ -16,7 +16,6 @@ import { spring, staggerDelay } from "../design/springs";
 import { useScriptStatus } from "../lib/scriptCoverage";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import type { FontFace } from "../lib/ipc";
-import { applyToActiveApp } from "../lib/applyActive";
 import { useFontStore, type Family } from "../state/fontStore";
 import { ScriptChip } from "./ScriptChip";
 import { MemberChip } from "./MemberChip";
@@ -71,6 +70,7 @@ export function FaceLine({
   /** 走入场动画（完整界面列表里一排排淡入）；速览里卡片本来就多，一律不走 */
   animate = false,
   index = 0,
+  onApply,
 }: {
   family: Family;
   face: FontFace;
@@ -79,6 +79,14 @@ export function FaceLine({
   onHover: (faceId: string | null) => void;
   animate?: boolean;
   index?: number;
+  /**
+   * 双击这一行要套用这个字重（1.9.13）。**只有速览界面传**。
+   *
+   * 为什么做成可选而不是无条件挂：这个组件同时被速览、完整界面的卡片、成员胶囊用，
+   * 而「双击套用」这一版只在速览里生效（完整界面的卡片 / 样张 / 详情面板都不响应双击）。
+   * 不传 = 双击什么都不多做，仍然只有单击复制 —— 与 1.9.11 及以前的行为完全一致。
+   */
+  onApply?: (faceId: string) => void;
 }) {
   const t = useT();
   const intro = useIntro();
@@ -144,17 +152,19 @@ export function FaceLine({
     copyFaceName();
   };
   /**
-   * 双击整条字重行 = 复制 + 套用这个字重到「最近在用的设计软件」（1.9.12）。
+   * 双击整条字重行 = 复制 + 套用这个字重（1.9.13，仅速览界面）。
    *
    * 让路规则与单击一致（点眼睛开关 / 别的按钮不算）：否则双击眼睛按钮会顺手套一次字体。
    * `stopPropagation` 是必须的 —— 速览里字重行嵌在整行 `.qb-item` 内，而整行也有双击，
    * 不拦的话一次双击会连套两遍（先这个字重、再 Regular）。
+   * 没传 `onApply`（完整界面）时这里什么都不做，双击只等价于两次单击复制。
    */
   const onLineDoubleClick = (e: ReactMouseEvent) => {
+    if (!onApply) return;
     if (isOwnActionTarget(e.target)) return;
     e.stopPropagation();
     copyFaceName();
-    applyToActiveApp(family.name, face.id);
+    onApply(face.id);
   };
   const onLinePointerDown = (e: ReactMouseEvent) => {
     if (isOwnActionTarget(e.target)) return;
