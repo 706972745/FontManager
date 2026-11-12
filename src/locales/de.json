@@ -1044,7 +1044,6 @@
   "settings.pluginsRefresh": "Neu suchen",
   "settings.pluginsInstallZip": "Aus ZIP installieren",
   "settings.plugCrashCause": "Ursache: {line}",
-  "settings.plugCrashNoLog": "Kein weiterer Hinweis im Log — über die Log-Schaltfläche rechts einsehen",
   "settings.pluginsOpenLog": "Log öffnen",
   "settings.pluginsOpenOne": "Ordner",
   "settings.pluginsSettings": "Plugin-Einstellungen",

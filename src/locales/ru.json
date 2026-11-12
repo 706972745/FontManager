@@ -1078,7 +1078,6 @@
   "settings.pluginsRefresh": "Пересканировать",
   "settings.pluginsInstallZip": "Установить из ZIP",
   "settings.plugCrashCause": "Причина: {line}",
-  "settings.plugCrashNoLog": "В журнале больше нет подсказок — откройте кнопку журнала справа",
   "settings.pluginsOpenLog": "Открыть журнал",
   "settings.pluginsOpenOne": "Папка",
   "settings.pluginsSettings": "Настройки плагина",

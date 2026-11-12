@@ -1056,7 +1056,6 @@
   "settings.pluginsRefresh": "重新掃描",
   "settings.pluginsInstallZip": "從 ZIP 安裝",
   "settings.plugCrashCause": "原因：{line}",
-  "settings.plugCrashNoLog": "日誌裡沒有更多線索，點右邊的日誌按鈕看完整記錄",
   "settings.pluginsOpenLog": "檢視日誌",
   "settings.pluginsOpenOne": "資料夾",
   "settings.pluginsSettings": "外掛設定",

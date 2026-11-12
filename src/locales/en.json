@@ -1073,7 +1073,6 @@
   "settings.pluginsRefresh": "Rescan",
   "settings.pluginsInstallZip": "Install from ZIP",
   "settings.plugCrashCause": "Cause: {line}",
-  "settings.plugCrashNoLog": "No further clue in the log — open the log button on the right",
   "settings.pluginsOpenLog": "Open log",
   "settings.pluginsOpenOne": "Folder",
   "settings.pluginsSettings": "Plugin settings",
