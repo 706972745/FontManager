@@ -4,6 +4,17 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.24] — 2026-11-12
+
+> **1.9.24**：给插件补一个写分组的端点（`PUT /curation/collection`），让「字体库同步」能把分组也备份走。
+
+### 新增
+
+- **`PUT /api/v1/curation/collection`**（权限 `write:curation`）：写入一个分组的**完整**成员名单，
+  空数组 = 删掉这个分组。整份写入而不是「加一个 / 删一个」，是因为插件那边算的是「本地 ∪ 远端」，
+  整份写回才不会把别人刚加的成员漏掉（代价：同一分组并发写时后者覆盖前者）。
+  服务层早就有 `services::curation::set_collection`，这次只是把它接到本地 API 上（约 20 行）。
+
 ## [1.9.23] — 2026-11-12
 
 > **1.9.23 修复**：卡片视图的「未渲染」偏红没生效 —— CSS 优先级问题。
