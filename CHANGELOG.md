@@ -4,7 +4,35 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [1.9.10] — 2026-11-19
+## [1.9.11] — 2026-11-12
+
+> **1.9.11 正式版**：给插件开两个端点 —— **套用字体**和**问当前设计软件**。
+> 插件从此不必自己实现 COM / JSX，套用引擎只有一份。纯加法，不改任何现有界面与行为。
+
+### 新增
+
+- **`POST /api/v1/fonts/apply`（权限 `write:apply`）**：把字体套用到
+  Photoshop / Illustrator / CorelDRAW。请求体 `{app, postscriptName, label, family, aliases}`，
+  返回 `{"outcome": "applied:1"}`，`outcome` 原样透传引擎的返回值
+  （`applied:N` / `created` / `no-text-selected` / `font-not-found` / `no-document` /
+  `not-running` / `app-no-response` / `launch-timeout` / `ps-error:…`）。
+  内部走 `spawn_blocking`：套用要起 PowerShell 并轮询，PS/AI 最多 30 秒、CorelDRAW 最多 60 秒。
+- **`GET /api/v1/apps/active`（权限 `read:apps`）**：返回「最近在用的设计软件」
+  `{app, exe}`（没有时 `{"app":null,"exe":""}`）。前台是 FontManager 自己或任务栏 / 桌面时，
+  沿 Z 序往下翻最多 30 个窗口，跳过不可见 / 最小化 / 带 owner 的窗口，
+  第一个属于 PS/AI/CDR 的就是答案 —— 所以「点任务栏切过去」也认。
+- 权限表新增 `write:apply`、`read:apps` 两项。`POST /fonts/apply` 的精确匹配排在
+  `starts_with("/fonts/")` 之前，否则会被当成 `write:fonts`（顺序有单测钉住）。
+
+### 说明
+
+- **为什么开端点而不是让插件自己写 COM**：套用引擎里已经有启用检查、CJK 提醒、
+  CorelDRAW 常驻 COM 宿主、9 种 outcome。插件复制一份，等于主程序修好的问题在插件里还在。
+- 纯加法：不动任何现有界面，不动 1.9.10 的「速览双击示例文字」；端点出错一律 400 + 人话，
+  handler 里不会 panic，挂了也不影响主程序。
+- 端点文档见 `docs/PLUGINS.md`（权限表 + 请求/响应示例 + outcome 列表）。
+
+## [1.9.10] — 2026-11-12
 
 > **1.9.10 正式版**：速览里多了一条更快的路 —— **双击示例文字，然后点一下目标窗口**，
 > 字体就套过去了。不改变数据格式，可直接覆盖升级。

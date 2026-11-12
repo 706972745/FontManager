@@ -235,6 +235,63 @@ PUT  /api/v1/curation/favorite    { "family": "...", "favorite": true }
 带 `Authorization: Bearer <apiToken>`。完整示例见 `examples/plugin-specimen-export/`
 （右键字族导出示例图 PNG，启动时自动跑一遍 API/权限自检）。
 
+### 套用字体到 PS / AI / CDR（1.9.11 起）
+
+`POST /api/v1/fonts/apply` —— 需要 `write:apply`。
+
+**为什么要开这个端点**：套用这件事主程序里已经有一整套引擎（`adobe.rs`：启用检查、
+CJK 提醒、CorelDRAW 常驻 COM 宿主、9 种 outcome）。插件自己写 COM / JSX / PowerShell
+等于把它复制一遍，两边必然跑偏 —— 主程序修好的问题插件里还在。所以插件只负责
+「选字体、认目标、翻提示」，套用一律走这里。
+
+```json
+POST /api/v1/fonts/apply
+{
+  "app": "photoshop",
+  "postscriptName": "SourceHanSansSC-Regular",
+  "label": "思源黑体 Regular",
+  "family": "思源黑体",
+  "aliases": ["思源黑体 CN"]
+}
+```
+
+- `app`：`photoshop` / `illustrator` / `coreldraw`（其它值 → **400**）
+- `postscriptName` / `family` 必填且非空（缺了 → **400**）
+- `label` 只用于提示文案，可省；省了 / 空串时回退成 `family`
+- `aliases` 是本地化族名候选（CorelDRAW 认中文名，只给英文名会成片找不到），可省
+
+成功返回 `200 {"outcome": "applied:1"}`，`outcome` **原样透传**引擎的返回值：
+
+| outcome | 含义 |
+|---|---|
+| `applied:N` | 应用到 N 个图层 / 文本框 |
+| `created` | 目标软件里没有选中文字，新建了一个文本框写进去 |
+| `no-text-selected` | 选中的对象不是文字 |
+| `font-not-found` | 目标软件里没这个字体（多半没启用 / 装完没重启软件） |
+| `no-document` | 目标软件没打开文档 |
+| `not-running` | 目标软件没在运行 |
+| `app-no-response` | 有窗口但不响应（弹着对话框 / 正在渲染） |
+| `launch-timeout` | 尝试拉起软件但超时 |
+| `ps-error:…` | 脚本层报错，冒号后是原文 |
+
+调用方要留足超时：PS / AI 最多 30 秒，CorelDRAW 最多 60 秒（内部会起 PowerShell 并轮询）。
+建议 `timeout=90`。
+
+### 最近在用的设计软件（1.9.11 起）
+
+`GET /api/v1/apps/active` —— 需要 `read:apps`。给插件的「自动」项用：
+
+```json
+{"app": "photoshop", "exe": "photoshop.exe"}
+{"app": null, "exe": ""}
+```
+
+判定规则：先看前台窗口；前台是 FontManager 自己、或任务栏 / 桌面（`explorer.exe`）时，
+沿 Z 序往下最多翻 30 个窗口，跳过不可见 / 最小化 / 带 owner 的窗口，第一个属于
+PS/AI/CDR 的就是答案。前台是别的软件时直接返回 `null` —— 那种情况下用户确实不在用设计软件。
+
+没有目标时**也是 200**（`{"app":null,"exe":""}`），这是正常状态，不是错误。
+
 ## 权限：403 到底是谁拦的
 
 插件跑在独立进程里，**所有能力都通过本地 API 走 HTTP**，所以「权限」不是一句口号，
@@ -271,6 +328,8 @@ PUT  /api/v1/curation/favorite    { "family": "...", "favorite": true }
 | `write:curation` | 改上面这些 | `PUT /curation/{note,rating,favorite,tags}` |
 | `export` | 触发打包导出、查导出进度 | `POST /export/pack`、`GET /jobs/{id}` |
 | `import` | 导入字体包 | `POST /import` |
+| `write:apply` | **把字体套用到 Photoshop / Illustrator / CorelDRAW**（会去驱动别人的软件） | `POST /fonts/apply` |
+| `read:apps` | 问「现在最近在用的是哪个设计软件」 | `GET /apps/active` |
 
 **`*` 不等于全权，插件写了也拿不到**（1.9.2 起）：签发时按上表白名单过滤，`*` 和拼错的
 权限名会被直接丢掉，`activation.log` 里留一行「申报了不受支持的权限 […]，已忽略」。
@@ -312,7 +371,11 @@ log(f"我是「{health['tokenName']}」，权限：{health['permissions']}")
 
 `perm_for` 是个 `match`，**从上往下取第一条命中的**，顺序很要紧：`GET /snapshots` 必须写在
 `_ if p.starts_with("/snapshots")` 之前，否则「查快照」会被「写快照」那条吃掉。
-默认分支 `_ => None` 是**不校验**，只在 `/health` 这种明确无害的端点上留口子。
+1.9.11 的 `POST /fonts/apply` 同理 —— 它必须写在 `POST if p.starts_with("/fonts/")` 之前，
+否则会拿到 `write:fonts`（能改系统字体表的权限）而不是 `write:apply`。
+`api.rs` 里有条单测（`apply_and_active_use_their_own_perm`）钉住这个顺序。
+默认分支 `_ => None` 是**不校验**，只在 `/health` 这种明确无害的端点上留口子；
+另有 `every_route_is_gated` 单测直接读源码里的 `.route(...)`，新端点忘了登记权限会立刻变红。
 
 ## 调试
 
