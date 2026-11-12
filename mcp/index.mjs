@@ -18,6 +18,20 @@ import path from "node:path";
 import readline from "node:readline";
 
 const PROTOCOL_VERSION = "2024-11-05";
+
+/**
+ * 这个 MCP 实例叫什么。
+ *
+ * 主程序 1.9.26 起允许「按客户端单独授权」：同时接了 Claude / Cursor / WorkBuddy 时，
+ * 可以在各自的 MCP 配置里加 `"env": { "ZFM_CLIENT_NAME": "claude" }`，
+ * 请求头就变成 `x-zfm-client: mcp:claude`，能分别授权 / 收回。
+ * 不设这个变量 = 通用 `mcp`（勾了 `mcp` 就等于允许所有 MCP）。
+ */
+const CLIENT_NAME = (() => {
+  const raw = String(process.env.ZFM_CLIENT_NAME || "").trim().toLowerCase();
+  if (!raw) return "mcp";
+  return /^[a-z0-9._-]{1,40}$/.test(raw) ? `mcp:${raw}` : "mcp";
+})();
 const SERVER_INFO = { name: "fontmanager", version: "1.0.0" };
 
 function apiJsonPath() {
@@ -50,7 +64,7 @@ async function call(method, route, body) {
       Authorization: `Bearer ${token}`,
       // 主程序 1.9.25 起：危险操作要「总开关 + 单独授权」两道闸，
       // MCP 靠这个头把自己和「本地 API 脚本」区分开。
-      "x-zfm-client": "mcp",
+      "x-zfm-client": CLIENT_NAME,
       "Content-Type": "application/json",
     },
     body: body === undefined ? undefined : JSON.stringify(body),

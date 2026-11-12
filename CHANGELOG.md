@@ -4,6 +4,21 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.26] — 2026-11-12
+
+> **1.9.26**：多个 MCP / 多个本地 API 脚本可以分开授权了 —— 客户端标识支持带名字。
+
+### 新增
+
+- 客户端标识支持 `mcp:<名字>` / `api:<名字>`（请求头 `x-zfm-client`），
+  设置页「允许谁做重大操作」可以按实例勾选，并支持手动添加。
+- 授权规则：勾 `mcp`（或 `mcp:*`）= **这一类全部允许**（含带名字的）；
+  只勾 `mcp:claude` = 只放行那一个。插件 id 仍然只认精确匹配。
+- MCP 端加 `ZFM_CLIENT_NAME` 环境变量即可带名字，不改代码：
+  `"env": { "ZFM_CLIENT_NAME": "claude" }` → 请求头变成 `mcp:claude`。
+- 客户端标识做了白名单清洗（小写、`[a-z0-9._-:]`、≤48 字符），非法值退回 `api`。
+- 文档：`docs/PLUGINS.md` 补授权矩阵，`mcp/README.md` 补多客户端接入示例。
+
 ## [1.9.25] — 2026-11-12
 
 > **1.9.25**：所有「重大操作」改成两道闸 —— 总开关 + 单独授权，插件 / 本地 API / MCP 一视同仁。

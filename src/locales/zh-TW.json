@@ -1135,5 +1135,9 @@
   "online.subsetsLabel": "字元集",
   "settings.apiDangerousAllow": "允許誰做重大操作",
   "settings.apiClientApi": "本地 API（腳本）",
-  "settings.apiClientMcp": "MCP"
+  "settings.apiClientMcp": "MCP",
+  "settings.apiClientAdd": "新增",
+  "settings.apiClientAddHint": "mcp:claude",
+  "settings.apiClientAddBad": "格式要像 mcp:claude 或 api:backup（冒號前是 api / mcp）",
+  "settings.apiDangerousAllowHint": "勾 api / mcp = 這一類全部允許（含帶名字的）；想只放行某一個，就按 mcp:名字 單獨新增。"
 }
