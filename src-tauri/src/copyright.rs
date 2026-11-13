@@ -1735,6 +1735,49 @@ mod tests {
         assert_eq!(class_from_status("auto"), None);
     }
 
+    /// 「手动状态 → 目录后缀」的**约定表**（用户 2026-11-13 钉死）：
+    /// 后缀字符串一个字都不能动 —— 改一个字，已有库里的目录就会在下一次同步时被
+    /// 批量改名（用户抱怨的「乱掉」放大器），而且旧后缀还被 `suffix_class` 读回来
+    /// 参与展示与对账。七个输入各断言一次，谁改了这张表谁就会在这里红。
+    #[test]
+    fn manual_status_to_dir_suffix_table() {
+        // status → 手动结论；auto 没有手动结论，调用方退回 classify_dir 保留旧后缀
+        let cases: &[(&str, Option<CopyrightClass>)] = &[
+            ("auto", None),
+            ("free_commercial", Some(CopyrightClass::FreeCommercial)),
+            ("free_personal", Some(CopyrightClass::FreePersonal)),
+            ("paid", Some(CopyrightClass::Paid)),
+            ("timelimited", Some(CopyrightClass::Timelimited)),
+            ("unknown", Some(CopyrightClass::Unknown)),
+            // 旧版笼统值：与前端 normalizeCopyright("free") 同口径 → 商用免费，
+            // 否则两端口径相反会把目录在（商用免费）↔（未知版权）之间来回改名
+            ("free", Some(CopyrightClass::FreeCommercial)),
+        ];
+        for (status, want) in cases {
+            assert_eq!(class_from_status(status), *want, "status={status:?}");
+        }
+
+        // 后缀字面量（目录名「（xx）」里的那部分），一个字都不能改
+        assert_eq!(suffix(CopyrightClass::FreeCommercial), "商用免费");
+        assert_eq!(suffix(CopyrightClass::FreePersonal), "个人免费");
+        assert_eq!(suffix(CopyrightClass::Paid), "收费字体");
+        assert_eq!(suffix(CopyrightClass::Timelimited), "限时字体");
+        assert_eq!(suffix(CopyrightClass::Unknown), "未知版权");
+
+        // round-trip：family_dir_name 生成的目录名能被 suffix_class 认回同一个分类
+        let classes = [
+            CopyrightClass::FreeCommercial,
+            CopyrightClass::FreePersonal,
+            CopyrightClass::Paid,
+            CopyrightClass::Timelimited,
+            CopyrightClass::Unknown,
+        ];
+        for class in classes {
+            let name = family_dir_name("Lora", class);
+            assert_eq!(suffix_class(&name), Some(class), "name={name}");
+        }
+    }
+
     #[test]
     fn reads_folder_notes() {
         assert_eq!(
