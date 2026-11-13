@@ -290,6 +290,19 @@ interface FontStore {
   /** 种子是否已到达（决定「该等多久才查断点 / 走恢复流程」） */
   seedReady: boolean;
   /**
+   * 本会话的首次全量扫描是否已经落地（2.1.4）。
+   *
+   * 侧栏 `…` 只认它，不认 `phase`：`phase === "scanning"` 在**每次**重扫时都会成立
+   * （导入字体、watcher 发现变化、改字体库目录都会触发 rescan），而 2.1.3 那时计数
+   * 用的是旧 `fonts`、显示的是真实数字 —— 改用 phase 判定的话，用户每导入一个字体
+   * 就会看到侧栏数字集体变成 `…`，第一反应是「数据丢了」。用户说的「读取中用 …」
+   * 指的是**打开软件后的首次读取**，不是每次重扫。
+   *
+   * 置位点在 `applyFullScan`（全量结果真正落地的那一处）；首次扫描失败不置，
+   * 此时侧栏保持 `…`（确实还不知道），等重试成功再变成真实数字。
+   */
+  fullScanDone: boolean;
+  /**
    * 落地种子（`scan:seed` 的出口）。
    * 种子**写进 `fonts`**（不是另开一份临时列表）：主列表组件不换实例、不重挂，
    * 骨架屏条件随之变成「fonts 为空」，全量完成时只有一次原地替换（ADR-07）。
@@ -1724,6 +1737,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   cancelApply: () => set({ applyCancelled: true }),
   overrides: new Map<string, boolean>(),
   seedReady: false,
+  fullScanDone: false,
   fonts: [],
   tags: {},
   collections: {},
@@ -1838,6 +1852,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
     set({
       fonts: merged,
       phase: "ready",
+      // 侧栏从 `…` 换成真实数字的唯一时机：全量结果真的落地了（见 fullScanDone 的注释）
+      fullScanDone: true,
       // 路径已不存在的覆盖项留着只会在下一次全量里误伤同名文件（回收站还原会复用路径）
       overrides: pruneOverrides(
         s.overrides,
@@ -1847,7 +1863,11 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   noteOverrides: (paths, active) => {
-    // 扫描结束后再记没有任何意义（那时结果已经是新的了），只会让 map 无限增长
+    // 扫描结束后再记没有任何意义（那时结果已经是新的了），只会让 map 无限增长。
+    // 注意：调用点一律放在 `await ipc.setFontsActive(...)` **成功之后**，而不是动手之前。
+    // 反例：启停失败时 catch 会回滚 UI 并 `rescan()`，若这时已经记了 override，
+    // 全量落地会把一次**没生效**的启用当成用户意图照办 —— 界面从此一直撒谎（显示已启用、
+    // 实际没注册），而且要等到下次重启才可能对上。记在成功后等价于「只记真正生效的决策」。
     if (get().phase !== "scanning") return;
     const next = nextOverrides(get().overrides, paths, active);
     if (next !== get().overrides) set({ overrides: next });
