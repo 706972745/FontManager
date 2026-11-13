@@ -2,7 +2,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 /// 软件最多保存的快照数量（超出后滚动淘汰最旧的）
 pub const MAX_SNAPSHOTS: usize = 5;
@@ -276,11 +277,260 @@ impl AppState {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// 数据根（2.1.5）
+//
+// 需求原话：「除了必须留在 C 盘的系统级物，缓存 / 数据 / 产物 / 日志 / 插件都放到
+// 安装地址下面」。于是 2.1.5 起 `<安装目录>\data` 是全部运行时数据的家，
+// `%APPDATA%\FontManager` 退化成「老位置」+「最后兜底」。
+//
+// 这一段的代码密度高、事故面也高（老用户的标签/分组/收藏/台账/快照都在里面），
+// 所以每一处都写清了「不这么做会出什么事故」。改之前先读 ADR-D3/D4（docs/架构设计-2.1.5）。
+// ══════════════════════════════════════════════════════════════════════════
+
+/// 产品目录名。必须与 `tauri.conf.json` 的 `productName` 保持一致 ——
+/// 它同时是 `%APPDATA%\FontManager` 里的那个目录名（1.2.4 至今的老位置）。
+pub const PRODUCT: &str = "FontManager";
+
+/// 安装器在 `<安装目录>\data\.zfm-data-root` 写下的标记文件。
+///
+/// ⚠️ 它只表示「这个安装根启用了 data 布局」，**不代表迁移已经完成**。
+/// 迁移是否完成只认 `state.json` 是否存在（见 [`migrate_to_data_root`]）：
+/// 标记由安装器写、迁移由程序做，两者的时间点差着一次启动，混用必然出错。
+pub const DATA_ROOT_MARKER: &str = ".zfm-data-root";
+
+/// 「上次迁移搬了一半」的标记（内容：时间戳 + 源路径）。
+///
+/// 它挡的是本设计里最致命的一条事故链：
+/// 迁移中途失败 → data 目录里只有半个 `state.json.tmp` → 下次启动看到空目录 →
+/// 当成全新安装 → 把默认 state 写进去 → **用户几年的账本被一份空账本盖掉**。
+/// 只要这个文件在，`load()` 就绝不会以「空账本」启动。
+const MIGRATE_MARKER: &str = ".zfm-migrate-in-progress";
+
+/// 写探针用的文件名（建完立刻删，绝不留下来）。
+const PROBE_FILE: &str = ".zfm-probe";
+
+/// `data_root` 是怎么定下来的。只用于日志与排障，**不参与任何业务判断**
+/// （一旦有人拿它做 `if`，路径就又会分叉出第二种真相）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DataRootSource {
+    /// 环境变量 `ZFM_DATA_DIR` 显式指定（排障 / QA 自动化，不写进用户文档）
+    EnvOverride,
+    /// `<exe 所在目录>\data` —— 正常路径
+    InstallDir,
+    /// `%LOCALAPPDATA%\FontManager\data` —— 装到 Program Files 时的回退
+    LocalAppData,
+    /// `%APPDATA%\FontManager` —— 最后兜底，保证软件永远不会因「没地方写」而崩
+    RoamingFallback,
+    /// macOS / Linux：与 2.1.4 完全一致，不做任何改道
+    NotWindows,
+}
+
+impl DataRootSource {
+    /// 日志里用的短标签。`grep source=install` 就知道这台机器的数据在哪。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::EnvOverride => "env",
+            Self::InstallDir => "install",
+            Self::LocalAppData => "localappdata",
+            Self::RoamingFallback => "roaming(fallback)",
+            Self::NotWindows => "legacy",
+        }
+    }
+}
+
+/// 解析结果：路径 + 它是怎么来的
+#[derive(Clone, Debug)]
+pub struct DataRoot {
+    pub path: PathBuf,
+    pub source: DataRootSource,
+}
+
+/// 应用数据根目录 —— **全软件唯一入口**。
+///
+/// 名字故意**不**从 `app_data_dir` 改成更准确的名字：全仓十几个调用点靠这个
+/// 语义变化自动跟随；改名得到的是「更准确的名字」，付的代价是十几处 diff ——
+/// 而漏改一处，就会有一部分数据顽固地留在 C 盘，且只在「装到 D 盘」的机器上才暴露。
+pub fn data_root() -> PathBuf {
+    effective_data_root().path
+}
+
+/// 数据根 + 判定来源（只给启动日志与排障用）
+pub fn data_root_info() -> (PathBuf, DataRootSource) {
+    let root = effective_data_root();
+    (root.path, root.source)
+}
+
+/// 2.1.4 及更早的位置：`%APPDATA%\FontManager`。
+///
+/// 只给三件事用，**不要再往业务代码里扩散**：
+///   1. 迁移的源目录；
+///   2. `plugins` 的老位置判定（`plugins::legacy_plugins_dir()` 的「老用户不搬家」规则
+///      依赖这个确切路径，改错的表现是「老用户几十个插件在界面上全部消失」）；
+///   3. 卸载白名单里的整删目标。
+pub fn legacy_app_data_dir() -> PathBuf {
+    // Windows 上 data_dir() 与 config_dir() 指向同一个目录（%APPDATA%），所以 2.1.4 的
+    // app_data_dir()（走 data_dir）与 state_path()（走 config_dir）从来没有分开过。
+    // 但 Linux 上两者不是同一个目录（~/.local/share vs ~/.config），而**账本一直写在
+    // config_dir 那一侧**（老的 state_path 就是这么写的）。这里必须跟着账本走：
+    // 选错那个，Linux 用户升个级就会「标签、分组、收藏全空」。
+    #[cfg(target_os = "windows")]
+    let base = dirs::data_dir();
+    #[cfg(not(target_os = "windows"))]
+    let base = dirs::config_dir();
+    base.unwrap_or_else(|| PathBuf::from(".")).join(PRODUCT)
+}
+
+/// 程序自己所在的目录。调试构建返回 `None`。
+///
+/// 为什么调试构建不认：`cargo run` / `cargo test` 跑在 `rust-target\{debug,release}` 下，
+/// 往那里写 1.7 MB 账本，下一次 `cargo clean` 就顺手把用户数据删了。
+fn install_dir() -> Option<PathBuf> {
+    if cfg!(debug_assertions) {
+        return None;
+    }
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.to_path_buf())
+}
+
+/// 写探针：建目录 → 写一个空文件 → 立刻删。
+///
+/// 为什么用「真的写一遍」而不是读 ACL：ACL 要自己推演「当前用户 / 管理员组 / 继承的
+/// 拒绝项」算出来的 effective rights，代码量与出错面都远大于写一个 0 字节文件；
+/// 而探针是**结果导向**的，Windows 怎么算权限都对。口径与 `scanner::is_writable_dir()`
+/// 一致（那边已经跑了一个大版本，坑都踩过了：探针文件必须删掉、别写带 BOM 的内容）。
+fn probe_writable(dir: &Path) -> bool {
+    if fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(PROBE_FILE);
+    match fs::write(&probe, b"") {
+        Ok(()) => {
+            let _ = fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// 「本次进程已经把数据根钉回老位置」。
+///
+/// 只在迁移失败时置位（见 [`effective_data_root`]）。迁移成功 / 无需迁移时永远是 false。
+static MIGRATION_FAILED: AtomicBool = AtomicBool::new(false);
+
+/// 只在进程生命周期内解析一次（`OnceLock`）。
+fn data_root_cached() -> &'static DataRoot {
+    static CELL: OnceLock<DataRoot> = OnceLock::new();
+    // 为什么必须缓存：`diag::log()` **每次写日志**都会问一次路径，而探针要
+    // create_dir_all + 写文件 + 删文件。更关键的是「锚定一次」的语义 ——
+    // 启动后路径不允许再变，否则同一进程里 state.json 会写到两个地方。
+    CELL.get_or_init(resolve_data_root)
+}
+
+/// 本次进程**实际**使用的数据根（迁移失败时会被钉回老位置）。
+///
+/// 为什么不直接改 `DATA_ROOT` 里那份缓存：`OnceLock` 天生不能再写，
+/// 而「迁移失败 → 本次继续用老位置」是设计里明确要求的行为（§5.2 失败矩阵）。
+/// 用两个静态量分工：`DATA_ROOT` 记「本来想去哪」，这个函数给出「最终落在哪」。
+fn effective_data_root() -> DataRoot {
+    let base = data_root_cached();
+    if MIGRATION_FAILED.load(Ordering::Relaxed) && base.source != DataRootSource::NotWindows {
+        return DataRoot {
+            path: legacy_app_data_dir(),
+            source: DataRootSource::RoamingFallback,
+        };
+    }
+    base.clone()
+}
+
+/// 四级判定（顺序不能变，见 ADR-D3）
+fn resolve_data_root() -> DataRoot {
+    // ── 非 Windows：一行都不能变 ──
+    //
+    // macOS 的安装单位是 .app 包，签名后 `Contents/MacOS/data` 不可写（Gatekeeper /
+    // App Translocation 会把它变只读或变副本），数据写进去 = 用户数据凭空消失；
+    // Linux 走 deb/AppImage，`/usr/lib/...` 同样不可写。而这次的改道需求本身
+    // 就来自「Windows 安装包 + 装到 D 盘」，只有 Windows 有 `$INSTDIR` 这个概念。
+    #[cfg(not(target_os = "windows"))]
+    {
+        return DataRoot {
+            path: legacy_app_data_dir(),
+            source: DataRootSource::NotWindows,
+        };
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // 0. 显式覆盖：排障 / QA 自动化。必须是绝对路径，且真的可写，否则忽略。
+        if let Some(dir) = std::env::var_os("ZFM_DATA_DIR")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+        {
+            if probe_writable(&dir) {
+                return DataRoot {
+                    path: dir,
+                    source: DataRootSource::EnvOverride,
+                };
+            }
+        }
+
+        // 调试构建不进安装目录（会污染 rust-target\debug）→ 直接走老位置
+        let Some(base) = install_dir() else {
+            return DataRoot {
+                path: legacy_app_data_dir(),
+                source: DataRootSource::RoamingFallback,
+            };
+        };
+
+        let dir = base.join("data");
+
+        // 1. 已存在即锚定 —— 绝不因为一次探针抖动就在两个位置之间横跳。
+        //
+        //    反例（每次重新探测）：用户今天以管理员身份跑了一次（Program Files 可写），
+        //    明天普通权限跑（不可写）→ 数据一半在新位置一半在 LOCALAPPDATA，
+        //    用户看到的是「我的标签怎么少了一半」，而我们连查都没法查。
+        //
+        //    判据里为什么还认 `.zfm-migrate-in-progress`：那是「上次搬到一半」的现场，
+        //    必须继续锚在这里重试，否则会留下一个半搬的空目录、下次又跑到别处去。
+        if dir.is_dir()
+            && (dir.join("state.json").is_file()
+                || dir.join(DATA_ROOT_MARKER).is_file()
+                || dir.join(MIGRATE_MARKER).is_file())
+        {
+            return DataRoot {
+                path: dir,
+                source: DataRootSource::InstallDir,
+            };
+        }
+        // 2. 可写 → 直接建（首次安装 / 首次以可写权限运行）
+        if probe_writable(&dir) {
+            return DataRoot {
+                path: dir,
+                source: DataRootSource::InstallDir,
+            };
+        }
+        // 3. 回退：默认安装目录就是 %LOCALAPPDATA%\FontManager，所以**对默认安装的用户，
+        //    这一条与第 2 条指向同一个目录** —— 不可能出现「回退后到处是第二份数据」。
+        //    这是特意选的，不是巧合。
+        if let Some(local) = dirs::data_local_dir() {
+            let dir = local.join(PRODUCT).join("data");
+            if probe_writable(&dir) {
+                return DataRoot {
+                    path: dir,
+                    source: DataRootSource::LocalAppData,
+                };
+            }
+        }
+        // 4. 兜底：2.1.4 的老位置。宁可留在 C 盘，也不能让软件因为「没地方写数据」而崩。
+        DataRoot {
+            path: legacy_app_data_dir(),
+            source: DataRootSource::RoamingFallback,
+        }
+    }
+}
+
 fn state_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("FontManager")
-        .join("state.json")
+    data_root().join("state.json")
 }
 
 /// 偏好的独立小文件（1.8.1 审查项 P3）。
@@ -425,14 +675,15 @@ pub fn save_prefs(state: &AppState) -> Result<(), String> {
     write_json_atomic(&prefs_path(), &state.prefs)
 }
 
+/// 2.1.5 起只是 [`data_root`] 的转发 —— 名字保留是为了不动那十几个调用点
+/// （改名 = 十几处 diff，漏一处的后果是「一部分数据顽固地留在 C 盘」，
+/// 且只在装到 D 盘的机器上才暴露）。
 pub fn app_data_dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("FontManager")
+    data_root()
 }
 
 pub fn trash_dir() -> PathBuf {
-    app_data_dir().join("Trash")
+    data_root().join("Trash")
 }
 
 /// 1.2.4 改名后数据目录也跟着换了名字。
@@ -446,7 +697,10 @@ pub fn trash_dir() -> PathBuf {
 ///
 /// 旧目录名拆成两段拼接：源码里不再出现旧品牌名，但这段迁移**绝不能删** ——
 /// 删了等于让 1.2.3 及以前的用户升级后收藏、标签、评分全部消失。
-fn migrate_legacy_dirs() {
+///
+/// 2.1.5：日志改成「先收集、后统一写」。原因见 [`migrate_to_data_root`]：
+/// 这一步跑的时候数据根还没定下来，直接 `diag::log` 会把日志写进一个随后不再使用的位置。
+fn migrate_legacy_dirs(notes: &mut Vec<String>) {
     const SKIP: [&str; 2] = ["preview-cache", "thumb-cache"];
     const LEGACY_DIR: [&str; 2] = ["Z", "FontManager"];
     let legacy_name = LEGACY_DIR.concat();
@@ -458,9 +712,9 @@ fn migrate_legacy_dirs() {
             continue;
         }
         if let Err(e) = copy_dir_filtered(&old, &new, &SKIP) {
-            crate::diag::log(&format!("store: legacy data migration failed: {e}"));
+            notes.push(format!("store: legacy data migration failed: {e}"));
         } else {
-            crate::diag::log(&format!(
+            notes.push(format!(
                 "store: migrated legacy data {} -> {}",
                 old.display(),
                 new.display()
@@ -487,8 +741,389 @@ fn copy_dir_filtered(src: &Path, dst: &Path, skip: &[&str]) -> std::io::Result<(
     Ok(())
 }
 
+/// 迁移的结局。`Fallback` 与 `Fatal` 的区别只有一条：**还有没有救**。
+enum MigrationOutcome {
+    /// 迁移成功 / 无需迁移（全新安装、已经搬过、非 Windows）
+    Done,
+    /// 搬不动，但老位置完好 → 本次继续用老位置，下次启动重试
+    Fallback,
+    /// 老位置也没有可用账本，且现场显示「上次搬了一半」→ 绝不能用空账本启动
+    Fatal(String),
+}
+
+/// 必须搬的白名单（除此之外一律不搬）。
+///
+/// 为什么精确列举而不是「整个目录 copy 一遍」：老位置里躺着 `preview-cache`
+/// （实测 385 MB）和 `thumb-cache`（上限 256 MB），两者都是纯生成物，
+/// 搬一遍要读 640 MB 写 640 MB（机械盘上是分钟级），而用户感受是「升级卡住了」。
+const MIGRATE_DIRS: [&str; 3] = ["Trash", "online", "Deactivated"];
+const MIGRATE_FILES: [&str; 5] = [
+    "font-cache.json",
+    "system-ps.json",
+    "api.json",
+    "activation.log",
+    "activation.log.old.log",
+];
+/// 前缀匹配：`state.json` / `state.json.bak` / `state.json.bak-*` / `prefs.json.bak-*` 都要带上。
+/// 账本的滚动备份是 `read_state_file` 的救命绳，漏掉它等于迁移时把保险丝一起扔了。
+const MIGRATE_PREFIXES: [&str; 2] = ["state.json", "prefs.json"];
+
+/// 把 2.1.4 的 `%APPDATA%\FontManager` 搬到 `<安装目录>\data`。
+///
+/// 三条铁律（§ADR-D4）：
+/// 1. **copy 不 move**：move 到一半失败（磁盘满 / 权限 / 被杀软拦）时源文件已经没了，
+///    用户是真丢数据；而且用户回退到 2.1.4 时还能接着用旧位置（回退是真实发生的场景）。
+/// 2. **先账本后缓存**：`state.json` 是唯一「丢了就不可逆」的东西，它先落地。
+/// 3. **失败就原地不动**：任何一步失败都不许让软件以空账本启动 —— 宁可这次不改道。
+///
+/// 日志全部收集到 `notes` 里由调用方统一写：这一步跑的时候 `data_root` 可能还会被回退，
+/// 现在写日志会分裂到两个文件，而且会在 data 目录里先建一个 activation.log 再被 copy 覆盖。
+fn migrate_to_data_root(notes: &mut Vec<String>) -> MigrationOutcome {
+    let target = data_root_cached().path.clone();
+    let source = legacy_app_data_dir();
+    if target == source {
+        // 非 Windows（data_root 就等于老位置），或用户把软件装在了 %APPDATA%\FontManager。
+        return MigrationOutcome::Done;
+    }
+
+    let in_progress = target.join(MIGRATE_MARKER);
+    let target_state = target.join("state.json");
+    let source_state = source.join("state.json");
+
+    // ① 幂等出口：唯一判据是**目标账本存不存在**，不用标记文件。
+    //    标记文件和「实际有没有数据」可能不一致（标记写了但 copy 失败），
+    //    而 state.json 的存在性本身就是最强的证据。
+    if target_state.is_file() {
+        if in_progress.exists() {
+            // 上次在「删标记」和「写账本」之间被打断：账本已经在了，补删标记即可。
+            let _ = fs::remove_file(&in_progress);
+            notes.push(format!(
+                "store: 数据已在 {}，清掉残留的 in-progress 标记",
+                target.display()
+            ));
+        }
+        return MigrationOutcome::Done;
+    }
+
+    // ② 老位置没有账本 = 全新安装（或用户自己清空了 %APPDATA%），没什么可搬。
+    if !source_state.is_file() {
+        if in_progress.is_file() {
+            // 「标记在 + 两边都没有账本」：上次搬到一半、源又被删了。
+            // 这种情况没有任何一份可信的账本，只能用空账本 —— 但空账本一旦落盘就会
+            // 覆盖掉可能还存在的 state.json.bak，所以宁可让用户看见一个明确的报错。
+            return MigrationOutcome::Fatal(format!(
+                "数据位置异常：\n{} 里没有可用的 state.json，而 {} 显示上次数据搬迁未完成。\n\n\
+                 请把 {} 整个复制出来备份后再启动；\n\
+                 如需重来，删掉 {} 后重新启动软件。",
+                source.display(),
+                in_progress.display(),
+                source.display(),
+                in_progress.display()
+            ));
+        }
+        return MigrationOutcome::Done;
+    }
+
+    // ③ 打标记。写不进去就整段放弃 —— 写不进标记说明目标盘本身有问题，
+    //    硬搬下去只会在下次启动留下一个「看起来像全新安装」的 data 目录。
+    if let Err(e) = write_migrate_marker(&in_progress, &source) {
+        notes.push(format!(
+            "store: 写迁移标记失败，放弃本次数据搬迁（继续用 {}）：{e}",
+            source.display()
+        ));
+        return MigrationOutcome::Fallback;
+    }
+    notes.push(format!(
+        "store: 开始把数据搬到 {}（源 {}）",
+        target.display(),
+        source.display()
+    ));
+
+    // ④ 账本：写 .tmp → 校验能解析 → rename 生效。
+    //
+    //    为什么不能直接 copy 到 state.json：copy 被打断会在目标留下半份文件，
+    //    而 `load_state_file` 会把它当「坏文件」留证 + 回滚 .bak，
+    //    用户看到的就是「标签少了一半」而且原因完全看不出来。
+    //    为什么还要校验源文件：源本身坏了（1.7 MB 被写成 16 KB 那种真机事故）时
+    //    留在原地走现有的 recover_broken_state 更安全，别把坏文件搬进新家。
+    if let Err(e) = copy_state_verified(&source_state, &target_state) {
+        notes.push(format!(
+            "store: 账本搬迁失败，本次继续使用 {}（下次启动重试）：{e}",
+            source.display()
+        ));
+        // 标记**故意保留**：它保证下次启动不会把半搬的 data 目录当成全新安装。
+        return MigrationOutcome::Fallback;
+    }
+
+    // ⑤ 其余白名单小文件 / 目录：单个失败只记日志继续（它们都可重建或有默认值），
+    //    **但会记进 failures** —— 因为「删旧缓存」的条件之一就是「全都搬成功」。
+    let mut failures: Vec<String> = Vec::new();
+    copy_whitelist(&source, &target, &mut failures, notes);
+
+    // ⑥ 插件：只在 `<安装目录>\plugins` 还不存在时搬。
+    //    为什么用「先 copy 到临时目录再改名」：直接往 `<install>\plugins` 里拷，
+    //    拷一半失败会留下一个内容不全的 plugins 目录，而 `plugins::resolve_plugins_dir()`
+    //    的规则是「新位置有插件就不用老位置」—— 用户会在界面上看到「插件忽然少了一半」，
+    //    文件其实一个没丢。改成改名之后，要么整份都在，要么完全没出现过。
+    copy_plugins_once(&source, &target, &mut failures, notes);
+
+    // ⑦ 收尾：先记账再删标记（顺序反了会留下「标记没了但 migrated 也没写」的窗口）。
+    append_marker_line(
+        &target.join(DATA_ROOT_MARKER),
+        &format!(
+            "migrated=1 version={} from={}",
+            env!("CARGO_PKG_VERSION"),
+            source.display()
+        ),
+        notes,
+    );
+    if let Err(e) = fs::remove_file(&in_progress) {
+        notes.push(format!("store: 删除迁移标记失败（不影响数据）：{e}"));
+    }
+
+    // ⑧ **唯一**会删东西的地方：删掉老位置的两个纯缓存目录。
+    //    三个条件必须同时成立，任一不满足就一个字节都不删（R-03）：
+    //      1. 目标账本已写入且真的能反序列化（证明不是搬了个空文件）；
+    //      2. 白名单全部搬成功（不是「中途报错退出」）；
+    //      3. 目标不是老位置本身（真的改道了）。
+    let state_ok = fs::read(&target_state)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .is_some();
+    if state_ok && failures.is_empty() {
+        for cache in ["preview-cache", "thumb-cache"] {
+            let dir = source.join(cache);
+            if !dir.is_dir() {
+                continue;
+            }
+            match fs::remove_dir_all(&dir) {
+                Ok(()) => notes.push(format!(
+                    "store: 已清理旧缓存目录 {}（纯生成物，会自动重建）",
+                    dir.display()
+                )),
+                // 文件被占用是常态（预览/缩略图还在被读），不重试也不影响功能。
+                Err(e) => notes.push(format!(
+                    "store: 旧缓存目录 {} 删不掉（不影响功能，用户可手动删）：{e}",
+                    dir.display()
+                )),
+            }
+        }
+    } else if !failures.is_empty() {
+        notes.push(format!(
+            "store: 有 {} 项没能搬过去，旧缓存目录保留不删：{}",
+            failures.len(),
+            failures.join("；")
+        ));
+    }
+
+    notes.push(format!(
+        "store: 数据搬迁完成 → {}（旧位置保留一份副本，回退到 2.1.4 仍可用）",
+        target.display()
+    ));
+    MigrationOutcome::Done
+}
+
+/// 写「搬家进行中」标记。内容只有时间戳与源路径，方便事后对着日志还原现场。
+fn write_migrate_marker(path: &Path, source: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    fs::write(
+        path,
+        format!("started={stamp}\r\nsource={}\r\n", source.display()),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// 往 `.zfm-data-root` **追加**一行（不是覆盖）：安装器写的是 `v=1`，
+/// 这里追加 `migrated=1`，两个信息要能同时在。
+fn append_marker_line(path: &Path, line: &str, notes: &mut Vec<String>) {
+    use std::io::Write;
+    match fs::OpenOptions::new().create(true).append(true).open(path) {
+        Ok(mut f) => {
+            if let Err(e) = writeln!(f, "{line}") {
+                notes.push(format!("store: 写 {} 失败（不影响数据）：{e}", path.display()));
+            }
+        }
+        Err(e) => notes.push(format!(
+            "store: 打不开 {}（不影响数据）：{e}",
+            path.display()
+        )),
+    }
+}
+
+/// copy 账本到目标：读源 → 校验源可解析 → 写 `.tmp` → 回读校验 → rename。
+fn copy_state_verified(src: &Path, dst: &Path) -> Result<(), String> {
+    let bytes = fs::read(src).map_err(|e| format!("读源账本失败：{e}"))?;
+    serde_json::from_slice::<serde_json::Value>(&bytes)
+        .map_err(|e| format!("源账本本身解析不了（留给原地的坏文件流程处理）：{e}"))?;
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let tmp = dst.with_extension("json.tmp");
+    fs::write(&tmp, &bytes).map_err(|e| format!("写临时文件失败：{e}"))?;
+    // 回读校验：磁盘满时 fs::write 可能已经「成功」但内容不完整。
+    let back = fs::read(&tmp).map_err(|e| format!("回读临时文件失败：{e}"))?;
+    if back != bytes {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!(
+            "回读内容与源不一致（{} vs {} 字节），多半是磁盘满",
+            back.len(),
+            bytes.len()
+        ));
+    }
+    fs::rename(&tmp, dst).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("改名生效失败：{e}")
+    })
+}
+
+/// 白名单里的文件与目录。
+fn copy_whitelist(source: &Path, target: &Path, failures: &mut Vec<String>, notes: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(source) else {
+        failures.push(format!("读不了源目录 {}", source.display()));
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // 半成品一律不搬：`.tmp` 是上一次写一半留下的，搬过去只会误导下一个人。
+        // `state.json` 由 ④ 用「校验 + rename」单独搬过，这里跳过免得绕开那道闸。
+        if name.ends_with(".tmp") || name == "state.json" {
+            continue;
+        }
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let wanted = if is_dir {
+            MIGRATE_DIRS.contains(&name.as_str())
+        } else {
+            MIGRATE_FILES.contains(&name.as_str())
+                || MIGRATE_PREFIXES.iter().any(|p| name.starts_with(p))
+        };
+        if !wanted {
+            continue;
+        }
+        let to = target.join(&name);
+        let result = if is_dir {
+            copy_dir_filtered(&entry.path(), &to, &[])
+        } else {
+            fs::copy(entry.path(), &to).map(|_| ())
+        };
+        match result {
+            Ok(()) => {}
+            Err(e) => {
+                // 单个文件失败不影响账本迁移：用户最多丢一个可重建的缓存。
+                // 但 Trash 里可能有用户还要恢复的字体，要说清楚「旧的那份还在」。
+                let tail = if name == "Trash" {
+                    "（旧目录里的原件还在，用户没丢东西）"
+                } else {
+                    ""
+                };
+                notes.push(format!("store: 搬 {name} 失败（跳过，继续）{tail}：{e}"));
+                failures.push(name);
+            }
+        }
+    }
+}
+
+/// 老位置的插件目录 → `<安装目录>\plugins`，**仅当后者不存在**。
+fn copy_plugins_once(
+    source: &Path,
+    target: &Path,
+    failures: &mut Vec<String>,
+    notes: &mut Vec<String>,
+) {
+    let Some(install_root) = target.parent() else {
+        return;
+    };
+    let legacy = source.join("plugins");
+    let dest = install_root.join("plugins");
+    if dest.exists() || !legacy.is_dir() {
+        return;
+    }
+    let staging = install_root.join(".zfm-plugins-copying");
+    let _ = fs::remove_dir_all(&staging);
+    match copy_dir_filtered(&legacy, &staging, &[]) {
+        Ok(()) => match fs::rename(&staging, &dest) {
+            Ok(()) => notes.push(format!(
+                "store: 插件已复制到 {}（老位置的副本保留）",
+                dest.display()
+            )),
+            Err(e) => {
+                let _ = fs::remove_dir_all(&staging);
+                notes.push(format!("store: 插件目录改名失败（跳过）：{e}"));
+                failures.push("plugins".into());
+            }
+        },
+        Err(e) => {
+            let _ = fs::remove_dir_all(&staging);
+            notes.push(format!("store: 插件目录复制失败（跳过）：{e}"));
+            failures.push("plugins".into());
+        }
+    }
+}
+
+/// 把收集到的日志一次性写出去。
+///
+/// 统一在 `data_root` 定下来之后调用：迁移期间写日志会分裂到两个文件，
+/// 还会在 data 目录里先建一个 activation.log 再被 copy 覆盖（丢掉会话头）。
+fn flush_notes(notes: &[String]) {
+    for line in notes {
+        crate::diag::log(line);
+    }
+}
+
+/// 真的没救了才走这里：`%APPDATA%` 与 data 目录里都没有可用账本，
+/// 而现场显示「上次搬了一半」。这时候**绝不能**落一份默认 state ——
+/// 用户几年的标签、分组、收藏会在一瞬间被覆盖，且不可逆。
+fn fatal_state_dir_error(detail: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+        let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+        let text = wide(detail);
+        let caption = wide("FontManager");
+        // SAFETY: 两个字符串都以 NUL 结尾、生命周期覆盖调用过程；窗口句柄传空表示无父窗口。
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                caption.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        eprintln!("FontManager: {detail}");
+    }
+    std::process::exit(1);
+}
+
 pub fn load() -> AppState {
-    migrate_legacy_dirs();
+    let mut notes: Vec<String> = Vec::new();
+    migrate_legacy_dirs(&mut notes);
+    // 数据根改道必须发生在**读 state 之前**：它决定 `state_path()` 指向哪里，
+    // 也可能因为搬不动而把数据根回退到老位置（见 effective_data_root）。
+    match migrate_to_data_root(&mut notes) {
+        MigrationOutcome::Done => {}
+        MigrationOutcome::Fallback => {
+            MIGRATION_FAILED.store(true, Ordering::Relaxed);
+            notes.push(format!(
+                "store: 本次数据根回退到 {}（迁移未完成，还没完成的那部分下次启动重试）",
+                legacy_app_data_dir().display()
+            ));
+        }
+        MigrationOutcome::Fatal(why) => {
+            notes.push(format!("store: 数据位置异常，已停止启动：{why}"));
+            flush_notes(&notes);
+            fatal_state_dir_error(&why);
+        }
+    }
+    flush_notes(&notes);
+
     let path = state_path();
     let mut state = load_state_file(&path);
     // 偏好以 prefs.json 为准（1.8.1 拆分）。老用户没有这个文件 → 用 state.json 里的
@@ -802,6 +1437,100 @@ mod tests {
         assert_eq!(second["soundPref"], "on");
         assert!(!path.with_extension("json.tmp").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── 数据根判定（2.1.5） ────────────────────────────────────────
+
+    /// 判定链里只有 `ZFM_DATA_DIR` 是可从测试里驱动的开关，而环境变量是**进程级**的，
+    /// cargo test 默认多线程 → 这几条必须串行跑，否则互相把对方的覆盖清掉。
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 判定顺序 #0：显式覆盖（绝对路径 + 真的可写）优先级最高，压过安装目录。
+    #[test]
+    fn data_root_env_override_wins() {
+        let _g = env_lock();
+        let d = tmp_dir("root-env");
+        std::env::set_var("ZFM_DATA_DIR", &d);
+        let root = resolve_data_root();
+        std::env::remove_var("ZFM_DATA_DIR");
+        assert_eq!(root.source, DataRootSource::EnvOverride);
+        assert_eq!(root.path, d);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// 判定顺序 #0 的护栏之一：相对路径一律忽略 —— 相对什么？当前工作目录？
+    /// 那会让「从资源管理器双击」和「从命令行启动」落到两个不同目录。
+    #[test]
+    fn data_root_env_ignores_relative_path() {
+        let _g = env_lock();
+        std::env::set_var("ZFM_DATA_DIR", "relative/not-allowed");
+        let root = resolve_data_root();
+        std::env::remove_var("ZFM_DATA_DIR");
+        assert_ne!(root.source, DataRootSource::EnvOverride);
+    }
+
+    /// 判定顺序 #0 的护栏之二：绝对路径但写不进去（父级是文件）→ 忽略，
+    /// 否则一个手滑的排障变量就能让软件启动即失效。
+    #[test]
+    fn data_root_env_ignores_unwritable_path() {
+        let _g = env_lock();
+        let d = tmp_dir("root-env-bad");
+        let blocker = d.join("blocker");
+        fs::write(&blocker, b"not a dir").unwrap();
+        std::env::set_var("ZFM_DATA_DIR", blocker.join("data"));
+        let root = resolve_data_root();
+        std::env::remove_var("ZFM_DATA_DIR");
+        assert_ne!(root.source, DataRootSource::EnvOverride);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// 调试/测试构建里 `install_dir()` 故意返回 None（不许往 rust-target 下写账本），
+    /// 于是一定落回老位置 —— 这条同时守住「cargo test 不会碰到真实用户数据目录」。
+    #[test]
+    fn data_root_falls_back_to_legacy_in_debug_build() {
+        let _g = env_lock();
+        std::env::remove_var("ZFM_DATA_DIR");
+        let root = resolve_data_root();
+        assert_eq!(root.path, legacy_app_data_dir());
+        assert!(matches!(
+            root.source,
+            DataRootSource::RoamingFallback | DataRootSource::NotWindows
+        ));
+        assert!(root.path.ends_with(PRODUCT));
+    }
+
+    /// 探针：可写的目录返回 true 且**不留垃圾文件**；父级是文件的路径返回 false。
+    #[test]
+    fn probe_writable_cleans_up_after_itself() {
+        let d = tmp_dir("probe");
+        assert!(probe_writable(&d.join("nested")));
+        assert!(!d.join("nested").join(PROBE_FILE).exists(), "探针文件必须删掉");
+        let blocker = d.join("blocker");
+        fs::write(&blocker, b"x").unwrap();
+        assert!(!probe_writable(&blocker.join("sub")));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// 账本搬迁必须是「校验 + rename」：源坏了就一个字节都别写进目标，
+    /// 让坏文件留在原地走现有的 recover_broken_state 流程。
+    #[test]
+    fn copy_state_verified_rejects_broken_source() {
+        let d = tmp_dir("state-copy");
+        let src = d.join("src.json");
+        let dst = d.join("data").join("state.json");
+        fs::write(&src, b"{\"notes\": {\"broken").unwrap();
+        assert!(copy_state_verified(&src, &dst).is_err());
+        assert!(!dst.exists(), "坏源不该在目标留下 state.json");
+        assert!(!dst.with_extension("json.tmp").exists(), "临时文件必须清掉");
+
+        fs::write(&src, b"{\"notes\": {}}").unwrap();
+        assert!(copy_state_verified(&src, &dst).is_ok());
+        assert!(dst.is_file());
+        assert!(src.exists(), "copy 不是 move：源必须原样保留");
+        let _ = fs::remove_dir_all(&d);
     }
 
     // ── 激活台账（2.1.4） ──────────────────────────────────────────

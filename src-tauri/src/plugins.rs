@@ -370,7 +370,17 @@ pub fn plugins_dir() -> PathBuf {
 
 /// 1.3.7 及更早版本的插件目录。
 pub fn legacy_plugins_dir() -> PathBuf {
-    store::app_data_dir().join("plugins")
+    // ⚠️ 这里**必须**是 legacy_app_data_dir()，不是 app_data_dir()（2.1.5 的 R-02）。
+    //
+    // app_data_dir() 的语义在 2.1.5 变成了「离程序最近的可写数据根」，也就是
+    // `<安装目录>\data`。如果这里跟着它走，这个函数算出来的「老位置」会漂到
+    // `<安装目录>\data\plugins`，而 resolve_plugins_dir() 的规则是
+    // 「老位置有插件 && 新位置没有 → 沿用老位置」——
+    // 两者于是都指向新位置且都为空 → 判定落到 `<exe>\plugins`（空）→
+    // **老用户几十个插件在界面上全部消失**（文件其实还好端端躺在 %APPDATA% 里）。
+    //
+    // 这是一个纯字符串改写就能埋进去的事故，所以单列一条注释钉在这里。
+    store::legacy_app_data_dir().join("plugins")
 }
 
 fn plugins_dir_cached() -> &'static PathBuf {

@@ -19,7 +19,8 @@ const THUMB_LIMIT: u64 = 256 * 1024 * 1024;
 
 /// 启动时给 asset 协议放行用
 pub fn root() -> Option<PathBuf> {
-    let dir = dirs::data_dir()?.join("FontManager").join(THUMB_DIR);
+    // 2.1.5：跟着数据根走（`<安装目录>\data\thumb-cache`），建不出目录就返回 None。
+    let dir = crate::store::data_root().join(THUMB_DIR);
     fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }

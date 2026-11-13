@@ -42,7 +42,9 @@ impl FaceNames {
 }
 
 pub fn log_path() -> PathBuf {
-    crate::store::app_data_dir().join("activation.log")
+    // 2.1.5：日志跟着数据根走（`<安装目录>\data\activation.log`）。
+    // 迁移期间不许调本函数 —— 那时数据根还会回退，日志会分裂到两个文件（见 store 的 flush_notes）。
+    crate::store::data_root().join("activation.log")
 }
 
 pub fn log(line: &str) {
@@ -66,6 +68,18 @@ pub fn session_start() {
         "---- FontManager {} on {} ----",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS
+    ));
+    // 2.1.5：开机第一件事就把「数据到底在哪」写下来。
+    //
+    // 为什么值得单占一行：数据根有四条判定分支（安装目录 / LOCALAPPDATA 回退 /
+    // %APPDATA% 兜底 / 环境变量覆盖），而它们**在界面上长得一模一样**。
+    // 用户报「我的标签没了」「插件不见了」时，第一个问题永远是「你这台机器的数据在哪」——
+    // 有这一行就一句话能答，没有就得远程猜。
+    let (root, source) = crate::store::data_root_info();
+    log(&format!(
+        "data_root={} source={}",
+        root.display(),
+        source.as_str()
     ));
 }
 
