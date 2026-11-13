@@ -1135,7 +1135,7 @@
   "online.sourcesOpen": "Öffnen",
   "online.subsetsLabel": "Zeichensatz",
   "load.restoringSeed": "Aktivierte, Gruppen- und Snapshot-Schriften werden geladen…",
-  "load.backgroundReading": "Schriften werden im Hintergrund gelesen {done}/{total}",
+  "load.backgroundReading": "Schriften werden im Hintergrund gelesen {done}/{total} ({percent} %)",
   "load.seedReady": "Schriftbibliothek ist bereit",
   "load.partialData": "Der Lesevorgang ist nicht abgeschlossen – einige Schriften fehlen noch",
   "load.retry": "Erneut lesen"

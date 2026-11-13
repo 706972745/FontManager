@@ -1171,7 +1171,7 @@
   "settings.apiClientAddBad": "Use a form like mcp:claude or api:backup (prefix must be api / mcp)",
   "settings.apiDangerousAllowHint": "Ticking api / mcp allows the whole class (including named clients); to allow just one, add it as mcp:name.",
   "load.restoringSeed": "Loading your enabled, group and snapshot fonts…",
-  "load.backgroundReading": "Reading {done}/{total} font files in the background",
+  "load.backgroundReading": "Reading {done}/{total} font files in the background ({percent}%)",
   "load.seedReady": "Font library ready",
   "load.partialData": "Reading didn’t finish — some fonts are not listed yet",
   "load.retry": "Read again"

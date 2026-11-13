@@ -1152,7 +1152,7 @@
   "online.sourcesOpen": "Ouvrir",
   "online.subsetsLabel": "Jeu de caractères",
   "load.restoringSeed": "Chargement des polices activées, de groupe et d’instantané…",
-  "load.backgroundReading": "Lecture des polices en arrière-plan {done}/{total}",
+  "load.backgroundReading": "Lecture des polices en arrière-plan {done}/{total} ({percent} %)",
   "load.seedReady": "Bibliothèque de polices prête",
   "load.partialData": "La lecture n’est pas terminée — certaines polices ne sont pas encore visibles",
   "load.retry": "Relancer la lecture"

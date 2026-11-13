@@ -1169,7 +1169,7 @@
   "online.sourcesOpen": "Открыть",
   "online.subsetsLabel": "Набор символов",
   "load.restoringSeed": "Загружаем включённые шрифты, шрифты групп и снимков…",
-  "load.backgroundReading": "Фоновое чтение шрифтов {done}/{total}",
+  "load.backgroundReading": "Фоновое чтение шрифтов {done}/{total} ({percent} %)",
   "load.seedReady": "Библиотека шрифтов готова",
   "load.partialData": "Чтение не завершено — часть шрифтов пока не видна",
   "load.retry": "Прочитать заново"
