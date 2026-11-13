@@ -4,6 +4,31 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] — 2026-11-13（正式版）
+
+> **2.1.0**：插件崩了不用再翻日志 —— 设置页那一行会直接写出死因，旁边还给一个「查看日志」。
+
+### 新增（设置 · 插件）
+
+- **崩溃原因直接显示在插件行上**。以前插件启动失败只会显示「上次运行中退出了（崩溃或被结束）」，
+  真正的原因（例如 `ModuleNotFoundError: No module named 'meta'`）只躺在
+  `%APPDATA%\FontManager\activation.log` 里，用户没有任何自助排查的入口。
+  现在这一行下面会多一行等宽小字：`原因：File "…\syncer.py", line 20 → ModuleNotFoundError: No module named 'meta'`。
+  超过 240 字截断，悬停可看全。
+- **「查看日志」按钮**：同一行右侧，用系统默认程序打开 `activation.log`。
+- 解析规则：只认属于该插件的行；`Traceback` / `Error` / `Exception` / `error:` 才算错误，
+  「进程已退出」「已就绪」「已握手」这类噪音行一律跳过；两条以上错误取**最后一条**，
+  并拼上这次 traceback 里**最内层**的那一帧 `File "…", line N`（中间夹的源码行、`^^^^`
+  不影响，函数级报错也能指到准确行），显示成 `File … → 错误` 的形态。
+- 只在**插件确实报错时**才读日志，且只读**尾部 64 KiB**；日志超过 1 MB 被轮转成
+  `activation.old.log` 时自动回落到那一份 —— 凌晨崩、上午才打开设置也照样能看到死因。
+- 六个解析单测（真实日志回放、两个插件交错写日志、噪音行、超长截断、轮转文件名约定）。
+
+### 说明
+
+- 插件行里那句话有三种来源：manifest 要求更高的 API 级别、崩溃、缺解释器。
+  「原因」行**只在真的解析到错误时才出现**，API 级别不兼容那种不显示，免得被读成「插件崩了」。
+
 ## [2.0.0] — 2026-11-13（正式版）
 
 > **2.0.0**：标题栏接管「导入文件夹 / 重新扫描」这两个**整库级**动作，顶栏回到「只作用于当前视图」；
