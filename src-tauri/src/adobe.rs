@@ -89,10 +89,16 @@ fn js_array(items: &[String]) -> String {
     format!("[{}]", body.join(", "))
 }
 
-fn photoshop_script(postscript: &str, _label: &str, family_name: &str, aliases: &[String]) -> String {
+fn photoshop_script(postscript: &str, label: &str, family_name: &str, aliases: &[String]) -> String {
     format!(
         r#"(function () {{
   var family = {family};
+  // 新建文字图层时写进图层名与内容的显示名。
+  // ⚠️ 必须在这里显式声明：脚本里原来直接写 `layer.name = label`，而 Rust 侧形参叫
+  // `_label`、`format!` 也没插值 —— 走到「没选中文字 → 新建文字图层」那条分支就抛
+  // ReferenceError: label is not defined，被外层 try/catch 吞掉后返回 font-not-found，
+  // 前端于是弹「PS 不认识这个字体」（用户 2026-11 报的「在 PS 里用不了」）。
+  var label = {label};
   var cands = {cands};
   var font = cands[0];
   // 软件登记的名字可能和字体文件里不一样（空格 / 连字符最常见），挨个试
@@ -101,6 +107,20 @@ fn photoshop_script(postscript: &str, _label: &str, family_name: &str, aliases: 
       var ff = app.fonts.getByName(cands[ci]);
       if (ff) {{ font = ff.postscriptName || cands[ci]; break; }}
     }} catch (e0) {{}}
+  }}
+  /**
+   * 字体名归一化比较。
+   *
+   * Photoshop 会把字体名归一化后再回读：写 `Arial MT` 读回 `ArialMT`、
+   * 写 `D3-Euronism` 读回 `D3 Euronism`，大小写也可能变。原来用 `===` 精确比较，
+   * 套用成功也会被判成失败 → 又是 font-not-found → 前端弹「PS 不认识这个字体」。
+   * 规则与 CorelDRAW 那条链路一致（`comhost.ps1` 的 Norm-FontName，1.9.16 踩过同一个坑）：
+   * 去掉空白 / 连字符 / 下划线后转小写。
+   */
+  function sameName(a, b) {{
+    if (!a || !b) {{ return false; }}
+    var norm = function (s) {{ return String(s).replace(/[\s\-_]/g, "").toLowerCase(); }};
+    return norm(a) === norm(b);
   }}
   if (app.documents.length === 0) {{ return "no-document"; }}
   var doc = app.activeDocument;
@@ -157,7 +177,8 @@ fn photoshop_script(postscript: &str, _label: &str, family_name: &str, aliases: 
       try {{ layer.textItem.font = family; }} catch (e2) {{ unknown = true; return 0; }}
     }}
     var cur = layer.textItem.font;
-    if (cur === font || cur === family) {{ return 1; }}
+    // 归一化比较：PS 会改写字体名的空格 / 连字符 / 大小写（见 sameName）
+    if (sameName(cur, font) || sameName(cur, family)) {{ return 1; }}
     unknown = true;
     return 0;
   }}
@@ -191,7 +212,7 @@ fn photoshop_script(postscript: &str, _label: &str, family_name: &str, aliases: 
     layer.textItem.size = 48;
     layer.textItem.position = [doc.width.value / 8, doc.height.value / 2];
     try {{ layer.textItem.font = font; }} catch (e0) {{ layer.textItem.font = family; }}
-    if (layer.textItem.font !== font && layer.textItem.font !== family) {{ layer.remove(); return "font-not-found"; }}
+    if (!sameName(layer.textItem.font, font) && !sameName(layer.textItem.font, family)) {{ layer.remove(); return "font-not-found"; }}
   }} catch (e) {{
     if (layer) {{ try {{ layer.remove(); }} catch (e2) {{}} }}
     return "font-not-found";
@@ -201,14 +222,19 @@ fn photoshop_script(postscript: &str, _label: &str, family_name: &str, aliases: 
   return "created";
 }})();"#,
         family = js_string(family_name),
-        cands = js_array(&font_candidates(postscript, family_name, _label, aliases)),
+        label = js_string(label),
+        cands = js_array(&font_candidates(postscript, family_name, label, aliases)),
     )
 }
 
-fn illustrator_script(postscript: &str, _label: &str, family_name: &str, aliases: &[String]) -> String {
+fn illustrator_script(postscript: &str, label: &str, family_name: &str, aliases: &[String]) -> String {
     format!(
         r#"(function () {{
   var family = {family};
+  // 与 photoshop_script 同一个坑：脚本里 `frame.contents = label` 用到 label，
+  // 但形参原来叫 `_label` 且没插值 —— 走到「没选中文字 → 新建文本」那条分支就抛
+  // ReferenceError，被 catch 吞掉后一律返回 apply-failed（Illustrator 侧症状）。
+  var label = {label};
   var cands = {cands};
   var name = cands[0];
   if (app.documents.length === 0) {{ return "no-document"; }}
@@ -260,7 +286,8 @@ fn illustrator_script(postscript: &str, _label: &str, family_name: &str, aliases
   return "created";
 }})();"#,
         family = js_string(family_name),
-        cands = js_array(&font_candidates(postscript, family_name, _label, aliases)),
+        label = js_string(label),
+        cands = js_array(&font_candidates(postscript, family_name, label, aliases)),
     )
 }
 
@@ -283,6 +310,23 @@ fn script_for(
 #[cfg(target_os = "windows")]
 fn ps_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
+}
+
+/**
+ * 目标软件的进程名（`Get-Process -Name`）。
+ *
+ * 只为一件事存在：`Marshal.GetActiveObject` 失败时用来区分「真没运行」和
+ * 「在跑但 ROT 里取不到」（权限 / 位数不一致 / 启动顺序），后者一律报
+ * 「Photoshop 没运行」会把人指到完全错误的方向上。
+ */
+#[cfg(target_os = "windows")]
+fn process_name(target: Target) -> &'static str {
+    match target {
+        Target::Photoshop => "Photoshop",
+        Target::Illustrator => "Illustrator",
+        // CorelDRAW 走 comhost，脚本里自己按 'CorelDRW' 判断进程，这里用不到
+        Target::CorelDraw => "CorelDRW",
+    }
 }
 
 /**
@@ -594,15 +638,44 @@ pub fn apply(
         };
         let path = std::env::temp_dir()
             .join(format!("fontmanager-apply-{}.jsx", std::process::id()));
-        std::fs::write(&path, script_for(target, postscript, label, family_name, aliases))
-            .map_err(|e| e.to_string())?;
-        let path_literal = path.to_string_lossy().replace('\'', "''");
+        /*
+         * 落盘必须是 **UTF-8 with BOM**。
+         *
+         * ExtendScript 打开 .jsx 时没有 BOM 就按系统 ANSI（简中机器上是 GBK）解码，
+         * 中文族名（如「黑」JNR(1)）会整段乱码 → 名字匹配不上 → 用户看到
+         * 「PS 不认识这个字体」。BOM 是它认 UTF-8 的唯一开关。
+         */
+        let script = script_for(target, postscript, label, family_name, aliases);
+        let mut bytes = Vec::with_capacity(script.len() + 3);
+        bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+        bytes.extend_from_slice(script.as_bytes());
+        std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+        /*
+         * 路径转成正斜杠：ExtendScript 在 Windows 上一样认 `/`，
+         * 而 `\` 一旦经过别的转义层就会变成转义序列（`\f` `\t` 之类）把路径弄坏。
+         */
+        let jsx = ps_quote(&path.to_string_lossy().replace('\\', "/"));
+        let proc = process_name(target);
+        /*
+         * 优先 `DoJavaScriptFile`：让 ExtendScript 自己按文件编码读，中文族名不会在
+         * 「整段长字符串塞进 COM」这一步被 UTF-16/ANSI 折腾。旧路径（`DoJavaScript`
+         * 传整段代码）留作兜底 —— 少数版本 / 权限下 DoJavaScriptFile 会抛异常。
+         *
+         * GetActiveObject 失败时先看进程：PS 明明在跑、只是 ROT 里取不到（权限 / 位数 /
+         * 启动顺序）却告诉用户「Photoshop 没运行」是彻底误导。进程在 → 报
+         * `ps-error:com-unavailable`（前端把 `ps-error:` 之后的内容原样当副标题显示）。
+         */
         (format!(
             "$ErrorActionPreference = 'Stop'\n\
              try {{ [Console]::OutputEncoding = [Text.Encoding]::UTF8 }} catch {{}}\n\
-             try {{ $a = [Runtime.InteropServices.Marshal]::GetActiveObject('{prog_id}') }} catch {{ Write-Output '{NOT_RUNNING}'; exit 0 }}\n\
-             $code = [IO.File]::ReadAllText('{path_literal}', [Text.Encoding]::UTF8)\n\
-             try {{ $r = $a.DoJavaScript($code); Write-Output ([string]$r) }} catch {{ Write-Output ('ps-error:' + $_.Exception.Message) }}\n"
+             try {{ $a = [Runtime.InteropServices.Marshal]::GetActiveObject('{prog_id}') }} catch {{\n\
+               if (@(Get-Process -Name '{proc}' -ErrorAction SilentlyContinue).Count -gt 0) {{ Write-Output 'ps-error:com-unavailable'; exit 0 }}\n\
+               Write-Output '{NOT_RUNNING}'; exit 0\n\
+             }}\n\
+             $jsx = {jsx}\n\
+             try {{ $r = $a.DoJavaScriptFile($jsx); Write-Output ([string]$r) }} catch {{\n\
+               try {{ $r = $a.DoJavaScript([IO.File]::ReadAllText($jsx, [Text.Encoding]::UTF8)); Write-Output ([string]$r) }} catch {{ Write-Output ('ps-error:' + $_.Exception.Message) }}\n\
+             }}\n"
         ), Some(path))
     };
 
@@ -923,6 +996,87 @@ mod tests {
     fn coreldraw_is_a_known_target() {
         assert!(Target::parse("coreldraw").is_ok());
         assert!(Target::parse("nope").is_err());
+    }
+
+    /// 缺陷 2-A 的护栏：脚本里用到的 `label` 必须有声明、有插值。
+    ///
+    /// 原来是「Rust 形参叫 `_label`、`format!` 也没插值，脚本里直接写
+    /// `layer.name = label` / `frame.contents = label`」。只要走到
+    /// 「没选中文字 → 新建一个文字图层」那条分支就抛
+    /// `ReferenceError: label is not defined`，被外层 try/catch 吞掉后返回
+    /// font-not-found / apply-failed，前端于是弹「PS 不认识这个字体」——
+    /// 这就是用户 2026-11 报的「在 Photoshop 里用不了」。
+    #[test]
+    fn ps_script_declares_label() {
+        // 用带中文和括号的显示名，顺带验证 js_string 转义后能原样出现在声明里
+        let ps = photoshop_script("HYQiHei-EES", "「黑」JNR(1)", "「黑」JNR(1)", &[]);
+        // 注释里也会出现 label 字样，逐行比对前先把整行注释去掉
+        let code: String = ps
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            code.contains(r#"var label = "「黑」JNR(1)";"#),
+            "label 必须以字面量显式声明（别依赖隐式全局）"
+        );
+        let decl = code.find("var label =").expect("PS 脚本必须声明 label");
+        let use_at = code.find("layer.name = label;").expect("新建图层要写 label");
+        assert!(decl < use_at, "声明必须在使用之前");
+        assert!(code.contains("layer.textItem.contents = label;"));
+        // 除了那一处 `var label = "…"`，不能再有「凭空来的」label：
+        // 每一处出现都必须落在声明之后
+        for (idx, _) in code.match_indices("label") {
+            assert!(idx >= decl, "脚本里出现了声明之前的 label 引用");
+        }
+    }
+
+    /// Illustrator 是同一个坑（`frame.contents = label`，形参原来叫 `_label`）：
+    /// 症状不是 font-not-found 而是 apply-failed，但用户看到的同样是「套用失败」。
+    #[test]
+    fn illustrator_script_declares_label() {
+        let ai = illustrator_script("HYQiHei-EES", "「黑」JNR(1)", "「黑」JNR(1)", &[]);
+        assert!(ai.contains(r#"var label = "「黑」JNR(1)";"#));
+        let decl = ai.find("var label =").expect("AI 脚本必须声明 label");
+        let use_at = ai.find("frame.contents = label;").expect("新建文本要写 label");
+        assert!(decl < use_at, "声明必须在使用之前");
+    }
+
+    /// 缺陷 2-C 的护栏：字体名回读要用归一化比较。
+    ///
+    /// Photoshop 会把名字归一化再回读（写 `Arial MT` 读回 `ArialMT`），
+    /// 用 `===` 精确比较就会把「套用成功」判成失败 → 又弹「不认识这个字体」。
+    /// JS 侧没法在 `cargo test` 里执行，所以这里用 Rust 镜像同一套规则当规格，
+    /// 同时校验脚本里用的正则就是这套规则。
+    #[test]
+    fn ps_script_normalizes_font_names() {
+        fn norm(s: &str) -> String {
+            s.chars()
+                .filter(|c| !matches!(c, ' ' | '\t' | '-' | '_'))
+                .flat_map(|c| c.to_lowercase())
+                .collect()
+        }
+        // 空格：写 Arial MT，PS 回读 ArialMT
+        assert_eq!(norm("Arial MT"), norm("ArialMT"));
+        // 连字符：写 D3-Euronism，PS 回读 D3 Euronism
+        assert_eq!(norm("D3-Euronism"), norm("D3 Euronism"));
+        // 大小写
+        assert_eq!(norm("SourceHanSans"), norm("sourcehansans"));
+        // 归一化不能把不同字重混成一个
+        assert_ne!(norm("Arial MT"), norm("Arial MT Bold"));
+
+        let ps = photoshop_script("ArialMT", "Arial MT", "Arial MT", &[]);
+        assert!(ps.contains("function sameName("), "要有归一化比较函数");
+        assert!(
+            ps.contains(r#"replace(/[\s\-_]/g, "")"#),
+            "脚本里的正则必须与上面 norm() 同一套规则（去空白 / 连字符 / 下划线）"
+        );
+        assert!(ps.contains("sameName(cur, font)"), "回读字体名要走归一化比较");
+        assert!(!ps.contains("cur === font"), "不能再有精确字符串比较");
+        assert!(
+            ps.contains("!sameName(layer.textItem.font, font)"),
+            "新建图层那条分支的校验也要归一化"
+        );
     }
 
     /// 真机调试用：把 PS / AI 的 JSX 落到 rust-target/scripts/，

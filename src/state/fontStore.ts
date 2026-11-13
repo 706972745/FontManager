@@ -1589,6 +1589,20 @@ function reportApplyOutcome(outcome: string, family: string, app: AdobeApp) {
     t("toast.noTextSelected", { app: appName }),
     t("toast.noTextSelectedSub", { app: appName }),
   );
+      } else if (outcome === "ps-error:com-unavailable") {
+  /*
+   * 2.1.3 新增的固定 code：目标软件**在跑**，只是 Running Object Table 里取不到它
+   * （权限 / 位数不一致 / 启动顺序）。以前这种情况一律落到 not-running，
+   * 告诉用户「Photoshop 没运行」，把人指到完全错误的方向。
+   *
+   * 文案复用 app-no-response 那一对：语义就是「它没应答」，而「等几秒再点一次，
+   * 或切过去把它叫醒」恰好是这类 ROT 取不到的有效解法。
+   * 不为这一个 code 新增 i18n 键（9 个语言包 + check-locales parity 的成本不值）。
+   */
+  toast.error(
+    t("toast.appNoResponse", { app: appName }),
+    t("toast.appNoResponseSub", { app: appName }),
+  );
       } else if (outcome.startsWith("ps-error:")) {
   toast.error(t("toast.couldntApplyIn", { app: appName }), outcome.slice("ps-error:".length).trim());
       } else {

@@ -28,6 +28,12 @@ import { useT, type TKey } from "../lib/i18n";
 const NAV_KEYS = ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"];
 
 /**
+ * 视图切换的三个 tab。顺序 = 键盘左右键的顺序 = 滑动指示器的 `--i` 序号，
+ * 所以三处都从这里取，别再各写一份字面量数组。
+ */
+const VIEW_MODES = ["grid", "list", "specimen"] as const;
+
+/**
  * 浮层内部的 listbox / tablist 方向键导航。
  *
  * 全局「上下方向键换选中字族」是挂在 window 上的，会把浮层里的方向键抢走——
@@ -96,10 +102,21 @@ export function SortMenu() {
       <AnimatePresence>
         {open && (
           <>
-            <div className="menu-backdrop" onClick={close} />
+            {/* data-no-drag：速览窗口里按下遮罩不能启动窗口拖动。
+                否则 `useWindowDrag` 会把指针捕获到 `.qb-head`，pointerup 的目标变成
+                `.qb-head`，click 被派发给最近公共祖先 → 遮罩的 onClick 收不到，
+                表现就是「点面板外面收不起来」（2026-11 用户报）。
+                外部点击的兜底判定在 `usePopoverMenu` 的捕获阶段 pointerdown 里。 */}
+            <div className="menu-backdrop" data-no-drag onClick={close} />
             <motion.ul
               ref={listRef}
               className="sort-menu glass-e3"
+              /*
+               * 菜单一打开，整个菜单盒都不该是拖动区：菜单自己有 4px 内边距，
+               * 那圈「非交互」空白在速览里按下去会被 `useWindowDrag` 当成拖动起点，
+               * 菜单跟着窗口跑。加 data-no-drag 后按内边距也不拖（点它本来也不该关菜单）。
+               */
+              data-no-drag
               role="listbox"
               onKeyDown={listboxKeys}
               initial={{ opacity: 0, y: -6, scale: 0.97 }}
@@ -187,6 +204,17 @@ function FilterSubTrigger({
       aria-expanded={active}
       onClick={(e) => onClick(e.currentTarget)}
       onMouseEnter={(e) => onHover(e.currentTarget)}
+      /*
+       * 指针已经停在这一行、但子面板是关的 → 再开一次（用户 2026-11 报「有时候不出现」）。
+       *
+       * 这个状态是真实存在的：指针快速划过这一行（enter → 开 → leave → 起收起计时器），
+       * 计时器到点把 sub 置空，而指针此时**还停在这一行上** —— 不会再触发一次 mouseenter，
+       * 于是「行是亮的、子面板永远不出来」，只能先把鼠标移开再移回来。
+       * `!active` 是必须的：已经开着时每次移动都重量一遍 rect 只会白抖。
+       */
+      onMouseMove={(e) => {
+        if (!active) onHover(e.currentTarget);
+      }}
       onMouseLeave={onLeave}
     >
       <span>{label}</span>
@@ -250,18 +278,16 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
     top: number;
     left: number;
   } | null>(null);
-  const openSub = (kind: "tag" | "collection" | "snapshot", el: HTMLElement) => {
-    const r = el.getBoundingClientRect();
-    setSub({ kind, top: r.top, left: r.left });
-  };
-  const tagCounts = useMemo(() => allTags(tags), [tags]);
-  const collectionNames = useMemo(() => Object.keys(collections).sort(), [collections]);
-
   /**
    * 子菜单的收起时机：鼠标离开入口或子面板后**延迟**收起。
    * 不能只在子面板上挂 onMouseLeave —— 用户很可能从「标签」按钮直接移开、
    * 根本没进过子面板，那时子面板永远不会收到 leave 事件，就会一直挂着（用户 2026-11-10 报的 bug）。
-   * 反过来，从按钮移到子面板中间有 6px 空隙，立刻收也会闪，所以留 160ms 余量。
+   * 反过来，从按钮移到子面板中间有 6px 空隙（`.filter-submenu` 的 translate 里那 -6px），
+   * 立刻收也会闪，所以留余量。
+   *
+   * 余量从 160ms 提到 240ms（用户 2026-11 报「有时候出来一会儿又消失」）：
+   * 指针斜着穿过那 6px 空隙时，160ms 经常不够；而到点后还有一次 `:hover` 复查兜底，
+   * 所以放宽不会让「移开还挂着」变严重。
    */
   const subTimer = useRef<number | null>(null);
   const keepSub = () => {
@@ -270,13 +296,46 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
       subTimer.current = null;
     }
   };
+  /**
+   * 当前子面板的入口行 / 面板本体。收起计时器到点时用它们复查指针还在不在 ——
+   * `:hover` 判定比记一堆 enter/leave 布尔量可靠（面板是 `position: fixed` 的兄弟节点，
+   * 中间还隔着 6px 空隙，靠事件配对很容易漏一条）。
+   */
+  const subTriggerRef = useRef<HTMLElement | null>(null);
+  const subPanelRef = useRef<HTMLUListElement | null>(null);
+  const openSub = (kind: "tag" | "collection" | "snapshot", el: HTMLElement) => {
+    /*
+     * 先掐掉上一行留下的收起计时器（用户 2026-11 报「出来一会儿又消失」的根因之一）。
+     *
+     * 场景：悬停「标签」→ 开 → 移开 → `closeSubSoon` 起了计时器 →
+     * 还没到点指针就移到「分组」→ `openSub` 换了 sub，但**那个计时器还立着** →
+     * 到点无条件 `setSub(null)`，刚打开的分组面板被上一行的计时器关掉。
+     * 表现就是「明明悬停在分组上，面板闪一下就没了」。
+     */
+    keepSub();
+    subTriggerRef.current = el;
+    const r = el.getBoundingClientRect();
+    setSub({ kind, top: r.top, left: r.left });
+  };
   const closeSubSoon = () => {
     keepSub();
-    subTimer.current = window.setTimeout(() => {
+    const tick = () => {
+      // 到点复查：指针还压在入口行或子面板上就不收，顺延一轮。
+      // 这一步让「面板开着但指针仍在上面」永远不会被计时器误关。
+      const still =
+        subTriggerRef.current?.matches(":hover") || subPanelRef.current?.matches(":hover");
+      if (still) {
+        subTimer.current = window.setTimeout(tick, 120);
+        return;
+      }
       subTimer.current = null;
       setSub(null);
-    }, 160);
+    };
+    subTimer.current = window.setTimeout(tick, 240);
   };
+  const tagCounts = useMemo(() => allTags(tags), [tags]);
+  const collectionNames = useMemo(() => Object.keys(collections).sort(), [collections]);
+
   useEffect(() => {
     if (!open) {
       setSub(null);
@@ -323,10 +382,17 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
       <AnimatePresence>
         {open && (
           <>
-            <div className="menu-backdrop" onClick={close} />
+            {/* data-no-drag：速览窗口里按下遮罩不能启动窗口拖动。
+                否则 `useWindowDrag` 会把指针捕获到 `.qb-head`，pointerup 的目标变成
+                `.qb-head`，click 被派发给最近公共祖先 → 遮罩的 onClick 收不到，
+                表现就是「点面板外面收不起来」（2026-11 用户报）。
+                外部点击的兜底判定在 `usePopoverMenu` 的捕获阶段 pointerdown 里。 */}
+            <div className="menu-backdrop" data-no-drag onClick={close} />
             <motion.ul
               ref={listRef}
               className="sort-menu filter-menu glass-e3"
+              /* 同 SortMenu：菜单盒（含 4px 内边距那圈空白）整体不是拖动区 */
+              data-no-drag
               role="listbox"
               aria-multiselectable
               onKeyDown={listboxKeys}
@@ -594,6 +660,7 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
       {/* 「范围」二级菜单：fixed 定位在菜单外（菜单自己 overflow-y:auto 会裁掉绝对定位子元素） */}
       {open && sub && (
         <ul
+          ref={subPanelRef}
           className="filter-submenu"
           role="menu"
           style={{ top: sub.top, left: sub.left }}
@@ -938,16 +1005,34 @@ export function TopBar() {
           if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
           e.preventDefault();
           e.stopPropagation();
-          const modes = ["grid", "list", "specimen"] as const;
-          const cur = modes.findIndex((m) => m === viewMode);
-          const next = modes[(cur + (e.key === "ArrowRight" ? 1 : -1) + modes.length) % modes.length];
+          const cur = VIEW_MODES.findIndex((m) => m === viewMode);
+          const next =
+            VIEW_MODES[(cur + (e.key === "ArrowRight" ? 1 : -1) + VIEW_MODES.length) % VIEW_MODES.length];
           setViewMode(next);
           e.currentTarget.querySelectorAll<HTMLButtonElement>("[role='tab']")[
-            modes.indexOf(next)
+            VIEW_MODES.indexOf(next)
           ]?.focus();
         }}
       >
-        {(["grid", "list", "specimen"] as const).map((mode) => (
+        {/*
+         * 滑动指示器（审计 P1-10）。
+         *
+         * 原来用 `<motion.span layoutId="view-pill" />` 挂在当前按钮内部做共享元素，
+         * 靠 layout 投影从上一个按钮的 box 滑到这一个。问题是投影用的是**上一次渲染量到的
+         * box**：顶栏换行（窗口变窄）、窗口缩放、详情面板开合都会让按钮的位置/宽度变掉，
+         * 这时投影出来的指示器会短暂停在按钮外面（用户 2026-11 截图里的高亮块错位）。
+         *
+         * 三个 tab 是纯图标 + 固定 padding，几何完全由序号决定，用不着量：
+         * 指示器改成一个绝对定位的兄弟节点，位置由 `--i` 算（见 app.css 的 `.view-pill`）。
+         * 这也是当初没选 `LayoutGroup` 的原因 —— 它只隔离 layoutId 命名空间，
+         * 并不消除「陈旧 box」这条路径，而这里连量都不用量了。
+         */}
+        <span
+          className="view-pill"
+          aria-hidden="true"
+          style={{ "--i": VIEW_MODES.indexOf(viewMode) } as CSSProperties}
+        />
+        {VIEW_MODES.map((mode) => (
           <motion.button
             data-hint="hint.viewMode"
             key={mode}
@@ -959,12 +1044,6 @@ export function TopBar() {
             onClick={() => setViewMode(mode)}
             whileTap={{ scale: 0.94, transition: springSnappy }}
           >
-            {/* 滑动指示器（审计 P1-10）：与侧栏 nav-pill 同一套共享元素。
-                挂在当前按钮内部而不是绝对定位算坐标 —— 三个 tab 的宽度由图标 + padding
-                决定，写死 left 在换语言 / 换字号时就会错位。 */}
-            {viewMode === mode && (
-              <motion.span className="view-pill" layoutId="view-pill" transition={springSnappy} />
-            )}
             {mode === "grid" ? (
               <LayoutGrid size={15} strokeWidth={1.5} />
             ) : mode === "list" ? (
