@@ -1160,5 +1160,11 @@
   "settings.apiClientAdd": "添加",
   "settings.apiClientAddHint": "mcp:claude",
   "settings.apiClientAddBad": "格式要像 mcp:claude 或 api:backup（冒号前是 api / mcp）",
-  "settings.apiDangerousAllowHint": "勾 api / mcp = 这一类全部允许（含带名字的）；想只放行某一个，就按 mcp:名字 单独添加。"
+  "settings.apiDangerousAllowHint": "勾 api / mcp = 这一类全部允许（含带名字的）；想只放行某一个，就按 mcp:名字 单独添加。",
+  "load.restoringSeed": "正在恢复上次启用的字体…",
+  "load.backgroundReading": "后台读取字体库 {done}/{total}",
+  "load.seedReady": "字体库已就绪",
+  "load.partialData": "读取未完成，部分字体暂不可见",
+  "load.retry": "重试读取",
+  "toast.ledgerWriteFailed": "启用记录没能保存，下次启动可能不会自动恢复"
 }

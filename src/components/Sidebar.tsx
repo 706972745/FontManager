@@ -8,6 +8,7 @@ import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { allTags, familiesFor, isSystemFamily, useFontStore, type Family, type Nav } from "../state/fontStore";
 import { faceKey } from "../lib/snapshotKey";
 import { sortContainers } from "../lib/faceContainers";
+import { navCountText } from "../lib/seedOverrides";
 import { exportFontList, snapshotToggleAction } from "../lib/menus";
 import { t as translate, useT } from "../lib/i18n";
 import { formatTagExpiry } from "../lib/tagExpiry";
@@ -36,7 +37,14 @@ function NavRow({
   label: string;
   /** 计数前的附加小字（标签的到期日期红字） */
   trailing?: React.ReactNode;
-  count?: number;
+  /**
+   * 行尾计数。`null` = **还不知道**（读字体期间，渲染 `…`）。
+   *
+   * 为什么是三态而不是 `countsUnknown` 布尔开关：`0` 会被读成「没有字体」，
+   * 而读字体的过程中给出的任何数字都是错的（PRD US-4）。类型上把「未知」挤进
+   * `number` 里是做不到的，只能多一档。
+   */
+  count?: number | null;
   index: number;
   /**
    * 分组 / 快照的序号（从 1 开始）。
@@ -58,6 +66,8 @@ function NavRow({
    */
   const compact = useFontStore((s) => s.viewMode === "specimen");
   const active = navKey(current) === navKey(nav);
+  // `null` → `…`；`undefined` → 这一行根本不显示计数（如「关于」）
+  const countText = navCountText(count);
   return (
     <motion.button
       className={`nav-row ${active ? "nav-active" : ""}`}
@@ -100,7 +110,11 @@ function NavRow({
       {no !== undefined && <span className="nav-no tabular">{no}</span>}
       <span className="nav-label">{label}</span>
       {trailing}
-      {count !== undefined && <span className="nav-count tabular">{count}</span>}
+      {countText !== null && (
+        <span className={`nav-count tabular${count === null ? " nav-count-unknown" : ""}`}>
+          {countText}
+        </span>
+      )}
     </motion.button>
   );
 }
@@ -221,12 +235,19 @@ export function Sidebar() {
   const t = useT();
   const intro = useIntro();
   const fonts = useFontStore((s) => s.fonts);
+  /**
+   * 读字体期间（含种子已出、全量仍在读）这些数字都是**错的**：它们全由 `fonts` 现算，
+   * 而此刻 fonts 只是全量的一个子集。统一显示 `…`，读完同帧变成真值（AC-05）。
+   * 收藏 / 最近导入 / 快照条目 / 回收站不在此列 —— 它们来自 state.json，不依赖扫描。
+   */
+  const scanning = useFontStore((s) => s.phase === "scanning");
   const collectionFaces = useFontStore((s) => s.collectionFaces);
   /**
    * 分组成员数 = 字族级成员 ∪ 字重级成员所在的字族（0.9.9-13）。
    * 只把某个字重放进分组时，计数也要算上那个字族，否则侧栏显示 0、点进去却有卡片。
    */
-  const collectionCount = (name: string) => {
+  const collectionCount = (name: string): number | null => {
+    if (scanning) return null;
     const fams = new Set(collections[name] ?? []);
     const keys = collectionFaces[name] ?? [];
     if (keys.length > 0) {
@@ -270,18 +291,20 @@ export function Sidebar() {
     if (pendingSnapshotFor) setCreatingSnapshot(true);
   }, [pendingSnapshotFor]);
 
-  const familyCount = familiesFor(fonts, tags).size;
+  const familyCount = scanning ? null : familiesFor(fonts, tags).size;
   const sessionActivated = useFontStore((s) => s.sessionActivated);
   const allFamilies = [...familiesFor(fonts, tags).values()];
-  const activatedCount = allFamilies.filter(
-    (f) => (f.active || f.partial) && !sessionActivated.includes(f.name),
-  ).length;
-  const sessionCount = allFamilies.filter((f) =>
-    sessionActivated.includes(f.name),
-  ).length;
-  const deactivatedCount = allFamilies.filter((f) => !f.active).length;
+  const activatedCount = scanning
+    ? null
+    : allFamilies.filter(
+        (f) => (f.active || f.partial) && !sessionActivated.includes(f.name),
+      ).length;
+  const sessionCount = scanning
+    ? null
+    : allFamilies.filter((f) => sessionActivated.includes(f.name)).length;
+  const deactivatedCount = scanning ? null : allFamilies.filter((f) => !f.active).length;
   // 与「系统字体」列表用同一个口径（isSystemFamily），否则计数和点进去看到的数量对不上
-  const systemCount = allFamilies.filter(isSystemFamily).length;
+  const systemCount = scanning ? null : allFamilies.filter(isSystemFamily).length;
   const tagCounts = allTags(tags);
   const collapsed = useFontStore((s) => s.collapsedSections);
   const toggleSection = useFontStore((s) => s.toggleSection);
@@ -676,7 +699,7 @@ export function Sidebar() {
                     </span>
                   ) : undefined
                 }
-                count={count}
+                count={scanning ? null : count}
                 index={i++}
                 onContextMenu={(e) =>
                   openContextMenu(e, [

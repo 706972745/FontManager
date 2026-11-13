@@ -1150,5 +1150,11 @@
   "key.wheel": "Molette",
   "online.sourcesLabel": "Source",
   "online.sourcesOpen": "Ouvrir",
-  "online.subsetsLabel": "Jeu de caractères"
+  "online.subsetsLabel": "Jeu de caractères",
+  "load.restoringSeed": "Restauration des polices activées la dernière fois…",
+  "load.backgroundReading": "Lecture des polices en arrière-plan {done}/{total}",
+  "load.seedReady": "Bibliothèque de polices prête",
+  "load.partialData": "La lecture n’est pas terminée — certaines polices ne sont pas encore visibles",
+  "load.retry": "Relancer la lecture",
+  "toast.ledgerWriteFailed": "L’activation n’a pas pu être enregistrée ; elle risque de ne pas être restaurée au prochain démarrage"
 }
