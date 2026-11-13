@@ -212,8 +212,6 @@ function MainContent() {
   const nav = useFontStore((s) => s.nav);
   const viewMode = useFontStore((s) => s.viewMode);
   const fonts = useFontStore((s) => s.fonts);
-  // 扫描途中陆续到达的字体：有就先铺出来，别让用户对着骨架屏等整库
-  const scanFonts = useFontStore((s) => s.scanFonts);
   const tags = useFontStore((s) => s.tags);
   const collections = useFontStore((s) => s.collections);
   const collectionFaces = useFontStore((s) => s.collectionFaces);
@@ -243,19 +241,16 @@ function MainContent() {
   const snapshotFilter = useFontStore((s) => s.snapshotFilter);
   const activatedAt = useFontStore((s) => s.activatedAt);
 
-  // 扫描中就用「已经读到的那些」先渲染；扫完 fonts 会被权威结果整体替换
-  const displayFonts = phase === "scanning" && scanFonts.length > 0 ? scanFonts : fonts;
-
   const families = useMemo(
     () =>
       selectVisibleFamilies({
-        fonts: displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search,
+        fonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search,
         classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
         variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort,
         tagFilter, collectionFilter, snapshotFilter,
         ratings, ratingFilter, activatedAt,
       }),
-    [displayFonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort, ratings, ratingFilter, activatedAt, tagFilter, collectionFilter, snapshotFilter],
+    [fonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort, ratings, ratingFilter, activatedAt, tagFilter, collectionFilter, snapshotFilter],
   );
 
   // 非字族浏览页面（回收站 / 关于 / 在线栏目）没有「可见字族顺序」，必须清空：
@@ -342,8 +337,9 @@ function MainContent() {
   if (nav.kind === "trash") return <TrashView />;
   if (nav.kind === "about") return <AboutView />;
   if (nav.kind === "online") return <OnlineView />;
-  // 一个字体都还没读到才显示骨架屏；已经开始出结果就直接上列表（底部进度条还在）
-  if (phase === "scanning" && scanFonts.length === 0) return <ScanSkeleton />;
+  // 一个字体都还没读到才显示骨架屏；种子一到（fonts 非空）就直接上列表，
+  // 底部进度条继续跟着全量读（ADR-07：全程只允许出现一次骨架屏）。
+  if (phase === "scanning" && fonts.length === 0) return <ScanSkeleton />;
   const body =
     families.length === 0 ? (
       <EmptyLibrary
@@ -679,6 +675,10 @@ export default function App() {
       if ((e.key === "a" || e.key === "A") && (e.metaKey || e.ctrlKey) && !inField) {
         const st = useFontStore.getState();
         if (st.compare || st.settingsOpen || st.helpOpen || st.paletteOpen) return;
+        // 种子阶段静默忽略（PRD R-11）：此刻列表只是全量的一小部分，全选出来的
+        // 是「一百多个」而不是「四千多个」，用户随后的批量操作全会落在这个残缺集合上。
+        // 不弹提示：用户按 Ctrl+A 时并不指望有一句解释，等到 ready 自然就恢复了。
+        if (st.phase !== "ready") return;
         e.preventDefault();
         st.selectAll();
       }
