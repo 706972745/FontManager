@@ -801,33 +801,49 @@ fn normalized_names(family: &str, localized: &[LocalizedName]) -> Vec<String> {
         .collect()
 }
 
-/// 分类编排：把「名字层」和「元数据层」按中西文分别组装，最后统一兜底成展示。
+/// 分类编排：名字 / 元数据 / 字形 / 等宽四种信号按可信度组装，最后统一兜底成展示。
 ///
-/// 单独拆出来是为了可测：`metadata` 是个惰性闭包，测试里给 `|| None` 就等于
-/// 「这个字体没有可用的 OS/2 / PANOSE」，不依赖任何真实字体文件。
-pub(crate) fn resolve_classification<F>(
+/// 单独拆出来是为了可测：`metadata` / `shape` 都是惰性闭包，测试里给 `|| None`
+/// 就等于「这个字体没有可用的 OS/2 / PANOSE」或「字形层判不出」，不依赖真实字体。
+///
+/// 优先级（用户 2026-11-13 定的口径）：
+/// - **中日韩字体**：名字 → 元数据 → 字形 → 展示。中文的 OS/2 / PANOSE 基本是垃圾
+///   （见 `classify_by_metadata` 的注释），所以名字永远第一。
+/// - **西文字体**：等宽 → 元数据 → 名字 → 字形 → 展示。西文古典字体的名字往往没有
+///   任何有用关键词（"AcaciasHand" 这种手写体靠名字判得出，但 "Barmeno" 什么都说不
+///   出来），元数据反而更靠谱，所以元数据在前。
+/// - **元数据是垃圾（PANOSE 全 0 / sFamilyClass=0）时**：字形层的结论优先于元数据，
+///   但**名字仍然更优先** —— 名字是厂家自己写的，字形只是几何推断。
+pub(crate) fn resolve_classification<M, S>(
     cjk: bool,
     monospaced: bool,
+    metadata_garbage: bool,
     names: &[String],
-    metadata: F,
+    metadata: M,
+    shape: S,
 ) -> Classification
 where
-    F: FnOnce() -> Option<Classification>,
+    M: Fn() -> Option<Classification>,
+    S: Fn() -> Option<Classification>,
 {
-    if cjk {
-        // 中日韩字体：名字优先（元数据基本不可信），名字判不出才看元数据
-        return classify_by_name(names)
-            .or_else(metadata)
-            .unwrap_or(Classification::Display);
-    }
-    // 西文字体：is_monospaced 最优先（Courier / Consolas 的 OS/2 class 会写成 8），
-    // 再元数据，再名字兜底，最后展示
-    if monospaced {
+    // 等宽只对西文有意义：中日韩字体天然等宽（见 is_cjk_font 的注释），不能据此判等宽
+    if monospaced && !cjk {
         return Classification::Mono;
     }
-    metadata()
-        .or_else(|| classify_by_name(names))
-        .unwrap_or(Classification::Display)
+    // 名字层排第一的两种情形：中日韩字体 / 元数据不可信
+    if cjk || metadata_garbage {
+        if let Some(c) = classify_by_name(names) {
+            return c;
+        }
+    }
+    let signals = if metadata_garbage {
+        // 元数据全 0：先问字形，再退回元数据
+        shape().or_else(metadata)
+    } else {
+        // 元数据可信：元数据 → 名字（西文）→ 字形
+        metadata().or_else(|| classify_by_name(names))
+    };
+    signals.or_else(shape).unwrap_or(Classification::Display)
 }
 
 /// 名字里带 `mono` 就够判等宽，但 `Monotype`（字厂名，如 Monotype Corsiva 手写体）
@@ -920,13 +936,38 @@ fn classify_by_metadata(
     }
 }
 
-/// 字族分类入口：`is_cjk_font` → 名字层（含覆盖表）→ 元数据层 → 展示兜底。
+/// 元数据是不是**明摆着的垃圾**：没有 OS/2 表，或者 `sFamilyClass` 与 PANOSE 全 0。
+///
+/// 命中时字形层要抢在元数据前面（见 `resolve_classification`）—— 全 0 的 OS/2 等于
+/// 厂家没填，按它判出来的分类纯属噪声。实测库里 SitkaVF / SegUIVar 就是这种：
+/// 名字里没有关键词、元数据全 0，只有字形判得出来。
+fn metadata_is_garbage(face: &ttf_parser::Face) -> bool {
+    const OS2: ttf_parser::Tag = ttf_parser::Tag::from_bytes(b"OS/2");
+    let Some(os2) = face.raw_face().table(OS2) else {
+        return true;
+    };
+    if os2.len() < 42 {
+        return true;
+    }
+    os2[30] == 0 && os2[32..42].iter().all(|b| *b == 0)
+}
+
+/// 字族分类入口。
+///
+/// 用户 2026-11-13 的硬要求：分类必须能泛化到以后新导入的字体 —— 关键词表管不到
+/// 没有可匹配词的字体，所以名字判不出时要靠**字形几何**，而不是直接倒进兜底展示
+/// （细节见 `resolve_classification` 的优先级说明）。
 fn classify(face: &ttf_parser::Face, family: &str, localized: &[LocalizedName]) -> Classification {
     let names = normalized_names(family, localized);
     let cjk = is_cjk_font(face, &names);
-    resolve_classification(cjk, face.is_monospaced(), &names, || {
-        classify_by_metadata(face, cjk, &names)
-    })
+    resolve_classification(
+        cjk,
+        face.is_monospaced(),
+        metadata_is_garbage(face),
+        &names,
+        || classify_by_metadata(face, cjk, &names),
+        || crate::shape_class::classify_by_shape(face),
+    )
 }
 
 fn layout_features(face: &ttf_parser::Face) -> Vec<String> {
@@ -1501,12 +1542,12 @@ mod tests {
 
     /// 中日韩分支、且「没有任何可用元数据」时的判定结果。
     fn cjk_class(names: &[&str]) -> Classification {
-        resolve_classification(true, false, &owned_lower(names), || None)
+        resolve_classification(true, false, false, &owned_lower(names), || None, || None)
     }
 
     /// 西文分支、且「没有任何可用元数据」时的判定结果。
     fn west_class(names: &[&str]) -> Classification {
-        resolve_classification(false, false, &owned_lower(names), || None)
+        resolve_classification(false, false, false, &owned_lower(names), || None, || None)
     }
 
     /// 综艺 / 琥珀这批中文美术字原本全是 Unknown（元数据全 0，名字里又没有旧关键词）。
@@ -1551,7 +1592,14 @@ mod tests {
         // 元数据说是手写也一样：中日韩分支名字优先
         let names = owned_lower(&["迷你简综艺"]);
         assert_eq!(
-            resolve_classification(true, false, &names, || Some(Classification::Script)),
+            resolve_classification(
+                true,
+                false,
+                false,
+                &names,
+                || Some(Classification::Script),
+                || None
+            ),
             Classification::Display,
             "名字判得出时不该让元数据说话"
         );
@@ -1626,7 +1674,14 @@ mod tests {
         // 等宽优先于一切（Courier / Consolas 的 OS/2 class 会写成 8）
         let courier = owned_lower(&["Courier New"]);
         assert_eq!(
-            resolve_classification(false, true, &courier, || Some(Classification::Sans)),
+            resolve_classification(
+                false,
+                true,
+                false,
+                &courier,
+                || Some(Classification::Sans),
+                || None
+            ),
             Classification::Mono
         );
         assert_eq!(west_class(&["Brush Script MT"]), Classification::Script);
@@ -1641,6 +1696,136 @@ mod tests {
             west_class(&["Monotype Corsiva"]),
             Classification::Mono,
             "Monotype 不是等宽"
+        );
+    }
+
+    /// 字形层接力：族名是一串乱码（新导入字体最常见的样子）时，宋体 / 黑体也不能
+    /// 掉进兜底展示 —— 这就是第二阶段加这层的目的（泛化到关键词表没覆盖的字体）。
+    ///
+    /// 这里直接对系统字体的 `Face` 调 `classify`，族名故意给乱码。
+    #[test]
+    fn shape_layer_rescues_fonts_whose_name_says_nothing() {
+        let cases = [
+            ("simsun.ttc", Classification::Serif),
+            ("simhei.ttf", Classification::Sans),
+            ("msyh.ttc", Classification::Sans),
+            ("times.ttf", Classification::Serif),
+            ("arial.ttf", Classification::Sans),
+        ];
+        for (file, want) in cases {
+            let path = Path::new(r"C:\Windows\Fonts").join(file);
+            if !path.exists() {
+                eprintln!("[skip] 系统字体缺失，跳过：{file}");
+                continue;
+            }
+            let Ok(data) = std::fs::read(&path) else { continue };
+            let Ok(face) = ttf_parser::Face::parse(&data, 0) else {
+                continue;
+            };
+            let garbage = "zzzqqq乱码";
+            let got = classify(&face, garbage, &[]);
+            eprintln!(
+                "{file}: 元数据垃圾={} 字形层={:?} 乱码族名下最终={got:?}",
+                metadata_is_garbage(&face),
+                crate::shape_class::classify_by_shape(&face)
+            );
+            assert_eq!(got, want, "{file}（族名乱码）该靠元数据/字形判成 {want:?}");
+        }
+    }
+
+    /// 「元数据明显是垃圾时，字形层的结论要优先于元数据」。
+    ///
+    /// Sitka / Segoe UI Variable 这几个可变字体的 OS/2 是**全 0**（厂家没填），
+    /// 名字里也没有任何关键词 —— 靠元数据只能掉进兜底展示，靠字形才判得出来。
+    #[test]
+    fn shape_wins_when_metadata_is_all_zeros() {
+        let cases = [
+            ("SitkaVF.ttf", Classification::Serif),    // Sitka 是衬线家族
+            ("SegUIVar.ttf", Classification::Sans),    // Segoe UI Variable 是无衬线
+        ];
+        for (file, want) in cases {
+            let path = Path::new(r"C:\Windows\Fonts").join(file);
+            if !path.exists() {
+                eprintln!("[skip] 系统字体缺失，跳过：{file}");
+                continue;
+            }
+            let Ok(data) = std::fs::read(&path) else { continue };
+            let Ok(face) = ttf_parser::Face::parse(&data, 0) else {
+                continue;
+            };
+            assert!(
+                metadata_is_garbage(&face),
+                "{file} 的 OS/2 本来就是全 0 —— 这是这条测试的前提"
+            );
+            eprintln!("{file} 字形层={:?}", crate::shape_class::classify_by_shape(&face));
+            assert_eq!(classify(&face, "zzzqqq", &[]), want, "{file} 该靠字形判出来");
+        }
+    }
+
+    /// 优先级铁律一：西文字体「名字比字形更可信」。手写体的名字（Hand / Script）
+    /// 不能被字形层盖掉 —— AcaciasHand 这类手写体既没有衬线也没有笔画对比度，
+    /// 几何上一片空白，只看字形会判成无衬线。
+    #[test]
+    fn western_name_beats_shape() {
+        let names = owned_lower(&["AcaciasHand"]);
+        assert_eq!(
+            resolve_classification(
+                false,
+                false,
+                false,
+                &names,
+                || None,
+                || Some(Classification::Sans)
+            ),
+            Classification::Script,
+            "名字判出手写时不该让字形说话"
+        );
+        // 元数据是垃圾时也一样：名字仍然优先于字形
+        assert_eq!(
+            resolve_classification(
+                false,
+                false,
+                true,
+                &names,
+                || Some(Classification::Serif),
+                || Some(Classification::Sans)
+            ),
+            Classification::Script
+        );
+    }
+
+    /// 优先级铁律二：元数据全 0 时字形抬头（压过元数据），元数据可信时字形只补位。
+    #[test]
+    fn garbage_metadata_loses_to_shape_but_good_metadata_does_not() {
+        let names = owned_lower(&["zzzqqq"]);
+        // 垃圾元数据 + 名字判不出 → 听字形
+        assert_eq!(
+            resolve_classification(
+                false,
+                false,
+                true,
+                &names,
+                || Some(Classification::Script),
+                || Some(Classification::Sans)
+            ),
+            Classification::Sans
+        );
+        // 可信元数据 + 名字判不出 → 听元数据
+        assert_eq!(
+            resolve_classification(
+                false,
+                false,
+                false,
+                &names,
+                || Some(Classification::Script),
+                || Some(Classification::Sans)
+            ),
+            Classification::Script
+        );
+        // 四种信号都没有 → 兜底展示
+        assert_eq!(
+            resolve_classification(false, false, true, &names, || None, || None),
+            Classification::Display
         );
     }
 
@@ -1957,6 +2142,9 @@ mod tests {
     /// 量化工具：把**真实字体库**的分类结果 dump 成 TSV，用来做规则改动的前后对比。
     ///
     /// 只看字面级分布不够 —— 筛选菜单里用户看到的是「族」，所以族级分布也一起打出来。
+    /// 另外还会打出**字形层**的统计：多少字面能靠几何判出来、多少给不出结论（后者
+    /// 最后进兜底展示，是已知且可接受的），以及字形层的耗时（这一层每个字体都要
+    /// 解析 4 个字形，必须确认没有把扫描拖慢）。
     ///
     /// 跑法：
     /// ```bash
@@ -1980,6 +2168,12 @@ mod tests {
         let out = std::env::var("ZFM_OUT").unwrap_or_else(|_| "classes.tsv".to_string());
 
         let mut rows: Vec<(String, Classification, String)> = Vec::new();
+        // 字形层统计（族名 → 字形层结论），只收前若干个样本供人眼核对
+        let mut shape_tally: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        let mut shape_none_samples: Vec<(String, Classification)> = Vec::new();
+        let mut shape_cost = std::time::Duration::ZERO;
+        let started = std::time::Instant::now();
         let mut files = 0usize;
         for entry in walkdir::WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path().to_path_buf();
@@ -1987,10 +2181,27 @@ mod tests {
                 continue;
             }
             files += 1;
+            let data = std::fs::read(&path).ok();
             for f in parse_font_file(&path, FontSource::Managed) {
                 rows.push((f.family.clone(), f.classification, f.path.clone()));
+                let Some(data) = data.as_deref() else { continue };
+                let Ok(face) = ttf_parser::Face::parse(data, f.face_index) else {
+                    continue;
+                };
+                let t0 = std::time::Instant::now();
+                let shaped = crate::shape_class::classify_by_shape(&face);
+                shape_cost += t0.elapsed();
+                let key = match shaped {
+                    Some(c) => format!("{:?}", c),
+                    None => "无结论".to_string(),
+                };
+                *shape_tally.entry(key).or_default() += 1;
+                if shaped.is_none() && shape_none_samples.len() < 20 {
+                    shape_none_samples.push((f.family.clone(), f.classification));
+                }
             }
         }
+        let elapsed = started.elapsed();
         rows.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.2.cmp(&b.2)));
 
         let mut face_tally: std::collections::BTreeMap<&'static str, usize> =
@@ -2028,6 +2239,91 @@ mod tests {
         }
         println!("字面级分布：{face_tally:?}");
         println!("族级分布：{family_tally:?}");
+        println!("字形层结论分布：{shape_tally:?}");
+        println!(
+            "字形层耗时：{:.2?} 总计 / {} 个字面 = {:.3?} 每个（整轮 {:.2?}）",
+            shape_cost,
+            rows.len(),
+            shape_cost / rows.len().max(1) as u32,
+            elapsed
+        );
+        println!("字形层「无结论」样例（族名 / 最终分类）：");
+        for (family, class) in &shape_none_samples {
+            println!("  {family}\t{}", class_key(*class));
+        }
+    }
+
+    /// 量化：字形层给扫描加了多少钱。
+    ///
+    /// 同一批 `Face` 上跑两遍分类：一遍走完整链路（含字形层），一遍**跳过字形层**
+    /// （等价于第一阶段的链路）。文件读取与字体解析都在计时之外，只比分类本身。
+    ///
+    /// 跑法：`ZFM_LIBRARY="E:\...\字体库" cargo test --lib bench_classify_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_classify_cost() {
+        let Ok(dir) = std::env::var("ZFM_LIBRARY") else {
+            eprintln!("[skip] 没设 ZFM_LIBRARY");
+            return;
+        };
+        let root = Path::new(&dir);
+        if !root.is_dir() {
+            eprintln!("[skip] ZFM_LIBRARY 不是目录：{dir}");
+            return;
+        }
+        let (mut with_shape, mut without_shape) = (
+            std::time::Duration::ZERO,
+            std::time::Duration::ZERO,
+        );
+        let mut faces = 0usize;
+        for entry in walkdir::WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path().to_path_buf();
+            if !path.is_file() || !is_font_file(&path) {
+                continue;
+            }
+            let Ok(data) = std::fs::read(&path) else { continue };
+            let Ok(probe) = ttf_parser::Face::parse(&data, 0) else {
+                continue;
+            };
+            let count = ttf_parser::fonts_in_collection(&data).unwrap_or(1).min(8);
+            for idx in 0..count {
+                let Ok(face) = ttf_parser::Face::parse(&data, idx) else {
+                    continue;
+                };
+                let names = normalized_names("zzzqqq", &[]);
+                let cjk = is_cjk_font(&face, &names);
+                let garbage = metadata_is_garbage(&face);
+                let mono = face.is_monospaced();
+                let t0 = std::time::Instant::now();
+                let a = resolve_classification(
+                    cjk,
+                    mono,
+                    garbage,
+                    &names,
+                    || classify_by_metadata(&probe, cjk, &names),
+                    || crate::shape_class::classify_by_shape(&face),
+                );
+                with_shape += t0.elapsed();
+                let t0 = std::time::Instant::now();
+                let b = resolve_classification(
+                    cjk,
+                    mono,
+                    garbage,
+                    &names,
+                    || classify_by_metadata(&probe, cjk, &names),
+                    || None,
+                );
+                without_shape += t0.elapsed();
+                let _ = (a, b);
+                faces += 1;
+            }
+        }
+        println!(
+            "{faces} 个字面：含字形层 {with_shape:.2?} / 不含 {without_shape:.2?} \
+             → 增量 {:.2?}（{:.0} µs/字面）",
+            with_shape.saturating_sub(without_shape),
+            (with_shape.saturating_sub(without_shape).as_secs_f64() * 1e6) / faces.max(1) as f64
+        );
     }
 
     /// 压测：把 `ZFM_BULK_DIR` 指向的目录里所有字体逐个解析一遍。
