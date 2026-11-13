@@ -21,7 +21,9 @@ export function LoadProgress({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const phase = useFontStore((s) => s.phase);
   const scan = useFontStore((s) => s.scanProgress);
-  /** 列表里已经有字体了 = 种子（或上一次的库）已经可用 */
+  /** 种子到了没有：决定这一条到底在说「恢复上次启用的」还是「正在读你的字体」 */
+  const seedReady = useFontStore((s) => s.seedReady);
+  /** 列表里已经有字体了 = 列表已经可用（种子或上一次的库） */
   const seeded = useFontStore((s) => s.fonts.length > 0);
   /**
    * 「刚读完」的一次性收尾。只认「scanning → ready」这一条真实迁移：
@@ -61,7 +63,9 @@ export function LoadProgress({ compact = false }: { compact?: boolean }) {
     : !reading
       ? t("load.seedReady")
       : percent == null
-        ? seeded
+        ? // 种子还没到 = 骨架屏态（A1~A3）：说的是「在恢复上次启用的」而不是「在读你的字体」，
+          // 因为此刻列表里一个字体都还没有，说「读取」会让人以为马上就能看到东西了
+          seedReady
           ? t("load.finding")
           : t("load.restoringSeed")
         : seeded

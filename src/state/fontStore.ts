@@ -3079,6 +3079,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     if (!clean) return;
     const st = get();
     // 扫描没跑完时 fonts 只是「已经扫到的那部分」，这时候建快照会缺一堆字面。
+    // （2.1.4 起扫描期间 fonts 里是种子子集，比全量更少，这道拦截只多不少。）
     if (st.phase === "scanning") {
       toast.info(t("snap.waitScan"));
       return;
@@ -3369,7 +3370,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   removeMissingFromSnapshot: async (name) => {
     const st = get();
-    // 扫描没跑完时 `fonts` 只是「已经扫到的那一部分」。这时候按「解析不到」判定缺失，
+    // 扫描没跑完时 `fonts` 只是「已经扫到的那一部分」（2.1.4 起还有种子子集这一层）。这时候按「解析不到」判定缺失，
     // 会把还没加载进来的条目整批当成「本机找不到」删掉 —— 实测扫描到 71% 时点一下，
     // 320 条的快照被削到只剩 7 条。宁可让用户等扫描完再清理，也不能悄悄吃掉数据。
     if (st.phase === "scanning") {
