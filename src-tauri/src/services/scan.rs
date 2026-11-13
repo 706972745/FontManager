@@ -91,7 +91,11 @@ pub fn is_seed_face(face: &FontFace, inp: &SeedInput) -> bool {
 /// 缓存里没有的路径直接丢弃，交给紧接着的全量扫描补上：现场解析几十个文件最坏能把
 /// 1.5s 的首帧预算吃光，还会和全量扫描重复解析同一批文件（缓存 get 又被打成 miss），
 /// 「伪快速启动」比慢启动更难排查。
-fn build_seed(cache: &crate::fontcache::FontCache, probe: &activation::Probe, state: &store::AppState) -> Vec<FontFace> {
+fn build_seed(
+    cache: &crate::fontcache::FontCache,
+    probe: &activation::Probe,
+    state: &store::AppState,
+) -> Vec<FontFace> {
     let inp = seed_input(probe, state);
     // 去重键用 (归一化路径, face_index)：
     //   · 同一路径可能在多个来源里命中（台账 + 分组 + 快照），必须只出一份；
