@@ -282,6 +282,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 动作分隔线 `.titlebar-sep` | 1px × 16px / margin 0 4px |
 | 库级动作 `.titlebar-controls .tb-action` | 30×30 / **无边框 · 透明底** / 4px 圆角 / 图标 14；hover = `--e2` 底 + 主文字色；禁用（扫描中 / 导入中）45% 透明、不出 hover 底。顺序固定 **导入文件夹 → 重新扫描**，紧跟在「设置」之后、`.titlebar-sep` 之前（2026-11-13 从顶栏迁来） |
 | 分组间距 `.tb-action-first` | 「导入文件夹」`margin-left: 4px`：`.titlebar-controls` 的 gap 只有 1px，这 4px 把「窗口动作（速览 / 设置）」与「字库动作（导入 / 重扫）」分成两组，右侧由 `.titlebar-sep` 兜住 |
+| 输入光标 `BlinkCaretInput` | **自绘闪烁块状光标**（2.1.2，用户点名效果）：全部 6 个输入框（顶栏搜索/预览、速览搜索/预览、右键菜单搜索、在线视图搜索）的光标为 2px 蓝竖条（`--caret-blue` 深色 #4c8dff / 浅色 #2f6bdb），1.1s 硬切闪烁，`prefers-reduced-motion` 时常亮。原生 caret 隐藏（`caret-color: transparent`），中文 IME 组合期间自动切回原生光标（`.blink-caret-field.is-composing`）。password 类型不支持（明文进镜像 DOM），退回原生。readOnly 由 `input[readonly] { caret-color: auto }` 兜底 |
 | 导入图标 `ImportFolderGlyph` | **打开文件夹 + 右下角外挂加号**（2.1.1，用户定的 V2）：FolderOpen 原路径缩到 86%，加号（臂长 6.3 / 圆头）压在右下角；加号先垫一圈 `--canvas` 底衬（4.2 宽）再叠 1.5 主色描边，交叠处自动留白 —— 看起来是加号浮在文件夹上而不是穿过它。纯内联 SVG，`currentColor` + `var(--canvas)`，深浅主题自动跟随 |
 | 关闭按钮 `.tc-close` | 悬停 = 错误红 18% 底 + 红字（**全软件唯一的红**只用在这个危险动作上） |
 | 侧栏 `.sidebar` | 底 `--ui-bg`；`.sidebar-scroll` flex 1 / gap 4px |
@@ -729,6 +730,7 @@ Windows 的 WebView2 没有滚轮惯性：滚一格走一格、松手就停。1.
 | 2.0.0 | **标题栏接管两个字库动作**：「导入文件夹」「重新扫描」从顶栏移到 `.titlebar-controls`，30×30 无边框（`.rescan-btn.tb-action` 叠加变体，基础规则未动），顺序 速览 → 设置 → **导入 → 重扫** │ 窗口按钮；顶栏右侧只剩视图切换并加 `margin-left: auto`（换行后仍贴右）。见 §3.1 / §3.2 |
 | 2.1.0 | **插件崩溃原因可见**：插件行在 `.settings-sub` 下多一行 10px 等宽小字「原因：{line}」，动作区最左多一个「查看日志」按钮（仅报错行）。文案来源是 `activation.log` 尾部 64 KiB 里该插件最后一条 stderr 错误（`File "…", line N → 异常`），日志轮转时回落 `activation.old.log`。见 §3.12 |
 | 2.1.1 | **标题栏导入图标加号**：`FolderOpen` 缩 86% + 右下角外挂加号，加号垫 `--canvas` 底衬（交叠处留白）。见 §3.1 |
+| 2.1.2 | **自绘闪烁光标**（§3.1）｜**右键菜单「打字即搜」**：「全部字体」按钮去下划线恢复胶囊（R4 重样式清理），`.ctx-hits` 滚动条改细淡且不响应 scroll-hot 热区（§3.12 相邻）｜**授权状态改名**：「收费」→「永久」（徽标「永久授权」）、「有时间限制」→「已购买（到期日期）」（徽标带日期）；自动判定文案不变｜**标签到期**：chip 日历按钮设日期，红色显示（跨年 YYYY-MM-DD / 今年 MM-DD），到期次日免确认自动移除（§3.8）｜**版权设置修复**：许可证盒子手动结论优先 + 自动识别降为附注；"free" 口径统一（目录（未知版权）→（商用免费）一次性改名）|
 
 ---
 
