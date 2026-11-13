@@ -1150,5 +1150,11 @@
   "key.wheel": "Roda",
   "online.sourcesLabel": "Origem",
   "online.sourcesOpen": "Abrir",
-  "online.subsetsLabel": "Conjunto de caracteres"
+  "online.subsetsLabel": "Conjunto de caracteres",
+  "load.restoringSeed": "Restaurando as fontes que você tinha ativado…",
+  "load.backgroundReading": "Lendo fontes em segundo plano {done}/{total}",
+  "load.seedReady": "Biblioteca de fontes pronta",
+  "load.partialData": "A leitura não terminou — algumas fontes ainda não aparecem",
+  "load.retry": "Ler novamente",
+  "toast.ledgerWriteFailed": "Não foi possível salvar o registro de ativação; talvez não seja restaurado na próxima inicialização"
 }

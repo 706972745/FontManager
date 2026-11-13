@@ -337,8 +337,20 @@ body,
   font-weight: 400;
   color: var(--text-tertiary);
   padding: 0 1px;
-  min-width: 20px;
+  /* 2.1.4：读字体期间这一列显示 `…`，读完变成真实数字。宽度必须两者都容得下，
+     否则每次启动都会看到整列数字向左「跳一下」（AC-05）。3ch 刚好放下 `…` 与三位数，
+     四位数（4000+ 字族）会自己撑开 —— 那是一次性的，不是抖动。 */
+  min-width: 3ch;
   text-align: right;
+  /* 等宽数字：`1` 与 `8` 占同样宽度，个位→十位→百位不会把组名推来推去 */
+  font-variant-numeric: tabular-nums;
+}
+/* 还不知道的数字（读取中）。压暗一档：它既不是 0 也不是真实值，
+   视觉上必须一眼看出「这里暂时没数」，否则会被读成「一个字体都没有」（PRD US-4）。 */
+.nav-count-unknown {
+  color: var(--text-tertiary);
+  opacity: 0.55;
+  letter-spacing: 0.5px;
 }
 .nav-active .nav-count {
   color: var(--text-secondary);
@@ -444,6 +456,23 @@ body,
 .load-fill-indeterminate {
   width: 35%;
   animation: load-slide 1.1s ease-in-out infinite;
+}
+/* 读失败降级时的「重试读取」（2.1.4 / R-15）：不抢焦点、不撑高这一条，
+   点一下只重发一次全量扫描 —— 种子列表已经在屏幕上了，失败了也还能接着用。 */
+.load-retry {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid rgba(var(--ink-rgb), 0.14);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-10);
+  font-weight: 500;
+  cursor: pointer;
+}
+.load-retry:hover {
+  border-color: rgba(var(--ink-rgb), 0.26);
+  color: var(--text-primary);
 }
 @keyframes load-slide {
   0% {

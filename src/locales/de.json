@@ -1133,5 +1133,11 @@
   "key.wheel": "Mausrad",
   "online.sourcesLabel": "Quelle",
   "online.sourcesOpen": "Öffnen",
-  "online.subsetsLabel": "Zeichensatz"
+  "online.subsetsLabel": "Zeichensatz",
+  "load.restoringSeed": "Zuletzt aktivierte Schriften werden wiederhergestellt…",
+  "load.backgroundReading": "Schriften werden im Hintergrund gelesen {done}/{total}",
+  "load.seedReady": "Schriftbibliothek ist bereit",
+  "load.partialData": "Der Lesevorgang ist nicht abgeschlossen – einige Schriften fehlen noch",
+  "load.retry": "Erneut lesen",
+  "toast.ledgerWriteFailed": "Die Aktivierung konnte nicht gespeichert werden; beim nächsten Start wird sie evtl. nicht wiederhergestellt"
 }
