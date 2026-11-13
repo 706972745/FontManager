@@ -477,6 +477,16 @@ body,
   border-bottom: 1px solid rgba(var(--ink-rgb), 0.05);
   background: rgba(var(--ink-rgb), 0.01);
   z-index: 5;
+  /* 不许被压缩（用户 2026-11 报：窗口变窄时「网格 / 列表 / 列」三个视图按钮浮在
+     列表内容上、和顶栏分离）。
+     `.topbar` 是 `.app-main`（flex column）的子项，默认 `flex-shrink:1`：换行后
+     内容高度变成两行，但 flex 容器按比例把它压回一行的高度，第二行就溢出到盒子外面；
+     而 `.topbar` 有 z-index:5，于是那一行按钮**压在列表上面**悬空浮着。
+     顶栏高度必须由自己的内容决定，让位交给 `.app-content`（flex:1; min-height:0）。
+     ⚠️ 待定清单 A15 提到的 R4「min-height: 64px」这次没补：单行时顶栏是
+     36 控件 + 上下各 10 padding = 56px，加 min-height 会凭空高 8px、改变现有观感，
+     要改得先跟视觉确认。这里只修「被压扁」这条硬 bug。 */
+  flex: 0 0 auto;
 }
 
 .topbar-field {
@@ -914,6 +924,8 @@ body,
   padding: 3px;
   gap: 2px;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+  /* 滑动指示器（.view-pill）的定位上下文 */
+  position: relative;
 }
 .view-btn {
   display: grid;
@@ -921,8 +933,8 @@ body,
   padding: 0 10px;
   border-radius: 4px;
   color: var(--text-tertiary);
-  /* 位置上下文 + 独立层叠上下文：滑动指示器（.view-pill，z-index:-1）要压在
-     图标下面、又要在 .view-toggle 的底色上面（审计 P1-10）。 */
+  /* 位置上下文 + 独立层叠上下文：滑动指示器 .view-pill 现在是 .view-toggle 的兄弟节点
+     （z-index 同为 0），靠 DOM 顺序压在指示器之上、又在 .view-toggle 的底色之上（审计 P1-10）。 */
   position: relative;
   z-index: 0;
   /* 底块交给 .view-pill 之后这里只剩文字色需要过渡 */
@@ -936,17 +948,35 @@ body,
   color: var(--text-primary);
 }
 /* 视图切换的滑动底块。圆角跟 `.view-toggle > *`（2px）保持一致 ——
-   别写 4px，那会让底块比按钮自己的圆角更圆，切换时四角露边。 */
+   别写 4px，那会让底块比按钮自己的圆角更圆，切换时四角露边。
+
+   位置由 `--i`（当前视图在 VIEW_MODES 里的序号，0/1/2）算出来，不用 motion 的
+   layoutId 投影：三个 tab 是纯图标 + 固定 padding（各 35px 宽），几何完全可算。
+   原来靠 layout 投影，用的是「上一次渲染量到的 box」—— 顶栏换行、窗口缩放、
+   详情面板开合都会让按钮位置变掉，指示器会短暂停在按钮外面（用户 2026-11 截图）。
+
+   几何推导（100% 取的是 .view-toggle 的 padding box 宽 = border-box - 2）：
+     内容宽 = 100% - 6（左右 padding 各 3）
+     单个按钮 = (内容宽 - 2 个 2px gap) / 3 = (100% - 10px) / 3
+     位移一步 = 按钮宽 + gap，用滑块自身宽度做百分比基准：(100% - 10px)/3 + 2px
+              = 100% + 2px 里的 100% 换成滑块宽 → translateX(calc(var(--i) * (100% + 2px)))
+   改 padding / gap 时这三处要一起改，否则会错位。 */
 .view-pill {
   position: absolute;
-  inset: 0;
-  z-index: -1;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 10px) / 3);
+  z-index: 0;
+  pointer-events: none;
   border-radius: 2px;
   background: var(--e3);
   box-shadow:
     inset 0 1px 0 var(--glass-top-highlight),
     0 0 10px var(--accent-glow-soft),
     var(--shadow-ground);
+  transform: translateX(calc(var(--i, 0) * (100% + 2px)));
+  transition: transform var(--t-state) ease;
 }
 
 .app-content {
@@ -1280,12 +1310,60 @@ body,
   justify-content: center;
   border-color: var(--accent-a);
 }
+/**
+ * 开关滑块：位置完全由「轨道尺寸 + 开关状态」算出来，不再依赖渲染时量到的 box。
+ *
+ * 用户 2026-11 报「很多按钮不跟随自己的按钮一起移动」，主因就是这里：
+ * 原来是 motion 的 `layout` 投影（每次渲染量一次 box，从「上一次的 box」动画过来）。
+ * 开关挂在虚拟滚动的行上（行会被回收复用）、在详情面板宽度逐帧 0→348 的容器里、
+ * 也跟着窗口缩放 —— 「上一次的 box」常常属于别的行 / 别的宽度，滑块就从错误的位置
+ * 飞过来、滞后于轨道。
+ *
+ * 几何（box-sizing: border-box）：
+ *   轨道 border-box 宽 = --pill-w，左右各 1px 边框 + 各 2px padding → 内容宽 = --pill-w - 6
+ *   滑块宽 = --pill-h - 6
+ *   「开」态要走 (--pill-w - 6) - (--pill-h - 6) = --pill-w - --pill-h
+ *   → sm 34-19 = 15px，lg 46-26 = 20px，换尺寸自动成立，不用写死数字。
+ * 绝对定位的包含块是 padding box，所以 left/top 写 2px 正好落在原来的 padding 位置上，
+ * 与旧的 flex 布局（justify-content: flex-start/flex-end）逐像素一致。
+ */
 .pill-thumb {
+  position: absolute;
+  left: 2px;
+  top: 2px;
   width: calc(var(--pill-h) - 6px);
   height: calc(var(--pill-h) - 6px);
   border-radius: 50%;
   background: linear-gradient(180deg, #ffffff, #e2e2e6);
   box-shadow: var(--shadow-ground);
+  /* 位移与按下反馈合成同一个 transform：两个分开写会互相覆盖 */
+  transform-origin: var(--pill-origin, 0) 50%;
+  transform: translateX(var(--pill-tx, 0)) scaleX(var(--pill-sx, 1));
+  transition: transform var(--t-quick) ease;
+}
+.pill-on .pill-thumb {
+  --pill-tx: calc(var(--pill-w) - var(--pill-h));
+  /* 拉伸原点（--pill-origin）由组件内联给（开态 100% = 右端，关态 0% = 左端），
+     这里不重复声明。注意它必须是带 % 的值：`transform-origin` 要 <length-percentage>，
+     裸数字只有 0 合法 —— 写成 1 会让整条 transform-origin 失效、回落 50% 50%。 */
+}
+.pill-mixed .pill-thumb {
+  --pill-tx: calc((var(--pill-w) - var(--pill-h)) / 2);
+}
+/* 减少动效：这两处 2026-11 从 motion 改成纯 CSS `transition: transform`，
+   `<MotionConfig reducedMotion>` 管不到纯 CSS，所以必须在这里显式压一次。
+   （tokens.css 里 --t-quick / --t-state 在 reduced 下已经是 1ms，这里是把它钉成
+   `none`：少一层依赖，将来谁动了 token 也不会让开关滑块和视图指示器重新动起来。）
+   双轨写法与文件里其它 reduced 规则一致：软件内开关（data-motion）+ 系统层（@media）。 */
+:root[data-motion="reduced"] .pill-thumb,
+:root[data-motion="reduced"] .view-pill {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pill-thumb,
+  .view-pill {
+    transition: none;
+  }
 }
 
 .detail {

@@ -79,7 +79,22 @@ function NavRow({
       whileTap={{ opacity: 0.96, transition: springSnappy }}
     >
       {active && (
-        <motion.span className="nav-pill" layoutId="nav-pill" transition={spring} />
+        /*
+         * 侧栏选中块。这里**保留** layoutId 共享元素（行是全宽块、纵向堆叠，行高与
+         * 间距在三个分区之间并不统一，纵向位移没法像顶栏的视图切换那样用序号算出来），
+         * 但加上 `layout="position"`：只投影位置、不投影尺寸。
+         *
+         * 原因：侧栏宽度本身参与动画（切样张视图时 260 → 图标条），每帧都在重排，
+         * 尺寸投影正是「指示器短暂跑到行外面」的来源；而这块的 x 恒为 0（行左对齐）、
+         * 尺寸由 `inset: 0` 自己跟着行走，只有换行时的 y 需要动画。
+         * `layout="position"` 正好把没用的尺寸投影掐掉，行间滑动照旧。
+         */
+        <motion.span
+          className="nav-pill"
+          layoutId="nav-pill"
+          layout="position"
+          transition={spring}
+        />
       )}
       <span className="nav-icon">{icon}</span>
       {no !== undefined && <span className="nav-no tabular">{no}</span>}

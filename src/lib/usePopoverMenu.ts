@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { acquireOverlay, releaseOverlay } from "./overlayRegistry";
+import { POPOVER_EXTRA, isOutsidePopover } from "./popoverOutside";
 
 /**
  * 下拉菜单（排序 / 筛选）的公共行为（0.9.8 · BUG-B）。
@@ -86,6 +87,29 @@ export function usePopoverMenu(id: string) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, close]);
+
+  /*
+   * 点弹层外面就收起。
+   *
+   * 用户 2026-11 报：速览窗口里弹出筛选菜单后，点列表区 / 空白处收不起来，只能按 Esc
+   * 或再点一次漏斗。根因见 `popoverOutside.ts` 顶部注释 —— 遮罩的 `onClick` 在速览里
+   * 会被窗口拖动抢走指针捕获而永远不触发，所以判定只能挂在 document 的捕获阶段。
+   *
+   * 捕获阶段还有个附带好处：它比 React 的冒泡监听（onClick）早，一次按下只会被处理一次，
+   * 不会出现「关掉又被同一次点击打开」。
+   *
+   * 菜单项本身的点击行为不动：点在 `listRef` / `.filter-submenu` 内这里直接返回，
+   * 该关的由各自的 onClick 关，该保持开着的（多选筛选项）保持开着。
+   */
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!isOutsidePopover(e.target, [listRef.current, triggerRef.current], POPOVER_EXTRA)) return;
+      close();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
   }, [open, close]);
 
   return { open, toggle, close, triggerRef, listRef };
