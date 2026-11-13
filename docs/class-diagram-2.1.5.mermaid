@@ -1,0 +1,58 @@
+%% FontManager 2.1.5 · 数据路径解析相关类型（新增类型只有两个，其余是函数级改动）
+%% 与 docs/架构设计-2.1.5-安装器与落盘.md 附录 A 一致
+classDiagram
+    class DataRoot {
+        +PathBuf path
+        +DataRootSource source
+    }
+
+    class DataRootSource {
+        <<enumeration>>
+        EnvOverride
+        InstallDir
+        LocalAppData
+        RoamingFallback
+        NotWindows
+    }
+
+    class store {
+        +data_root() PathBuf
+        +data_root_info() (PathBuf, DataRootSource)
+        +legacy_app_data_dir() PathBuf
+        +app_data_dir() PathBuf
+        +state_path() PathBuf
+        +prefs_path() PathBuf
+        +trash_dir() PathBuf
+        +load() AppState
+        -install_dir() Option
+        -probe_writable(dir) bool
+        -resolve_data_root() DataRoot
+        -data_root_cached() DataRoot
+        -migrate_to_data_root() Vec
+        -migrate_legacy_dirs() Vec
+    }
+
+    class CallSites {
+        +fontcache_cache_path()
+        +preview_font_cache_dir()
+        +thumb_root()
+        +scanner_system_ps_cache_path()
+        +api_api_json_path()
+        +diag_log_path()
+        +online_online_dir()
+        +installer_staging()
+        +plugins_legacy_plugins_dir()
+    }
+
+    class Frozen {
+        +single_instance_request_path()
+        +file_assoc_icon_dir()
+        +scanner_managed_font_dir()
+        +activation_linux_fontconfig()
+    }
+
+    DataRoot --> DataRootSource
+    store --> DataRoot
+    CallSites --> store : data_root()
+    CallSites --> store : legacy_app_data_dir()
+    Frozen ..> store : 故意不跟随

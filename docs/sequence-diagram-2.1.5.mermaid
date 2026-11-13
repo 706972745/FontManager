@@ -1,0 +1,46 @@
+%% FontManager 2.1.5 · 老用户升级路径（NSIS 安装 → 启动 → data 迁移）
+%% 与 docs/架构设计-2.1.5-安装器与落盘.md §5.1 一致
+sequenceDiagram
+    autonumber
+    participant U as 用户
+    participant NSIS as nsExec（安装器）
+    participant EXE as fontmanager.exe
+    participant L as lib.rs::run
+    participant S as store
+    participant FS as 文件系统
+
+    U->>NSIS: 双击 2.1.5 安装包
+    NSIS->>NSIS: .onInit：RestorePreviousInstallLocation 取回 $INSTDIR
+    NSIS->>NSIS: ZfmDirPre：注册表已有安装目录 → 跳过目录页
+    NSIS->>FS: File fontmanager.exe（覆盖）→ WriteUninstaller
+    NSIS->>FS: POSTINSTALL：CreateDirectory $INSTDIR\data
+    NSIS->>FS: 探针可写 → 写 $INSTDIR\data\.zfm-data-root
+    NSIS->>U: 完成页（数据位置说明 + 立即运行）
+    U->>EXE: 启动
+    EXE->>L: run()
+    L->>L: single_instance::acquire()（用 %APPDATA% 的 open-request.txt，不动）
+    L->>S: load()
+    S->>S: migrate_legacy_dirs()（旧品牌目录 → %APPDATA%，行为不变）
+    S->>S: resolve_data_root() → <install>\data（有 .zfm-data-root，锚定）
+    S->>S: migrate_to_data_root() 判定
+
+    alt <data>\state.json 已存在
+        S->>S: 已迁移过，直接返回（幂等）
+    else 旧位置有 state.json
+        S->>FS: 写 .zfm-migrate-in-progress
+        S->>FS: copy state.json → state.json.tmp → 校验可解析 → rename
+        S->>FS: copy prefs/font-cache/system-ps/api/activation.log/Trash/online/Deactivated
+        S->>FS: copy plugins（仅当 <install>\plugins 不存在）
+        S->>FS: 追加 .zfm-data-root 的 migrated=1，删 .zfm-migrate-in-progress
+        S->>FS: 删 %APPDATA%\FontManager\preview-cache 与 thumb-cache（640MB，纯生成物）
+    else 旧位置什么都没有（全新安装）
+        S->>FS: 什么都不做，data 目录已由安装器建好
+    end
+
+    S->>S: read_state_file(<data>\state.json)
+    S->>S: prefs.json 归一 + 系统字体脏数据清理 + pin_legacy_library（业务逻辑不变）
+    S-->>L: AppState（标签/分组/收藏/台账/快照全在）
+    L->>L: diag::session_start()（此时路径已是 data，日志写在 data 下）
+    L->>L: Builder::setup → window.show()（前端骨架屏 → 扫字体）
+
+    Note over S,FS: 任一步失败 → 不写 state.json、data_root 回退 legacy_app_data_dir()、<br/>保留 in-progress 标记，绝不出现"空账本启动"
