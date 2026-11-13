@@ -9917,7 +9917,7 @@ body.tour-qb .qb-actions .qb-btn-text {
   animation: caret-blink 1.1s steps(1, end) infinite;
 }
 .blink-caret-empty {
-  width: 0.55em;
+  width: 0.7em;
 }
 /* 块内白色字形：内容 = 被覆盖的那个字符，字体六项与 input 完全一致（JS 复制），
    left/top 由组件按镜像几何摆放 —— 与底下真实字形重合，视觉即「变白」。

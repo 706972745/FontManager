@@ -46,6 +46,9 @@ import {
 
 export type BlinkCaretInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "ref">;
 
+/** 蓝块比被覆盖字符左右各多出的内边距（px）——「清晰度优先于严丝合缝」。 */
+const BLOCK_PAD = 4;
+
 /** 镜像 / 白字形共用的字体复制（六项 computed style，缺一不可）。 */
 function syncFont(el: HTMLElement, cs: CSSStyleDeclaration): void {
   el.style.fontFamily = cs.fontFamily;
@@ -128,6 +131,8 @@ export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps
       const padL = Number.parseFloat(cs.paddingLeft) || 0;
       const padR = Number.parseFloat(cs.paddingRight) || 0;
       const contentWidth = Math.max(0, input.clientWidth - padL - padR);
+      // 「清晰度优先于严丝合缝」（用户 2026-11-13）：块比字符左右各宽 4px，
+      // 白字四周留蓝边，一眼看清是哪个字。
       const box = coveredCharBox(
         value,
         sel,
@@ -135,6 +140,7 @@ export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps
         charWidth,
         input.scrollLeft,
         contentWidth,
+        BLOCK_PAD,
       );
       caret.style.left = `${padL + box.left}px`;
       caret.style.width = `${box.width}px`;

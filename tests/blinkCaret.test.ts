@@ -33,7 +33,7 @@ test("coveredIndexFor：三态、越界夹取、增补平面整对回退", () =>
   assert.equal(charLengthAt("你好", 1), 1);
 });
 
-test("coveredCharBox：常规定位与字符宽度自适应", () => {
+test("coveredCharBox：常规定位、字符宽度自适应、blockPad 放宽", () => {
   // 中文：块宽 = 字符 advance（镜像实测传入）
   const cn = coveredCharBox("你好", 2, 14, 14, 0, 200);
   assert.deepEqual(cn, { left: 14, width: 14, char: "好", glyphShift: 0 });
@@ -43,18 +43,26 @@ test("coveredCharBox：常规定位与字符宽度自适应", () => {
   // 增补平面：char 是完整的一对，不是半个代理
   const astral = coveredCharBox("𝐀𝐁x", 2, 20, 18, 0, 200);
   assert.equal(astral.char, "𝐀");
+  // blockPad=4（清晰度优先）：块比字符左右各宽 4px，白字形仍贴在字符真实位置
+  const padded = coveredCharBox("你好", 2, 14, 14, 0, 200, 4);
+  assert.deepEqual(padded, { left: 10, width: 22, char: "好", glyphShift: 4 });
 });
 
 test("coveredCharBox：左缘裁切 —— 块收回可视区，白字形贴回真实位置", () => {
-  // 字符滚出左边一半：rawLeft = 10-30 = -20 → left 夹到 0，宽 = 26-20 = 6，
-  // 白字形相对块左缘右移 20px（贴回字符真实位置），露出的才是对的半个字
+  // 无 pad：字符滚出左边一半：rawLeft = 10-30 = -20 → left 夹到 0，宽 = 26-20 = 6，
+  // 白字形相对块左缘 -20（被块的 overflow:hidden 裁掉，露出的部分与真实字形一致）
   const clipped = coveredCharBox("你好", 2, 10, 26, 30, 200);
-  assert.deepEqual(clipped, { left: 0, width: 6, char: "好", glyphShift: 20 });
+  assert.deepEqual(clipped, { left: 0, width: 6, char: "好", glyphShift: -20 });
   // 整个字符滚出左边：宽度归 0（块不可见）
   const gone = coveredCharBox("你好", 2, 10, 26, 100, 200);
   assert.equal(gone.left, 0);
   assert.equal(gone.width, 0);
-  assert.equal(gone.glyphShift, 90);
+  assert.equal(gone.glyphShift, -90);
+  // 有 pad 的裁切：块左缘 = 字符左缘 − pad 再夹 0；
+  // rawCharLeft=-20、pad=4 → rawLeft=-24 → left=0，宽 = −20+26+4 = 10，
+  // 即「字符可见部分 (6px) + 右侧 pad (4px)」，白字形在块内 −20px 被裁到只剩可见部分
+  const padded = coveredCharBox("你好", 2, 10, 26, 30, 200, 4);
+  assert.deepEqual(padded, { left: 0, width: 10, char: "好", glyphShift: -20 });
 });
 
 test("coveredCharBox：空输入退化为空盒；password 不在自绘集合", () => {
