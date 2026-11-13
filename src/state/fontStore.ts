@@ -47,6 +47,11 @@ import {
   type TrashEntry,
 } from "../lib/ipc";
 import { normalizeFaces } from "../lib/ipc";
+import {
+  applyOverrides,
+  nextOverrides,
+  pruneOverrides,
+} from "../lib/seedOverrides";
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
 import {
   familyActivation,
@@ -274,10 +279,29 @@ interface FontStore {
   /** 请求取消正在进行的快照应用 */
   cancelApply: () => void;
   /**
-   * 扫描途中陆续到达的字体（原生侧每解析一批就推过来）。
-   * 只用于「边读边显示」，扫描结束会被权威结果整体覆盖。
+   * 扫描期间用户手动改过的启停：path → active（2.1.4 / ADR-08）。
+   *
+   * 全量结果的 `active` 来自**扫描开始那一刻**的注册表快照，用户在扫描期间做的启停
+   * （含启动时自动恢复进去的那批）都不在那个快照里；落地时用这张表压过扫描结论。
+   * 用 `Map` 而不是对象：键是 Windows 路径（带 `:` `\`），对象当字典容易被原型链坑到。
+   * 只在 `phase === "scanning"` 期间非空，`applyFullScan` 之后只保留仍存在的路径。
    */
-  scanFonts: FontFace[];
+  overrides: Map<string, boolean>;
+  /** 种子是否已到达（决定「该等多久才查断点 / 走恢复流程」） */
+  seedReady: boolean;
+  /**
+   * 落地种子（`scan:seed` 的出口）。
+   * 种子**写进 `fonts`**（不是另开一份临时列表）：主列表组件不换实例、不重挂，
+   * 骨架屏条件随之变成「fonts 为空」，全量完成时只有一次原地替换（ADR-07）。
+   */
+  applySeed: (faces: FontFace[]) => void;
+  /**
+   * 落地全量结果：**唯一**一次 `set({fonts, phase})`。
+   * 会先叠加 `overrides`（用户操作优先），再裁掉指向已消失路径的覆盖项。
+   */
+  applyFullScan: (full: FontFace[]) => void;
+  /** 记一条用户决策（扫描期间才生效，其他时候直接返回，避免 map 无限增长） */
+  noteOverrides: (paths: readonly string[], active: boolean) => void;
   fonts: FontFace[];
   tags: Record<string, string[]>;
   collections: Record<string, string[]>;
@@ -1168,7 +1192,9 @@ function persistPrefs(get: () => FontStore) {
       onboarded: s.onboarded,
       lastImported: s.lastImported,
       restoreOnLaunch: s.restoreOnLaunch,
-      lastActivePaths: s.fonts.filter((f) => f.active).map((f) => f.path),
+      // 2.1.4：不再写 lastActivePaths。它是「扫描结果里 active 的那些」的派生值，
+      // 扫描没完成时会被写成空数组，把用户上次的启用状态抹掉（PRD §6 点名的问题）。
+      // 现在由后端台账 `state.activated` 负责，只记用户的持久启停动作。
       copyrightStatus: s.copyrightStatus,
       copyrightExpiry: s.copyrightExpiry,
       tagExpiry: s.tagExpiry,
@@ -1452,6 +1478,9 @@ async function applyEntries(
       batches,
       apply: async (batch, noSave) => {
         await ipc.setFontsActive(batch.paths, batch.active, noSave);
+        // 这一批**真的成功了**才记覆盖：写前面的话，IPC 失败时会把一次没生效的启用
+        // 记成用户意图，全量落地照它执行 —— 界面从此一直撒谎，直到下次重启。
+        useFontStore.getState().noteOverrides(batch.paths, batch.active);
         applied.push(batch);
       },
       // 空列表 = 只落盘：中间批次都跳过了存盘，取消/失败时必须补这一次
@@ -1515,7 +1544,10 @@ async function undoAppliedBatches(applied: ApplyBatch[]): Promise<void> {
   try {
     const outcome = await runBatches({
       batches,
-      apply: (batch, noSave) => ipc.setFontsActive(batch.paths, batch.active, noSave),
+      apply: async (batch, noSave) => {
+        await ipc.setFontsActive(batch.paths, batch.active, noSave);
+        useFontStore.getState().noteOverrides(batch.paths, batch.active);
+      },
       flush: () => ipc.setFontsActive([], true, false),
       onProgress: (done, total) =>
         useFontStore.setState({ applyProgress: { done, total, undo: true } }),
@@ -1690,7 +1722,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
   applyCancelled: false,
   cancelApply: () => set({ applyCancelled: true }),
-  scanFonts: [],
+  overrides: new Map<string, boolean>(),
+  seedReady: false,
   fonts: [],
   tags: {},
   collections: {},
@@ -1790,36 +1823,63 @@ export const useFontStore = create<FontStore>((set, get) => ({
   pendingResume: null,
   pendingDestructive: null,
 
+  applySeed: (faces) => {
+    // 双保险：后端已有「每进程只发一次」的守卫（ADR-05），这里再挡一次「fonts 非空」。
+    // 会话中的 rescan 万一重发了种子，主列表被缩成种子子集是最难看的故障（C2）：
+    // 用户看着几千个字体突然只剩一百多个，任何操作都不敢做。
+    if (get().fonts.length > 0) return;
+    set({ fonts: faces, seedReady: true });
+  },
+
+  applyFullScan: (full) => {
+    const s = get();
+    // 叠加顺序不能反：扫描结论是「扫描开始那一刻」的真相，用户操作比它新
+    const merged = applyOverrides(full, s.overrides);
+    set({
+      fonts: merged,
+      phase: "ready",
+      // 路径已不存在的覆盖项留着只会在下一次全量里误伤同名文件（回收站还原会复用路径）
+      overrides: pruneOverrides(
+        s.overrides,
+        full.map((f) => f.path),
+      ),
+    });
+  },
+
+  noteOverrides: (paths, active) => {
+    // 扫描结束后再记没有任何意义（那时结果已经是新的了），只会让 map 无限增长
+    if (get().phase !== "scanning") return;
+    const next = nextOverrides(get().overrides, paths, active);
+    if (next !== get().overrides) set({ overrides: next });
+  },
+
   init: async () => {
     if (initStarted) return;
     initStarted = true;
     await listen<ScanProgress>("scan:progress", (e) => {
       set({ scanProgress: e.payload });
     });
+    // 种子（2.1.4）：原生侧在扫描开始**之前**推一次「首帧就该出现」的那几百个字体
+    // （上次已启用 + 系统字体 + 分组内 + 快照内）。
+    //
+    // 监听必须赶在 invoke("scan_fonts") 之前注册完：对没有监听者的 Tauri 事件是丢弃
+    // 而不是排队，一次错过就整段启动都收不到种子（C5，本设计最脆的一环）。
+    let seedResolve: (() => void) | undefined;
+    const seedArrived = new Promise<void>((r) => {
+      seedResolve = r;
+    });
+    await listen<FontFace[]>("scan:seed", (e) => {
+      get().applySeed(normalizeFaces(e.payload));
+      seedResolve?.();
+    });
     // 打包 / 解包 .FontManager 的进度：清单一律走这一条事件，
     // 前端不做任何「估算」，done/total 由后端按文件数如实给。
     await listen<PackProgress>("pack:progress", (e) => {
       set({ packProgress: e.payload });
     });
-    // 边扫边显示：原生侧每解析一批就推一批过来，界面立刻能铺卡片，
-    // 不用等整库扫完（几千个字体要好几秒）才「啪」地一次性出现。
-    //
-    // 但不能来一批就 set 一次：每次 set 都会让 App 重算「可见字族」（6000 个字面排序 + 过滤），
-    // 6170 个文件约 50 批，等于启动时白做 50 次全量计算 —— 用户感知就是「越用越慢、扫描像卡住」。
-    // 这里把批次攒起来，每 150ms 合并刷新一次（≈6 次/秒），肉眼看仍是连续铺开。
-    let pendingBatch: FontFace[] = [];
-    let batchTimer: ReturnType<typeof setTimeout> | undefined;
-    await listen<FontFace[]>("scan:batch", (e) => {
-      pendingBatch = pendingBatch.concat(normalizeFaces(e.payload));
-      if (batchTimer !== undefined) return;
-      batchTimer = setTimeout(() => {
-        batchTimer = undefined;
-        if (pendingBatch.length === 0) return;
-        const add = pendingBatch;
-        pendingBatch = [];
-        set({ scanFonts: get().scanFonts.concat(add) });
-      }, 150);
-    });
+    // 全量批次不再推给界面（ADR-06，2.1.4）：以前每 120 面推一批，6170 个文件约 50 批，
+    // 每批都要重算一次「可见字族」（6000 字面排序 + 过滤），启动时白做 50 次全量计算。
+    // 现在种子占据「先显示出来」这个位置，全量结果在末尾整体返回一次（见 applyFullScan）。
     let themeMigrated = false;
     try {
       const prefs = (await ipc.getPrefs()) ?? {};
@@ -2033,9 +2093,19 @@ export const useFontStore = create<FontStore>((set, get) => ({
       set({ onlineProgress: e.payload });
     });
     // 字库扫描（几千个字体）要好几秒甚至十几秒。原来窗口是「扫描完成之后才显示」，
-    // 这段时间用户对着空桌面干等，什么反馈都没有。先把窗口亮出来——里面是骨架屏 +
-    // 底部百分比进度条，扫完自然换成字体库（见 components/LoadProgress.tsx）。
-    await get().rescan();
+    // 这段时间用户对着空桌面干等，什么反馈都没有。现在窗口先亮出来，里面是骨架屏 +
+    // 底部百分比进度条；种子一到就换成真正的列表（见 applySeed），骨架屏随即消失。
+    //
+    // 关键在于**不 await 全量**：2.1.4 起 `init()` 等的是「种子到了」，不是「扫完了」。
+    const scanPromise = get().rescan();
+    // 种子正常在 100~300ms 内到达；3s 是兜底（缓存损坏 / 事件丢失 / 空种子）。
+    // 宁可让恢复流程晚一点，也不能让启动卡在等一个永远不会来的事件上（D-1/D-4）。
+    await Promise.race([
+      seedArrived,
+      scanPromise,
+      new Promise<void>((r) => setTimeout(r, 3000)),
+    ]);
+    set({ seedReady: true });
     // E2/DEF-4：有未完成的批量断点时，「启动时恢复上次启用的字体」整体让位。
     //
     // 冲突实景（2026-11-01 测试报告 DEF-4，高危）：批量停用跑到 30% 被强杀 →
@@ -2043,27 +2113,43 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // → 用户点「继续」后续做流再停 409 个 → 终态 reg=319，与「全部停用」的意图相反。
     // 两个机制都在「纠正」注册表，叠加之后终态不可预期。约定：断点在时只弹
     // 「继续吗」，恢复等断点消散（续做完成 / 用户放弃）后的下一次启动再说。
-    //
-    // 顺带修掉一个潜伏竞态：断点查询必须在 rescan 之后——resumePendingBatch
-    // 要靠 get().fonts 把路径还原成族清单，扫描完成前弹框，用户点「继续」会
-    // 因为清单为空而静默什么都不做。
     try {
       const cp = await ipc.batchCheckpointGet();
       if (cp) {
+        // 有断点就不能像以前那样「立刻弹」了：`resumePendingBatch` 靠 `get().fonts`
+        // 把路径还原成族清单，而此刻 fonts 还只是种子（批量停用的那批字体**故意**不在
+        // 种子里 —— 它们正是被用户停用的那些）。提前弹窗的后果是：用户点「继续」→
+        // families 为空 → 断点被 clearBatchCheckpoint 清掉 → 几千条清单凭空蒸发。
+        // 所以这里等全量到位再弹，种子列表照常可浏览。
+        await scanPromise.catch(() => {});
         set({ pendingResume: cp });
         return;
       }
     } catch {
       // 断点只是锦上添花，不能让它挡启动
     }
+    // 恢复的是「持久台账」里的那批字体（不是扫描结果派生的 lastActivePaths），
+    // 所以种子一到就能做，不必等全量（ADR-11）。
     await get().restoreLastActivation();
   },
 
   restoreLastActivation: async () => {
     if (!get().restoreOnLaunch) return;
-    const saved = get().lastActivePaths;
+    // 数据源换成后端台账（用户意图），不再用 `prefs.lastActivePaths` ——
+    // 那是「扫描结果里 active 的那些」，扫描没完成时会被写成空数组（PRD §6 点名的问题）。
+    // 台账为空（首次升级 / 用户从没操作过）时退回 lastActivePaths 兜一次（D11）。
+    let ledger: string[] = [];
+    try {
+      ledger = await ipc.getActivePaths();
+    } catch {
+      /* 读不到就当空：恢复是锦上添花，不能挡启动 */
+    }
+    const saved = ledger.length > 0 ? ledger : get().lastActivePaths;
     if (saved.length === 0) return;
     const byPath = new Map(get().fonts.map((f) => [f.path, f] as const));
+    // 只挑「列表里已有、可停用、当前不是启用」的：已启用的再写一遍注册表要 0.3s/个，白花时间。
+    // 台账里但不在种子里的路径必然跳过（缓存没命中）—— 这类字体等全量读完后自然出现，
+    // 与 2.1.3 的行为一致，记为已知限制。
     const missing = [
       ...new Set(
         saved.filter((p) => {
@@ -2074,15 +2160,19 @@ export const useFontStore = create<FontStore>((set, get) => ({
     ];
     if (missing.length === 0) return;
     try {
-      await ipc.setFontsActive(missing, true);
+      // record = false：启动补启用**不是**用户的意图，写台账会让每次启动都自我强化，
+      // 用户以后再也停不掉这批字体（§5.2 表格 / PRD §6「启动时应用种子本身不记录」）。
+      await ipc.setFontsActive(missing, true, false, false);
       // 原来这里会整库 rescan：注册表刚写完又要重扫一遍、重判一遍激活，
       // 界面就会在「读取 100%」之后再闪一次骨架屏，看起来像卡住了。
-      // 注册表已经落好了，本地把对应字面标成激活即可，剩下的交给下次扫描。
+      // 注册表已经落好了，本地把对应字面标成激活即可，剩下的交给全量结果。
+      // 全量结果用的是**扫描开始那一刻**的 probe，必须让 overrides 压过它，否则
+      // 刚恢复的字体在全量落地时又变回停用（AC-15 的反面，ADR-08 最容易漏的一条）。
+      get().noteOverrides(missing, true);
       const revived = new Set(missing);
       set({
         fonts: get().fonts.map((f) => (revived.has(f.path) ? { ...f, active: true } : f)),
       });
-      persistPrefs(get);
       toast.success(t("toast.restoredLast", { count: missing.length }), undefined, "activate");
     } catch (e) {
       toast.error(t("toast.couldntRestoreLast"), String(e));
@@ -2099,7 +2189,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // 接受这里的语义：扫描期间的新意图合并到当前这一次（结果是从磁盘刚读的，本来就不旧）。
     if (scanInflight) return scanInflight;
     const run = (async () => {
-    set({ phase: "scanning", scanFonts: [] });
+    // 只改 phase，**不清空 fonts**（ADR-07）：主列表组件保持挂载，浏览器原生保留
+    // scrollTop，全量落地时用户看到的几乎就是「原地不动」。清空再填 = 闪一次白屏 + 骨架屏复现。
+    set({ phase: "scanning" });
     try {
       const [fonts, tags, collections, snapshots, favorites, notes, trash] = await Promise.all([
         ipc.scanFonts(),
@@ -2110,18 +2202,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
         ipc.getNotes(),
         ipc.listTrash(),
       ]);
-      set({
-        fonts,
-        tags,
-        collections,
-        snapshots,
-        favorites,
-        notes,
-        trash,
-        phase: "ready",
-        // 权威结果已到位，临时列表可以丢了（否则会多占一份内存）
-        scanFonts: [],
-      });
+      set({ tags, collections, snapshots, favorites, notes, trash });
+      // 字体库本身走 applyFullScan：一次 set 落地 + 叠加扫描期间的用户决策
+      get().applyFullScan(fonts);
       // 授权文档里写了「哪些渠道能 / 不能商用」的，首次见到就把原话写进备注
       const seededNotes = await seedLicenseNotes(fonts, notes);
       if (seededNotes) set({ notes: seededNotes });
@@ -2203,6 +2286,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     if (paths.length <= APPLY_CHUNK) {
       try {
         await ipc.setFontsActive(paths, active);
+        get().noteOverrides(paths, active);
         if (active) markActivated([family]);
         persistPrefs(get);
       } catch (e) {
@@ -2232,6 +2316,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
         batches,
         apply: async (batch, noSave) => {
           await ipc.setFontsActive(batch.paths, batch.active, noSave);
+          useFontStore.getState().noteOverrides(batch.paths, batch.active);
           applied.push(batch);
         },
         flush: () => ipc.setFontsActive([], true, false),
@@ -2286,6 +2371,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
     });
     try {
       await ipc.setFontsActiveSession(paths);
+      // 「启用至关闭」也是真实生效的启用（只是退出时撤销）：不记下来的话，
+      // 扫描期间点了它，全量一落地这批字体就变回停用，用户以为没点成功。
+      get().noteOverrides(paths, true);
       set({ sessionActivated: [...new Set([...get().sessionActivated, family])] });
       markActivated([family]);
       toast.success(
@@ -2316,6 +2404,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     });
     try {
       await ipc.setFontsActive([path], active);
+      get().noteOverrides([path], active);
       persistPrefs(get);
     } catch (e) {
       set({ fonts: prevFonts });
@@ -3581,6 +3670,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
         batches,
         apply: async (batch, noSave) => {
           await ipc.setFontsActive(batch.paths, batch.active, noSave);
+          useFontStore.getState().noteOverrides(batch.paths, batch.active);
           applied.push(batch);
         },
         // 中间批次都跳过了存盘，取消/失败时必须补这一次

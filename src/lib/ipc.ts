@@ -425,8 +425,20 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   scanFonts: () => invoke<FontFace[]>("scan_fonts").then(normalizeFaces),
   setFontActive: (path: string, active: boolean) =>
     invoke<void>("set_font_active", { path, active }),
-  setFontsActive: (paths: string[], active: boolean, noSave?: boolean) =>
-    invoke<void>("set_fonts_active", { paths, active, noSave: noSave ?? false }),
+  /**
+   * 批量启停。
+   *
+   * `record`（2.1.4）：这次算不算「用户的持久意图」—— 后端据此维护激活台账。
+   * 默认 `true`（界面上所有批量启停都是持久操作）；**启动时恢复上次启用**必须传 `false`，
+   * 否则每次启动都在给自己的台账续命，用户再也停不掉那批字体（PRD §6）。
+   */
+  setFontsActive: (paths: string[], active: boolean, noSave?: boolean, record?: boolean) =>
+    invoke<void>("set_fonts_active", {
+      paths,
+      active,
+      noSave: noSave ?? false,
+      record: record ?? true,
+    }),
   setFontsActiveSession: (paths: string[]) =>
     invoke<void>("set_fonts_active_session", { paths }),
   /**
@@ -439,6 +451,12 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
     invoke<void>("batch_checkpoint", { cp }),
   /** E2：启动时查有没有没做完的批量（有 → 弹「继续吗」） */
   batchCheckpointGet: () => invoke<PendingBatch | null>("batch_checkpoint_get"),
+  /**
+   * 2.1.4：持久激活台账（用户意图的快照，已排序）。
+   * 启动时用它补启用上次那批字体，取代原来的 `prefs.lastActivePaths`
+   * （后者是扫描结果的派生值，扫描没完成时会被写成空数组）。
+   */
+  getActivePaths: () => invoke<string[]>("get_active_paths"),
   installFonts: (paths: string[], existing: string[], mode: InstallMode) =>
     invoke<InstallResult>("install_fonts", { paths, existing, mode }),
   installOnline: (
