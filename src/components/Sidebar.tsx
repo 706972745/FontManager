@@ -236,18 +236,25 @@ export function Sidebar() {
   const intro = useIntro();
   const fonts = useFontStore((s) => s.fonts);
   /**
-   * 读字体期间（含种子已出、全量仍在读）这些数字都是**错的**：它们全由 `fonts` 现算，
-   * 而此刻 fonts 只是全量的一个子集。统一显示 `…`，读完同帧变成真值（AC-05）。
+   * 首次全量还没落地（含种子已出、全量仍在读）时这些数字都是**错的**：它们全由 `fonts`
+   * 现算，而此刻 fonts 只是全量的一个子集。统一显示 `…`，读完同一帧变成真值（AC-05）。
+   *
+   * 为什么判 `fullScanDone` 而不是 `phase === "scanning"`：`phase` 在**每次**重扫时
+   * 都会回到 scanning（导入字体、watcher 发现变化、换字体库目录都会触发 rescan），
+   * 而 2.1.3 那时用的是旧 `fonts`、显示真实数字。跟着 phase 变的话，用户每导入一个
+   * 字体就看到整列数字变成 `…`，像是数据丢了。用户要的「读取中用 …」只针对打开软件
+   * 后的首次读取，所以这里只认「首次全量是否已落地」。
+   *
    * 收藏 / 最近导入 / 快照条目 / 回收站不在此列 —— 它们来自 state.json，不依赖扫描。
    */
-  const scanning = useFontStore((s) => s.phase === "scanning");
+  const pendingCounts = useFontStore((s) => !s.fullScanDone);
   const collectionFaces = useFontStore((s) => s.collectionFaces);
   /**
    * 分组成员数 = 字族级成员 ∪ 字重级成员所在的字族（0.9.9-13）。
    * 只把某个字重放进分组时，计数也要算上那个字族，否则侧栏显示 0、点进去却有卡片。
    */
   const collectionCount = (name: string): number | null => {
-    if (scanning) return null;
+    if (pendingCounts) return null;
     const fams = new Set(collections[name] ?? []);
     const keys = collectionFaces[name] ?? [];
     if (keys.length > 0) {
@@ -291,20 +298,22 @@ export function Sidebar() {
     if (pendingSnapshotFor) setCreatingSnapshot(true);
   }, [pendingSnapshotFor]);
 
-  const familyCount = scanning ? null : familiesFor(fonts, tags).size;
+  const familyCount = pendingCounts ? null : familiesFor(fonts, tags).size;
   const sessionActivated = useFontStore((s) => s.sessionActivated);
   const allFamilies = [...familiesFor(fonts, tags).values()];
-  const activatedCount = scanning
+  const activatedCount = pendingCounts
     ? null
     : allFamilies.filter(
         (f) => (f.active || f.partial) && !sessionActivated.includes(f.name),
       ).length;
-  const sessionCount = scanning
+  const sessionCount = pendingCounts
     ? null
     : allFamilies.filter((f) => sessionActivated.includes(f.name)).length;
-  const deactivatedCount = scanning ? null : allFamilies.filter((f) => !f.active).length;
+  const deactivatedCount = pendingCounts
+    ? null
+    : allFamilies.filter((f) => !f.active).length;
   // 与「系统字体」列表用同一个口径（isSystemFamily），否则计数和点进去看到的数量对不上
-  const systemCount = scanning ? null : allFamilies.filter(isSystemFamily).length;
+  const systemCount = pendingCounts ? null : allFamilies.filter(isSystemFamily).length;
   const tagCounts = allTags(tags);
   const collapsed = useFontStore((s) => s.collapsedSections);
   const toggleSection = useFontStore((s) => s.toggleSection);
@@ -699,7 +708,7 @@ export function Sidebar() {
                     </span>
                   ) : undefined
                 }
-                count={scanning ? null : count}
+                count={pendingCounts ? null : count}
                 index={i++}
                 onContextMenu={(e) =>
                   openContextMenu(e, [
