@@ -244,7 +244,9 @@ struct PsNameCache {
 const PS_CACHE_VERSION: u32 = 1;
 
 fn system_ps_cache_path() -> PathBuf {
-    crate::store::app_data_dir().join("system-ps.json")
+    // 2.1.5：纯缓存，跟着数据根走。默认库位置（managed_font_dir）**故意不跟着改**，
+    // 见 ADR-D2：字体是用户资产，搬它要改 4 处口径 + 改写 state 里几千条路径。
+    crate::store::data_root().join("system-ps.json")
 }
 
 /// 系统字体目录的快照指纹：字体文件的路径 + 大小 + mtime 全参与哈希。

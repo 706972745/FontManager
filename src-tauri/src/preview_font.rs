@@ -834,7 +834,10 @@ pub fn cache_root() -> Option<PathBuf> {
 }
 
 fn cache_dir() -> Option<PathBuf> {
-    let dir = dirs::data_dir()?.join("FontManager").join(CACHE_DIR);
+    // 2.1.5：预览副本跟着数据根走（`<安装目录>\data\preview-cache`）。
+    // 注意这里必须保留 `?` 的语义 —— 建不出目录就返回 None，调用方（asset scope 放行）
+    // 会安静跳过；改成 panic 等于让装到只读盘的机器开不了机。
+    let dir = crate::store::data_root().join(CACHE_DIR);
     fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }

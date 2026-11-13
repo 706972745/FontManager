@@ -761,7 +761,8 @@ pub fn install(
     mode: InstallMode,
     library: &Path,
 ) -> InstallResult {
-    let staging = crate::store::app_data_dir().join("staging");
+    // 2.1.5：解包临时区跟着数据根走（装到 D 盘时别把几个 GB 的中间产物留在 C 盘）。
+    let staging = crate::store::data_root().join("staging");
     let mut result = InstallResult::default();
     let mut known: HashSet<String> = existing.clone();
 

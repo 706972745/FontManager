@@ -58,10 +58,8 @@ struct CacheFile {
 }
 
 fn cache_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("FontManager")
-        .join("font-cache.json")
+    // 2.1.5：纯缓存，跟着数据根走。路径变了最多重建一次（下次扫描慢 1~2 秒）。
+    crate::store::data_root().join("font-cache.json")
 }
 
 /// 一次扫描期间的缓存句柄：`get` 命中就复用，未命中就解析后 `put`，

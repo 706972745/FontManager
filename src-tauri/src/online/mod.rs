@@ -74,7 +74,8 @@ pub struct DownloadProgress {
 }
 
 pub fn online_dir() -> PathBuf {
-    crate::store::app_data_dir().join("online")
+    // 2.1.5：在线目录（catalogue / licenses / staging）跟着数据根走。
+    crate::store::data_root().join("online")
 }
 
 pub fn catalogue_path() -> PathBuf {
