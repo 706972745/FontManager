@@ -1,0 +1,49 @@
+%% 2.1.4 启动种子装载 · 关键时序（源文件：docs/架构设计-2.1.4-启动种子装载.md §2）
+sequenceDiagram
+    autonumber
+    participant U as 用户
+    participant FE as fontStore.init()
+    participant IPC as ipc.ts (invoke/listen)
+    participant CMD as lib.rs::scan_fonts
+    participant SCAN as services::scan_library
+    participant FC as FontCache
+    participant ACT as activation::Probe
+    participant ST as Store(AppState)
+
+    Note over FE: 窗口已在 Rust setup 里 show（lib.rs:2819）<br/>phase = "scanning"，fonts = []
+    FE->>IPC: listen("scan:seed" | "scan:progress")
+    FE->>IPC: invoke("scan_fonts")
+    IPC->>CMD: scan_fonts
+    CMD->>CMD: spawn_blocking(UiSink)
+    CMD->>SCAN: scan_library(store, sink)
+
+    SCAN->>ST: lock 读 extra/library/linked/unpreviewable
+    SCAN->>SCAN: discover_managed 收编
+    SCAN->>FC: FontCache::load()（6.9MB 反序列化）
+    SCAN->>ACT: probe()（同步，HKLM+HKCU 约 316 条）
+    SCAN->>ST: 读 activated / deactivated / collections / snapshots / prefs.collectionFaces
+    SCAN->>SCAN: build_seed(cache, probe, state) -> Vec<FontFace>
+    SCAN->>CMD: sink.seed(&seed)
+    CMD->>CMD: UI_SEED_SENT.swap(true)：首次才发
+    CMD-->>FE: emit "scan:seed" [FontFace...]
+    Note over FE: applySeed(): set({fonts: seed, phase 仍为 "scanning"})<br/>骨架屏消失，侧栏 5 项主计数 = …, Ctrl+A 被拦
+    FE->>IPC: invoke("batch_checkpoint_get")
+    alt 有断点
+        FE->>FE: set({pendingResume}) —— 恢复流程让位（DEF-4）
+    else 无断点
+        FE->>IPC: invoke("get_active_paths")
+        IPC-->>FE: 台账路径[]
+        FE->>FE: restoreLastActivation()：挑 种子内 && deactivatable && !active
+        FE->>IPC: invoke("set_fonts_active", {paths, active:true, record:false})
+        Note over FE: 本地 patch active + noteOverrides(paths, true)
+    end
+
+    SCAN->>SCAN: scan_all(缓存命中复用 + 解析新文件)<br/>每 120 面 sink.batch -> UiSink 空实现（不再 emit）
+    SCAN->>SCAN: 链接字体第二遍 / cache.finish()
+    SCAN->>ST: 裁剪 state.activated（按本轮扫描到的路径集合，D10）
+    SCAN->>SCAN: 回填 active = is_active(同一个 probe)
+    SCAN-->>CMD: Ok(faces)
+    CMD->>CMD: services::fonts::publish(faces)
+    CMD-->>FE: return 全量 faces
+    FE->>FE: applyFullScan(faces)<br/>叠加 overrides -> 单次 set({fonts, phase:"ready"})<br/>清 overrides，列表不重挂
+    Note over U: 侧栏 5 项主计数同帧由 … 变为真实值
