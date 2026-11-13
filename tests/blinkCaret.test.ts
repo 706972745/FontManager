@@ -1,57 +1,71 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeCaretX, sliceToCaret } from "../src/design/primitives/blinkCaret.ts";
+import {
+  CARET_TYPES,
+  charLengthAt,
+  coveredCharBox,
+  coveredIndexFor,
+} from "../src/design/primitives/blinkCaret.ts";
 
 /**
- * 自绘闪烁块状光标（2026-11-13）的定位纯函数。
+ * 块状光标（蓝块包字 + 白字，2026-11-13 二次修正）的定位纯函数。
  *
  * 组件没法在 node 里测（node --test 不转 JSX），所以镜像测宽的**几何部分**
- * 全部收敛在 computeCaretX / sliceToCaret 这两个纯函数里，在这里测：
- * - 文本超宽 + scrollLeft>0 时贴右缘（用户最常用的「点末尾继续输入」路径）；
- * - selectionStart 越界不得产生 NaN —— 光标 left 一旦是 NaN，整个竖条直接消失；
- * - 中文/增补平面字符按 code unit 切，与 input.selectionStart 同一口径。
+ * 全部收敛在 coveredIndexFor / coveredCharBox / charLengthAt 里，在这里测：
+ * - coveredIndex 三态（末尾盖最后一个 / 开头盖第一个 / 空输入不盖）；
+ * - 越界 selectionStart 与增补平面字符不得产生半个字符或 NaN；
+ * - 左缘裁切：字符滚出可视区左边时块收回可视区、白字形贴回真实位置。
  */
 
-test("computeCaretX：常规定位与空内容", () => {
-  // 选择点在中间：镜像宽就是答案
-  assert.equal(computeCaretX("abc", 2, 40, 0, 200), 40);
-  // 空输入框：光标在最左
-  assert.equal(computeCaretX("", 0, 0, 0, 200), 0);
-  // 内容区非法（clientWidth 0 / 负数，输入框还没布局出来）：不产生 NaN，贴左缘
-  assert.equal(computeCaretX("abc", 3, 40, 0, 0), 0);
-  assert.equal(computeCaretX("abc", 3, 40, 0, -5), 0);
+test("coveredIndexFor：三态、越界夹取、增补平面整对回退", () => {
+  // 末尾：盖最后一个字符
+  assert.equal(coveredIndexFor("你好", 2), 1);
+  // 光标在最前且有内容：盖第一个字符
+  assert.equal(coveredIndexFor("你好", 0), 0);
+  // 空输入：不盖任何字符
+  assert.equal(coveredIndexFor("", 0), -1);
+  // 越界 selectionStart：夹进 [0, len]
+  assert.equal(coveredIndexFor("abc", 99), 2);
+  assert.equal(coveredIndexFor("abc", -7), 0);
+  // 增补平面（𝐀 占两个 code unit）：光标在它后面（sel=2）回退到整对的起点
+  assert.equal(coveredIndexFor("𝐀𝐁x", 2), 0);
+  assert.equal(charLengthAt("𝐀𝐁x", 0), 2);
+  assert.equal(charLengthAt("你好", 1), 1);
 });
 
-test("computeCaretX：文本超宽时贴右缘、滚到左边贴左缘", () => {
-  // 末尾 + 未滚动：镜像 500 > 内容区 200 → 夹到 200（贴右缘）
-  assert.equal(computeCaretX("x".repeat(300), 300, 500, 0, 200), 200);
-  // 已滚动 scrollLeft=300：raw = 500-300 = 200 → 仍是 200（末尾永远贴右缘）
-  assert.equal(computeCaretX("x".repeat(300), 300, 500, 300, 200), 200);
-  // 滚得多、选择点在中段：raw = 500-450 = 50
-  assert.equal(computeCaretX("x".repeat(300), 50, 500, 450, 200), 50);
-  // scrollLeft 超过镜像宽（越滚越多）：夹到左缘 0
-  assert.equal(computeCaretX("x".repeat(300), 0, 500, 600, 200), 0);
+test("coveredCharBox：常规定位与字符宽度自适应", () => {
+  // 中文：块宽 = 字符 advance（镜像实测传入）
+  const cn = coveredCharBox("你好", 2, 14, 14, 0, 200);
+  assert.deepEqual(cn, { left: 14, width: 14, char: "好", glyphShift: 0 });
+  // 拉丁窄字符：同一套几何，宽度天然不同（由镜像实测决定）
+  const latin = coveredCharBox("fix", 2, 10, 4, 0, 200);
+  assert.deepEqual(latin, { left: 10, width: 4, char: "i", glyphShift: 0 });
+  // 增补平面：char 是完整的一对，不是半个代理
+  const astral = coveredCharBox("𝐀𝐁x", 2, 20, 18, 0, 200);
+  assert.equal(astral.char, "𝐀");
 });
 
-test("computeCaretX：selectionStart 越界不得产生 NaN", () => {
-  // 程序化 setSelectionRange / 竞态会把 selectionStart 顶过字符串长度
-  const got = computeCaretX("abc", 999, 40, 0, 200);
-  assert.ok(Number.isFinite(got), `必须是有限数，实际 ${got}`);
-  assert.ok(got >= 0 && got <= 200, `必须夹在 [0,200]，实际 ${got}`);
-  // 负数也一样
-  const neg = computeCaretX("abc", -7, 40, 0, 200);
-  assert.ok(Number.isFinite(neg) && neg >= 0 && neg <= 200);
+test("coveredCharBox：左缘裁切 —— 块收回可视区，白字形贴回真实位置", () => {
+  // 字符滚出左边一半：rawLeft = 10-30 = -20 → left 夹到 0，宽 = 26-20 = 6，
+  // 白字形相对块左缘右移 20px（贴回字符真实位置），露出的才是对的半个字
+  const clipped = coveredCharBox("你好", 2, 10, 26, 30, 200);
+  assert.deepEqual(clipped, { left: 0, width: 6, char: "好", glyphShift: 20 });
+  // 整个字符滚出左边：宽度归 0（块不可见）
+  const gone = coveredCharBox("你好", 2, 10, 26, 100, 200);
+  assert.equal(gone.left, 0);
+  assert.equal(gone.width, 0);
+  assert.equal(gone.glyphShift, 90);
 });
 
-test("sliceToCaret：中文按字符、增补平面按 code unit、越界夹取", () => {
-  // 中文：selectionStart=2 是「两个汉字」，不是两个字节
-  assert.equal(sliceToCaret("字体库abc", 2), "字体");
-  // 增补平面（𝐀 是两个 code unit）：input.selectionStart 也是 code unit 口径 ——
-  // 所以 sel=2 只到「𝐀 的末尾」，光标没法停在 𝐀 和 𝐁 之间，这与原生行为一致
-  assert.equal(sliceToCaret("𝐀𝐁x", 2), "𝐀");
-  assert.equal(sliceToCaret("𝐀𝐁x", 4), "𝐀𝐁");
-  assert.equal(sliceToCaret("𝐀𝐁x", 5), "𝐀𝐁x");
-  // 越界：负数 → 空串；超过长度 → 全文
-  assert.equal(sliceToCaret("字体", -1), "");
-  assert.equal(sliceToCaret("字体", 99), "字体");
+test("coveredCharBox：空输入退化为空盒；password 不在自绘集合", () => {
+  // 空输入：char null → 组件渲染 0.55em 空块（CSS），几何无意义
+  assert.deepEqual(coveredCharBox("", 0, 0, 0, 0, 200), {
+    left: 0,
+    width: 0,
+    char: null,
+    glyphShift: 0,
+  });
+  // password 必须不在自绘集合（镜像会把明文塞进 DOM）
+  assert.equal(CARET_TYPES.has("password"), false);
+  assert.equal(CARET_TYPES.has("text"), true);
 });
