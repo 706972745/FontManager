@@ -106,7 +106,7 @@ import {
   type TKey,
 } from "../lib/i18n";
 import { familyMatches, searchTokens, type LabelMaps, type SearchableFamily } from "../lib/familySearch";
-import { isTagExpired, parseTagExpiry } from "../lib/tagExpiry";
+import { isTagExpired, parseTagExpiry, sweepTagResult } from "../lib/tagExpiry";
 
 export const SIZES = [8, 14, 18, 24, 32, 48, 64, 96] as const;
 
@@ -4265,10 +4265,14 @@ export const useFontStore = create<FontStore>((set, get) => ({
       .filter(([, date]) => isTagExpired(date))
       .map(([tag]) => tag);
     for (const tag of expired) {
-      // removeTagEverywhere 自带逐族写盘 + 失败回退 + 导航跳转，直接复用
+      // removeTagEverywhere 自带逐族写盘 + 失败回退 + 导航跳转，直接复用。
+      // 但它内部**吞掉逐族失败并回滚、不抛出** —— 无条件删键 + 发成功 toast
+      // 会变成「标签还在、到期键已删、永不重试」+ 两条互相矛盾的 toast
+      // （QA Round 1）。所以用 sweepTagResult 判成败：部分失败就保留键，
+      // 下一轮 sweep 自然重试；真删干净才删键 + 报喜。
       await get().removeTagEverywhere(tag);
-      const next = { ...get().tagExpiry };
-      delete next[tag];
+      const next = sweepTagResult(get().tagExpiry, get().tags, tag);
+      if (!next) continue;
       set({ tagExpiry: next });
       persistPrefs(get);
       toast.info(t("tag.autoRemoved", { tag }));

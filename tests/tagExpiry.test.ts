@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatTagExpiry, isTagExpired, parseTagExpiry } from "../src/lib/tagExpiry.ts";
+import {
+  formatTagExpiry,
+  isTagExpired,
+  parseTagExpiry,
+  sweepTagResult,
+} from "../src/lib/tagExpiry.ts";
 
 test("formatTagExpiry hides the year inside the current year", () => {
   const now = new Date(2026, 10, 13); // 2026-11-13
@@ -32,4 +37,30 @@ test("parseTagExpiry keeps only strict YYYY-MM-DD strings", () => {
   assert.equal(parseTagExpiry("26-11-12"), null);
   assert.equal(parseTagExpiry(42), null);
   assert.equal(parseTagExpiry(null), null);
+});
+
+test("sweepTagResult keeps the expiry key when removal only partially failed", () => {
+  const expiry = { "临时素材": "2026-11-12" };
+  // removeTagEverywhere 内部吞掉逐族失败并回滚、不抛出 —— 标签还挂在
+  // 某个字族上 = 没删干净：保留到期键（下一轮 sweep 重试），调用方跳过成功 toast
+  const partial = sweepTagResult(
+    expiry,
+    { "Lora": ["临时素材"], "Inter": [] },
+    "临时素材",
+  );
+  assert.equal(partial, null, "部分失败必须保留到期键");
+  assert.deepEqual(expiry, { "临时素材": "2026-11-12" }, "入参不被原地改写");
+});
+
+test("sweepTagResult drops the expiry key only when the tag is gone everywhere", () => {
+  const expiry = { "临时素材": "2026-11-12", "其它": "2027-01-01" };
+  const next = sweepTagResult(
+    expiry,
+    { "Lora": [], "Inter": ["别的标签"] },
+    "临时素材",
+  );
+  assert.deepEqual(next, { "其它": "2027-01-01" }, "删干净才删键，其它键不受影响");
+  // tags 值不是数组的脏数据按「不在任何族」处理（不炸、不误判成失败）
+  const dirty = sweepTagResult(expiry, { "Lora": null as unknown as string[] }, "临时素材");
+  assert.deepEqual(dirty, { "其它": "2027-01-01" });
 });
