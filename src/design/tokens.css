@@ -42,6 +42,11 @@
      别拿它当通用错误色用。 */
   --expiry-red: #e5484d;
 
+  /* 用户 2026-11-13 点名要的块状光标色，仅用于自绘光标（BlinkCaretInput）。
+     全局语义色都是灰度（accent 也是），只有这一处按用户要求给了真蓝，
+     别拿它当通用强调色用。 */
+  --caret-blue: #4c8dff;
+
   --badge-otf: #d4d4d8;
   --badge-ttf: #d4d4d8;
   --badge-woff: #d4d4d8;
@@ -115,6 +120,7 @@
   --warning: #3f3f46;
   --error: #3f3f46;
   --expiry-red: #d13438;
+  --caret-blue: #2f6bdb;
   --badge-otf: #3f3f46;
   --badge-ttf: #3f3f46;
   --badge-woff: #3f3f46;

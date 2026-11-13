@@ -9877,9 +9877,57 @@ body.tour-qb .qb-actions .qb-btn-text {
   min-width: 0;
 }
 
-/* 输入光标颜色显式声明（2026-11-13）：Windows 11 的「文本光标指示器」开着时
-   会画一个不闪的彩色粗条，那是 OS 级覆盖层，应用侧去不掉；这条只保证指示器
-   关闭后，光标在深浅两套主题下都按主文字色可见，不吃全局 button/input 的继承色。 */
-.topbar-field input, .qb-search input, .ctx-search, .online-search-input {
-  caret-color: var(--text-primary);
+/* ─── 自绘闪烁块状光标（2026-11-13 用户点名要的「蓝色粗块光标」） ───────────
+   之前的 caret-color 防御性着色已删：6 个输入框全部换上 BlinkCaretInput，
+   原生光标直接藏掉。Windows 文本光标指示器是 OS 级覆盖层去不掉，自绘这条
+   是唯一能给出「闪烁的块状光标」的路。组件见 design/primitives/BlinkCaretInput.tsx。 */
+.blink-caret-field {
+  position: relative;
+  /* 接管原 input 在容器里的伸缩位：.topbar-field input / .qb-search input /
+     .ctx-search / .online-search-input 原来都是容器直接的 flex/width:100% 子项 */
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.blink-caret-field input {
+  caret-color: transparent;
+}
+/* IME 组合期间：自绘光标藏起（组件不渲染），原生光标恢复出来跟拼音走。
+   选择器比上面那条高一级，盖得住。 */
+.blink-caret-field.is-composing input {
+  caret-color: auto;
+}
+.blink-caret {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 1.05em;
+  border-radius: 1px;
+  background: var(--caret-blue);
+  /* 2px 竖条正常叠在文字上方即可；placeholder / 文字本身不受影响 */
+  z-index: 1;
+  pointer-events: none;
+  animation: caret-blink 1.1s steps(1, end) infinite;
+}
+/* 测宽镜像：跟着 input 的 computed style 走，永远藏住、不占布局 */
+.blink-caret-mirror {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  white-space: pre;
+  pointer-events: none;
+}
+/* 不追求和系统同频：55% 亮 / 45% 灭，steps(1,end) 让它是「切换」而不是渐隐 */
+@keyframes caret-blink {
+  0%, 55% { opacity: 1; }
+  56%, 100% { opacity: 0; }
+}
+/* 闪烁属于动画：系统开了「减少动态效果」就给常亮不闪的静态光标 */
+@media (prefers-reduced-motion: reduce) {
+  .blink-caret {
+    animation: none;
+    opacity: 1;
+  }
 }

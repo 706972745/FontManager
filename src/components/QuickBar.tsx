@@ -68,6 +68,7 @@ import { applyToActiveApp } from "../lib/applyActive";
 import { buildFaceIndexCached, entryFaceIds, faceKey } from "../lib/snapshotKey";
 import { FilterMenu } from "./TopBar";
 import { SearchSuggest, type Suggestion } from "./SearchSuggest";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { openPluginSettings } from "../lib/pluginMenu";
 import { usePluginStore } from "../lib/pluginStore";
 import { StarRating } from "./StarRating";
@@ -815,7 +816,7 @@ export function QuickBar() {
 
               <div className="qb-search">
                 <Search size={13} strokeWidth={1.5} className="field-icon" />
-                <input
+                <BlinkCaretInput
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onFocus={() => setQueryFocus(true)}
@@ -924,7 +925,7 @@ export function QuickBar() {
             <div className="qb-bar qb-bar-2">
               <div className="topbar-field qb-sample">
                 <Type size={13} strokeWidth={1.5} className="field-icon" />
-                <input
+                <BlinkCaretInput
                   value={sampleText}
                   onChange={(e) => setSampleText(e.target.value)}
                   placeholder={t("top.samplePlaceholder")}

@@ -10,6 +10,7 @@ import { displayFamilyName, familyNameVariants } from "../../lib/fontNames";
 import { useFontStore, type Nav } from "../../state/fontStore";
 import type { FontFace } from "../../lib/ipc";
 import { scrimFade, springSnappy } from "../springs";
+import { BlinkCaretInput } from "./BlinkCaretInput";
 
 export type MenuItem =
   | {
@@ -567,7 +568,7 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
       {search !== null && (
         <div className="ctx-search-wrap">
           <Search size={13} strokeWidth={2} aria-hidden />
-          <input
+          <BlinkCaretInput
             ref={searchRef}
             className="ctx-search"
             value={search}
@@ -580,7 +581,8 @@ function MenuPanel({ x, y, items }: { x: number; y: number; items: MenuItem[] })
             onKeyDown={(e) => {
               // Tab 不在这里处理：容器捕获层的 onTabScope 先于一切冒泡截走它
               //（切搜索范围）；完整界面/速览一致 —— 搜索模式下 Tab 永远不关菜单
-              if (e.key === "Enter") {                e.preventDefault();
+              if (e.key === "Enter") {
+                e.preventDefault();
                 const active =
                   document.activeElement instanceof HTMLButtonElement &&
                   document.activeElement.classList.contains("ctx-hit")
