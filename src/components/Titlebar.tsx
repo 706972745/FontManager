@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, Minus, PanelTop, RefreshCw, Square, X } from "lucide-react";
+import { Minus, PanelTop, RefreshCw, Square, X } from "lucide-react";
 import { useFontStore } from "../state/fontStore";
 import { motion, useReducedMotion } from "motion/react";
 import { springSnappy, springSoft } from "../design/springs";
@@ -69,8 +69,43 @@ function ImportFolderButton() {
       }}
       whileTap={{ scale: 0.94, transition: springSnappy }}
     >
-      <FolderOpen size={14} strokeWidth={1.5} />
+      <ImportFolderGlyph />
     </motion.button>
+  );
+}
+
+/**
+ * 「导入文件夹」的图标：打开文件夹 + 右下角外挂加号。
+ *
+ * 用户 2026-11-13 从四个方案里定的 V2（角上叠放 + 底衬）：文件夹略缩到 86%，
+ * 加号压在右下角 —— 但加号先垫一圈**标题栏底色的底衬**再叠上去，交叠处会自动
+ * 留白，看起来是加号浮在文件夹上而不是穿过它（候选稿里加号直接压线的那版
+ * 会糊成一团）。底衬用 `--canvas`：标题栏底色就是 canvas 上 1.5% 的 ink 水洗，
+ * 深浅两套主题自动跟随，不需要分开处理。
+ *
+ * 纯内联 SVG（不走 lucide）：lucide 的 FolderPlus 是「闭合文件夹 + 内部加号」，
+ * 形状和用户认可的「打开文件夹」不一致；这里是 FolderOpen 原路径 + 外挂加号，
+ * 描边宽 / 圆角 / 端点风格与其它 lucide 图标完全一致。
+ */
+function ImportFolderGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <g
+        transform="scale(0.86)"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+      </g>
+      <g strokeLinecap="round" fill="none">
+        <path d="M17.9 14.7v6.3" stroke="var(--canvas)" strokeWidth={4.2} />
+        <path d="M14.7 17.85h6.3" stroke="var(--canvas)" strokeWidth={4.2} />
+        <path d="M17.9 14.7v6.3" stroke="currentColor" strokeWidth={1.5} />
+        <path d="M14.7 17.85h6.3" stroke="currentColor" strokeWidth={1.5} />
+      </g>
+    </svg>
   );
 }
 
