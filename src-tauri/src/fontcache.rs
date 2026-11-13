@@ -32,7 +32,11 @@ use std::path::PathBuf;
 // v10：分类判定重做（2026-11-13）—— 名字优先、逐层短路、判不出兜底成「展示」，
 // 不再产出 Unknown。`classification` 是烤进缓存字面的，v9 及以前的缓存里
 // 存着 2371 个字面的 Unknown（还有 迷你简综艺=script 这类错值），必须整库重算。
-const CACHE_VERSION: u32 = 10;
+// v11：分类规则在 v10 之后又改了三轮（2026-11-13，2.1.2）—— 名字层第二批关键词
+// （宋黑合体/魏碑/日韩）、拉丁词边界（CamelCase 感知）、手写词补全 + 覆盖表扩充。
+// classification 同样烤在字面上，v10 缓存的分类是旧规则算的，必须整库重算，
+// 否则用户看到的还是改版前的结果（QA 与 2.1.2 验收都依赖这次重算）。
+const CACHE_VERSION: u32 = 11;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
