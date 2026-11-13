@@ -15,6 +15,13 @@
 //! 3. **中文宋 / 黑**：`一` 两端与中段的厚度比（宋体两端有顿角，≥ 1.5）+ `十`
 //!    竖画 / 横画厚度比（宋体横细竖粗，≥ 1.6）。**两个信号都一致才下结论**。
 //!
+//! **装饰性否决**（用户 2026-11-13 拍板，只作用于拉丁分支）：像素 / 方块字与海报体
+//! 属于「展示」，不许被字形层塞进衬线 / 无衬线 ——
+//! - `o` 零曲线（全是直线段）= 像素 / 方块字；
+//! - `o` 竖画厚 ÷ 字高 超出 [0.03, 0.35] = 海报体（超粗）或发丝体（极细）。
+//! 中文分支不能套用：黑体的 `一` / `十` 本来就是直线，套用会误杀整批中文无衬线。
+//! 手写体的几何本来就「不像衬线也不像无衬线」，两条否决碰不到它，仍走兜底展示。
+//!
 //! 楷体 / 行书这类不在这层区分 —— 它们的笔画也有粗细变化，和宋体撞车；手写只靠
 //! 名字 + PANOSE，判不出就走兜底展示（用户口径：宁可偏差，不要消失）。
 //!
@@ -33,6 +40,10 @@ type Contours = Vec<Vec<(f32, f32)>>;
 
 /// 二次曲线细分数（够把衬线的圆角还原出来，又不至于让点数爆炸）。
 const QUAD_STEPS: usize = 8;
+
+/// `o` 的竖画厚 ÷ o 字高 的正常区间；区间之外视为海报体 / 发丝体（展示），
+/// 不给衬线 / 无衬线结论。实测正文体在 0.05–0.25 之间，两侧留了余量。
+const O_WEIGHT_RANGE: (f32, f32) = (0.03, 0.35);
 /// 三次曲线细分数。
 const CURVE_STEPS: usize = 10;
 /// `一` 的横向采样点个数。
@@ -85,6 +96,10 @@ pub(crate) struct ShapeMetrics {
     pub han_end_ratio: Option<f32>,
     /// `十`：竖画厚 ÷ 横画厚。黑体 ≈ 1，宋体 ≥ 1.6。
     pub han_stroke_ratio: Option<f32>,
+    /// `o` 的曲线段数（退化用 `O`）。像素 / 方块字是 0 —— 装饰性否决的信号。
+    pub o_curves: Option<usize>,
+    /// `o` 的竖画厚 ÷ o 的字高。海报体（超粗）与发丝体（极细）在这条上现形。
+    pub o_weight: Option<f32>,
 }
 
 /// `classify_by_shape` 的详细版：先把所有指标都算出来，再统一判定。
@@ -97,6 +112,8 @@ pub(crate) fn shape_metrics(face: &ttf_parser::Face) -> ShapeMetrics {
         stroke_contrast: latin_stroke_contrast(face),
         han_end_ratio: contours_of(face, '一').and_then(|c| han_end_ratio(&c)),
         han_stroke_ratio: contours_of(face, '十').and_then(|c| han_stroke_ratio(&c)),
+        o_curves: curves_of(face, 'o').or_else(|| curves_of(face, 'O')),
+        o_weight: o_weight_of(face),
     }
 }
 
@@ -138,6 +155,19 @@ fn han_verdict(m: &ShapeMetrics) -> Option<Classification> {
 ///   只信 `I` 会把这两个无衬线体判成衬线。
 fn latin_verdict(m: &ShapeMetrics) -> Option<Classification> {
     m.stroke_contrast?; // 没有正常的 o 环 → 不是正文体骨架，不下结论
+    // 装饰性否决（用户 2026-11-13 拍板）：像素 / 方块字与海报体属于「展示」，
+    // 不许字形层把它们塞进衬线 / 无衬线 —— 它们几何上可能很规则（像素字的 o
+    // 就是两个嵌套矩形、笔画等厚），但用途是装饰，不是正文。
+    // 注意：中文分支**不能**套用零曲线否决 —— 黑体的 `一` / `十` 本来就是直线，
+    // 那样会把整批中文无衬线误杀，所以这条只写在拉丁判定里。
+    if m.o_curves == Some(0) {
+        return None; // 像素 / 方块字：正文体的 o 必然有曲线
+    }
+    if let Some(w) = m.o_weight {
+        if !(O_WEIGHT_RANGE.0..=O_WEIGHT_RANGE.1).contains(&w) {
+            return None; // 海报体（超粗）或发丝体（极细）
+        }
+    }
     let i = m.serif_ratio_i.and_then(ratio_verdict);
     let l = m.serif_ratio_l.and_then(ratio_verdict);
     match (i, l) {
@@ -183,6 +213,17 @@ fn contours_of(face: &ttf_parser::Face, ch: char) -> Option<Contours> {
     flattener.finish()
 }
 
+/// 字形里的曲线段数（二次 + 三次）。字形不存在返回 `None`。
+///
+/// 像素 / 方块字的轮廓**全是直线**（`o` 是两个嵌套矩形），正常正文体的 `o`
+/// 必然有曲线 —— 这是「装饰性否决」里区分两者的唯一可靠几何信号。
+fn curves_of(face: &ttf_parser::Face, ch: char) -> Option<usize> {
+    let gid = face.glyph_index(ch)?;
+    let mut flattener = Flattener::default();
+    face.outline_glyph(gid, &mut flattener)?;
+    Some(flattener.curves)
+}
+
 /// 把 `OutlineBuilder` 的路径段收成折线点集（曲线按固定步数细分）。
 #[derive(Default)]
 struct Flattener {
@@ -190,6 +231,8 @@ struct Flattener {
     cur: Vec<(f32, f32)>,
     start: (f32, f32),
     pen: (f32, f32),
+    /// 路径里的曲线段数（二次 + 三次）。像素 / 方块字是 0 —— 装饰性否决的信号之一。
+    curves: usize,
 }
 
 impl Flattener {
@@ -227,6 +270,7 @@ impl ttf_parser::OutlineBuilder for Flattener {
 
     fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
         let (x0, y0) = self.pen;
+        self.curves += 1;
         for i in 1..=QUAD_STEPS {
             let t = i as f32 / QUAD_STEPS as f32;
             let mt = 1.0 - t;
@@ -240,6 +284,7 @@ impl ttf_parser::OutlineBuilder for Flattener {
 
     fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
         let (x0, y0) = self.pen;
+        self.curves += 1;
         for i in 1..=CURVE_STEPS {
             let t = i as f32 / CURVE_STEPS as f32;
             let mt = 1.0 - t;
@@ -447,6 +492,28 @@ fn latin_stroke_contrast(face: &ttf_parser::Face) -> Option<f32> {
     ['o', 'O']
         .iter()
         .find_map(|ch| contours_of(face, *ch).as_deref().and_then(stroke_contrast))
+}
+
+/// `o` 的竖画厚 ÷ o 的字高。
+///
+/// 这是「装饰性否决」的第二条信号：海报体 / 超粗展示体的竖画能占到字高三分之一以上，
+/// 发丝体薄到几乎看不见 —— 两者都不该被字形层塞进衬线 / 无衬线。
+fn o_weight_of(face: &ttf_parser::Face) -> Option<f32> {
+    let contours = contours_of(face, 'o')?;
+    let (_, _, y_min, y_max) = bounds(&contours)?;
+    let h = y_max - y_min;
+    if h <= 0.0 {
+        return None;
+    }
+    let spans = ink_spans(&crossings_at_y(&contours, (y_min + y_max) / 2.0));
+    if spans.len() != 2 {
+        return None;
+    }
+    let v = ((spans[0].1 - spans[0].0) + (spans[1].1 - spans[1].0)) / 2.0;
+    if v <= 0.0 {
+        return None;
+    }
+    Some(v / h)
 }
 
 // ——————————————————————————————————————————————
@@ -714,6 +781,68 @@ mod tests {
         }
     }
 
+    /// 装饰性否决①：`o` 零曲线（像素 / 方块字）不许判成无衬线。
+    /// 除了 `o_curves`，其余指标与「正常无衬线」完全一致 —— 证明否决只看曲线数。
+    #[test]
+    fn zero_curve_o_is_vetoed() {
+        let base = ShapeMetrics {
+            serif_ratio_i: Some(1.0),
+            serif_ratio_l: Some(1.0),
+            stroke_contrast: Some(1.0),
+            han_end_ratio: None,
+            han_stroke_ratio: None,
+            o_curves: Some(8),
+            o_weight: Some(0.10),
+        };
+        assert_eq!(latin_verdict(&base), Some(Classification::Sans));
+        let pixel = ShapeMetrics {
+            o_curves: Some(0),
+            ..base
+        };
+        assert_eq!(latin_verdict(&pixel), None, "像素字该进展示，不是无衬线");
+    }
+
+    /// 装饰性否决②：`o` 笔画厚 ÷ 字高 落在正常区间之外（海报体 / 发丝体）不下结论。
+    #[test]
+    fn extreme_o_weight_is_vetoed() {
+        let base = ShapeMetrics {
+            serif_ratio_i: Some(1.0),
+            serif_ratio_l: Some(1.0),
+            stroke_contrast: Some(1.0),
+            han_end_ratio: None,
+            han_stroke_ratio: None,
+            o_curves: Some(8),
+            o_weight: Some(0.12),
+        };
+        assert_eq!(latin_verdict(&base), Some(Classification::Sans));
+        for w in [0.01f32, 0.02, 0.36, 0.5] {
+            let m = ShapeMetrics {
+                o_weight: Some(w),
+                ..base
+            };
+            assert_eq!(latin_verdict(&m), None, "o_weight={w} 该被否决");
+        }
+        for w in [0.05f32, 0.12, 0.30] {
+            let m = ShapeMetrics {
+                o_weight: Some(w),
+                ..base
+            };
+            assert_ne!(latin_verdict(&m), None, "o_weight={w} 在正常区间内");
+        }
+    }
+
+    /// 否决不许误伤正文体：Arial 的 `o` 必然有曲线、笔画厚度正常。
+    /// 系统里没有 arial.ttf 就跳过（CI 与精简系统上都可能缺）。
+    #[test]
+    fn normal_sans_is_not_vetoed_by_the_o_gate() {
+        let Some((file, m, verdict)) = system_metrics("arial.ttf") else {
+            return;
+        };
+        eprintln!("{file} o_curves={:?} o_weight={:?} → {verdict:?}", m.o_curves, m.o_weight);
+        assert_ne!(m.o_curves, Some(0), "arial 的 o 不可能零曲线");
+        assert_eq!(verdict, Some(Classification::Sans), "arial 该判无衬线");
+    }
+
     /// 诊断：把一批系统字体的四个几何指标 + 最终结论全打出来。
     /// 阈值定标、以及「哪些字体给不出结论」这两件事都靠它取证。
     ///
@@ -773,8 +902,8 @@ mod tests {
                 Some(c) => format!("{c:?}"),
                 None => "None(无结论)".to_string(),
             };
-            println!("{file:20} 期望={want:8} 结论={verdict:14} I={:.2?} l={:.2?} 对比度={:.2?} 一={:.2?} 十={:.2?}",
-                m.serif_ratio_i, m.serif_ratio_l, m.stroke_contrast, m.han_end_ratio, m.han_stroke_ratio);
+            println!("{file:20} 期望={want:8} 结论={verdict:14} I={:.2?} l={:.2?} 对比度={:.2?} 一={:.2?} 十={:.2?} o曲线={:?} o厚度比={:.2?}",
+                m.serif_ratio_i, m.serif_ratio_l, m.stroke_contrast, m.han_end_ratio, m.han_stroke_ratio, m.o_curves, m.o_weight);
         }
     }
 }
