@@ -106,6 +106,7 @@ import {
   type TKey,
 } from "../lib/i18n";
 import { familyMatches, searchTokens, type LabelMaps, type SearchableFamily } from "../lib/familySearch";
+import { isTagExpired, parseTagExpiry } from "../lib/tagExpiry";
 
 export const SIZES = [8, 14, 18, 24, 32, 48, 64, 96] as const;
 
@@ -419,6 +420,8 @@ interface FontStore {
   copyrightStatus: Record<string, string>;
   /** 时间限制版权的到期日期：family → "YYYY-MM-DD"（缺省 = 未设置） */
   copyrightExpiry: Record<string, string>;
+  /** 标签到期的日期：标签名 → "YYYY-MM-DD"；到期后 sweepExpiredTags 不经确认直接移除（用户 2026-11-13） */
+  tagExpiry: Record<string, string>;
   nav: Nav;
   selectedFamily: string | null;
 
@@ -638,6 +641,10 @@ interface FontStore {
   setCopyrightStatus: (family: string, status: string | null) => void;
   /** date 为 null 时清除到期日期 */
   setCopyrightExpiry: (family: string, date: string | null) => void;
+  /** 标签的到期日期；date 为 null 时清除（清除后该标签永不过期） */
+  setTagExpiry: (tag: string, date: string | null) => void;
+  /** 把已到期的标签直接移除（不经确认），每个删掉的标签发一条 toast */
+  sweepExpiredTags: () => Promise<void>;
   exportLibraryData: (dest: string) => Promise<void>;
   importLibraryData: (src: string) => Promise<void>;
   /**
@@ -1164,6 +1171,7 @@ function persistPrefs(get: () => FontStore) {
       lastActivePaths: s.fonts.filter((f) => f.active).map((f) => f.path),
       copyrightStatus: s.copyrightStatus,
       copyrightExpiry: s.copyrightExpiry,
+      tagExpiry: s.tagExpiry,
       ratings: s.ratings,
       activatedAt: s.activatedAt,
       // 一次性迁移标记：写进去之后，用户自己拨回 24px 才不会被改回 32px
@@ -1754,6 +1762,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   tagFilter: [],
   copyrightStatus: {},
   copyrightExpiry: {},
+  tagExpiry: {},
   nav: { kind: "library" },
   selectedFamily: null,
   revealFamily: null,
@@ -1878,6 +1887,17 @@ export const useFontStore = create<FontStore>((set, get) => ({
                   ),
               )
             : get().copyrightExpiry,
+        // 标签到期的恢复走同一个正则校验（lib/tagExpiry.ts::parseTagExpiry），
+        // 坏值整条丢掉 —— 到期删除是不可逆动作，宁可少删不可误删
+        tagExpiry:
+          prefs.tagExpiry && typeof prefs.tagExpiry === "object"
+            ? Object.fromEntries(
+                Object.entries(prefs.tagExpiry as Record<string, unknown>)
+                  .filter(
+                    (entry): entry is [string, string] => parseTagExpiry(entry[1]) !== null,
+                  ),
+              )
+            : get().tagExpiry,
         // 评分：只认 1~5 的整数，坏值整条丢掉（老备份里可能混进 0 / 字符串）
         ratings: normalizeRatings(prefs.ratings),
         activatedAt: (() => {
@@ -1906,6 +1926,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
       });
       setSoundLevel(get().soundPref);
       hydrateLocalePref(get().localePref);
+      // 启动先扫一遍到期标签：用户隔了几天才打开软件，到期粒度是天，
+      // 不扫的话「到期自动移除」要等下一次定时器才发生
+      void get().sweepExpiredTags();
       // 把偏好里的快捷键再同步给原生侧一次：
       // 启动时原生已经按偏好注册过，但这一趟同时也覆盖「上次注册被占用、
       // 用户后来把占用方关了」的情况，并保证前后端配置不会因为某次写入失败而错位。
@@ -4226,6 +4249,30 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
     set({ copyrightExpiry: next });
     persistPrefs(get);
+  },
+  setTagExpiry: (tag, date) => {
+    const next = { ...get().tagExpiry };
+    if (!date) {
+      delete next[tag];
+    } else {
+      next[tag] = date;
+    }
+    set({ tagExpiry: next });
+    persistPrefs(get);
+  },
+  sweepExpiredTags: async () => {
+    const expired = Object.entries(get().tagExpiry)
+      .filter(([, date]) => isTagExpired(date))
+      .map(([tag]) => tag);
+    for (const tag of expired) {
+      // removeTagEverywhere 自带逐族写盘 + 失败回退 + 导航跳转，直接复用
+      await get().removeTagEverywhere(tag);
+      const next = { ...get().tagExpiry };
+      delete next[tag];
+      set({ tagExpiry: next });
+      persistPrefs(get);
+      toast.info(t("tag.autoRemoved", { tag }));
+    }
   },
   toggleFormat: (f) => {
     const cur = get().formatFilter;

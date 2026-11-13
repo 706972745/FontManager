@@ -10,6 +10,7 @@ import { faceKey } from "../lib/snapshotKey";
 import { sortContainers } from "../lib/faceContainers";
 import { exportFontList, snapshotToggleAction } from "../lib/menus";
 import { t as translate, useT } from "../lib/i18n";
+import { formatTagExpiry } from "../lib/tagExpiry";
 
 function navKey(n: Nav): string {
   if (n.kind === "tag") return `tag:${n.tag}`;
@@ -23,6 +24,7 @@ function NavRow({
   nav,
   icon,
   label,
+  trailing,
   count,
   index,
   no,
@@ -32,6 +34,8 @@ function NavRow({
   nav: Nav;
   icon: React.ReactNode;
   label: string;
+  /** 计数前的附加小字（标签的到期日期红字） */
+  trailing?: React.ReactNode;
   count?: number;
   index: number;
   /**
@@ -80,6 +84,7 @@ function NavRow({
       <span className="nav-icon">{icon}</span>
       {no !== undefined && <span className="nav-no tabular">{no}</span>}
       <span className="nav-label">{label}</span>
+      {trailing}
       {count !== undefined && <span className="nav-count tabular">{count}</span>}
     </motion.button>
   );
@@ -296,6 +301,7 @@ export function Sidebar() {
     if (src) void importSnapshots(src as string, mode);
   };
 
+  const tagExpiry = useFontStore((s) => s.tagExpiry);
   const removeTagEverywhere = (tag: string) => {
     // 交给 store：它按最新状态逐族串行写、失败只报一次（§5 第 36 条）。
     // 以前在这里遍历渲染期的 tags 快照并发、失败逐族弹 toast，会把期间新加的标签覆盖掉。
@@ -645,6 +651,16 @@ export function Sidebar() {
                 nav={{ kind: "tag", tag }}
                 icon={<Tag size={15} strokeWidth={1.5} />}
                 label={tag}
+                trailing={
+                  tagExpiry[tag] ? (
+                    <span
+                      className="tag-expiry-date"
+                      title={`${translate("tag.expiryDate")}: ${tagExpiry[tag]}`}
+                    >
+                      {formatTagExpiry(tagExpiry[tag])}
+                    </span>
+                  ) : undefined
+                }
                 count={count}
                 index={i++}
                 onContextMenu={(e) =>

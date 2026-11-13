@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AlertTriangle, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { easeTop, spring, springSnappy } from "../design/springs";
@@ -14,6 +14,7 @@ import { openContextMenuAt } from "../design/primitives/ContextMenu";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { classifyLicense, copyrightExpired, familyCopyrightClass, normalizeCopyright } from "../lib/license";
 import { faceKey } from "../lib/snapshotKey";
+import { formatTagExpiry } from "../lib/tagExpiry";
 import { parentDir } from "../lib/onlineCoverage";
 import { playTag } from "../lib/sound";
 import { StarRating } from "./StarRating";
@@ -564,7 +565,11 @@ function LicenseSection({
 function TagEditor({ family, tags }: { family: string; tags: string[] }) {
   const t = useT();
   const setFamilyTags = useFontStore((s) => s.setFamilyTags);
+  const tagExpiry = useFontStore((s) => s.tagExpiry);
+  const setTagExpiry = useFontStore((s) => s.setTagExpiry);
   const [draft, setDraft] = useState("");
+  // 正在设置到期日期的那枚标签（同一时间只开一行内联日期选择器）
+  const [expiryTag, setExpiryTag] = useState<string | null>(null);
 
   const add = () => {
     const next = draft.trim().toLowerCase();
@@ -589,6 +594,23 @@ function TagEditor({ family, tags }: { family: string; tags: string[] }) {
             layout
           >
             {tag}
+            {tagExpiry[tag] && (
+              <span
+                className="tag-expiry-date"
+                title={`${t("tag.expiryDate")}: ${tagExpiry[tag]}`}
+              >
+                {formatTagExpiry(tagExpiry[tag])}
+              </span>
+            )}
+            <button
+              className="tag-expiry-btn"
+              aria-label={t("tag.expiryDate")}
+              title={t("tag.expiryDate")}
+              data-active={expiryTag === tag || undefined}
+              onClick={() => setExpiryTag((cur) => (cur === tag ? null : tag))}
+            >
+              <CalendarDays size={11} strokeWidth={1.5} />
+            </button>
             <button
               aria-label={t("tag.removeAria", { tag })}
               onClick={() => {
@@ -601,6 +623,31 @@ function TagEditor({ family, tags }: { family: string; tags: string[] }) {
           </motion.span>
         ))}
       </AnimatePresence>
+      {expiryTag && tags.includes(expiryTag) && (
+        <div className="tag-expiry-row">
+          <span className="tag-expiry-label">{t("tag.expiryDate")}</span>
+          <input
+            type="date"
+            className="copyright-expiry-input"
+            value={tagExpiry[expiryTag] ?? ""}
+            onChange={(e) => setTagExpiry(expiryTag, e.target.value || null)}
+            aria-label={t("tag.expiryDate")}
+          />
+          {tagExpiry[expiryTag] && (
+            <button
+              className="copyright-expiry-clear"
+              onClick={() => {
+                setTagExpiry(expiryTag, null);
+                setExpiryTag(null);
+              }}
+              aria-label={t("copyright.clearExpiry")}
+              data-hint-text={t("copyright.clearExpiry")}
+            >
+              <X size={12} strokeWidth={1.5} />
+            </button>
+          )}
+        </div>
+      )}
       <div className="tag-input">
         <input
           value={draft}

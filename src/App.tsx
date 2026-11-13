@@ -329,6 +329,16 @@ function MainContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 标签到期的自动清除（用户 2026-11-13）：到期粒度是天，10 分钟扫一次足够。
+  // 启动那一次在 fontStore.init() 恢复完偏好之后已经扫过，这里只负责后续。
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => void useFontStore.getState().sweepExpiredTags(),
+      10 * 60 * 1000,
+    );
+    return () => window.clearInterval(timer);
+  }, []);
+
   if (nav.kind === "trash") return <TrashView />;
   if (nav.kind === "about") return <AboutView />;
   if (nav.kind === "online") return <OnlineView />;
