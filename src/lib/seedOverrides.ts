@@ -51,20 +51,26 @@ export function applyOverrides<T extends OverrideTarget>(
 }
 
 /**
- * 裁掉指向「本轮已经不存在的路径」的覆盖项。
+ * 一次全量落地的完整结果：叠加好的字体表 + **落地后**的覆盖表。
  *
- * 不裁的反例：路径被删除后复用了同一个名字（回收站还原、重新导入同名文件），
- * 上一次会话残留的覆盖项会在下一次全量里误伤这个新文件。
+ * 覆盖表落地后一律是空的 —— 这正是 D-1 那条缺陷的修复点，所以两件事绑在一个函数里，
+ * 谁也没法只改一半（曾经分开写：字体表叠加 + 覆盖表「只裁掉已消失路径」，结果留下了
+ * 「还活着」的旧决策）。
+ *
+ * 为什么是**清空**而不是「裁掉已消失路径」：override 的语义是「本轮扫描期间用户压过了
+ * 扫描结论」。扫描结论一旦落地，它就完成使命了。而 `noteOverrides` 只在
+ * `phase === "scanning"` 时记录 —— 落地之后用户再改启停**不会**更新这张表
+ * （`phase` 已是 `ready`）。于是留着的那条旧决策会在**下一轮**任意 rescan
+ * （导入字体 / watcher / 换字体库）里压过**更新的**真相：
+ * 界面显示停用、注册表其实已启用（或反过来：界面说启用、套用到 PS/AI 时失败），
+ * 而且要到重启才可能对上。只裁「路径已不存在」的那些挡不住这条路径 ——
+ * 要命的是**还活着**的旧决策。
  */
-export function pruneOverrides(
+export function landFullScan<T extends OverrideTarget>(
+  full: T[],
   overrides: Map<string, boolean>,
-  alive: Iterable<string>,
-): Map<string, boolean> {
-  if (overrides.size === 0) return overrides;
-  const keep = new Set(alive);
-  const next = new Map<string, boolean>();
-  for (const [p, v] of overrides) if (keep.has(p)) next.set(p, v);
-  return next;
+): { fonts: T[]; overrides: Map<string, boolean> } {
+  return { fonts: applyOverrides(full, overrides), overrides: new Map() };
 }
 
 /**

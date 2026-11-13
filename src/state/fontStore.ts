@@ -47,11 +47,7 @@ import {
   type TrashEntry,
 } from "../lib/ipc";
 import { normalizeFaces } from "../lib/ipc";
-import {
-  applyOverrides,
-  nextOverrides,
-  pruneOverrides,
-} from "../lib/seedOverrides";
+import { landFullScan, nextOverrides } from "../lib/seedOverrides";
 import { matchAffinityFonts, type AffinityEvent } from "../lib/affinity";
 import {
   familyActivation,
@@ -1846,19 +1842,16 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
 
   applyFullScan: (full) => {
-    const s = get();
-    // 叠加顺序不能反：扫描结论是「扫描开始那一刻」的真相，用户操作比它新
-    const merged = applyOverrides(full, s.overrides);
+    // 叠加顺序不能反：扫描结论是「扫描开始那一刻」的真相，用户操作比它新。
+    // 落地后覆盖表**清空**（不是裁剪）—— 为什么见 `landFullScan` 的注释：
+    // 留着还活着的旧决策，会在下一轮 rescan 里压过更新的真相（D-1）。
+    const landed = landFullScan(full, get().overrides);
     set({
-      fonts: merged,
+      fonts: landed.fonts,
       phase: "ready",
       // 侧栏从 `…` 换成真实数字的唯一时机：全量结果真的落地了（见 fullScanDone 的注释）
       fullScanDone: true,
-      // 路径已不存在的覆盖项留着只会在下一次全量里误伤同名文件（回收站还原会复用路径）
-      overrides: pruneOverrides(
-        s.overrides,
-        full.map((f) => f.path),
-      ),
+      overrides: landed.overrides,
     });
   },
 

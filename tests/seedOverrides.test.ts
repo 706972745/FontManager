@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applyOverrides,
+  landFullScan,
   navCountText,
   nextOverrides,
-  pruneOverrides,
 } from "../src/lib/seedOverrides.ts";
 
 /**
@@ -47,11 +47,8 @@ test("stale overrides never resurrect a path and get pruned", () => {
     ["C:/f/kept.ttf"],
     "覆盖表不能凭空造出字体",
   );
-  const pruned = pruneOverrides(
-    overrides,
-    full.map((f) => f.path),
-  );
-  assert.deepEqual([...pruned.keys()], ["C:/f/kept.ttf"]);
+  // 落地后覆盖表清空（landFullScan），所以「路径已不存在」的条目也不可能留到下一轮
+  assert.equal(landFullScan(full, overrides).overrides.size, 0);
 });
 
 /** U20：只读字面（系统字体）不覆盖 —— 注册表里根本改不动它，覆盖只会让界面撒谎 */
@@ -91,4 +88,41 @@ test("nav count renders unknown as an ellipsis, not as zero", () => {
   assert.equal(navCountText(null), "…");
   assert.equal(navCountText(0), "0");
   assert.equal(navCountText(4214), "4214");
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * QA（2.1.4 独立验证）补充：覆盖项的生命周期
+ *
+ * 设计 §3.3 的原文：「只在 `phase === "scanning"` 期间非空，`applyFullScan` 之后清空。」
+ *
+ * 下面这条钉住的是它的**行为后果**，而不是某个实现细节：一轮扫描结束时留在 map 里的
+ * 覆盖项，必须已经「用掉」了 —— 不能让上一轮的决策在**下一轮**扫描里再赢一次。
+ * 因为 noteOverrides 只在 scanning 期间记录，而 applyFullScan 会记 fullScanDone，
+ * 用户在全量落地之后做的启停**不会**更新 map；那份旧决策留在 map 里就是纯粹的脏数据。
+ * ──────────────────────────────────────────────────────────────────────────── */
+test("overrides from a finished scan must not win again in the next scan", () => {
+  const X = "C:/f/x.ttf";
+
+  // 扫描 1 进行中：用户把 X 停用（这正是 PRD A4 明确允许的操作）
+  const scan1Overrides = nextOverrides(new Map(), [X], false);
+  // 扫描 1 落地：store 走的就是 landFullScan（fontStore.applyFullScan）。
+  // 全量结果里 X 被压成停用（正确），同时覆盖表被清空。
+  const landed1 = landFullScan([face(X, true)], scan1Overrides);
+  assert.equal(landed1.fonts[0].active, false);
+
+  // 「存活下来的覆盖表」= 落地函数返回的那张，store 会直接 set 回去
+  const carried = landed1.overrides;
+
+  // 之后（phase 已是 ready）用户又把 X 启用 —— noteOverrides 此时不记录（设计如此）
+  // 扫描 2：注册表里 X 确实是启用的，扫描结论也是 active=true
+  const scan2 = [face(X, true)];
+  const landed2 = landFullScan(scan2, carried);
+
+  assert.equal(
+    carried.size,
+    0,
+    "扫描 1 的覆盖项被带进了扫描 2：下一轮全量会用它压过真实注册表状态，" +
+      "界面从此长时间显示错的启用状态（落地后必须清空，不能只裁剪已消失路径）",
+  );
+  assert.equal(landed2.fonts[0].active, true, "扫描 2 的真实结论被上一轮的旧决策覆盖了");
 });
