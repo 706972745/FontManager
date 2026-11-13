@@ -282,7 +282,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 动作分隔线 `.titlebar-sep` | 1px × 16px / margin 0 4px |
 | 库级动作 `.titlebar-controls .tb-action` | 30×30 / **无边框 · 透明底** / 4px 圆角 / 图标 14；hover = `--e2` 底 + 主文字色；禁用（扫描中 / 导入中）45% 透明、不出 hover 底。顺序固定 **导入文件夹 → 重新扫描**，紧跟在「设置」之后、`.titlebar-sep` 之前（2026-11-13 从顶栏迁来） |
 | 分组间距 `.tb-action-first` | 「导入文件夹」`margin-left: 4px`：`.titlebar-controls` 的 gap 只有 1px，这 4px 把「窗口动作（速览 / 设置）」与「字库动作（导入 / 重扫）」分成两组，右侧由 `.titlebar-sep` 兜住 |
-| 导入图标 `ImportFolderGlyph` | **打开文件夹 + 右下角外挂加号**（2.2.1，用户定的 V2）：FolderOpen 原路径缩到 86%，加号（臂长 6.3 / 圆头）压在右下角；加号先垫一圈 `--canvas` 底衬（4.2 宽）再叠 1.5 主色描边，交叠处自动留白 —— 看起来是加号浮在文件夹上而不是穿过它。纯内联 SVG，`currentColor` + `var(--canvas)`，深浅主题自动跟随 |
+| 导入图标 `ImportFolderGlyph` | **打开文件夹 + 右下角外挂加号**（2.1.1，用户定的 V2）：FolderOpen 原路径缩到 86%，加号（臂长 6.3 / 圆头）压在右下角；加号先垫一圈 `--canvas` 底衬（4.2 宽）再叠 1.5 主色描边，交叠处自动留白 —— 看起来是加号浮在文件夹上而不是穿过它。纯内联 SVG，`currentColor` + `var(--canvas)`，深浅主题自动跟随 |
 | 关闭按钮 `.tc-close` | 悬停 = 错误红 18% 底 + 红字（**全软件唯一的红**只用在这个危险动作上） |
 | 侧栏 `.sidebar` | 底 `--ui-bg`；`.sidebar-scroll` flex 1 / gap 4px |
 | 侧栏分组标题 `.sidebar-heading` | 10px / 600 / 全大写 / 字距 0.1em / 弱色；`padding: 14px 11px 5px` |
@@ -728,7 +728,7 @@ Windows 的 WebView2 没有滚轮惯性：滚一格走一格、松手就停。1.
 | 1.8.2 | 深色浮层底（右键菜单 / Toast）从 R7 的冷灰 `#1e1e22` 改回暖墨 `#1c1c1a`，悬停底改 `color-mix`；设置面板首帧优化（屏外分区 `content-visibility: auto`、入场去掉 scale）—— 见 §3.12 浮层底色行 |
 | 2.0.0 | **标题栏接管两个字库动作**：「导入文件夹」「重新扫描」从顶栏移到 `.titlebar-controls`，30×30 无边框（`.rescan-btn.tb-action` 叠加变体，基础规则未动），顺序 速览 → 设置 → **导入 → 重扫** │ 窗口按钮；顶栏右侧只剩视图切换并加 `margin-left: auto`（换行后仍贴右）。见 §3.1 / §3.2 |
 | 2.1.0 | **插件崩溃原因可见**：插件行在 `.settings-sub` 下多一行 10px 等宽小字「原因：{line}」，动作区最左多一个「查看日志」按钮（仅报错行）。文案来源是 `activation.log` 尾部 64 KiB 里该插件最后一条 stderr 错误（`File "…", line N → 异常`），日志轮转时回落 `activation.old.log`。见 §3.12 |
-| 2.2.1 | **标题栏导入图标加号**：`FolderOpen` 缩 86% + 右下角外挂加号，加号垫 `--canvas` 底衬（交叠处留白）。见 §3.1 |
+| 2.1.1 | **标题栏导入图标加号**：`FolderOpen` 缩 86% + 右下角外挂加号，加号垫 `--canvas` 底衬（交叠处留白）。见 §3.1 |
 
 ---
 
