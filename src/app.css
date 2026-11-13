@@ -9888,6 +9888,9 @@ body.tour-qb .qb-actions .qb-btn-text {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
+  /* 块状光标滚出可视区的部分由这里裁掉（块可以部分可见）；
+     wrapper 里只有 input / 光标 / 隐藏镜像，不会裁掉别的 */
+  overflow: hidden;
 }
 .blink-caret-field input {
   caret-color: transparent;
@@ -9897,18 +9900,33 @@ body.tour-qb .qb-actions .qb-btn-text {
 .blink-caret-field.is-composing input {
   caret-color: auto;
 }
+/* 蓝块（2026-11-13 二次修正）：宽度 = 被覆盖字符的 advance（JS 按
+   镜像实测设置），高度撑满输入框 —— 老终端「蓝块包字」的形态；
+   空输入没有字符可盖，退化为 0.55em 空块（.blink-caret-empty）。 */
 .blink-caret {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 1.05em;
-  border-radius: 1px;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
   background: var(--caret-blue);
-  /* 2px 竖条正常叠在文字上方即可；placeholder / 文字本身不受影响 */
+  /* 白字形超出块的右缘时裁掉（左缘裁切由组件改 glyphShift 处理） */
+  overflow: hidden;
+  /* 蓝块盖在文字上方；placeholder / 文字本身不受影响 */
   z-index: 1;
   pointer-events: none;
   animation: caret-blink 1.1s steps(1, end) infinite;
+}
+.blink-caret-empty {
+  width: 0.55em;
+}
+/* 块内白色字形：内容 = 被覆盖的那个字符，字体六项与 input 完全一致（JS 复制），
+   left/top 由组件按镜像几何摆放 —— 与底下真实字形重合，视觉即「变白」。
+   颜色写死 #fff：块色是用户点名的蓝，白字是这个效果的定义本身，不走主题变量。 */
+.blink-caret-glyph {
+  position: absolute;
+  color: #fff;
+  white-space: pre;
+  pointer-events: none;
 }
 /* 测宽镜像：跟着 input 的 computed style 走，永远藏住、不占布局 */
 .blink-caret-mirror {
