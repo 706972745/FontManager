@@ -167,11 +167,17 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; ────── 视觉：只有三档颜色，别再加第四种 ──────
 ; 底 #ffffff / 主文字 #1c1c24（纯黑 #000 在白色上发灰、显脏）/ 次级文字靠系统灰。
+;
+; ⚠️ MUI_BGCOLOR / MUI_TEXTCOLOR 的值会被 MUI **原样**传给 SetCtlColors
+; （Interface.nsh:247-251），所以这里要写 BGR，不是 RGB：
+;   #1c1c24  →  "241C1C"   （写反成 "1C1C24" 会得到 #241c1c，看着像黑但偏红）
+;   #ffffff  →  "FFFFFF"   （对称，写反看不出来 —— 所以只写对这一个会漏掉另一个）
+; 换算口诀：hex #RRGGBB → 0xBBGGRR。
 ; 为什么不做暗色：NSIS 的按钮、输入框、目录树都是**系统主题**画出来的浅色控件，
 ; 暗底上会贴出一排惨白的系统按钮，比现在更难看。真要暗色只能自绘所有控件，
 ; 那是 800 行 nsDialogs，与「只改 UI、可维护性优先」直接冲突。
 !define MUI_BGCOLOR   "FFFFFF"
-!define MUI_TEXTCOLOR "1C1C24"
+!define MUI_TEXTCOLOR "241C1C"
 
 ; Installer sidebar image
 ;
@@ -181,8 +187,13 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 ; 所以 sidebarImage 必须配（tauri.conf.json → bundle.windows.nsis.sidebarImage），
 ; 图由 windows/gen-nsis-images.py 生成（纯标准库手写 BMP，可重新生成）。
 ;
-; 图里只有白底 + 一根细线 + 居中单色图标，没有字：图里的文字没法本地化，
-; 而且 125%/150% 下会被系统按比例缩放，细笔画最先糊。
+; 内容 = **纯白 #ffffff + 右缘 1px #efefef 竖线，不画图标**：
+;   · 欢迎页改成自绘后，这张图只剩**完成页**在用；完成页右侧已经有「立即运行 /
+;     桌面快捷方式」两个交互，左边再放 logo 只是抢注意力；
+;   · FitControl 默认会把图**拉伸**到控件尺寸（164:314 不等于 MUI 内页 109u 的实际宽高比），
+;     纯白 + 1px 竖线拉伸后仍是纯白 + 略粗的竖线（可接受），图标会被拉变形；
+;   · 参考稿的美学就是「纯白 + 大量留白 + 1px 细线」，白底侧栏 = 「没有侧栏」。
+; 图标版留在 gen-nsis-images.py 的 build_sidebar_icon() 里（P2，默认不调用）。
 !if "${SIDEBARIMAGE}" != ""
   !define MUI_WELCOMEFINISHPAGE_BITMAP "${SIDEBARIMAGE}"
 !endif
@@ -215,18 +226,84 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "Installer Language"
 
 ; Installer pages, must be ordered as they appear
-; 1. Welcome Page
 ;
-; 文案全部指向 $(ZM_*)，运行时会按当前语言替换（MUI 自己就是这么用的：
-; MUI_WELCOMEPAGE_TITLE 的默认值本身就是 "$(MUI_TEXT_WELCOME_INFO_TITLE)"）。
-; MUI_WELCOMEPAGE_TITLE_3LINES 把标题区从 28u 撑到 38u，配 12pt bold
-; = 留白足、层次清。**不做超大标题**：那要 CreateFont + SendMessage WM_SETFONT
-; 去改 MUI 内部控件，靠控件 ID 定位，MUI 一升级就断。
-!define MUI_WELCOMEPAGE_TITLE_3LINES
-!define MUI_WELCOMEPAGE_TITLE "$(ZM_WELCOME_TITLE)"
-!define MUI_WELCOMEPAGE_TEXT  "$(ZM_WELCOME_TEXT)"
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
-!insertmacro MUI_PAGE_WELCOME
+; ══════════════════════════════════════════════════════════════════════════
+; 1. 欢迎页：**自绘**（Page custom），纯白满版 + 大标题 + 细线 + 页脚
+; ══════════════════════════════════════════════════════════════════════════
+; 为什么自绘而不是 !insertmacro MUI_PAGE_WELCOME：
+;   MUI 的欢迎页把标题固定成 12pt bold、正文固定 130u 高、左侧**永远**留 109u 给位图，
+;   做不出参考稿那种「大标题 + 宽留白」的层次；而它的内部控件只能靠控件 ID 去改字体，
+;   MUI 一升级就断。自绘一个**内页**反而更稳：nsDialogs::Create 1018 建的是内页，
+;   外层窗口 / 按钮 / 品牌字仍然是 MUI 的，DPI 与键盘可达性都还在。
+;
+; DPI 三条纪律（125%/150% 全靠它们不错位）：
+;   · 坐标**一律用 u**，禁止像素 —— u 由系统 DPI 换算，像素不会；
+;   · 字号用 CreateFont 的「磅」，NSIS 内部按 GetDeviceCaps(LOGPIXELSY)/72 换算；
+;   · 字族用 $(^Font)（系统 UI 字体），写死「微软雅黑」会让英文系统 fallback 成难看的字。
+;
+; 已知风险（在验收里盯）：用户在辅助功能里把「文本大小」调到 125% 以上时 u 会整体变大，
+; 固定 u 高度的 Label 可能装不下两行正文 —— 靠「文案不超过 2 行 + 留够 12u 行高」来兜。
+; 跨显示器拖动不重排是 NSIS 不处理 WM_DPICHANGED，属已知限制，不修（修 = 自己写窗口过程）。
+Page custom ZfmWelcome
+Function ZfmWelcome
+  ; ── R-17：被动模式（/P）必须跳过本页 ──
+  ; Page custom **没有 PRE 回调**，只能在 create 里 Abort —— 这是 NSIS 的既定用法。
+  ; 不跳的后果：`setup.exe /P`（进度条模式的静默安装）会**卡在自绘页**上等人点下一步，
+  ; 而 /P 的设计前提恰好是「不需要人」。静默模式（/S）NSIS 本来就不建页面，不受影响。
+  ${If} $PassiveMode = 1
+    Abort
+  ${EndIf}
+
+  ; 外层 header 文案留空：大标题由下面自己的 Label 承担，否则同一句话会出现两遍
+  !insertmacro MUI_HEADER_TEXT "" ""
+
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  ; 整页白底：给内页本身刷背景色，否则会露出系统灰
+  SetCtlColors $0 "0x241C1C" "0xFFFFFF"
+
+  ; 大标题 22pt/700（#1c1c24）
+  ${NSD_CreateLabel} 16u 40u -32u 30u "$(ZM_WELCOME_TITLE)"
+  Pop $1
+  CreateFont $2 "$(^Font)" "22" "700"
+  SendMessage $1 ${WM_SETFONT} $2 0
+  SetCtlColors $1 "0x241C1C" "0xFFFFFF"
+
+  ; 副标题 10pt/400（#727279）
+  ${NSD_CreateLabel} 16u 72u -32u 14u "$(ZM_WELCOME_SUB)"
+  Pop $3
+  CreateFont $4 "$(^Font)" "10" "400"
+  SendMessage $3 ${WM_SETFONT} $4 0
+  SetCtlColors $3 "0x797272" "0xFFFFFF"
+
+  ; 1u 高的「细线」：NSIS 没有 Line 控件，用一个实心背景的静态控件模拟（标准做法）。
+  ; 用 u 不用 px —— 150% 下 1px 会消失，1u 会变成约 2px（可接受）。
+  ${NSD_CreateLabel} 16u 96u -32u 1u ""
+  Pop $5
+  SetCtlColors $5 "0xEFEFEF" "0xEFEFEF"
+
+  ; 正文两行：拆成两个 Label，不用 $\r$\n —— 不同 DPI 下 $\r$\n 的折行位置不可控
+  ${NSD_CreateLabel} 16u 108u -32u 12u "$(ZM_WELCOME_L1)"
+  Pop $6
+  SetCtlColors $6 "0x797272" "0xFFFFFF"
+  ${NSD_CreateLabel} 16u 124u -32u 12u "$(ZM_WELCOME_L2)"
+  Pop $7
+  SetCtlColors $7 "0x797272" "0xFFFFFF"
+
+  ; 页脚小字（#9b9ba0）：y 用负数 = 距底 22u
+  ${NSD_CreateLabel} 16u -22u -32u 10u "$(ZM_FOOT)"
+  Pop $8
+  SetCtlColors $8 "0xA09B9B" "0xFFFFFF"
+
+  nsDialogs::Show
+FunctionEnd
+;
+; 注意：这里**没有** MUI_WELCOMEPAGE_TITLE / _TEXT 的 define 了 —— 欢迎页自绘后它们
+; 不再被使用；留着只会让人误以为改那两行就能改文案（实际显示的是上面的 Label）。
+; MUI_WELCOMEFINISHPAGE_BITMAP 仍然必须配：完成页还在用它（见上面 SIDEBARIMAGE 段）。
 
 ; 2. License Page (if defined)
 !if "${LICENSE}" != ""
@@ -281,6 +358,13 @@ Function PageReinstall
   ; Compare this installar version with the existing installation
   ; and modify the messages presented to the user accordingly
   compare_version:
+  ;
+  ; ★ R-18：下面三组 $R1/$R2/$R3 的赋值顺序就是「第几个 radio = 什么行为」的**唯一**定义，
+  ;   PageLeaveReinstall 完全依赖它。逐条对照基线，不要「顺手整理」成看起来对称的写法：
+  ;     同版本：R2(addOrReinstall) 进第 1 个 radio，R3(uninstallApp) 进第 2 个
+  ;     升级　：R2(uninstallBeforeInstalling) 进第 1 个 —— 注意这里第 1 个**是卸载**
+  ;     降级　：同上，且 downgrades 关闭时第 2 个 radio 被禁用
+  ;   「推荐」这一行在升级场景里是 R3(dontUninstall)，进的是第 2 个 radio。
   StrCpy $R4 "$(older)"
   ${If} $WixMode = 1
     ReadRegStr $R0 HKLM "$R6" "DisplayVersion"
@@ -367,6 +451,21 @@ Function PageReinstallUpdateSelection
   ${EndIf}
 FunctionEnd
 Function PageLeaveReinstall
+  ; ══════════════════════════════════════════════════════════════════════════
+  ; ⚠️ R-18 安全红线：这个函数里的**语义映射**一个字都不能动。
+  ;
+  ; $R0 = 版本比较结果（0 同版本 / 1 升级 / -1 降级）；
+  ; $R1 = 用户选中的是第几个 radio（1 = 第一个 / 0 = 第二个）。
+  ; 而「第一个 radio 是卸载还是直接覆盖」由 PageReinstall 里那三组 StrCpy 决定，
+  ; 且**每组的分工不一样**（同版本页 1=直接装、升级页 1=先卸载）。
+  ;
+  ; 把 $R1 的语义或那三组 StrCpy 的赋值顺序对调 = 用户在「推荐」选项上点下一步，
+  ; 实际走了**卸载**分支：卸载完再装失败，用户就没软件了（数据还在，但软件没了，
+  ; 而且他不知道发生了什么）。这是本文件里唯一「改错就毁机器」的地方。
+  ;
+  ; 允许改的只有：这些分支里引用的 $(...) 文案（见 zfm-strings.nsh 的
+  ; alreadyInstalled / dontUninstall / uninstallBeforeInstalling 覆盖）。
+  ; ══════════════════════════════════════════════════════════════════════════
   ${NSD_GetState} $R2 $R1
 
   ; If migrating from Wix, always uninstall
@@ -500,6 +599,13 @@ Function ZfmDirLeave
 FunctionEnd
 
 ; 6. Start menu shortcut page
+;
+; ★ 这一页**不是废代码，不许删**。它现在恒被跳过，只是因为 tauri.conf.json 里没配
+;   `startMenuFolder` → 走 !else 分支 → PRE 回调 `Skip`（Abort）= 界面上看不到。
+;   所以「欢迎 → 安装位置 → 安装中 → 完成」这个 4 页流程**本来就成立**，不需要删页。
+;   删掉这段的后果：哪天有人填上 startMenuFolder，就变成「用户不能选开始菜单文件夹名」
+;   的功能回退 —— 而且是静默回退（构建不报错，装机时才发现少了选项）。
+;   同理，`Call CreateOrUpdateStartMenuShortcut` 与 /S 下补建桌面快捷方式的分支也留着。
 Var AppStartMenuFolder
 !if "${STARTMENUFOLDER}" != ""
   !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
@@ -539,6 +645,14 @@ FunctionEnd
 
 ; Uninstaller Pages
 ; 1. Confirm uninstall page
+;
+; 正文用定稿表 ⑥ 的那一句（页标题沿用 MUI 原生的 "卸载 $(^NameDA)" = "卸载 FontManager"，
+; 中文翻译与定稿表逐字一致，再覆盖一遍只会多一处要同步的文案）。
+; 复选框文案（$(deleteAppData)）在 zfm-strings.nsh 里改成「同时删除全部数据与字体库」——
+; hooks.nsh 勾选时确实会删 $INSTDIR\字体库（用户的付费字体也在里面），
+; 不写清就是在踩 R-04 的口径风险；这属于信息披露，不是行为变更。
+; ⚠️ 下面的 GetDpiForWindow + /96 换算是基线代码，整段保留，不要"顺手优化"。
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "$(ZM_UN_TEXT)"
 Var DeleteAppDataCheckbox
 Var DeleteAppDataCheckboxState
 !define /ifndef WS_EX_LAYOUTRTL         0x00400000
