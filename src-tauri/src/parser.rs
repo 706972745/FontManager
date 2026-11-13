@@ -831,6 +831,9 @@ const FAMILY_OVERRIDES: &[(&str, Classification)] = &[
     // 不去放松全局词边界（否则 Transcript / Paintbrush 这类尾缀词会被误伤）。
     ("chibrush", Classification::Script),
     ("christopherhand", Classification::Script),
+    // 汉仪少杰硬笔行书（QA Round 1 核实为真手写）：`hand` 嵌在小写串中间
+    // （前邻 e / 后邻 a），词边界与长词都够不着，逐族点名。
+    ("hanshaojiehandanti", Classification::Script),
 ];
 
 /// 族名 + 各语言本地化名（去掉空白项，**保留原始大小写**）。
@@ -1801,6 +1804,9 @@ mod tests {
             "Christopherhand",
             "Hobbiton Brushhand",
             "SnellRoundhand",
+            // QA Round 1 真库对拍：汉仪少杰硬笔行书（真手写，QA 已核实）。命中点
+            // `hand` 前邻 e、后邻 a，词边界与长词都接不住，走 FAMILY_OVERRIDES。
+            "HanShaoJiehandanti",
         ] {
             assert_eq!(west_class(&[name]), Classification::Script, "{name} 该判手写");
         }
