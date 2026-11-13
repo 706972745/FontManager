@@ -61,8 +61,27 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
                 scanner::ScanProgress { done, total },
             );
         }
-        fn batch(&self, faces: &[FontFace]) {
-            let _ = self.0.emit("scan:batch", faces);
+        /// 2.1.4：全量批次彻底退出主列表（ADR-06）。
+        ///
+        /// 以前每 120 面推一批，6170 个文件约 50 批 —— 每批一次 120 条的 JSON 序列化，
+        /// 前端还要为每一批重算一次「可见字族」（6000 字面排序 + 过滤），实测就是
+        /// 启动时白做 50 次全量计算，用户感知为「越用越慢、扫描像卡住」。
+        /// 全量结果本来就要在末尾整体返回一次，中途推送纯属重复劳动。
+        /// `ScanSink::batch` 保留：HTTP 侧的 job 表还靠它报「又读完几个」。
+        fn batch(&self, _faces: &[FontFace]) {}
+        /// 首帧种子：**每进程只发一次**（ADR-05）。
+        ///
+        /// 守卫必须在这里、不能在 `scan_library` 里：会话中任何 rescan（导入字体、
+        /// watcher、改目录）都会再走一遍扫描，若不加守卫，主列表会被种子子集「缩水」；
+        /// 而若把守卫放进 `scan_library`，`api.rs` 的 NullSink 先扫一次就会把这一次
+        /// 「吃掉」，界面从此永远收不到种子 —— 那是个真 bug，不是理论风险。
+        fn seed(&self, faces: &[FontFace]) {
+            static UI_SEED_SENT: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if UI_SEED_SENT.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+            let _ = self.0.emit("scan:seed", faces);
         }
     }
     let store = app.state::<Store>().inner().clone();

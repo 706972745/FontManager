@@ -131,6 +131,39 @@ impl FontCache {
         );
     }
 
+    /// 缓存里全部字面的只读迭代器（2.1.4 种子装载用）。
+    ///
+    /// 种子要在**不解析任何文件**的前提下挑出「首帧就该出现」的那几百个字体，
+    /// 元数据全在这份缓存里（`CacheFile` 本来就存完整 `FontFace`）。
+    ///
+    /// 为什么返回 `impl Iterator` 而不是 `&HashMap`：`Entry` 的 `mtime` / `size`
+    /// 是纯粹的缓存实现细节，一旦漏出去，别处就会顺手拿它做判断，
+    /// 以后想改缓存键（比如加 inode）就得追着一堆调用点改。
+    pub fn faces(&self) -> impl Iterator<Item = &FontFace> {
+        self.entries.values().flat_map(|e| e.faces.iter())
+    }
+
+    /// 缓存里的字面总数（只用于日志：`[seed] 缓存 N 个字面 → 种子 M 个`）。
+    pub fn face_count(&self) -> usize {
+        self.entries.values().map(|e| e.faces.len()).sum()
+    }
+
+    /// 只读迭代器见 [`FontCache::faces`]；单测专用：不读也不写磁盘的空调色板。
+    ///
+    /// 种子单测要自己 `put` 几条假字面进去，若走 `load()` 会把开发机真实的 6.9MB
+    /// 缓存读进来（结果随机器而变），`finish()` 还可能把它覆盖掉 ——
+    /// 测试永远不该碰用户数据。
+    #[cfg(test)]
+    pub fn empty() -> Self {
+        Self {
+            path: std::env::temp_dir().join("zfm-test-unused-font-cache.json"),
+            entries: HashMap::new(),
+            seen: HashSet::new(),
+            hits: 0,
+            misses: 0,
+        }
+    }
+
     /// 收尾：丢掉这轮没出现的路径（删掉的字体 / 换掉的目录），后台线程落盘。
     /// 落盘放后台，扫描结果先交给界面——写几 MB 的 JSON 不该占用启动时间。
     pub fn finish(mut self) {
