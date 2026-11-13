@@ -9931,3 +9931,18 @@ body.tour-qb .qb-actions .qb-btn-text {
     opacity: 1;
   }
 }
+
+/* readOnly 输入框的原生光标兜底（2026-11-13）：BlinkCaretInput 的自绘光标排除了
+   readOnly，而上面那条 caret-color: transparent 是无条件的 —— 不补这条，未来谁接
+   readOnly 输入框，焦点进去「自绘没有 + 原生也没有」。当前 6 个调用点没用 readOnly，
+   属于防御；别删（组件 doc 注释也钉了这件事）。 */
+.blink-caret-field input[readonly] {
+  caret-color: auto;
+}
+
+/* 标签到期的日历小按钮只在 hover 时显形（5957 那条 opacity:0），
+   键盘用户 Tab 到它时同样要看得见 —— 焦点环走全局 :focus-visible 默认样式，
+   这里只负责把按钮本体显出来。复合选择器压住基础规则，不怕以后规则挪动。 */
+.tag-chip .tag-expiry-btn:focus-visible {
+  opacity: 1;
+}

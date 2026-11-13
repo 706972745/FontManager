@@ -25,6 +25,10 @@ import { CARET_TYPES, computeCaretX, sliceToCaret } from "./blinkCaret";
  * 状态切换走 field span 的 `is-composing` class，不走 inline style ——
  * 受控输入每个字符都重渲染，React 会把 inline style 冲掉。
  *
+ * readOnly：自绘光标不处理（showCaret 排除了 readOnly），但原生光标靠 app.css 的
+ * `.blink-caret-field input[readonly] { caret-color: auto }` 恢复 ——
+ * **别删那条规则**，否则未来谁接 readOnly 输入框，焦点进去自绘没有、原生也没有，纯盲。
+ *
  * 纯逻辑（sliceToCaret / computeCaretX / CARET_TYPES）在同目录 blinkCaret.ts：
  * `node --test` 只做类型剥离、不转 JSX，单测必须 import 那份无 JSX 的模块。
  */
@@ -39,7 +43,8 @@ export type BlinkCaretInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "
  * + `.blink-caret-mirror`（隐藏测宽镜像）。
  *
  * ref 透传到 input（ContextMenu 的 searchRef 要 focus()）。type 非 text/search/url/
- * tel/password 时直接渲染普通 input，不自绘、也不包 wrapper。
+ * tel 时直接渲染普通 input，不自绘、也不包 wrapper（password 同样在集合外：
+ * 镜像 span 会把明文密码塞进 DOM，见 blinkCaret.ts 的注释）。
  */
 export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps>(
   function BlinkCaretInput(props, ref) {

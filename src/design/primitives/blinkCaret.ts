@@ -5,13 +5,16 @@
  * 单测要直接 import 这些函数，就不能和组件同文件。
  */
 
-/** 光标只在文本类输入框里有意义；其余类型退回普通 input，不自绘。 */
+/** 光标只在文本类输入框里有意义；其余类型退回普通 input，不自绘。
+ *
+ * **password 必须留在集合外**：镜像 span 会把 `value.slice(0, selectionStart)`
+ * 渲染成明文塞进 DOM —— `visibility:hidden` 挡不住 devtools / 爬 DOM。
+ * 密码框走退回路径（普通 input + 原生光标），绝不能自绘。 */
 export const CARET_TYPES: ReadonlySet<string | undefined> = new Set([
   "text",
   "search",
   "url",
   "tel",
-  "password",
   undefined,
 ]);
 
