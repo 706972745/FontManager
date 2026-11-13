@@ -584,6 +584,11 @@ just moving one folder:
 ```
 
 Install it to `D:\Apps\FontManager` and all of the above lives on `D:`.
+Upgrading from 2.1.4 moves your data into `data\` and then **drops the old
+`preview-cache` / `thumb-cache` on purpose** — they are regenerable and keeping
+them would leave ~400 MB of cache on `C:`. First previews/thumbnails after the
+upgrade are a bit slower while they rebuild; your tags, collections, favorites,
+ledger, snapshots and plugins are never touched.
 If the folder is not writable (typically the MSI build under `Program Files`),
 data falls back to `%LOCALAPPDATA%\FontManager\data`, and the first line of
 `activation.log` always tells you where: `data_root=… source=install|localappdata|roaming(fallback)`.
