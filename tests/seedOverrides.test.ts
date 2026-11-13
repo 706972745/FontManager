@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applyOverrides,
+  countKnown,
   landFullScan,
   navCountText,
   nextOverrides,
@@ -125,4 +126,41 @@ test("overrides from a finished scan must not win again in the next scan", () =>
       "界面从此长时间显示错的启用状态（落地后必须清空，不能只裁剪已消失路径）",
   );
   assert.equal(landed2.fonts[0].active, true, "扫描 2 的真实结论被上一轮的旧决策覆盖了");
+});
+
+/**
+ * 侧栏计数的分档（2.1.4 第二版，用户 2026-11-13 反馈后重做）。
+ *
+ * 第一版用「首次全量是否落地」一个开关管住全部数字，于是「已启用 / 系统字体 /
+ * 启用至关闭 / 分组」明明已经全在种子里、数量确定，却也被打成 `…`；空分组更是
+ * 该显示 0 的地方显示 `…`。用户原话：「既然…先启用，那没启用前应该都是…，
+ * 那一部分完全启用的就应该显示出数字才对」。
+ */
+test("计数分档：种子覆盖全集的类别在种子落地后即显示数字，其余等全量", () => {
+  const nothing = { fullScanDone: false, seedLanded: false };
+  assert.equal(countKnown("seed", nothing), false, "种子还没到，任何数字都是猜的");
+  assert.equal(countKnown("whole", nothing), false);
+
+  const seedOnly = { fullScanDone: false, seedLanded: true };
+  assert.equal(
+    countKnown("seed", seedOnly),
+    true,
+    "已启用 / 系统字体 / 分组 / 启用至关闭这几类必然全在种子里，种子一到数量就确定了",
+  );
+  assert.equal(
+    countKnown("whole", seedOnly),
+    false,
+    "字体库总数 / 已停用 / 标签的分母是整个字库，全量没读完必然算错，必须保持 …",
+  );
+
+  const done = { fullScanDone: true, seedLanded: false };
+  assert.equal(countKnown("seed", done), true, "空种子走骨架屏流程时，全量落地后照样要出数字");
+  assert.equal(countKnown("whole", done), true);
+});
+
+test("计数分档：种子已覆盖但集合为空时显示 0，不是 …", () => {
+  // 空分组：种子落了、组里就是没东西 —— 用户明确要求这时候是 0
+  assert.equal(navCountText(0), "0");
+  // 而这个集合在种子到达前是不该给数字的
+  assert.equal(navCountText(null), "…");
 });

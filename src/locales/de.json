@@ -1134,7 +1134,7 @@
   "online.sourcesLabel": "Quelle",
   "online.sourcesOpen": "Öffnen",
   "online.subsetsLabel": "Zeichensatz",
-  "load.restoringSeed": "Zuletzt aktivierte Schriften werden wiederhergestellt…",
+  "load.restoringSeed": "Aktivierte, Gruppen- und Snapshot-Schriften werden geladen…",
   "load.backgroundReading": "Schriften werden im Hintergrund gelesen {done}/{total}",
   "load.seedReady": "Schriftbibliothek ist bereit",
   "load.partialData": "Der Lesevorgang ist nicht abgeschlossen – einige Schriften fehlen noch",
