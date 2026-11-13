@@ -9,8 +9,19 @@
 
 产物（提交进仓库；**构建时不跑这个脚本**，它只是让图可以重新生成）：
 
-    src-tauri/windows/sidebar.bmp   164×314 24bit  —— 欢迎页/完成页左侧那一列
-    src-tauri/windows/header.bmp    150×57  24bit  —— 内页顶部横条（本版不启用，见下）
+    src-tauri/windows/sidebar.bmp   164×314 24bit  —— 完成页左侧那一列（纯白 + 右缘细线）
+    src-tauri/windows/header.bmp    150×57  24bit  —— 内页顶部横条（本版不启用：没配 headerImage）
+
+P0（本版实际入库的图）只画「纯白 + 右缘 1px 竖细线」，**不画图标**：
+  · 欢迎页已改成自绘（Page custom ZfmWelcome），这张图只剩**完成页**在用；
+    完成页右侧已经有「立即运行 / 桌面快捷方式」两个交互，左边再放 logo 只是抢注意力。
+  · MUI_WELCOMEFINISHPAGE_BITMAP_STRETCH 默认 FitControl，图会被**拉伸**到控件尺寸：
+    纯白 + 1px 竖线拉伸后仍是纯白 + 略粗的竖线（可接受）；图标会被拉变形，
+    还要反推 109u 的实际宽高比去凑 164:314。
+  · 第三份参考稿的美学就是「纯白 + 大量留白 + 1px 细线」，白底侧栏 = 「没有侧栏」。
+
+图标版没删，留成 build_sidebar_icon() / build_header_icon() 两个函数（默认不调用，
+P2 想换回图标版时把 main() 里那两行改一下即可）。
 
 为什么要自己手写 BMP：
   1. MUI_WELCOMEFINISHPAGE_BITMAP 的**默认值**就是 NSIS 自带的蓝色 win.bmp，
@@ -44,7 +55,7 @@ HEADER_BMP = os.path.join(HERE, "header.bmp")
 # ── 配色（与主程序同一套黑白灰，别再引入第二种颜色）──────────────────────
 WHITE = (255, 255, 255)
 INK = (28, 28, 36)        # #1c1c24，主文字色
-HAIRLINE = (233, 233, 240)  # #e9e9f0，一根极浅的分隔线
+HAIRLINE = (239, 239, 239)  # #efefef，一根极浅的分隔线（= tokens.css 的 --e2 压白）
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -258,21 +269,39 @@ def load_icon_mask(box):
 
 
 def build_sidebar():
-    """164×314：白底 + 居中单色图标 + 右边缘一根细线。
+    """P0：164×314 纯白 + 右缘 1px 竖细线，**不画图标**（理由见文件头）。
 
-    尺寸是 MUI 写死的（欢迎页/完成页左侧那一列的宽度就是 164，高度 314），
-    给别的尺寸会被 FitControl 拉伸，图标就糊了。
+    尺寸是 MUI 写死的（完成页左侧那一列就是 164×314），给别的尺寸会被 FitControl
+    拉伸；纯白图拉伸后仍然纯白，所以这里不存在变形问题 —— 这也是不画图标的好处之一。
     """
-    sidebar_mask, box = load_icon_mask(96)
     canvas = Canvas(164, 314)
-    canvas.stamp_mask(sidebar_mask, box, box, (164 - box) // 2, (314 - box) // 2)
-    # 细线只画在最右一列：内容是纯白，不画这根线的话侧栏和正文会糊成一片。
+    # 细线只画最右一列：整张图是纯白，没有这根线侧栏和正文会糊成一片（参考稿的层次感）。
     canvas.vline(163, HAIRLINE)
     return canvas
 
 
 def build_header():
-    """150×57：白底 + 左下角小图标 + 底部一根细线（本版未启用，见 ADR-D6 的 P2）。"""
+    """150×57 纯白 + 底部 1px 细线（本版未启用：不配 headerImage 时 MUI 压根不用它）。"""
+    canvas = Canvas(150, 57)
+    canvas.hline(56, HAIRLINE)
+    return canvas
+
+
+# ── 以下两个是 P2 的「带图标」版本：保留可重新生成的能力，默认不调用 ──────────
+# 切换方法：把 main() 里的 build_sidebar() / build_header() 换成下面这两个。
+# 提醒：图标版会被 FitControl 拉伸，164:314 与 109u 控件框的宽高比不一致，
+# 换过去之前先在 100%/125%/150% 三档下目视确认（这是 ADR-D7 把它列 P2 的原因）。
+def build_sidebar_icon():
+    """164×314：白底 + 居中单色图标（96px 盒子，面积平均降采样）+ 右缘细线。"""
+    sidebar_mask, box = load_icon_mask(96)
+    canvas = Canvas(164, 314)
+    canvas.stamp_mask(sidebar_mask, box, box, (164 - box) // 2, (314 - box) // 2)
+    canvas.vline(163, HAIRLINE)
+    return canvas
+
+
+def build_header_icon():
+    """150×57：白底 + 左侧小图标（28px 盒子）+ 底部细线。"""
     header_mask, box = load_icon_mask(28)
     canvas = Canvas(150, 57)
     canvas.stamp_mask(header_mask, box, box, 12, (57 - box) // 2)
