@@ -741,6 +741,11 @@ const MONO_KEYWORDS: &[&str] = &["等宽", "等寬"];
 /// `Monotype` 是字厂名（Monotype Corsiva 是手写体），不是等宽。
 const MONO_LATIN_KEYWORD: &str = "mono";
 
+/// 这些拉丁关键词的合法命中在 CamelCase 词的内部（`Kaiti` 的 `kai`、`SealScript`
+/// 的 `seal`），词边界规则会把它们拒掉，所以单独走「包含」匹配。
+/// 误伤风险都很低：字体名里几乎不会出现 `Makai` / `unsealed` 这类词。
+const LATIN_SUBSTRING_KEYWORDS: &[&str] = &["kai", "seal"];
+
 /// 展示（美术字 / 标题字 / 圆体 / 图标符号 / 专题字）关键词。
 ///
 /// 这张表是本次重做的主力：库里的美术字大多只有一个「描述性」中文名
@@ -750,34 +755,49 @@ const DISPLAY_KEYWORDS: &[&str] = &[
     "综艺", "综藝", "琥珀", "娃娃", "布丁", "彩带", "彩帶", "海报", "海報", "广告", "廣告",
     "标题", "標題", "美术", "美術", "艺术", "藝術", "装饰", "裝飾", "立体", "立體", "描边",
     "描邊", "卡通", "漫画", "漫畫", "像素", // 圆体：用户 2026-11-13 明确归展示，不归无衬线
-    "圆", "圓", "round", // 图标 / 符号 / 专题字库（XX篇 / XX动物 / XX交通工具）
+    "圆", "圓", // 图标 / 符号 / 专题字库（XX篇 / XX动物 / XX交通工具）
     "图标", "圖標", "符号", "符號", "篇", "生物", "动物", "動物", "植物", "食物", "人物", "星座",
     "音乐", "音樂", "建筑", "建築", "交通", "服饰", "服飾", "用品", "器具", "贴纸", "貼紙", "涂鸦",
-    "塗鴉", // 西文展示体（名字兜底那一层复用这张表）
-    "pop", "display", "decorative", "poster", "headline", "ornament", "dingbat", "symbol", "icon",
-    "pixel", "bitmap", "3d", "outline", "shadow",
+    "塗鴉", // 第二批（用户 2026-11-13 裁定）：倩体 / 剪纸 / 菱心 这批美术字与专题字
+    "倩体", "倩體", "剪纸", "剪紙", "菱心", "童体", "童體", "彩云", "彩雲", "版画", "版畫",
+    "糖果", "花体", "花體", "扑克", "天气", "天氣", "昆虫", "昆蟲", "数学", "數學", "箭头",
+    "箭頭", "边框", "邊框", "图案", "圖案", // 日文：丸ゴ（丸ゴシック）是圆体 → 展示
+    "丸ゴ", "丸ゴシック", // 西文展示体（名字兜底那一层复用这张表）
+    "pop", "round", "display", "decorative", "poster", "headline", "ornament", "dingbat",
+    "symbol", "icon", "pixel", "bitmap", "3d", "outline", "shadow",
 ];
 
 /// 手写（书法 / 毛笔 / 连笔 / 西文手写体）关键词。
 const SCRIPT_KEYWORDS: &[&str] = &[
     "行书", "行書", "草", // 草书（叶根友疾风草书）
     "隶", "隷", // 隶的繁体写法（文鼎CS大隸書 / 日本青柳隷書）
-    "篆", "seal", "硬笔", "硬筆", "毛笔", "毛筆", "钢笔", "鋼筆", "手写", "手寫", "流形", "连笔",
-    "連筆", "brush", "script", "hand", "cursive", "calligraph",
+    "篆", "硬笔", "硬筆", "毛笔", "毛筆", "钢笔", "鋼筆", "手写", "手寫", "流形", "连笔", "連筆",
+    // 第二批（用户 2026-11-13 裁定）：行楷 / 魏碑这类「不是印刷楷体」的书写体
+    "行楷", "魏碑", "北魏", "瘦金", "颜体", "顏體", "柳体", "柳體", "签名", "簽名", "手绘",
+    "手繪", // 西文手写体
+    "brush", "script", "hand", "handwrit", "roundhand", "cursive", "calligraph",
 ];
 
 /// 衬线关键词。
 ///
 /// **不要往里加「衬线」二字**：`无衬线` 里也含这两个字，而衬线判定顺序在无衬线
 /// 之前，加进去会把「无衬线体」判成衬线。
-const SERIF_KEYWORDS: &[&str] = &["宋", "明", "仿", "楷", "kai", "字典", "serif", "song", "ming"];
+/// 「明朝」不用再加 —— `明` 已经覆盖（「明朝体」「細明體」都含「明」）。
+const SERIF_KEYWORDS: &[&str] = &[
+    "宋", "明", "仿", "楷", "kai", "字典", "serif", "song", "ming",
+    // 日文教科书体是宋体一类；韩文 바탕( Batang ) / 궁서( Gungsuh ) 是明体
+    "教科書", "바탕", "궁서",
+];
 
 /// 无衬线关键词。
 ///
 /// 「等线」是无衬线（Windows 的 DengXian / 汉仪中等线 / 迷你简中等线），它们的
 /// OS/2 class 常被写成 10（手写），不补这个关键字就会被归到手写里。
+/// 韩文 돋움( Dotum ) / 굴림( Gulim ) 是黑体一类。
 const SANS_KEYWORDS: &[&str] = &[
     "黑", "hei", "雅黑", "等线", "等線", "哥特", "gothic", "sans", "无衬线", "無襯線",
+    // 日文：ゴシック = Gothic = 黑体一类（片假名不匹配 ASCII 的 gothic，必须单独收）
+    "ゴシック", "돋움", "굴림",
 ];
 
 /// 显式覆盖表：关键词表对不上的**具体字族**，命中即用（族名或本地化名包含即可）。
@@ -788,17 +808,71 @@ const FAMILY_OVERRIDES: &[(&str, Classification)] = &[
     // 方正康体系列：书写感很强的美术字，不是印刷楷体 → 手写
     ("康体", Classification::Script),
     ("康體", Classification::Script),
+    // 魏碑 / 北魏楷：刻石书写体，不是印刷楷体（用户 2026-11-13 裁定）。
+    // 手写关键词表里已有 魏碑 / 北魏，这里再钉一次，防止以后动衬线表时漏掉。
+    ("北魏楷", Classification::Script),
+    ("魏碑", Classification::Script),
     // 方正新秀丽：衬线
     ("新秀丽", Classification::Serif),
     ("新秀麗", Classification::Serif),
 ];
 
-/// 族名 + 各语言本地化名，小写化（关键词匹配用）。
+/// 族名 + 各语言本地化名（去掉空白项，**保留原始大小写**）。
+///
+/// 不在这里做小写化：中文关键词没有大小写问题，而拉丁关键词的词边界判定要靠
+/// 原始大小写区分 CamelCase（`AcaciasHand` 的 `Hand` 是词、`dreaming` 的 `ming`
+/// 不是词），各匹配函数自己负责大小写。
 fn normalized_names(family: &str, localized: &[LocalizedName]) -> Vec<String> {
-    std::iter::once(family.to_lowercase())
-        .chain(localized.iter().map(|l| l.name.to_lowercase()))
+    std::iter::once(family.to_string())
+        .chain(localized.iter().map(|l| l.name.clone()))
         .filter(|n| !n.trim().is_empty())
         .collect()
+}
+
+/// 拉丁关键词是否命中：大小写不敏感，且按**词边界**匹配。
+///
+/// 为什么不用 `contains`：`pop` 会命中 `Poppins`、`round` 命中 `Rounded` /
+/// `Battleground`、`ming` 命中 `Dreaming of Lilian`、`hand` 命中 `HandelGothic` ——
+/// 全是误伤（用户 2026-11-13 裁定：这类词必须整词匹配）。
+///
+/// 但**纯**的「两侧必须是非字母」也不行：字体名是 CamelCase 的，`AcaciasHand` 的
+/// `Hand`、`DFPHei` 的 `Hei`、`BankGothic` 的 `Gothic` 都是合法命中。所以规则是：
+/// - 后邻字符不是小写字母（结尾 / 大写 / 数字 / 分隔符都算边界；紧跟小写 `s` 视为
+///   复数也算边界 —— `Ornaments` / `Dingbats` 这类图标字体名）；
+/// - 且（前邻字符不是小写字母，**或**命中处的首字母是大写 —— CamelCase 词头）；
+/// - 关键词以数字结尾的（`3d`），后面紧跟小写字母也算边界（`3Dkirieji`）。
+fn contains_latin_word(raw: &str, keyword: &str) -> bool {
+    if keyword.is_empty() {
+        return false;
+    }
+    let kw = keyword.to_lowercase();
+    let chars: Vec<char> = raw.chars().collect();
+    let n = kw.chars().count();
+    if chars.len() < n {
+        return false;
+    }
+    for start in 0..=(chars.len() - n) {
+        if chars[start..start + n]
+            .iter()
+            .zip(kw.chars())
+            .any(|(c, k)| c.to_ascii_lowercase() != k)
+        {
+            continue;
+        }
+        let first_is_upper = chars[start].is_ascii_uppercase();
+        let before = if start == 0 { None } else { Some(chars[start - 1]) };
+        let after = chars.get(start + n).copied();
+        let before_ok = !before.is_some_and(|c| c.is_ascii_lowercase());
+        let after_ok = !after.is_some_and(|c| c.is_ascii_lowercase() && c != 's')
+            || kw.starts_with(|c: char| c.is_ascii_digit());
+        if before_ok && after_ok {
+            return true;
+        }
+        if first_is_upper && after_ok {
+            return true;
+        }
+    }
+    false
 }
 
 /// 分类编排：名字 / 元数据 / 字形 / 等宽四种信号按可信度组装，最后统一兜底成展示。
@@ -850,21 +924,35 @@ where
 /// 不是等宽 —— 排除掉，否则那批字会被判成等宽。
 fn has_mono_keyword(names: &[String]) -> bool {
     names.iter().any(|n| {
-        MONO_KEYWORDS.iter().any(|kw| n.contains(kw))
-            || (n.contains(MONO_LATIN_KEYWORD) && !n.contains("monotype"))
+        let lower = n.to_lowercase();
+        MONO_KEYWORDS.iter().any(|kw| lower.contains(kw))
+            || (lower.contains(MONO_LATIN_KEYWORD) && !lower.contains("monotype"))
     })
 }
 
 /// **只靠名字**判分类；判不出返回 `None`（由调用方决定是否走元数据 / 兜底展示）。
 ///
 /// 顺序即优先级，逐层短路：
-/// 等宽 → 展示 → 手写 → 衬线 → 无衬线 → 显式覆盖表。
+/// 等宽 → 展示 → 手写 → 「宋黑」合体 → 衬线 → 无衬线 → 显式覆盖表。
+///
+/// 关键词匹配分两种：中文关键词按「包含」（中文没有词边界），拉丁关键词按
+/// 词边界（见 `contains_latin_word`）；个别合法命中在 CamelCase 内部的
+/// （`Kaiti` 的 `kai`）走包含，单独列在 `LATIN_SUBSTRING_KEYWORDS`。
 pub(crate) fn classify_by_name(names: &[String]) -> Option<Classification> {
     if names.is_empty() {
         return None;
     }
-    let has = |kw: &str| names.iter().any(|n| n.contains(kw));
-    let has_any = |kws: &[&str]| kws.iter().any(|kw| has(kw));
+    let lower: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
+    let has = |kw: &str| lower.iter().any(|n| n.contains(kw));
+    // 拉丁关键词：默认词边界；Kaiti / Seal 这种合法命中在 CamelCase 内部的走包含
+    let has_kw = |kw: &str| {
+        if kw.is_ascii() && !LATIN_SUBSTRING_KEYWORDS.contains(&kw) {
+            names.iter().any(|n| contains_latin_word(n, kw))
+        } else {
+            has(kw)
+        }
+    };
+    let has_any = |kws: &[&str]| kws.iter().any(|kw| has_kw(kw));
 
     // 1. 等宽
     if has_mono_keyword(names) {
@@ -880,7 +968,13 @@ pub(crate) fn classify_by_name(names: &[String]) -> Option<Classification> {
     }
     // 3.5「Xxx Sans Serif」这类名字两个词都在，无衬线优先（`serif` 只是修饰语）。
     // 这一步必须在衬线判定之前，否则「FreeSans Serif」会被判成衬线。
-    if (has("sans") || has("gothic")) && has("serif") {
+    if (has_kw("sans") || has_kw("gothic")) && has_kw("serif") {
+        return Some(Classification::Sans);
+    }
+    // 3.6「宋黑」合体（FZSongHei / 方正宋黑）：视觉上是黑体骨架（横竖等粗），
+    // 用户 2026-11-13 裁定 → 无衬线。放在衬线之前，否则「宋」会抢先判成衬线，
+    // 用户在「衬线」筛选里会看到一堆黑体。
+    if (has("宋") || has_kw("song")) && (has("黑") || has_kw("hei")) {
         return Some(Classification::Sans);
     }
     // 4. 衬线（印刷楷体也算这里：用户 2026-11-13 口径）
@@ -894,7 +988,7 @@ pub(crate) fn classify_by_name(names: &[String]) -> Option<Classification> {
     // 6. 显式覆盖表：具体字族纠正（方正康体 → 手写、方正新秀丽 → 衬线）
     if let Some((_, class)) = FAMILY_OVERRIDES
         .iter()
-        .find(|(kw, _)| names.iter().any(|n| n.contains(kw)))
+        .find(|(kw, _)| lower.iter().any(|n| n.contains(kw)))
     {
         return Some(*class);
     }
@@ -917,7 +1011,8 @@ fn classify_by_metadata(
     if cjk {
         return os2_class(face).or_else(|| panose_serif_style(face));
     }
-    let has = |kw: &str| names.iter().any(|n| n.contains(kw));
+    let lower: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
+    let has = |kw: &str| lower.iter().any(|n| n.contains(kw));
     match (os2_class(face), panose_class(face)) {
         // 两个信号一致，直接用
         (Some(a), Some(b)) if a == b => Some(a),
@@ -1536,18 +1631,19 @@ mod tests {
     // 不依赖任何真实字体文件（字体库路径在不同机器上不一样）。
     // ———————————————————————————————————————————————————————————
 
-    fn owned_lower(names: &[&str]) -> Vec<String> {
-        names.iter().map(|n| n.to_lowercase()).collect()
+    fn raw_names(names: &[&str]) -> Vec<String> {
+        // 名字层现在要原始大小写（拉丁词边界判定靠 CamelCase），不再预先小写
+        names.iter().map(|n| n.to_string()).collect()
     }
 
     /// 中日韩分支、且「没有任何可用元数据」时的判定结果。
     fn cjk_class(names: &[&str]) -> Classification {
-        resolve_classification(true, false, false, &owned_lower(names), || None, || None)
+        resolve_classification(true, false, false, &raw_names(names), || None, || None)
     }
 
     /// 西文分支、且「没有任何可用元数据」时的判定结果。
     fn west_class(names: &[&str]) -> Classification {
-        resolve_classification(false, false, false, &owned_lower(names), || None, || None)
+        resolve_classification(false, false, false, &raw_names(names), || None, || None)
     }
 
     /// 综艺 / 琥珀这批中文美术字原本全是 Unknown（元数据全 0，名字里又没有旧关键词）。
@@ -1590,7 +1686,7 @@ mod tests {
             assert_eq!(cjk_class(&[name]), Classification::Display, "{name} 该判展示");
         }
         // 元数据说是手写也一样：中日韩分支名字优先
-        let names = owned_lower(&["迷你简综艺"]);
+        let names = raw_names(&["迷你简综艺"]);
         assert_eq!(
             resolve_classification(
                 true,
@@ -1622,6 +1718,95 @@ mod tests {
         assert_eq!(cjk_class(&["方正康体简体"]), Classification::Script);
         assert_eq!(cjk_class(&["方正康體繁體"]), Classification::Script);
         assert_eq!(cjk_class(&["方正新秀丽简体"]), Classification::Serif);
+    }
+
+    /// 「宋黑」合体（FZSongHei / 方正宋黑）：视觉上是黑体骨架，用户 2026-11-13 裁定
+    /// → 无衬线，不能让「宋」抢先判成衬线。纯宋体不受影响。
+    #[test]
+    fn song_hei_hybrids_are_sans() {
+        assert_eq!(cjk_class(&["FZSongHei-B07S"]), Classification::Sans);
+        assert_eq!(cjk_class(&["FZCuHeiSongS-B-GB"]), Classification::Sans);
+        assert_eq!(cjk_class(&["方正宋黑简体"]), Classification::Sans);
+        // 纯宋体 / 纯黑体都不受影响
+        assert_eq!(cjk_class(&["宋体"]), Classification::Serif);
+        assert_eq!(cjk_class(&["黑体"]), Classification::Sans);
+    }
+
+    /// 魏碑 / 北魏楷：刻石书写体 → 手写（用户 2026-11-13 裁定），和「华文楷体=衬线」
+    /// 不是一回事。
+    #[test]
+    fn weibei_is_script_not_serif() {
+        assert_eq!(cjk_class(&["迷你简北魏楷书"]), Classification::Script);
+        assert_eq!(cjk_class(&["简北魏楷书"]), Classification::Script);
+        assert_eq!(cjk_class(&["迷你简魏碑"]), Classification::Script);
+        assert_eq!(cjk_class(&["华文行楷"]), Classification::Script, "行楷是书写体不是印刷楷");
+    }
+
+    /// 第二批关键词（用户 2026-11-13 裁定补词）：手写 / 展示各抽几条。
+    #[test]
+    fn second_batch_keywords_land_in_the_right_class() {
+        for name in ["方正瘦金书", "汉仪颜体简", "迷你简签名"] {
+            assert_eq!(cjk_class(&[name]), Classification::Script, "{name} 该判手写");
+        }
+        for name in [
+            "方正倩体简",
+            "华康剪紙",
+            "迷你简彩云",
+            "華康花體",
+            "華康天氣篇",
+            "华康圖案",
+        ] {
+            assert_eq!(cjk_class(&[name]), Classification::Display, "{name} 该判展示");
+        }
+    }
+
+    /// 日文 / 韩文命名习惯（用户 2026-11-13 裁定补词）。
+    /// 片假名不匹配 ASCII 的 gothic / serif，必须单独收词。
+    #[test]
+    fn japanese_and_korean_names_are_classified() {
+        assert_eq!(cjk_class(&["A-OTF ゴシックMB101"]), Classification::Sans);
+        assert_eq!(cjk_class(&["丸ゴシック"]), Classification::Display, "丸ゴ是圆体");
+        assert_eq!(cjk_class(&["教科書体"]), Classification::Serif);
+        assert_eq!(cjk_class(&["明朝体"]), Classification::Serif, "明朝已被「明」覆盖");
+        assert_eq!(cjk_class(&["바탕체"]), Classification::Serif);
+        assert_eq!(cjk_class(&["돋움체"]), Classification::Sans);
+    }
+
+    /// 拉丁关键词的词边界匹配（用户 2026-11-13 裁定）：`pop` 不许命中 `Poppins`。
+    #[test]
+    fn latin_keywords_match_on_word_boundaries() {
+        // 这些是误伤，必须拒绝
+        for (name, kw) in [
+            ("Poppins", "pop"),
+            ("Poplar Std", "pop"),
+            ("HandelGothic BT", "hand"),
+            ("Dreaming of Lilian", "ming"),
+            ("Battleground", "round"),
+            ("Gotham Rounded", "round"),
+            ("Monotype Corsiva", "mono"),
+        ] {
+            assert!(
+                !contains_latin_word(name, kw),
+                "「{name}」不该命中 {kw}"
+            );
+        }
+        // 这些是合法命中，必须保留（CamelCase 词头 / 分隔符 / 复数 / 数字边界）
+        for (name, kw) in [
+            ("BJpupuPOP", "pop"),
+            ("Pop-Art", "pop"),
+            ("AcaciasHand", "hand"),
+            ("Adam's Hand", "hand"),
+            ("BankGothic", "gothic"),
+            ("FreeSans", "sans"),
+            ("I.Ming", "ming"),
+            ("3Dkirieji", "3d"),
+            ("KozSongMono", "mono"),
+            ("DFPHei-W5J", "hei"),
+            ("Charming Ornaments", "ornament"),
+            ("Dingbats", "dingbat"),
+        ] {
+            assert!(contains_latin_word(name, kw), "「{name}」该命中 {kw}");
+        }
     }
 
     #[test]
@@ -1672,7 +1857,7 @@ mod tests {
             "判不出也要给展示"
         );
         // 等宽优先于一切（Courier / Consolas 的 OS/2 class 会写成 8）
-        let courier = owned_lower(&["Courier New"]);
+        let courier = raw_names(&["Courier New"]);
         assert_eq!(
             resolve_classification(
                 false,
@@ -1767,7 +1952,7 @@ mod tests {
     /// 几何上一片空白，只看字形会判成无衬线。
     #[test]
     fn western_name_beats_shape() {
-        let names = owned_lower(&["AcaciasHand"]);
+        let names = raw_names(&["AcaciasHand"]);
         assert_eq!(
             resolve_classification(
                 false,
@@ -1797,7 +1982,7 @@ mod tests {
     /// 优先级铁律二：元数据全 0 时字形抬头（压过元数据），元数据可信时字形只补位。
     #[test]
     fn garbage_metadata_loses_to_shape_but_good_metadata_does_not() {
-        let names = owned_lower(&["zzzqqq"]);
+        let names = raw_names(&["zzzqqq"]);
         // 垃圾元数据 + 名字判不出 → 听字形
         assert_eq!(
             resolve_classification(
