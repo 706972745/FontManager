@@ -10,7 +10,7 @@ import { useListFontCss } from "../lib/fontLoader";
 import { faceStyleLabel } from "../lib/faceName";
 import { useRevealFamily } from "../lib/useReveal";
 import { listChars } from "../lib/listChars";
-import { copyrightExpired, familyCopyrightClass } from "../lib/license";
+import { copyrightExpired, familyCopyrightClass, normalizeCopyright } from "../lib/license";
 import { buildFamilyMenu, copyText } from "../lib/menus";
 import { useFamilyMembership } from "../lib/membership";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
@@ -150,12 +150,28 @@ const SpecimenTile = memo(function SpecimenTile({
 
   const licCls = familyCopyrightClass(family.faces, copyrightOverride);
   const licExpired = licCls === "timelimited" && copyrightExpired(copyrightExpiry);
-  const licKey = `copyright.${licCls}` as TKey;
+  // 徽标带日期 + 手动覆盖优先（用户 2026-11-13）：手动 paid/timelimited 用「永久授权 /
+  // 已购买（日期）」这套新键；无手动覆盖时维持自动判定文案 —— 自动判定的
+  // 「限时字体」语义上不是「已购买」，所以不能共用 paid 的旧文案。
+  const manualCls = normalizeCopyright(copyrightOverride ?? null);
+  const purchasedText = copyrightExpiry
+    ? t("copyright.purchasedWithDate", { date: copyrightExpiry })
+    : t("copyright.purchasedBadge");
+  const licText =
+    manualCls === "paid"
+      ? t("copyright.paidBadge")
+      : manualCls === "timelimited"
+        ? purchasedText
+        : t(`copyright.${licCls}` as TKey);
   const licTitle = licExpired
     ? `${t("copyright.expiryDate")}: ${copyrightExpiry} — ${t("copyright.expired")}`
-    : licCls === "timelimited" && copyrightExpiry
-      ? `${t("copyright.expiryDate")}: ${copyrightExpiry}`
-      : t("detail.copyright");
+    : manualCls === "paid"
+      ? t("copyright.paidBadge")
+      : manualCls === "timelimited"
+        ? purchasedText
+        : licCls === "timelimited" && copyrightExpiry
+          ? `${t("copyright.expiryDate")}: ${copyrightExpiry}`
+          : t("detail.copyright");
 
   const system = isSystemFamily(family);
   const members = [
@@ -257,7 +273,7 @@ const SpecimenTile = memo(function SpecimenTile({
           className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`}
           data-hint-text={licTitle}
         >
-          {t(licKey)}
+          {licText}
         </span>
         <StarRating
           family={family.name}

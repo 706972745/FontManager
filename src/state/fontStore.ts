@@ -1173,7 +1173,12 @@ function persistPrefs(get: () => FontStore) {
       quickbarHotkey: s.quickbarHotkey,
       quickbarHotkeyOpens: s.quickbarHotkeyOpens,
       collectionFaces: s.collectionFaces,
-    });
+    })
+      // 写失败不能毫无感知（用户 2026-11-13 报）：评分 / 版权 / 偏好静默丢失比崩溃更迷惑
+      .catch((err) => {
+        console.warn("[prefs] 偏好写入失败", err);
+        toast.error(t("toast.prefsSaveFailed"));
+      });
   }, 600);
 }
 

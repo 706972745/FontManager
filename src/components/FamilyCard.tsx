@@ -15,8 +15,7 @@ import { ScriptChip } from "./ScriptChip";
 import { FaceLine, faceLineFontSize } from "./FaceLine";
 import { MemberChip } from "./MemberChip";
 import { activeConflictsFor, conflictsFor, SIZES, useFontStore, type Family } from "../state/fontStore";
-import { copyrightExpired } from "../lib/license";
-import { familyCopyrightClass } from "../lib/license";
+import { copyrightExpired, familyCopyrightClass, normalizeCopyright } from "../lib/license";
 import { useFamilyMembership } from "../lib/membership";
 import { faceKey } from "../lib/snapshotKey";
 import { collectionFaceScope } from "../lib/collectionScope";
@@ -201,12 +200,28 @@ export const FamilyCard = memo(function FamilyCard({
   // 与筛选同一口径（`familyCopyrightClass`），否则「勾了商用免费却筛出标着未知的卡」
   const licCls = familyCopyrightClass(family.faces, copyrightOverride);
   const licExpired = licCls === "timelimited" && copyrightExpired(copyrightExpiry);
-  const licKey = `copyright.${licCls}` as TKey;
+  // 徽标带日期 + 手动覆盖优先（用户 2026-11-13）：手动 paid/timelimited 用「永久授权 /
+  // 已购买（日期）」这套新键；无手动覆盖时维持自动判定文案 —— 自动判定的
+  // 「限时字体」语义上不是「已购买」，所以不能共用 paid 的旧文案。
+  const manualCls = normalizeCopyright(copyrightOverride ?? null);
+  const purchasedText = copyrightExpiry
+    ? t("copyright.purchasedWithDate", { date: copyrightExpiry })
+    : t("copyright.purchasedBadge");
+  const licText =
+    manualCls === "paid"
+      ? t("copyright.paidBadge")
+      : manualCls === "timelimited"
+        ? purchasedText
+        : t(`copyright.${licCls}` as TKey);
   const licTitle = licExpired
     ? `${t("copyright.expiryDate")}: ${copyrightExpiry} — ${t("copyright.expired")}`
-    : licCls === "timelimited" && copyrightExpiry
-      ? `${t("copyright.expiryDate")}: ${copyrightExpiry}`
-      : t("detail.copyright");
+    : manualCls === "paid"
+      ? t("copyright.paidBadge")
+      : manualCls === "timelimited"
+        ? purchasedText
+        : licCls === "timelimited" && copyrightExpiry
+          ? `${t("copyright.expiryDate")}: ${copyrightExpiry}`
+          : t("detail.copyright");
 
   /** 悬停跑马灯：预览文本被截断时缓慢左移展示结尾、移开快速回滚（用户 2026-11-05） */
   const previewMarquee = useMarquee(size);
@@ -312,7 +327,7 @@ export const FamilyCard = memo(function FamilyCard({
           className={`lic-chip lic-${licCls} ${licExpired ? "lic-expired" : ""}`}
           data-hint-text={licTitle}
         >
-          {t(licKey)}
+          {licText}
         </span>
         {hasActiveConflict ? (
           <span

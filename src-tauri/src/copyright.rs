@@ -548,12 +548,15 @@ fn pick_quote(candidates: &[&str], class: CopyrightClass, reason: &Reason) -> Op
 /// 前端「版权状态」下拉里的值 → 版权分类；auto / 无法识别时返回 None（表示按来源重新判定）
 pub fn class_from_status(status: &str) -> Option<CopyrightClass> {
     match status.trim().to_lowercase().as_str() {
-        // "free" 是旧版存下来的笼统值：那时免费不分商用/个人，历史上被直接当成
-        // 「商用免费」写进目录名 —— 这等于替用户**把权限放大**（2026-11-02 修正）。
+        // "free" 是旧版存下来的笼统值：那时免费不分商用/个人。
         //
-        // 现在一律落到「未知版权」，逼着重新按证据判定：宁可显示未判定，
-        // 也不能在没有任何依据的情况下宣称一个字体可以商用。
-        "free" => Some(CopyrightClass::Unknown),
+        // 与前端 `normalizeCopyright("free")` 同口径 → 商用免费。这条通道只吃
+        // **手动设置**，用户当年亲手点的「免费」是人的声明，不是软件替他猜的；
+        // 两端口径不一致的后果是：设置完回到软件里目录变成「未知版权」后缀、
+        // 界面却显示商用免费（用户 2026-11-13 报的「设置后回到软件判定」主根因之一）。
+        // 自动判定那边（`dirClass`）依然不许把 "free" 当证据 —— 见 effectiveCopyrightClass
+        // 里挡在门外的那个分支，权限放大问题是在那边防的，不在这里。
+        "free" => Some(CopyrightClass::FreeCommercial),
         "free_commercial" | "freecommercial" | "commercial" => {
             Some(CopyrightClass::FreeCommercial)
         }
@@ -1708,9 +1711,15 @@ mod tests {
 
     #[test]
     fn maps_manual_status() {
-        // 旧版存的笼统值 "free"：免费不分商用/个人，一律当成「未知」重新按证据判定。
-        // 以前这里直接给「商用免费」，等于没有依据就把权限放大到可以商用。
-        assert_eq!(class_from_status("free"), Some(CopyrightClass::Unknown));
+        // 旧版存的笼统值 "free"：与前端 normalizeCopyright("free") 同口径 → 商用免费。
+        // 这条通道只吃**手动设置**（用户当年亲手点的「免费」是人的声明），
+        // 两端口径不一致的后果是：设置完回到软件里目录变成「未知版权」后缀、
+        // 界面却显示商用免费（用户 2026-11-13 报的「设置后回到软件判定」主根因之一）。
+        // 自动判定那边（dirClass）依然不许把 "free" 当证据（见 effectiveCopyrightClass）。
+        assert_eq!(
+            class_from_status("free"),
+            Some(CopyrightClass::FreeCommercial)
+        );
         assert_eq!(
             class_from_status("free_personal"),
             Some(CopyrightClass::FreePersonal)

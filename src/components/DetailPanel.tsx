@@ -457,7 +457,14 @@ function CopyrightStatusSection({ family }: { family: string }) {
             className={`copyright-status-btn ${status === opt ? "copyright-status-active" : ""}`}
             onClick={() => setCopyrightStatus(family, opt)}
           >
-            {t(`copyright.${opt}`)}
+            {/* chips 拆新键（paidChip / timelimitedChip）：`copyright.paid` / `copyright.timelimited`
+                同时被徽标（FamilyCard / QuickBar / SpecimenView）共用 —— 徽标的自动判定
+                「限时字体」语义上不是「已购买」，不能跟着按钮一起改名（用户 2026-11-13） */}
+            {opt === "paid"
+              ? t("copyright.paidChip")
+              : opt === "timelimited"
+                ? t("copyright.timelimitedChip")
+                : t(`copyright.${opt}`)}
           </button>
         ))}
       </div>
@@ -491,12 +498,35 @@ function CopyrightStatusSection({ family }: { family: string }) {
   );
 }
 
-function LicenseSection({ license, licenseUrl }: { license: string | null; licenseUrl: string | null }) {
+function LicenseSection({
+  family,
+  license,
+  licenseUrl,
+}: {
+  family: string;
+  license: string | null;
+  licenseUrl: string | null;
+}) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
-  if (!license && !licenseUrl) return null;
+  // 手动设置必须压过自动判定（用户 2026-11-13 报「设置后回到软件判定」）：
+  // 只看 name 表文本的 classifyLicense 根本不知道用户点过什么，要把覆盖值接进来。
+  const override = useFontStore((s) => s.copyrightStatus[family]);
+  const manual = override ? normalizeCopyright(override) : null;
+  const expiry = useFontStore((s) => s.copyrightExpiry[family]);
+  if (!license && !licenseUrl && !manual) return null;
   const cls = classifyLicense(license);
-  const label = t(`license.${cls}`);
+  const manualVerdict =
+    manual === "paid"
+      ? t("copyright.paidBadge")
+      : manual === "timelimited"
+        ? expiry
+          ? t("copyright.purchasedWithDate", { date: expiry })
+          : t("copyright.purchasedBadge")
+        : manual
+          ? t(`copyright.${manual}`)
+          : null;
+  const label = manualVerdict ?? t(`license.${cls}`);
   return (
     <div className={`license-box license-${cls}`}>
       <div className="license-head">
@@ -512,6 +542,12 @@ function LicenseSection({ license, licenseUrl }: { license: string | null; licen
           </button>
         )}
       </div>
+      {manualVerdict && (license || licenseUrl) && (
+        // 手动结论下面保留自动识别原文，用户才知道软件自己判的是什么、差在哪
+        <div className="license-disclaimer">
+          {t("copyright.autoWithText", { text: t(`license.${cls}`) })}
+        </div>
+      )}
       {license && (
         <button className="license-text" onClick={() => setExpanded((v) => !v)}>
           {expanded || license.length <= 180 ? license : `${license.slice(0, 180)}… `}
@@ -1353,7 +1389,7 @@ export function DetailPanel() {
                 variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
               >
                 <div className="detail-heading">{t("detail.license")}</div>
-                <LicenseSection license={lead.license} licenseUrl={lead.licenseUrl} />
+                <LicenseSection family={family.name} license={lead.license} licenseUrl={lead.licenseUrl} />
               </motion.section>
             )}
 
