@@ -20,6 +20,7 @@ import {
   subsetCounts,
 } from "../lib/onlineSources";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { useModalLayer } from "../lib/modalLayer";
 import { ipc, type FontFace, type OnlineFamily } from "../lib/ipc";
 import {
@@ -335,7 +336,7 @@ export function OnlineView() {
       <div className="online-bar">
         <div className="online-search">
           <Search size={14} strokeWidth={1.5} className="online-search-icon" />
-          <input
+          <BlinkCaretInput
             className="online-search-input"
             type="text"
             value={draft}

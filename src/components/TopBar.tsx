@@ -19,6 +19,7 @@ import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
 import { familiesFor, MIN_PREVIEW_SIZE_INDEX, SIZES, allTags, useFontStore, type SortMode } from "../state/fontStore";
 import { SearchSuggest, type Suggestion } from "./SearchSuggest";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { openPluginSettings } from "../lib/pluginMenu";
 import { useFontCss } from "../lib/fontLoader";
 import type { Classification, FontFormat } from "../lib/ipc";
@@ -826,7 +827,7 @@ export function TopBar() {
     >
       <div className="topbar-field topbar-search">
         <Search size={14} strokeWidth={1.5} className="field-icon" />
-        <input
+        <BlinkCaretInput
           id="global-search"
           // 输入框也挂说明：光看占位符「搜索…」不知道能搜到什么
           data-hint="hint.search"
@@ -890,7 +891,7 @@ export function TopBar() {
 
       <div className="topbar-field topbar-sample">
         <Type size={14} strokeWidth={1.5} className="field-icon" />
-        <input
+        <BlinkCaretInput
           data-hint="hint.sample"
           value={sampleText}
           onChange={(e) => setSampleText(e.target.value)}
