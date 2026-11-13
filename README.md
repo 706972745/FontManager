@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.1.5-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -43,6 +43,16 @@ and MCP when you want your tools to join in.
 <br>
 
 ---
+
+## 🆕 What's new
+
+**2.1.5 — Your data follows the install folder**
+
+- **Everything lives under the install folder**: install to `D:\…` and tags / collections / favorites / the activation ledger / snapshots / caches / logs / online downloads all go to `D:\…\data` — C: stops growing new app data. Upgrading an older version migrates it for you and keeps the old folder as a fallback.
+- **Redesigned installer**: the NSIS blue sidebar is gone, the welcome page is hand-drawn (big title, thin rule, generous whitespace), bilingual and follows the system language. The upgrade page now defaults to "overwrite install (recommended)" instead of uninstalling first.
+- **Usable on first frame** (2.1.4): on launch the app first loads the fonts you had enabled, plus system fonts, group members and snapshot members — usable immediately — then reads the rest in the background and refreshes only once.
+
+See the full [changelog](CHANGELOG.md).
 
 ## 📖 Table of contents
 

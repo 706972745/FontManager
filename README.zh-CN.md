@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.1.5-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -43,6 +43,16 @@
 <br>
 
 ---
+
+## 🆕 最近更新
+
+**2.1.5 —— 数据跟着安装目录走**
+
+- **数据全在安装目录下**：装到 D 盘，标签 / 分组 / 收藏 / 台账 / 快照 / 缓存 / 日志 / 在线下载全在 `D:\…\data` 下，C 盘不再新增长出来的软件数据。升级老版本时自动搬迁，旧目录留一份当退路。
+- **安装器界面重做**：去掉 NSIS 自带的蓝色侧栏，欢迎页改成自绘（大标题 + 细线 + 留白），中英双语、跟随系统；升级维护页默认停在「直接覆盖安装（推荐）」，不再默认先卸载。
+- **首屏可用**（2.1.4）：打开软件先装载「上次已启用 + 系统字体 + 分组 + 快照」这批字体并立即可用，其余后台读取、只刷新一次。
+
+完整清单见 [更新日志](CHANGELOG.md)。
 
 ## 📖 目录
 
