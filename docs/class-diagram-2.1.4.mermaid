@@ -1,0 +1,124 @@
+%% 2.1.4 增量数据结构（源文件：docs/架构设计-2.1.4-启动种子装载.md §3）
+classDiagram
+    direction LR
+
+    class AppState {
+        +HashSet deactivated
+        +HashSet activated
+        +HashMap collections
+        +HashMap tags
+        +List snapshots
+        +HashMap parked
+        +HashMap added
+        +HashSet linked
+        +HashSet unpreviewable
+        +Value prefs
+        +record_activated(path, on) bool
+        +active_library_dir() Option
+        +save_snapshot(snapshot) Result
+    }
+
+    class Snapshot {
+        +String name
+        +u64 created_at
+        +List entries
+    }
+
+    class SnapshotEntry {
+        +String key
+        +Option path
+        +String family
+        +String style
+        +bool system
+    }
+
+    class FontCache {
+        -PathBuf path
+        -HashMap entries
+        -HashSet seen
+        -usize hits
+        -usize misses
+        +load() FontCache
+        +get(path, mtime, size, source) Option
+        +put(path, mtime, size, source, faces)
+        +finish()
+        +faces() Iterator
+        +face_count() usize
+    }
+
+    class Entry {
+        +u64 mtime
+        +u64 size
+        +FontSource source
+        +List faces
+    }
+
+    class Probe {
+        -HashSet registered
+        +is_registered(normalized) bool
+    }
+
+    class SeedInput {
+        +HashSet activated
+        +HashSet deactivated
+        +HashSet collection_families
+        +HashSet collection_face_keys
+        +HashSet snapshot_keys
+        +HashSet snapshot_paths
+    }
+
+    class ScanSink {
+        <<trait>>
+        +progress(done, total)
+        +batch(faces)
+        +seed(faces)
+    }
+
+    class UiSink {
+        -AppHandle app
+        +progress(done, total)
+        +batch(faces)
+        +seed(faces)
+    }
+
+    class NullSink {
+        +progress(done, total)
+        +batch(faces)
+    }
+
+    class ScanLibrary {
+        <<module>>
+        +scan_library(store, sink) List
+        +is_seed_face(face, input) bool
+        -build_seed(cache, probe, state) List
+        -seed_input(probe, state) SeedInput
+    }
+
+    class FontStore {
+        +List fonts
+        +phase phase
+        +Map overrides
+        +bool seedReady
+        +applyFullScan(full)
+        +restoreLastActivation()
+        +rescan()
+    }
+
+    AppState "1" *-- "*" Snapshot
+    Snapshot "1" *-- "*" SnapshotEntry
+    FontCache "1" *-- "*" Entry
+    ScanLibrary ..> FontCache : 读缓存
+    ScanLibrary ..> Probe : 判注册表
+    ScanLibrary ..> AppState : 读台账/分组/快照/prefs
+    ScanLibrary ..> SeedInput : 构造
+    ScanLibrary ..> ScanSink : seed()
+    UiSink ..|> ScanSink
+    NullSink ..|> ScanSink
+    FontStore ..> UiSink : listen scan:seed
+    FontStore ..> AppState : get_active_paths / set_fonts_active(record)
+
+    note for AppState "2.1.4 新增 activated：持久激活台账，随 state.json 落盘；系统字体路径不入账"
+    note for FontCache "2.1.4 新增 faces()/face_count()：只读迭代，entries 仍私有；CACHE_VERSION 不变"
+    note for ScanSink "2.1.4 新增 seed()，默认空实现（NullSink 无需改动）"
+    note for UiSink "一次性守卫 UI_SEED_SENT 放在实现侧，避免 HTTP 侧先扫吃掉这一次"
+    note for FontStore "2.1.4 删除 scanFonts；新增 overrides / seedReady / applyFullScan"
