@@ -31,6 +31,8 @@ mod registry;
 mod scanner;
 mod single_instance;
 mod services;
+// 2026-11-13：按字形几何判分类（关键词表管不到的「新导入字体」用这一层）
+mod shape_class;
 mod sound;
 #[cfg(target_os = "windows")]
 mod warm;
