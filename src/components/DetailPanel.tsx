@@ -403,7 +403,13 @@ function NoteEditor({ family }: { family: string }) {
   );
 }
 
-const COPYRIGHT_STATUS_OPTIONS = ["auto", "free_commercial", "free_personal", "paid", "timelimited"] as const;
+// 「永久」（paid）chip 已按用户 2026-11-13 裁定移除 —— 不可再选。
+// 存量兼容（硬要求）：prefs 里已存的 paid 值**全部路径保留** —— 徽标仍显示
+// 「永久授权」（copyright.paidBadge）、顶栏筛选（TopBar 的 COPYRIGHT_FILTERS 仍含
+// "paid"）能用、目录后缀「收费字体」映射不动（class_from_status 的 paid 分支未动）。
+// 这里只是不能再**新选**；键盘导航对已设 paid 的族 indexOf 为 -1，
+// 由下方 Math.max(cur, -1) 的 roving 逻辑兜住。
+const COPYRIGHT_STATUS_OPTIONS = ["auto", "free_commercial", "free_personal", "timelimited"] as const;
 
 /** 版权状态手动设置：默认"自动"（根据版权信息识别），也可手动指定商用免费 / 个人免费 / 收费 / 时间限制 */
 function CopyrightStatusSection({ family }: { family: string }) {
@@ -458,14 +464,12 @@ function CopyrightStatusSection({ family }: { family: string }) {
             className={`copyright-status-btn ${status === opt ? "copyright-status-active" : ""}`}
             onClick={() => setCopyrightStatus(family, opt)}
           >
-            {/* chips 拆新键（paidChip / timelimitedChip）：`copyright.paid` / `copyright.timelimited`
-                同时被徽标（FamilyCard / QuickBar / SpecimenView）共用 —— 徽标的自动判定
-                「限时字体」语义上不是「已购买」，不能跟着按钮一起改名（用户 2026-11-13） */}
-            {opt === "paid"
-              ? t("copyright.paidChip")
-              : opt === "timelimited"
-                ? t("copyright.timelimitedChip")
-                : t(`copyright.${opt}`)}
+            {/* chips 拆新键（timelimitedChip）：`copyright.timelimited` 同时被徽标共用 ——
+                徽标的自动判定「限时字体」语义上不是「已购买」，不能跟着按钮改名
+                （用户 2026-11-13）。「paid」chip 已移除，copyright.paidBadge 仅供存量 paid 值的徽标 */}
+            {opt === "timelimited"
+              ? t("copyright.timelimitedChip")
+              : t(`copyright.${opt}`)}
           </button>
         ))}
       </div>
