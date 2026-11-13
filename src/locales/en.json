@@ -1174,6 +1174,5 @@
   "load.backgroundReading": "Reading {done}/{total} font files in the background",
   "load.seedReady": "Font library ready",
   "load.partialData": "Reading didn’t finish — some fonts are not listed yet",
-  "load.retry": "Read again",
-  "toast.ledgerWriteFailed": "Couldn’t save the activation record; your fonts may not be restored automatically next time"
+  "load.retry": "Read again"
 }
