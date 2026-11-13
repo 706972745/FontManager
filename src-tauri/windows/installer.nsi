@@ -1,3 +1,28 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; FontManager 安装器模板（自定义 fork，2.1.5 起）
+;
+; 来源：Tauri CLI 2.12.2 内嵌的 NSIS 模板（@tauri-apps/cli-win32-x64-msvc 里
+;      以 handlebars 原文嵌入，共 984 行）。**不要凭空手写这份文件** ——
+;      升级 Tauri 时的正确做法是重新提取上游模板与这份做 diff，再决定怎么合并。
+;
+; 本 fork 只改了「看得见的部分」：
+;   · 配色（白底 + 近黑字）、欢迎页/完成页的文案与留白、目录页的写探针、
+;     升级时跳过目录页、侧栏图换掉 NSIS 自带的蓝色 win.bmp；
+;   · 双语文案集中到 zfm-strings.nsh（在 MUI_LANGUAGE 之后 include）。
+;
+; **一个字都没动**的东西（动了就是升级断链 / 数据被清）：
+;   · .onInit 的 $INSTDIR 默认值与 RestorePreviousInstallLocation
+;   · Section Install 里 WriteRegStr ... "" $INSTDIR、WriteUninstaller、
+;     UNINSTKEY 的全部值与 EstimatedSize 计算
+;   · 三个 NSIS_HOOK_* 插入点（位置也不能变：POSTINSTALL 必须在
+;     StartMenuShortcut 之后、SetAutoClose 之前）
+;   · un.ConfirmShow 的 GetDpiForWindow /96 换算
+;   · 所有 handlebars 循环（#each …，当前大多为空，但将来加资源/文件关联全靠它们注入；
+;     删掉以后加资源会静默丢失，构建不报错）
+;
+; 若某个界面文案突然变回英文长句 → 先来查 zfm-strings.nsh 里对 MUI_TEXT_* 的覆盖表，
+; MUI 大版本升级可能把这些私有 LangString 改名（不会崩，只是覆盖失效）。
+; ═══════════════════════════════════════════════════════════════════════════
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -71,6 +96,13 @@ ${StrLoc}
 !define ESTIMATEDSIZE "{{estimated_size}}"
 !define STARTMENUFOLDER "{{start_menu_folder}}"
 
+; ★ 2.1.5 新增：data 根标记文件名（安装器与程序共用同一个名字）
+;   安装器在 $INSTDIR\data\.zfm-data-root 写 v=1；
+;   程序迁移成功后往同一个文件追加 migrated=1。
+;   程序只拿它当「这个安装根启用 data 布局」的信号，**不当迁移完成的证据** ——
+;   迁移是否完成只认 data\state.json 是否存在（见 src-tauri/src/store.rs）。
+!define ZFM_DATA_MARKER ".zfm-data-root"
+
 Var PassiveMode
 Var UpdateMode
 Var NoShortcutMode
@@ -133,7 +165,24 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
   !define MUI_ICON "${INSTALLERICON}"
 !endif
 
+; ────── 视觉：只有三档颜色，别再加第四种 ──────
+; 底 #ffffff / 主文字 #1c1c24（纯黑 #000 在白色上发灰、显脏）/ 次级文字靠系统灰。
+; 为什么不做暗色：NSIS 的按钮、输入框、目录树都是**系统主题**画出来的浅色控件，
+; 暗底上会贴出一排惨白的系统按钮，比现在更难看。真要暗色只能自绘所有控件，
+; 那是 800 行 nsDialogs，与「只改 UI、可维护性优先」直接冲突。
+!define MUI_BGCOLOR   "FFFFFF"
+!define MUI_TEXTCOLOR "1C1C24"
+
 ; Installer sidebar image
+;
+; ⚠️ 这里不是「有就放、没有就算了」：MUI_WELCOMEFINISHPAGE_BITMAP 的默认值是
+; NSIS 自带的蓝色 win.bmp，而置空会编译期 !error（Pages/Welcome.nsh:26-28）——
+; 「不放图」的真实结果是「还是那张蓝的」，正是用户抱怨的东西。
+; 所以 sidebarImage 必须配（tauri.conf.json → bundle.windows.nsis.sidebarImage），
+; 图由 windows/gen-nsis-images.py 生成（纯标准库手写 BMP，可重新生成）。
+;
+; 图里只有白底 + 一根细线 + 居中单色图标，没有字：图里的文字没法本地化，
+; 而且 125%/150% 下会被系统按比例缩放，细笔画最先糊。
 !if "${SIDEBARIMAGE}" != ""
   !define MUI_WELCOMEFINISHPAGE_BITMAP "${SIDEBARIMAGE}"
 !endif
@@ -167,6 +216,15 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
+;
+; 文案全部指向 $(ZM_*)，运行时会按当前语言替换（MUI 自己就是这么用的：
+; MUI_WELCOMEPAGE_TITLE 的默认值本身就是 "$(MUI_TEXT_WELCOME_INFO_TITLE)"）。
+; MUI_WELCOMEPAGE_TITLE_3LINES 把标题区从 28u 撑到 38u，配 12pt bold
+; = 留白足、层次清。**不做超大标题**：那要 CreateFont + SendMessage WM_SETFONT
+; 去改 MUI 内部控件，靠控件 ID 定位，MUI 一升级就断。
+!define MUI_WELCOMEPAGE_TITLE_3LINES
+!define MUI_WELCOMEPAGE_TITLE "$(ZM_WELCOME_TITLE)"
+!define MUI_WELCOMEPAGE_TEXT  "$(ZM_WELCOME_TEXT)"
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_WELCOME
 
@@ -386,8 +444,60 @@ Function PageLeaveReinstall
 FunctionEnd
 
 ; 5. Choose install directory page
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
+;
+; 这一页是「装到 D 盘」的唯一入口，必须有（去掉它 = G2 直接失去意义）。
+; 但**升级时必须跳过**并锁回旧目录 —— 见 ZfmDirPre 里那段反例说明。
+!define MUI_DIRECTORYPAGE_TEXT_TOP         "$(ZM_DIR_TOP)"
+!define MUI_DIRECTORYPAGE_TEXT_DESTINATION "$(ZM_DIR_DEST)"
+!define MUI_PAGE_CUSTOMFUNCTION_PRE        ZfmDirPre
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE      ZfmDirLeave
 !insertmacro MUI_PAGE_DIRECTORY
+
+Function ZfmDirPre
+  ; ① 被动模式（/P）跳过本页 —— 与上游原来的 SkipIfPassive 完全等价。
+  ;    MUI 每页只允许一个 PRE 回调，所以这里必须把它合进来而不是再 define 一个。
+  ${IfThen} $PassiveMode = 1 ${|} Abort ${|}
+
+  ; ② 显式 /D=... 是「我就是要装到这儿」（企业静默部署），按用户意愿执行，
+  ;    不做「升级锁目录」的覆盖。不给这个出口会把合法用法一起挡掉。
+  ${GetOptions} $CMDLINE "/D=" $R1
+  ${IfNot} ${Errors}
+    Return
+  ${EndIf}
+
+  ; ③ 升级（注册表里已有安装目录）→ 跳过本页并把 $INSTDIR 钉回去。
+  ;
+  ; 反例（不跳）：老用户在升级时手滑把路径从 %LOCALAPPDATA%\FontManager 改成
+  ; D:\FontManager，装完就是**两套**：桌面快捷方式指向新的，字体库和账本留在旧的，
+  ; 用户看到的是「升个级标签分组全没了」。这比迁移逻辑写错更常见，也更容易被
+  ; 误判成「数据丢了」—— 所以这一条是硬规则，不要为了「灵活」而放开。
+  ReadRegStr $R0 SHCTX "${MANUPRODUCTKEY}" ""
+  ${If} $R0 != ""
+    StrCpy $INSTDIR $R0
+    Abort
+  ${EndIf}
+FunctionEnd
+
+Function ZfmDirLeave
+  ; 写探针：RequestExecutionLevel user 下，普通用户往 C:\Program Files 写会被拒。
+  ;
+  ; 不拦的后果（实测过）：NSIS 会在 File "fontmanager.exe" 那一步报
+  ; "Error opening file for writing"，然后留下一个「目录建了、文件没写、注册表没写全」
+  ; 的半装状态 —— 用户装了个空壳，还占着 HKCU 的 Uninstall 键。
+  ; 探针把失败提前到页面内，用户当场就能改路径。
+  CreateDirectory "$INSTDIR"
+  ClearErrors
+  FileOpen $R9 "$INSTDIR\.zfm-probe" w
+  ${If} ${Errors}
+    ; 别把刚建出来的空目录留在 Program Files 里：RMDir 是非递归的，
+    ; 只会在目录确实是空的时候成功，动不到任何已有内容。
+    RMDir "$INSTDIR"
+    MessageBox MB_ICONEXCLAMATION "$(ZM_DIR_NOWRITE)"
+    Abort          ; 停在当前页，让用户改路径（不会进入安装阶段）
+  ${EndIf}
+  FileClose $R9
+  Delete "$INSTDIR\.zfm-probe"
+FunctionEnd
 
 ; 6. Start menu shortcut page
 Var AppStartMenuFolder
@@ -407,12 +517,18 @@ Var AppStartMenuFolder
 ; Don't auto jump to finish page after installation page,
 ; because the installation page has useful info that can be used debug any issues with the installer.
 !define MUI_FINISHPAGE_NOAUTOCLOSE
+; 大标题 + 两行说明：完成页是用户唯一会认真看一眼的页面，
+; 数据位置那句话就放在这里（设置页「数据位置」那一行是 P2，本版不做）。
+!define MUI_FINISHPAGE_TITLE_3LINES
+!define MUI_FINISHPAGE_TITLE "$(ZM_FINISH_TITLE)"
+!define MUI_FINISHPAGE_TEXT  "$(ZM_FINISH_TEXT)"
 ; Use show readme button in the finish page as a button create a desktop shortcut
 !define MUI_FINISHPAGE_SHOWREADME
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "$(createDesktop)"
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "$(ZM_FINISH_DESKTOP)"
 !define MUI_FINISHPAGE_SHOWREADME_FUNCTION CreateOrUpdateDesktopShortcut
 ; Show run app after installation.
 !define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_TEXT "$(ZM_FINISH_RUN)"
 !define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_FINISH
@@ -474,6 +590,34 @@ FunctionEnd
 {{#each language_files}}
   !include "{{this}}"
 {{/each}}
+
+; ────── FontManager 自己的双语文案（2.1.5）──────
+;
+; 位置不能动：LangString 只能往「已经 MUI_LANGUAGE 加载过的语言」里写，
+; 所以这一段**必须**在 languages 那组循环（MUI_LANGUAGE）之后。
+;
+; 为什么路径绕这么一圈：NSIS 的 !include 相对路径以**主脚本所在目录**为基准
+; （已实测：子文件里 include 同目录的兄弟文件会 "could not find"），而渲染后的主脚本
+; 落在构建产物目录 rust-target\release\nsis\x64\ —— 我们的源码目录根本不在那。
+; handlebars 又只给绝对路径的**文件** token，没有「目录」token，所以从 sidebar_image
+; 的绝对路径里把文件名削掉换出源码目录。注意 NSIS 会把 define 里的反斜杠归一成正斜杠
+; （已实测），所以这里搜的是 "/sidebar.bmp" 而不是 "\sidebar.bmp"。
+;
+; 若 sidebarImage 被清空 → 这里编译期就炸，不会静默丢文案（宁可构建失败）。
+;
+; 反斜杠而不是正斜杠：**实测**过两种写法 —— 渲染后的脚本带 UTF-8 BOM，此时
+; `!define` 里的 `\` 原样保留（搜 "/sidebar.bmp" 匹配不到）；而不带 BOM 的脚本会被
+; NSIS 归一成正斜杠（搜 "\sidebar.bmp" 匹配不到）。因为 tauri 渲染时一定加 BOM，
+; 这里以反斜杠为准，同时保留正斜杠那次尝试兜住上游将来改行为。
+!searchreplace ZFM_NSIS_DIR "${SIDEBARIMAGE}" "\sidebar.bmp" ""
+!if "${ZFM_NSIS_DIR}" == "${SIDEBARIMAGE}"
+  !searchreplace ZFM_NSIS_DIR "${SIDEBARIMAGE}" "/sidebar.bmp" ""
+!endif
+!if "${ZFM_NSIS_DIR}" == "${SIDEBARIMAGE}"
+  !error "无法从 sidebarImage 推出源码目录，找 zfm-strings.nsh 失败：${SIDEBARIMAGE}"
+!endif
+!addincludedir "${ZFM_NSIS_DIR}"
+!include "zfm-strings.nsh"
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode

@@ -67,7 +67,10 @@
         "template": "./windows/installer.nsi",
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
-        "installerHooks": "./windows/hooks.nsh"
+        "installerHooks": "./windows/hooks.nsh",
+        "sidebarImage": "./windows/sidebar.bmp",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": false
       }
     }
   }
