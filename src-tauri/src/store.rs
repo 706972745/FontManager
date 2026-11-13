@@ -44,6 +44,18 @@ pub struct Snapshot {
 pub struct AppState {
     pub deactivated: HashSet<String>,
 
+    /// 持久激活台账（2.1.4）：**用户意图**的快照，不是扫描结果的派生值。
+    ///
+    /// 为什么存「原始路径」而不是归一化后的小写路径：前端拿它跟 `FontFace.path` 直接
+    /// 对号（`restoreLastActivation`），归一化会引入一次口径转换，两边一旦不同步
+    /// 就会出现「台账里有、界面上匹配不到」。归一化只在比较时临时做（条目量级几百，成本可忽略）。
+    ///
+    /// 反例（不记账）：每次启动都只能靠注册表现算「上次启用了什么」，而注册表里还混着
+    /// 「启用至关闭」的会话级残留 —— 用户一重启就被反向启用（1.2.x 的实测事故）。
+    /// 系统字体路径一律不落账（写入时过滤 + `store::load` 兜底清理）。
+    #[serde(default)]
+    pub activated: HashSet<String>,
+
     pub tags: HashMap<String, Vec<String>>,
 
     pub collections: HashMap<String, Vec<String>>,
@@ -184,6 +196,59 @@ impl AppState {
         } else {
             None
         }
+    }
+
+    /// 记 / 撤一条台账，返回是否真的改了（调用方据此决定要不要落盘）。
+    ///
+    /// 三条硬规则：
+    /// ① 系统字体路径直接拒绝 —— 它改不动，记进来只会在每次启动时白算一次种子
+    ///   （PRD §6「记录目标为系统字体路径 → 忽略」）；
+    /// ② 写入前清掉同一路径的其它大小写 / 斜杠变体 —— 同一文件在 `linked` / `added` /
+    ///   注册表里写法可能不同，不清就会攒出 N 份「同一个字体」的台账，体积随时间线性
+    ///   膨胀（PRD R-18 的隐患）；
+    /// ③ `on=false` 且本来就没有 → 不算改动，避免一次无意义的整份 state 落盘。
+    ///
+    /// 注意 `is_system_font` 必须在最前面：上游有些调用点（批量启停）拿到的是混合清单，
+    /// 不能指望它们自己过滤。
+    pub fn record_activated(&mut self, path: &str, on: bool) -> bool {
+        if crate::activation::is_system_font(path) {
+            return false;
+        }
+        let norm = crate::activation::norm_path(path);
+        let had_variant = self
+            .activated
+            .iter()
+            .any(|p| p != path && crate::activation::norm_path(p) == norm);
+        let existed = self.activated.contains(path);
+        if on {
+            if had_variant {
+                self.activated
+                    .retain(|p| crate::activation::norm_path(p) != norm);
+            }
+            self.activated.insert(path.to_string())
+        } else {
+            if !existed && !had_variant {
+                return false;
+            }
+            self.activated
+                .retain(|p| p != path && crate::activation::norm_path(p) != norm);
+            false
+        }
+    }
+
+    /// 按「本轮扫描真实见到的路径集合」裁剪台账，返回剔掉几条（D10）。
+    ///
+    /// 为什么用扫描结果而不是逐条 `is_file`：几千条 stat 在机械盘上是几百毫秒，
+    /// 而扫描本来就把每个文件摸过一遍了 —— 结果就在手边，没必要再问一次磁盘。
+    /// `alive` 是**归一化**后的集合，比较也要归一化（台账里存的是原始写法）。
+    ///
+    /// 反例（不裁剪）：删掉的字体永远留在台账里，每次启动都为它们各算一次种子、
+    /// 各查一次缓存，`state.json` 只涨不落（PRD R-18）。
+    pub fn retain_activated(&mut self, alive_normalized: &HashSet<String>) -> usize {
+        let before = self.activated.len();
+        self.activated
+            .retain(|p| alive_normalized.contains(&crate::activation::norm_path(p)));
+        before - self.activated.len()
     }
 
     /// 保存（插入或覆盖）一个快照。上限 [`MAX_SNAPSHOTS`] 个：
@@ -452,6 +517,23 @@ pub fn load() -> AppState {
         ));
         if let Err(e) = save(&state) {
             crate::diag::log(&format!("store: failed to persist deactivated cleanup: {e}"));
+        }
+    }
+    // 台账的同类清理（2.1.4）：系统字体路径不该出现在台账里。写入侧已经挡过一道
+    // （`record_activated`），这里兜住历史脏数据与手工改过的 state.json ——
+    // 留着的唯一后果是每次启动都为这几条白算一次种子，但它会让「台账 = 用户意图」这个
+    // 前提失效，排查时非常迷惑，所以宁可当场剔掉并落盘一次。
+    let before_activated = state.activated.len();
+    state
+        .activated
+        .retain(|p| !crate::activation::is_system_font(p));
+    if state.activated.len() != before_activated {
+        crate::diag::log(&format!(
+            "store: dropped {} protected system-font entries from activated ledger",
+            before_activated - state.activated.len()
+        ));
+        if let Err(e) = save(&state) {
+            crate::diag::log(&format!("store: failed to persist activated cleanup: {e}"));
         }
     }
     // 1.2.6：默认库从「Windows 用户字体目录」搬到了安装目录。

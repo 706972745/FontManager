@@ -66,7 +66,19 @@ fn never_registered(cache: &crate::registry::RegCache, path: &str) -> bool {
     cache.names_for(path).is_empty() && !cache.is_machine(path)
 }
 
-pub fn sync(state: &mut AppState, path: &str, active: bool) -> Result<(), String> {
+/// 路径归一化：去掉 `\\?\` 长路径前缀、`/` 统一成 `\`、转小写。比较两条路径是否
+/// 「同一个文件」时只认这个口径（大小写不敏感 + 斜杠不敏感，Windows 的语义）。
+///
+/// 为什么不用 `crate::registry::normalize`：`registry` 模块整体是 `#![cfg(windows)]`，
+/// 其它平台整个不存在；而台账查重与种子筛选（2.1.4）是跨平台逻辑，必须能编译。
+/// `registry::normalize` 反过来委托到这里，两边永远同一套口径 —— 一旦分家，
+/// 就会出现「台账里那条永远匹配不上注册表探测结果」的幽灵条目。
+pub fn norm_path(path: &str) -> String {
+    let p = path.strip_prefix(r"\\?\").unwrap_or(path);
+    p.replace('/', "\\").to_lowercase()
+}
+
+pub fn sync(state: &mut AppState, path: &str, active: bool, record: bool) -> Result<(), String> {
     if is_system_font(path) {
         crate::diag::log(&format!("activation: skip protected system font: {path}"));
         return Ok(());
@@ -90,6 +102,11 @@ pub fn sync(state: &mut AppState, path: &str, active: bool) -> Result<(), String
         } else {
             state.deactivated.remove(path);
         }
+    } else if record {
+        // ⚠️ 只有 `apply` 成功才记账（PRD §6：成功写盘后才记录，失败回滚不记）。
+        // 放在这里而不是函数开头：apply 失败时注册表其实没变，记了账下次启动会去
+        // 「恢复」一个本来就启用的字体 —— 无害但每次启动都自我强化写盘，台账永不收敛。
+        state.record_activated(path, active);
     }
     result
 }
@@ -100,12 +117,18 @@ pub fn sync(state: &mut AppState, path: &str, active: bool) -> Result<(), String
  * 之前每个字体都要 `user_entries()` 全量枚举 HKCU 字体表（还会随着写入不断变长），
  * 再各广播一次 WM_FONTCHANGE —— 5000 级批量实测退化成 ~2.5 个/秒，界面整个卡住
  * （`set_fonts_active` 是同步命令，跑在主线程上）。现在索引 O(1) 复用。
+ *
+ * `record` = 这批动作算不算「用户的持久意图」（见 ADR-09：必填而不是默认值，
+ * 新调用点编译不过，改的时候必须想一遍）。台账在循环外一次性落：逐条 retain 是 O(n·m)，
+ * 5000 条能把一次批量从毫秒级推到秒级。
  */
-pub fn sync_batch(state: &mut AppState, paths: &[String], active: bool) -> Vec<String> {
+pub fn sync_batch(state: &mut AppState, paths: &[String], active: bool, record: bool) -> Vec<String> {
     let mut failed = Vec::new();
     if paths.is_empty() {
         return failed;
     }
+    // 本轮真正改成功的路径（只借 paths，不借 state，循环外统一记账不会冲突）
+    let mut done: Vec<&str> = Vec::with_capacity(paths.len());
     // Windows：索引只建一次；其他平台每写一个字体都要重写 fontconfig，索引无意义
     #[cfg(target_os = "windows")]
     let mut cache = crate::registry::RegCache::load();
@@ -132,13 +155,21 @@ pub fn sync_batch(state: &mut AppState, paths: &[String], active: bool) -> Vec<S
         #[cfg(not(target_os = "windows"))]
         let result = apply(state, path, active);
         crate::diag::activation(path, active, &result);
-        if let Err(e) = result {
-            if was_deactivated {
-                state.deactivated.insert(path.clone());
-            } else {
-                state.deactivated.remove(path);
+        match result {
+            Ok(()) => done.push(path),
+            Err(e) => {
+                if was_deactivated {
+                    state.deactivated.insert(path.clone());
+                } else {
+                    state.deactivated.remove(path);
+                }
+                failed.push(e);
             }
-            failed.push(e);
+        }
+    }
+    if record {
+        for path in done {
+            state.record_activated(path, active);
         }
     }
     #[cfg(target_os = "windows")]
@@ -386,6 +417,28 @@ pub fn probe() -> Probe {
     }
 }
 
+impl Probe {
+    /// 注册表里的全部字体路径（**已归一化**），供种子筛选用。
+    ///
+    /// 为什么不是 `is_registered(&str)` 单条查询：种子筛选要落在一个纯函数
+    /// （`is_seed_face`）里才能单测，那个函数只认 `SeedInput` 里的集合；
+    /// 一条条回调查询就得把 `Probe` 塞进去，测试也就跑不起来了。
+    /// 代价是把 316 条路径摊成一份 `Vec<&String>`（约 2.5 KB 引用），可忽略。
+    ///
+    /// 非 Windows 平台没有注册表这个概念，恒返回空 —— 那边种子会自动退化成
+    /// 「台账 + 分组 + 快照 + 系统字体」，不会崩。
+    pub fn registered_paths(&self) -> Vec<&String> {
+        #[cfg(target_os = "windows")]
+        {
+            self.registered.iter().collect()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Vec::new()
+        }
+    }
+}
+
 pub fn is_active(probe: &Probe, state: &AppState, face: &crate::font_types::FontFace) -> bool {
     #[cfg(target_os = "windows")]
     {
@@ -427,13 +480,13 @@ mod tests {
         let mut state = AppState::default();
         let font = "/tmp/My <Fancy> & Font.ttf";
 
-        sync(&mut state, font, false).unwrap();
+        sync(&mut state, font, false, false).unwrap();
         assert!(state.deactivated.contains(font));
         let xml = std::fs::read_to_string(&fragment).unwrap();
         assert!(xml.contains("<rejectfont>"));
         assert!(xml.contains("/tmp/My &lt;Fancy&gt; &amp; Font.ttf"));
 
-        sync(&mut state, font, true).unwrap();
+        sync(&mut state, font, true, true).unwrap();
         assert!(!state.deactivated.contains(font));
         assert!(!fragment.exists(), "fragment should be removed when nothing is deactivated");
 
@@ -468,14 +521,17 @@ mod tests {
         }
     }
 
-    /// 系统字体走 sync 必须「静默跳过」：不写 deactivated，也不报错
+    /// 系统字体走 sync 必须「静默跳过」：不写 deactivated，也不报错，
+    /// 而且**不进台账**（PRD §6：台账里出现系统路径即视为脏数据）。
     #[cfg(target_os = "windows")]
     #[test]
     fn sync_skips_system_font_without_error() {
         let mut state = AppState::default();
         let path = r"C:\Windows\Fonts\segoeui.ttf";
-        assert!(sync(&mut state, path, false).is_ok());
+        assert!(sync(&mut state, path, false, true).is_ok());
         assert!(!state.deactivated.contains(path));
+        assert!(sync(&mut state, path, true, true).is_ok());
+        assert!(state.activated.is_empty(), "系统字体不能进台账");
     }
 
     /// E3：停用一个「本来就没启用」的字体（HKCU 无条目、非机器级注册），
@@ -492,7 +548,7 @@ mod tests {
             never_registered(&cache, path),
             "测试前提：虚构路径不应出现在真注册表里"
         );
-        assert!(sync(&mut state, path, false).is_ok());
+        assert!(sync(&mut state, path, false, true).is_ok());
         assert!(!state.deactivated.contains(path));
     }
 
@@ -505,7 +561,7 @@ mod tests {
         let mut state = AppState::default();
         let fresh = r"C:\zfm-e3-never-registered\batch-a.ttf";
         let fresh2 = r"C:\zfm-e3-never-registered\batch-b.ttf";
-        let failed = sync_batch(&mut state, &[fresh.to_string(), fresh2.to_string()], false);
+        let failed = sync_batch(&mut state, &[fresh.to_string(), fresh2.to_string()], false, false);
         assert!(failed.is_empty());
         assert!(!state.deactivated.contains(fresh));
         assert!(!state.deactivated.contains(fresh2));

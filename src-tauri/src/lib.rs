@@ -106,7 +106,8 @@ fn dedupe_font_library(
 #[tauri::command]
 fn set_font_active(store: State<Store>, path: String, active: bool) -> Result<(), String> {
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
-    activation::sync(&mut state, &path, active)?;
+    // 单族持久启停 = 用户意图，进台账（§5.2 表格）
+    activation::sync(&mut state, &path, active, true)?;
     store::save(&state)
 }
 
@@ -115,13 +116,17 @@ fn set_font_active(store: State<Store>, path: String, active: bool) -> Result<()
  * 批量启停放在后台线程：同步命令跑在主线程上，几千个字体时界面会整个「无响应」
  * （GDI 装载 + 注册表写入，实测 5000 级要二三十分钟）。
  */
-async fn set_fonts_active(store: State<'_, Store>, paths: Vec<String>, active: bool, no_save: Option<bool>) -> Result<(), String> {
+async fn set_fonts_active(store: State<'_, Store>, paths: Vec<String>, active: bool, no_save: Option<bool>, record: Option<bool>) -> Result<(), String> {
     let total = paths.len();
     let no_save = no_save.unwrap_or(false);
+    // 记不记账由调用方说（`Option` 是为了老调用点不用全改）：默认 `true` ——
+    // 界面上所有批量启停都是持久意图，只有「启动时恢复上次启用」要显式传 false，
+    // 否则每次启动都自我强化写盘，台账永不收敛（PRD §6 最后几行）。
+    let record = record.unwrap_or(true);
     let store = store.inner().clone();
     let failed = tauri::async_runtime::spawn_blocking(move || {
         let mut state = store.0.lock().map_err(|e| e.to_string())?;
-        let failed = activation::sync_batch(&mut state, &paths, active);
+        let failed = activation::sync_batch(&mut state, &paths, active, record);
         // 快照切换等大批量场景：中间批次跳过存盘（每次写 2.4MB 的 state.json，
         // 100 批 = 240MB 磁盘 IO），只在最后一批落盘。
         if !no_save {
@@ -168,6 +173,22 @@ fn batch_checkpoint_get(store: State<Store>) -> Result<Option<crate::store::Pend
     Ok(state.pending_batch.clone())
 }
 
+/// 2.1.4：持久激活台账（`state.activated`）的只读出口。
+///
+/// 为什么要单开一条命令：启动恢复（`restoreLastActivation`）需要「用户意图」去补启用，
+/// 而旧做法用的是 `prefs.lastActivePaths` —— 那是**扫描结果的派生值**，
+/// 扫描还没完成时会被写成空数组（PRD §6 点名的问题）。台账与扫描无关，天然可以提前用。
+///
+/// 排序后返回：前端按同一顺序批量启用，日志与手工比对都稳定（`HashSet` 的迭代顺序
+/// 每个进程都不同，直接吐出去会让两次启动的日志看起来完全不一样）。
+#[tauri::command]
+fn get_active_paths(store: State<Store>) -> Result<Vec<String>, String> {
+    let state = store.0.lock().map_err(|e| e.to_string())?;
+    let mut out: Vec<String> = state.activated.iter().cloned().collect();
+    out.sort();
+    Ok(out)
+}
+
 #[tauri::command]
 async fn install_fonts(
     app: tauri::AppHandle,
@@ -205,7 +226,8 @@ async fn install_fonts(
         }
         auto = state.auto_activate_imports && result.installed.len() < 64;
         for face in &result.installed {
-            let _ = activation::sync(&mut state, &face.path, auto);
+            // 导入后自动启用属于持久状态（PRD §6），进台账
+            let _ = activation::sync(&mut state, &face.path, auto, true);
             state.added.insert(face.path.clone(), now);
         }
         let _ = store::save(&state);
@@ -264,7 +286,8 @@ async fn install_online_family(
     if let Ok(mut state) = store.0.lock() {
         auto = state.auto_activate_imports && result.installed.len() < 64;
         for face in &result.installed {
-            let _ = activation::sync(&mut state, &face.path, auto);
+            // 同上：在线安装后的自动启用也是持久意图
+            let _ = activation::sync(&mut state, &face.path, auto, true);
             state.added.insert(face.path.clone(), now);
         }
         let _ = store::save(&state);
@@ -337,8 +360,9 @@ fn uninstall_one(
     family: &str,
 ) -> Result<TrashEntry, String> {
     if state.deactivated.contains(path) {
-        // 先把它重新启用，否则文件搬走后注册表里留一条指向空路径的值
-        activation::sync(state, path, true)?;
+        // 先把它重新启用，否则文件搬走后注册表里留一条指向空路径的值。
+        // 这是删除流程的内部补偿（文件马上就没），不能记成「用户想启用它」。
+        activation::sync(state, path, true, false)?;
     }
     // `state.linked` 不能单独当「这是库外链接字体」的判据：
     // 扫描的「自动收编」会把**库内**新发现的字体也写进 linked（lib.rs 里的 fresh 分支），
@@ -352,13 +376,18 @@ fn uninstall_one(
         let entry = installer::unlink_quiet(path, family)?;
         state.linked.remove(path);
         state.added.remove(path);
+        // 台账也要撤：文件已经不在了，留着只会让下次启动为它算一条永远装不上的种子
+        // （PRD §6「删除字族 / 移入回收站 → 记录 remove」）。
+        state.record_activated(path, false);
         return Ok(entry);
     }
     // 真删同样要清登记表：扫描的「自动收编」会把库内字体写进 linked/added，
     // 不清就留下指向空路径的死记录（linked 会在下次扫描被 retain 掉，added 不会）。
     state.linked.remove(path);
     state.added.remove(path);
-    installer::uninstall_quiet(path, family)
+    let entry = installer::uninstall_quiet(path, family)?;
+    state.record_activated(path, false);
+    Ok(entry)
 }
 
 #[tauri::command]
@@ -491,7 +520,8 @@ fn affinity_session_activate(
     let mut failed = Vec::new();
     let mut activated = Vec::with_capacity(total);
     for path in paths {
-        match activation::sync(&mut state, &path, true) {
+        // 亲和软件的会话级启用（退出即撤销）：不进台账（§5.2 表格）
+        match activation::sync(&mut state, &path, true, false) {
             Ok(()) => activated.push(path),
             Err(e) => failed.push(e),
         }
@@ -1065,7 +1095,8 @@ fn rename_family_dir(
         out
     };
     for p in &active {
-        let _ = activation::sync(state, p, false);
+        // 内部动作：路径马上要变，旧路径进台账只会留下一条指向不存在文件的记录
+        let _ = activation::sync(state, p, false, false);
     }
     match move_dir_contents(dir, target) {
         Ok(moved) => {
@@ -1102,7 +1133,8 @@ fn rename_family_dir(
                 // 刚搬完的文件可能还被系统字体缓存放着，重试几次再算失败
                 let mut ok = false;
                 for attempt in 0..3 {
-                    if activation::sync(state, new, true).is_ok() {
+                    // 用户原本就启用，只是换了路径：意图没变，台账要跟着搬到新路径
+                    if activation::sync(state, new, true, true).is_ok() {
                         ok = true;
                         break;
                     }
@@ -1118,7 +1150,8 @@ fn rename_family_dir(
         Err(e) => {
             // 搬失败了就把字体恢复成原来的启用状态，别让用户的字体凭空消失
             for p in &active {
-                let _ = activation::sync(state, p, true);
+                // 回滚到原状态：旧路径仍在台账里，这里不记账
+                let _ = activation::sync(state, p, true, false);
             }
             Err(e)
         }
@@ -1706,7 +1739,9 @@ fn set_fonts_active_session(store: State<Store>, paths: Vec<String>) -> Result<(
     let mut failed = Vec::new();
     let mut activated = Vec::with_capacity(total);
     for path in paths {
-        match activation::sync(&mut state, &path, true) {
+        // 「启用至关闭」是临时试用：退出即撤销，绝不能进台账
+        // （PRD US-5：长期状态不该被试用行为污染）
+        match activation::sync(&mut state, &path, true, false) {
             Ok(()) => activated.push(path),
             Err(e) => failed.push(e),
         }
@@ -1735,7 +1770,8 @@ fn revert_session_activations(app: &tauri::AppHandle) {
         Err(_) => return,
     };
     for p in &paths {
-        let _ = activation::sync(&mut guard, p, false);
+        // 会话撤销只是在纠正注册表，不代表用户改主意
+        let _ = activation::sync(&mut guard, p, false, false);
     }
     affinity::revert_session(&mut guard);
     let _ = store::save(&guard);
@@ -2908,6 +2944,7 @@ pub fn run() {
             set_batch_running,
             batch_checkpoint,
             batch_checkpoint_get,
+            get_active_paths,
             install_fonts,
             install_online_family,
             uninstall_font,
