@@ -13,11 +13,25 @@ All notable changes to FontManager are documented here. The format follows
 ### 安装器 · 观感与排版
 
 - **蓝色侧栏图没了**。此前欢迎页/完成页左侧是 NSIS 自带的 `win.bmp`（一张 2003 年风格的蓝天图），
-  和主程序的黑白灰完全不搭。现在换成白底 + 一根细线 + 居中单色图标。注意这里不是「放不放图」的选择题：
-  `MUI_WELCOMEFINISHPAGE_BITMAP` 的默认值就是那张蓝图，**置空会编译期报错**，所以必须提供自己的
-  `sidebar.bmp`（164×314 24bit，由 `src-tauri/windows/gen-nsis-images.py` 用纯标准库生成，可重新生成）。
+  和主程序的黑白灰完全不搭。现在换成**纯白 + 右缘 1px 细线**，不放 logo：
+  欢迎页改成自绘后这张图只剩完成页在用，而完成页右侧已经有「立即运行 / 桌面快捷方式」两个交互，
+  左边再放个图只是抢注意力；另外 MUI 的 `FitControl` 会把图拉伸到控件尺寸，图标会被拉变形。
+  注意这里不是「放不放图」的选择题：`MUI_WELCOMEFINISHPAGE_BITMAP` 的默认值就是那张蓝图，
+  **置空会编译期报错**，所以必须提供自己的 `sidebar.bmp`（164×314 24bit，由
+  `src-tauri/windows/gen-nsis-images.py` 用纯标准库生成，可重新生成；带图标的版本留在脚本里
+  另一个函数，默认不调用）。
+- **欢迎页改成自绘**（`Page custom`）。此前欢迎页是 MUI 默认版式：标题固定 12pt、正文固定 130u 高、
+  左边永远留 109u 给位图，做不出「大标题 + 宽留白」的层次。现在是自己画的内页：
+  22pt 产品名 + 灰色副标题 + 1u 细线 + 两行说明 + 页脚，坐标一律用 `u`（不是像素），
+  125%/150% 下跟着系统 DPI 走。**没有**去自绘窗口边框/按钮——那要把 hover/pressed/focus/
+  键盘 Tab/高对比度全自己兜，等于重写整个向导，还会丢屏幕阅读器。
 - **一屏五行废话砍到三行**。此前欢迎页是 MUI 默认文案（「建议关闭其它所有程序」之类），
-  占满一屏还没说清这软件是干什么的。现在标题 + 两行说明 + 版本号，其余留白。
+  占满一屏还没说清这软件是干什么的。现在大标题 + 一句副标题 + 两行说明，其余留白。
+- **按钮文字保持 NSIS 原生**（下一步/上一步/取消/安装/完成）。之前考虑过统一改措辞，
+  但 `^Next` / `^Install` 是全局 LangString，覆盖会影响所有页面，收益只是措辞 —— 不做。
+- **页面流程仍是 4 页**（欢迎 → 安装位置 → 安装中 → 完成）。开始菜单页的代码原样保留，
+  只是因为没有配 `startMenuFolder` 而被 PRE 回调跳过；删掉它会让「将来想配开始菜单名」
+  变成静默功能回退。
 - **完成页会告诉你数据在哪**。此前装完只有一句「完成」。现在多一行「数据保存在安装目录的 data 文件夹，
   卸载时可选择是否保留」—— 「装到 D 盘数据在哪」这个问题不该让用户去翻文档。
 - **安装位置页顶部有一句人话**：「程序、字体库和全部数据都会保存在这个目录下。以后想整体搬走，
@@ -85,6 +99,9 @@ All notable changes to FontManager are documented here. The format follows
 
 ### 卸载 · 口径只加不减
 
+- **复选框文案改成「同时删除全部数据与字体库」**。此前用的是 Tauri 的默认文案
+  「Delete the application data」，但勾选后 `hooks.nsh` 实际会连 `$INSTDIR\字体库` 一起删
+  —— 里面有用户花钱买的字体。文案不写清楚就是在踩口径风险，这属于信息披露不是行为变更。
 - 勾「同时删除应用数据」时新增两条白名单：`<安装目录>\data`（先认 `state.json` /
   `font-cache.json` / `api.json` / `.zfm-data-root` 任一特征文件，避免误删用户塞进同名目录的东西）
   与 `%LOCALAPPDATA%\FontManager\data`（Program Files 安装时的回退位置）。
@@ -100,9 +117,16 @@ All notable changes to FontManager are documented here. The format follows
   `%LOCALAPPDATA%\FontManager\data` 回退分支 —— 这是「程序目录不可写」的自洽行为。
   MSI 卸载也没有「删除应用数据」复选框，数据永远保留。
 - **`bundle.targets` 仍是 `"all"`**，NSIS 与 MSI 都出。
-- **安装器不是无边框自绘窗口**：进度条、目录树、按钮仍由 Windows 主题绘制，
-  做不到参考图那种「控件全自绘」的排版。理由写在模板头部注释里：自绘等于把
-  拖拽、DPI 换屏、键盘可达性、高对比度全部自己兜，维护成本远超收益。
+- **安装器不是无边框自绘窗口**：只有欢迎页是自绘的，目录页、进度条、完成页、按钮
+  仍由 Windows 主题绘制，做不到参考图那种「控件全自绘」的排版。理由写在模板头部注释里：
+  自绘等于把拖拽、DPI 换屏、键盘可达性、高对比度全部自己兜，维护成本远超收益。
+- **WebView2 内核缓存（约 100MB）仍在 `%LOCALAPPDATA%\com.iieozo.fontmanager`**，本期不改道。
+  它不是软件数据，是 Windows 托管的浏览器 profile（里面还有界面语言等设置，换目录不搬 profile
+  会把语言重置）。改它需要把整个 `app.windows` 从 `tauri.conf.json` 搬进 Rust —— 窗口配置从此
+  没有单一事实来源，且 profile 初始化失败时窗口建不出来、用户双击毫无反应也没有错误框。
+  为一个一次性 100MB 付永久维护税不划算。README 已如实披露这块体积，卸载勾选删除数据时会一并清掉。
+- **英文侧目录页标题仍是 MUI 原生的「Choose Install Location」**（定稿表写「Choose a location」）。
+  为一句措辞去覆盖全局私有 LangString 不划算；中文侧「选择安装位置」与定稿表逐字一致。
 - **设置页没有「数据位置」这一行**（需要 3 个 i18n key × 9 种语言，列 P2）：
   位置信息这一版由「安装器完成页文案 + 启动日志第一行 + README」三处承担。
 - **安装器模板是从 Tauri CLI 2.12.2 内嵌模板 fork 的**（984 行 handlebars）。

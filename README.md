@@ -590,6 +590,12 @@ data falls back to `%LOCALAPPDATA%\FontManager\data`, and the first line of
 Upgrading from 2.1.4 copies the old `%APPDATA%\FontManager` data into `data\`
 automatically and keeps the old folder as a backup.
 
+**One exception, on purpose** — the WebView2 runtime keeps its own browser-profile
+cache under `%LOCALAPPDATA%\com.iieozo.fontmanager` (roughly 100 MB: the Chromium
+cache of the embedded browser engine). Windows owns and manages that folder; it is
+not FontManager data and it does not move with the install folder. Uninstalling with
+"delete app data" checked does remove it.
+
 ### Uninstalling
 
 The NSIS uninstaller's confirmation page has a **"Delete app data"** checkbox:
