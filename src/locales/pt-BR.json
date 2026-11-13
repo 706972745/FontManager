@@ -1151,7 +1151,7 @@
   "online.sourcesLabel": "Origem",
   "online.sourcesOpen": "Abrir",
   "online.subsetsLabel": "Conjunto de caracteres",
-  "load.restoringSeed": "Restaurando as fontes que você tinha ativado…",
+  "load.restoringSeed": "Carregando as fontes ativadas, de grupo e de snapshot…",
   "load.backgroundReading": "Lendo fontes em segundo plano {done}/{total}",
   "load.seedReady": "Biblioteca de fontes pronta",
   "load.partialData": "A leitura não terminou — algumas fontes ainda não aparecem",

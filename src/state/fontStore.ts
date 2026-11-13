@@ -299,6 +299,15 @@ interface FontStore {
    */
   fullScanDone: boolean;
   /**
+   * 种子**真的到了**（`applySeed` 里置位），与 `seedReady` 不是一回事。
+   *
+   * `seedReady` 是「启动流程不必再等种子了」（含 3s 超时兜底、空种子也会置位），
+   * 拿它当计数依据会把「空种子 + 空列表」显示成 0 个已启用 —— 而库里明明有上千个。
+   * 侧栏的「已启用 / 启用至关闭 / 系统字体 / 分组」只认这一个标志：种子落地即意味着
+   * 这几类字体已经**全部**在 `fonts` 里，数量确定，空的就该显示 0。
+   */
+  seedLanded: boolean;
+  /**
    * 落地种子（`scan:seed` 的出口）。
    * 种子**写进 `fonts`**（不是另开一份临时列表）：主列表组件不换实例、不重挂，
    * 骨架屏条件随之变成「fonts 为空」，全量完成时只有一次原地替换（ADR-07）。
@@ -493,6 +502,14 @@ interface FontStore {
   pendingResume: PendingBatch | null;
 
   init: () => Promise<void>;
+  /**
+   * 只拉「与扫描无关」的那批库元数据（标签 / 分组 / 快照 / 收藏 / 备注 / 回收站）。
+   *
+   * 它们全在 `state.json` 里，一次 IPC 各几十微秒，但 `rescan()` 把它们和 `scanFonts()`
+   * 一起 `Promise.all` —— 于是要等全量读完才落地。后果是启动后几秒内「收藏」显示 0
+   * （用户明明收了一个）、回收站也是 0，而这两个数字跟扫描毫无关系。启动时先单独拉一遍。
+   */
+  hydrateMeta: () => Promise<void>;
   rescan: () => Promise<void>;
   restoreLastActivation: () => Promise<void>;
   setFamilyActive: (family: string, active: boolean) => Promise<void>;
@@ -1733,6 +1750,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
   cancelApply: () => set({ applyCancelled: true }),
   overrides: new Map<string, boolean>(),
   seedReady: false,
+  seedLanded: false,
   fullScanDone: false,
   fonts: [],
   tags: {},
@@ -1838,7 +1856,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // 会话中的 rescan 万一重发了种子，主列表被缩成种子子集是最难看的故障（C2）：
     // 用户看着几千个字体突然只剩一百多个，任何操作都不敢做。
     if (get().fonts.length > 0) return;
-    set({ fonts: faces, seedReady: true });
+    // seedLanded 与 seedReady 分开置位：seedReady 含 3s 超时兜底，拿它当计数依据会把
+    // 「空种子 + 空列表」显示成 0 个已启用（库里其实有上千个）。详见类型声明处的注释。
+    set({ fonts: faces, seedReady: true, seedLanded: faces.length > 0 });
   },
 
   applyFullScan: (full) => {
@@ -2105,6 +2125,11 @@ export const useFontStore = create<FontStore>((set, get) => ({
     await listen<OnlineProgress>("online:progress", (e) => {
       set({ onlineProgress: e.payload });
     });
+    // 先单独把「与扫描无关」的库元数据拿回来（标签 / 分组 / 快照 / 收藏 / 备注 / 回收站）。
+    // `rescan()` 把它们和 `scanFonts()` 放在同一个 `Promise.all` 里，等于要等全量读完才落地，
+    // 期间「收藏 0 / 回收站 0」是错的（用户 2026-11-13 实际看到）。这几项全是 state.json
+    // 里的内存数据，加起来几十微秒，必须在种子到达前就位，否则侧栏会出现「已知的量也显示错」。
+    await get().hydrateMeta();
     // 字库扫描（几千个字体）要好几秒甚至十几秒。原来窗口是「扫描完成之后才显示」，
     // 这段时间用户对着空桌面干等，什么反馈都没有。现在窗口先亮出来，里面是骨架屏 +
     // 底部百分比进度条；种子一到就换成真正的列表（见 applySeed），骨架屏随即消失。
@@ -2189,6 +2214,22 @@ export const useFontStore = create<FontStore>((set, get) => ({
       toast.success(t("toast.restoredLast", { count: missing.length }), undefined, "activate");
     } catch (e) {
       toast.error(t("toast.couldntRestoreLast"), String(e));
+    }
+  },
+
+  hydrateMeta: async () => {
+    try {
+      const [tags, collections, snapshots, favorites, notes, trash] = await Promise.all([
+        ipc.getTags(),
+        ipc.getCollections(),
+        ipc.getSnapshots(),
+        ipc.getFavorites(),
+        ipc.getNotes(),
+        ipc.listTrash(),
+      ]);
+      set({ tags, collections, snapshots, favorites, notes, trash });
+    } catch {
+      // 读不到就等 rescan 收尾那次补齐 —— 元数据缺失不该挡住启动，更不该弹错
     }
   },
 

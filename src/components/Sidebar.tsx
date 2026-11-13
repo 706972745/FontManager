@@ -8,7 +8,7 @@ import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { allTags, familiesFor, isSystemFamily, useFontStore, type Family, type Nav } from "../state/fontStore";
 import { faceKey } from "../lib/snapshotKey";
 import { sortContainers } from "../lib/faceContainers";
-import { navCountText } from "../lib/seedOverrides";
+import { countKnown, navCountText } from "../lib/seedOverrides";
 import { exportFontList, snapshotToggleAction } from "../lib/menus";
 import { t as translate, useT } from "../lib/i18n";
 import { formatTagExpiry } from "../lib/tagExpiry";
@@ -236,25 +236,38 @@ export function Sidebar() {
   const intro = useIntro();
   const fonts = useFontStore((s) => s.fonts);
   /**
-   * 首次全量还没落地（含种子已出、全量仍在读）时这些数字都是**错的**：它们全由 `fonts`
-   * 现算，而此刻 fonts 只是全量的一个子集。统一显示 `…`，读完同一帧变成真值（AC-05）。
+   * 侧栏数字的可信度**分两档**，不再是一个开关管全部（用户 2026-11-13 指出第一版太粗）。
    *
-   * 为什么判 `fullScanDone` 而不是 `phase === "scanning"`：`phase` 在**每次**重扫时
-   * 都会回到 scanning（导入字体、watcher 发现变化、换字体库目录都会触发 rescan），
-   * 而 2.1.3 那时用的是旧 `fonts`、显示真实数字。跟着 phase 变的话，用户每导入一个
-   * 字体就看到整列数字变成 `…`，像是数据丢了。用户要的「读取中用 …」只针对打开软件
-   * 后的首次读取，所以这里只认「首次全量是否已落地」。
+   * - `seed`（种子落地即可信）：已启用 / 启用至关闭 / 系统字体 / 每个分组。
+   *   这几类字体**必然全在种子里** —— 种子就是「系统字体 + 台账与注册表里的启用项 +
+   *   分组成员 + 快照成员」拼出来的，所以种子一到它们的数量就确定了。空的就该显示 0，
+   *   打 `…` 等于把一个已知事实藏起来。
+   * - `whole`（必须等全量）：字体库总数、已停用（= 全库 − 已启用）、标签覆盖的族数。
+   *   这三者的分母是整个字库，全量没读完就永远算不准。
    *
-   * 收藏 / 最近导入 / 快照条目 / 回收站不在此列 —— 它们来自 state.json，不依赖扫描。
+   * 为什么都不判 `phase === "scanning"`：`phase` 在**每次**重扫时都会回到 scanning
+   * （导入字体、watcher 发现变化、换字体库目录都会触发 rescan），而 2.1.3 那时计数
+   * 用的是旧 `fonts`、显示真实数字。跟着 phase 变的话，用户每导入一个字体就会看到
+   * 整列数字变成 `…`，第一反应是「数据丢了」。用户要的「读取中用 …」只针对打开软件
+   * 后的首次读取。
+   *
+   * 收藏 / 最近导入 / 快照条目 / 回收站不在此列 —— 它们来自 state.json，不依赖扫描，
+   * 由 `init()` 里的 `hydrateMeta()` 在种子到达前就拉回来。
    */
-  const pendingCounts = useFontStore((s) => !s.fullScanDone);
+  const fullScanDone = useFontStore((s) => s.fullScanDone);
+  const seedLanded = useFontStore((s) => s.seedLanded);
+  const countFlags = { fullScanDone, seedLanded };
+  /** 种子已覆盖全集的那一类（空的显示 0，不是 `…`） */
+  const seedCountsKnown = countKnown("seed", countFlags);
+  /** 要等整个字库才准的那一类 */
+  const wholeCountsKnown = countKnown("whole", countFlags);
   const collectionFaces = useFontStore((s) => s.collectionFaces);
   /**
    * 分组成员数 = 字族级成员 ∪ 字重级成员所在的字族（0.9.9-13）。
    * 只把某个字重放进分组时，计数也要算上那个字族，否则侧栏显示 0、点进去却有卡片。
    */
   const collectionCount = (name: string): number | null => {
-    if (pendingCounts) return null;
+    if (!seedCountsKnown) return null;
     const fams = new Set(collections[name] ?? []);
     const keys = collectionFaces[name] ?? [];
     if (keys.length > 0) {
@@ -298,22 +311,22 @@ export function Sidebar() {
     if (pendingSnapshotFor) setCreatingSnapshot(true);
   }, [pendingSnapshotFor]);
 
-  const familyCount = pendingCounts ? null : familiesFor(fonts, tags).size;
+  const familyCount = wholeCountsKnown ? familiesFor(fonts, tags).size : null;
   const sessionActivated = useFontStore((s) => s.sessionActivated);
   const allFamilies = [...familiesFor(fonts, tags).values()];
-  const activatedCount = pendingCounts
-    ? null
-    : allFamilies.filter(
+  const activatedCount = seedCountsKnown
+    ? allFamilies.filter(
         (f) => (f.active || f.partial) && !sessionActivated.includes(f.name),
-      ).length;
-  const sessionCount = pendingCounts
-    ? null
-    : allFamilies.filter((f) => sessionActivated.includes(f.name)).length;
-  const deactivatedCount = pendingCounts
-    ? null
-    : allFamilies.filter((f) => !f.active).length;
+      ).length
+    : null;
+  const sessionCount = seedCountsKnown
+    ? allFamilies.filter((f) => sessionActivated.includes(f.name)).length
+    : null;
+  const deactivatedCount = wholeCountsKnown
+    ? allFamilies.filter((f) => !f.active).length
+    : null;
   // 与「系统字体」列表用同一个口径（isSystemFamily），否则计数和点进去看到的数量对不上
-  const systemCount = pendingCounts ? null : allFamilies.filter(isSystemFamily).length;
+  const systemCount = seedCountsKnown ? allFamilies.filter(isSystemFamily).length : null;
   const tagCounts = allTags(tags);
   const collapsed = useFontStore((s) => s.collapsedSections);
   const toggleSection = useFontStore((s) => s.toggleSection);
@@ -708,7 +721,9 @@ export function Sidebar() {
                     </span>
                   ) : undefined
                 }
-                count={pendingCounts ? null : count}
+                // 标签覆盖的是「任意带这个标签的族」，它们的字体大多不在种子里，
+                // 只能等全量（见上文 seedCountsKnown / wholeCountsKnown 的分档）
+                count={wholeCountsKnown ? count : null}
                 index={i++}
                 onContextMenu={(e) =>
                   openContextMenu(e, [

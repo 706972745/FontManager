@@ -85,3 +85,22 @@ export function navCountText(count: number | null | undefined): string | null {
   if (count === null) return "…";
   return String(count);
 }
+
+/**
+ * 侧栏某一行的计数什么时候**已经可信**。
+ *
+ * 2.1.4 第一版用「首次全量是否落地」一个开关管住全部数字，用户当场看出不对：
+ * 已启用 / 启用至关闭 / 系统字体 / 分组这几类字体**必然全在种子里**（种子就是由
+ * 系统字体 + 台账/注册表里的启用项 + 分组成员 + 快照成员拼出来的），数量从种子到达
+ * 那一刻起就是确定的 —— 打 `…` 等于把一个已知事实藏起来，而且空分组明明该显示 0。
+ *
+ * 所以按「这个集合是否可能随全量增长」分成两档：
+ * - `seed`：种子已覆盖全集 → 种子落地即可信（空的就显示 0）
+ * - `whole`：要等全库才知道（字体库总数、已停用 = 全库 − 已启用、标签覆盖的族数）
+ */
+export function countKnown(
+  scope: "seed" | "whole",
+  flags: { fullScanDone: boolean; seedLanded: boolean },
+): boolean {
+  return scope === "whole" ? flags.fullScanDone : flags.seedLanded || flags.fullScanDone;
+}

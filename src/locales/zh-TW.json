@@ -1153,7 +1153,7 @@
   "settings.apiClientAddHint": "mcp:claude",
   "settings.apiClientAddBad": "格式要像 mcp:claude 或 api:backup（冒號前是 api / mcp）",
   "settings.apiDangerousAllowHint": "勾 api / mcp = 這一類全部允許（含帶名字的）；想只放行某一個，就按 mcp:名字 單獨新增。",
-  "load.restoringSeed": "正在還原上次啟用的字型…",
+  "load.restoringSeed": "正在載入已啟用、分組與快照字型…",
   "load.backgroundReading": "背景讀取字型庫 {done}/{total}",
   "load.seedReady": "字型庫已就緒",
   "load.partialData": "讀取未完成，部分字型暫時看不到",
