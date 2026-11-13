@@ -1,6 +1,6 @@
 [package]
 name = "fontmanager"
-version = "2.1.0"
+version = "2.2.1"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
 authors = ["IIEOzo"]
 license = "GPL-3.0-only"
