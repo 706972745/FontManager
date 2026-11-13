@@ -27,7 +27,7 @@ import { useT, type TKey } from "../lib/i18n";
 import { dockKeysFor, splitDockHint } from "../lib/dockHint";
 import { useDisplayName } from "../lib/displayName";
 import { copyrightExpired } from "../lib/license";
-import { familyCopyrightClass } from "../lib/license";
+import { familyCopyrightClass, normalizeCopyright } from "../lib/license";
 import { isEnabledNow } from "../lib/familyState";
 import { familyMatches, searchTokens } from "../lib/familySearch";
 import { useFamilyMembership } from "../lib/membership";
@@ -162,11 +162,26 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   // 与筛选同一口径（`familyCopyrightClass`），否则「勾了商用免费却筛出标着未知的卡」
   const licCls = familyCopyrightClass(family.faces, copyrightOverride);
   const licExpired = licCls === "timelimited" && copyrightExpired(copyrightExpiry);
+  // 徽标带日期 + 手动覆盖优先（用户 2026-11-13），与 FamilyCard / SpecimenView 同口径
+  const manualCls = normalizeCopyright(copyrightOverride ?? null);
+  const purchasedText = copyrightExpiry
+    ? t("copyright.purchasedWithDate", { date: copyrightExpiry })
+    : t("copyright.purchasedBadge");
+  const licText =
+    manualCls === "paid"
+      ? t("copyright.paidBadge")
+      : manualCls === "timelimited"
+        ? purchasedText
+        : t(`copyright.${licCls}` as TKey);
   const licTitle = licExpired
     ? `${t("copyright.expiryDate")}: ${copyrightExpiry} — ${t("copyright.expired")}`
-    : licCls === "timelimited" && copyrightExpiry
-      ? `${t("copyright.expiryDate")}: ${copyrightExpiry}`
-      : t("detail.copyright");
+    : manualCls === "paid"
+      ? t("copyright.paidBadge")
+      : manualCls === "timelimited"
+        ? purchasedText
+        : licCls === "timelimited" && copyrightExpiry
+          ? `${t("copyright.expiryDate")}: ${copyrightExpiry}`
+          : t("detail.copyright");
   // 版权原文：优先字形版权声明，退回到许可文本（与详情面板「版权信息」一致）
   const copyright = family.copyright || family.license || lead.copyright || lead.license || "";
   const hasChips =
@@ -321,7 +336,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
         className={`qb-lic ${licExpired ? "is-expired" : ""}`}
         data-hint-text={licTitle}
       >
-        {t(`copyright.${licCls}` as TKey)}
+        {licText}
       </span>
 
       {/* 速览里也能一键收藏 / 打一星（与卡片同一套交互，别让人非得回主界面） */}
