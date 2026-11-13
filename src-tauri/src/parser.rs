@@ -816,24 +816,18 @@ const FAMILY_OVERRIDES: &[(&str, Classification)] = &[
     // 手写关键词表里已有 魏碑 / 北魏，这里再钉一次，防止以后动衬线表时漏掉。
     ("北魏楷", Classification::Script),
     ("魏碑", Classification::Script),
-    // 词边界规则挡掉的两个真手写族（QA Round 1 定）："Chibrush" 的 brush、
-    // "Christopherhand" 的 hand 都长在小写词干的后面，边界判定认不出，
-    // 又不能用「后邻小写也算边界」去放开（那会把 Poppins/Rounded 放回来），
-    // 所以按设计走覆盖表 —— 关键词管一类，覆盖表管指名的那一族。
-    ("Chibrush", Classification::Script),
-    ("Christopherhand", Classification::Script),
+    // 词边界规则挡掉的三个真手写族（QA Round 1 定，2026-11-13）："Chibrush" 的
+    // brush、"Christopherhand" 的 hand、"HanShaoJiehandanti" 的 hand 都长在小写
+    // 词干的后面/中间，边界判定认不出，长词也够不着；又不能用「后邻小写也算边界」
+    // 去放开（那会把 Poppins/Rounded 放回来），所以按设计走覆盖表 ——
+    // 关键词管一类，覆盖表管指名的那一族。**键必须全小写**：匹配是
+    // `lowered_name.contains(kw)`，带大写的键永远命不中（曾是死条目）。
+    ("chibrush", Classification::Script),
+    ("christopherhand", Classification::Script),
+    ("hanshaojiehandanti", Classification::Script),
     // 方正新秀丽：衬线
     ("新秀丽", Classification::Serif),
     ("新秀麗", Classification::Serif),
-    // QA Round 1 真库对拍（2026-11-13）：这两族的命中点嵌在小写串里，词边界
-    // 规则怎么放长词都接不住（`Chibrush` 的 brush 前邻 i、`Christopherhand` 的
-    // hand 前邻 r —— 不是 ing/ic 这类已知后缀）。按本表的既定用途逐族点名纠正，
-    // 不去放松全局词边界（否则 Transcript / Paintbrush 这类尾缀词会被误伤）。
-    ("chibrush", Classification::Script),
-    ("christopherhand", Classification::Script),
-    // 汉仪少杰硬笔行书（QA Round 1 核实为真手写）：`hand` 嵌在小写串中间
-    // （前邻 e / 后邻 a），词边界与长词都够不着，逐族点名。
-    ("hanshaojiehandanti", Classification::Script),
 ];
 
 /// 族名 + 各语言本地化名（去掉空白项，**保留原始大小写**）。
