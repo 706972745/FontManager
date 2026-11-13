@@ -429,6 +429,7 @@ function CopyrightStatusSection({ family }: { family: string }) {
       <div
         className="copyright-status-row"
         role="radiogroup"
+        tabIndex={0}
         aria-label={t("detail.copyrightStatus")}
         onKeyDown={(e) => {
           const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"];
