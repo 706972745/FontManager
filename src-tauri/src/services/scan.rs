@@ -276,8 +276,14 @@ pub fn scan_library(store: &Store, sink: &dyn ScanSink) -> Result<Vec<FontFace>,
     // 同一个 Probe 后面还要给扫描收尾回填 active 复用，不重复枚举注册表。
     let t_seed = std::time::Instant::now();
     let mut cache = crate::fontcache::FontCache::load();
+    let cache_load = t_seed.elapsed();
+    let t_probe = std::time::Instant::now();
     let probe = activation::probe();
-    eprintln!("[scan] probe 耗时 {:?}", t_seed.elapsed());
+    eprintln!(
+        "[scan] 缓存装载 {:?}，probe 耗时 {:?}",
+        cache_load,
+        t_probe.elapsed()
+    );
     {
         let state = store.0.lock().map_err(|e| e.to_string())?;
         let seed = build_seed(&cache, &probe, &state);
