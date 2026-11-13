@@ -3033,6 +3033,33 @@ h2.detail-title.copy-name {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* 结果列表的滚动条整套自管（2026-11-13）：全局那条 10px 宽 + 4.5px 透明边
+   （靠 background-clip: padding-box 把 10px 收成 1px 视觉）套到 6px 宽度上
+   会直接裁没，所以不能用 width 覆盖了事。这里是一条细淡的 6px；
+   鼠标靠近右缘（App 给容器挂 .scroll-hot）也不加宽加深 —— 否则徽章正下方
+   会出现一块变宽变深的灰，看着像「文字压着灰块」。.scroll-hot 挂在滚动容器
+   自己身上，必须用 `.ctx-hits.scroll-hot` 复合选择器才能压过全局的
+   `*::-webkit-scrollbar-thumb`（同为 (0,1,0)，写在前面会被 7729 那段盖回去）。 */
+.ctx-menu .ctx-hits::-webkit-scrollbar {
+  width: 6px;
+}
+.ctx-menu .ctx-hits::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ctx-menu .ctx-hits::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ui-fg) 16%, transparent);
+  border: 0;
+  border-radius: 999px;
+  min-height: 24px;
+}
+.ctx-menu .ctx-hits::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ui-fg) 26%, transparent);
+}
+.ctx-menu .ctx-hits.scroll-hot::-webkit-scrollbar-thumb,
+.ctx-menu .ctx-hits.scroll-hot::-webkit-scrollbar-thumb:hover {
+  border-width: 0;
+  background: color-mix(in srgb, var(--ui-fg) 16%, transparent);
+}
 .ctx-more {
   padding: 6px 9px 7px;
   font-size: 11.5px;
@@ -8401,23 +8428,11 @@ body.ui-fade-out .app-frame {
   margin: 4px 8px;
   background: var(--ui-line);
 }
-/* 菜单顶部那行族名：10px 等宽弱色 + 一条标题线（R4 §5.1）。
-   ⚠️ 必须 border: 0 + border-radius: 0：旧样式把它做成了「搜索框」那种四边描边胶囊，
-   在菜单顶上看着像一个输入框，用户会去点它。这里只留一条下边线。 */
-.ctx-scope {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-tertiary);
-  border: 0;
-  border-bottom: 1px solid var(--ui-line);
-  border-radius: 0;
-  background: none;
-  padding: 2px 2px 7px;
-  margin: 0 2px 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* （2026-11-13 删）R4 §5.1 曾把 .ctx-scope 重样式成「10px 等宽弱色 + 一条下边线」
+   （border: 0 + border-radius: 0 + border-bottom），把 3008 的圆角胶囊整个盖掉，
+   用户看到的是「文字 + 下划线」，以为是个链接。经用户要求恢复 3008-3023 的
+   胶囊描边形态（hover 加深照旧生效），这条 R4 重样式整体移除 —— 想找回看 git。
+   9413 的 font-size 覆盖（--fs-11）保留不动。 */
 
 /* ─── Toast：66px 高、8px 圆角、左侧 2px 蓝竖线（R4 §6.4） ──────────── */
 .toast {
@@ -9834,4 +9849,11 @@ body.tour-qb .qb-actions .qb-btn-text {
    给 flex item 松绑：`min-width: 0`。*/
 .settings-plugin-group .settings-plugin-row > div:not(.settings-plugin-actions) {
   min-width: 0;
+}
+
+/* 输入光标颜色显式声明（2026-11-13）：Windows 11 的「文本光标指示器」开着时
+   会画一个不闪的彩色粗条，那是 OS 级覆盖层，应用侧去不掉；这条只保证指示器
+   关闭后，光标在深浅两套主题下都按主文字色可见，不吃全局 button/input 的继承色。 */
+.topbar-field input, .qb-search input, .ctx-search, .online-search-input {
+  caret-color: var(--text-primary);
 }
