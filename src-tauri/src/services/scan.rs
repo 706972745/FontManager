@@ -30,7 +30,9 @@ fn file_time(path: &str, birth: bool) -> Option<u64> {
     } else {
         meta.modified().ok()?
     };
-    t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs())
+    t.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
 }
 
 /// 种子筛选的全部输入（路径均已按 [`activation::norm_path`] 归一化）。
@@ -72,7 +74,10 @@ pub fn is_seed_face(face: &FontFace, inp: &SeedInput) -> bool {
         return true;
     }
     // ④ 分组：整族成员按族名，字重级成员按 faceKey
-    if inp.collection_families.contains(&face.family.to_lowercase()) {
+    if inp
+        .collection_families
+        .contains(&face.family.to_lowercase())
+    {
         return true;
     }
     let key = crate::services::fonts::face_key(face);
@@ -124,7 +129,11 @@ fn build_seed(
         // 缓存里的 active / added_at 是上次扫描的旧值，必须用本轮 probe 重算，
         // 否则首帧的「已启用」是错的（AC-12/AC-14）。
         f.active = !inp.deactivated.contains(&norm) && activation::is_active(probe, state, &f);
-        f.added_at = state.added.get(&f.path).copied().or_else(|| file_time(&f.path, true));
+        f.added_at = state
+            .added
+            .get(&f.path)
+            .copied()
+            .or_else(|| file_time(&f.path, true));
         if state.unpreviewable.contains(&f.id) && f.incomplete.is_none() {
             f.incomplete = Some(crate::parser::UNPREVIEWABLE_REASON.to_string());
         }
@@ -228,8 +237,9 @@ fn migrate_note_rules(store: &Store) {
 ///
 /// 这是**阻塞调用**：几千个字体要几秒到几分钟，调用方必须放到后台线程
 /// （命令层用 `spawn_blocking`，HTTP 侧用 `tokio::task::spawn_blocking`）。
-pub fn scan_library(store: &Store, sink: &dyn ScanSink) -> Result<Vec<FontFace>, String> {    let (extra, library_dir, linked, unpreviewable) = {
-            let state = store.0.lock().map_err(|e| e.to_string())?;
+pub fn scan_library(store: &Store, sink: &dyn ScanSink) -> Result<Vec<FontFace>, String> {
+    let (extra, library_dir, linked, unpreviewable) = {
+        let state = store.0.lock().map_err(|e| e.to_string())?;
         (
             state.extra_dirs.clone(),
             state.active_library_dir().map(|s| s.to_owned()),
@@ -464,7 +474,10 @@ pub fn scan_library(store: &Store, sink: &dyn ScanSink) -> Result<Vec<FontFace>,
             }
             let _ = store::save(&state);
         }
-        eprintln!("[scan] 已归集 {} 个损坏字体到「非完整字体」", old_to_new.len());
+        eprintln!(
+            "[scan] 已归集 {} 个损坏字体到「非完整字体」",
+            old_to_new.len()
+        );
     }
 
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
@@ -502,7 +515,11 @@ pub fn scan_library(store: &Store, sink: &dyn ScanSink) -> Result<Vec<FontFace>,
         })
         .collect();
 
-    eprintln!("[scan] 全部就绪 {:?}（{} 个字面）", t_scan.elapsed(), faces.len());
+    eprintln!(
+        "[scan] 全部就绪 {:?}（{} 个字面）",
+        t_scan.elapsed(),
+        faces.len()
+    );
     for (orig, parked) in &state.parked {
         for mut f in parser::parse_font_file(std::path::Path::new(parked), FontSource::User) {
             f.id = format!("{}#{}", orig, f.face_index);
@@ -512,7 +529,8 @@ pub fn scan_library(store: &Store, sink: &dyn ScanSink) -> Result<Vec<FontFace>,
             faces.push(f);
         }
     }
-    Ok(faces)}
+    Ok(faces)
+}
 
 #[cfg(test)]
 mod seed_tests {
@@ -677,7 +695,10 @@ mod seed_tests {
     /// 归一化本身：`\\?\` 前缀必须去掉，否则复制/链接进来的字体永远匹配不上
     #[test]
     fn norm_path_strips_long_prefix_and_slashes() {
-        assert_eq!(activation::norm_path(r"\\?\E:\Fonts\A.TTF"), r"e:\fonts\a.ttf");
+        assert_eq!(
+            activation::norm_path(r"\\?\E:\Fonts\A.TTF"),
+            r"e:\fonts\a.ttf"
+        );
         assert_eq!(activation::norm_path("E:/Fonts/A.TTF"), r"e:\fonts\a.ttf");
     }
 
@@ -721,7 +742,11 @@ mod seed_tests {
         let probe = activation::probe();
         let seed = build_seed(&cache, &probe, &state);
         let ids: Vec<&str> = seed.iter().map(|f| f.id.as_str()).collect();
-        assert_eq!(ids.len(), 3, "同路径只出一份，ttc 的两个字面都要在：{ids:?}");
+        assert_eq!(
+            ids.len(),
+            3,
+            "同路径只出一份，ttc 的两个字面都要在：{ids:?}"
+        );
         assert_eq!(seed.iter().filter(|f| f.path == single).count(), 1);
         assert_eq!(seed.iter().filter(|f| f.path == ttc).count(), 2);
         // U11：缓存里写的是 active=true，但那台机器上并没有注册它 → 首帧必须显示停用
@@ -729,6 +754,225 @@ mod seed_tests {
         assert!(
             !seed.iter().any(|f| f.path == single && f.active),
             "缓存里的旧 active 值污染了首帧"
+        );
+    }
+
+    // ── 以下为 QA（2.1.4 独立验证）补充的对抗性用例 ────────────────────────
+    //
+    // 上面 T5 的用例已经钉住了 `is_seed_face` 这一个纯函数的判断，但它们都把
+    // `SeedInput` 直接摆成期望的样子 —— 真正会出错的是**上游 `seed_input` 怎么从
+    // `AppState` 摊平这份集合**（旧格式快照、大小写、系统路径过滤全在这一层）。
+    // 所以这几条一律走 `seed_input` / `build_seed` 端到端，不再手搓 `SeedInput`。
+
+    /// 快照旧格式：`key` 为空、只有 `path` —— 走完整链路（`seed_input` → `is_seed_face`）必须命中。
+    ///
+    /// 为什么单独立一条：`store::de_snapshots` 把老快照转成 `key: ""` + `path: Some(..)`，
+    /// 而前端要等 rescan 返回后才把 path 迁成 key —— 种子发生在 rescan 返回**之前**，
+    /// 所以后端必须自己兜 path 分支。只测 `is_seed_face`（预填 snapshot_paths）测不出
+    /// 「`seed_input` 忘了把 path 塞进集合」这种错。
+    #[test]
+    fn seed_input_maps_legacy_snapshot_path_without_key() {
+        let mut state = store::AppState::default();
+        state.snapshots.push(store::Snapshot {
+            name: "旧格式".to_string(),
+            created_at: 0,
+            entries: vec![store::SnapshotEntry {
+                key: String::new(), // 老数据：key 是空串
+                path: Some(r"E:\Fonts\Old.ttf".to_string()),
+                family: String::new(),
+                style: String::new(),
+                system: false,
+            }],
+        });
+        let inp = seed_input(&activation::probe(), &state);
+        assert!(
+            inp.snapshot_paths
+                .contains(&activation::norm_path(r"e:/fonts/OLD.TTF")),
+            "旧格式快照的 path 没有进 snapshot_paths（大小写/斜杠都要归一化）"
+        );
+        // 端到端：这份快照里的字体必须进种子
+        let f = face(r"E:\Fonts\Old.ttf", "Old", None);
+        assert!(is_seed_face(&f, &inp));
+    }
+
+    /// 快照条目 `key` 与 `path` 都为空（历史脏数据）→ 跳过、不 panic，
+    /// 且**不能**因此中断同一个快照里后面那些正常条目。
+    #[test]
+    fn seed_input_skips_snapshot_entry_without_key_or_path() {
+        let mut state = store::AppState::default();
+        let good = face(r"E:\Fonts\Good.ttf", "Good", Some("Good-Regular"));
+        state.snapshots.push(store::Snapshot {
+            name: "脏数据".to_string(),
+            created_at: 0,
+            entries: vec![
+                store::SnapshotEntry {
+                    key: String::new(),
+                    path: None, // key 与 path 都空
+                    family: String::new(),
+                    style: String::new(),
+                    system: false,
+                },
+                store::SnapshotEntry {
+                    key: crate::services::fonts::face_key(&good),
+                    path: None,
+                    family: "Good".to_string(),
+                    style: "Regular".to_string(),
+                    system: false,
+                },
+            ],
+        });
+        // 不 panic 就是第一层断言
+        let inp = seed_input(&activation::probe(), &state);
+        assert!(
+            inp.snapshot_paths.is_empty(),
+            "空条目不该往路径集合里塞东西"
+        );
+        assert_eq!(inp.snapshot_keys.len(), 1, "后面那条正常条目不能被跳条连累");
+        assert!(is_seed_face(&good, &inp));
+        // 空条目本身匹配不到任何字体
+        let nobody = face(r"E:\Fonts\Nobody.ttf", "Nobody", None);
+        let mut only_empty = input();
+        only_empty.snapshot_keys = inp.snapshot_keys.clone();
+        only_empty.snapshot_paths = inp.snapshot_paths.clone();
+        assert!(!is_seed_face(&nobody, &only_empty));
+    }
+
+    /// R-16 的一个容易搞反的面：字体**在分组里**但用户明确停用过 → 仍然不进种子。
+    /// 同一族里没被停用的兄弟字面照常进种子（不允许「整族只进一半就 panic」或全丢）。
+    #[test]
+    fn deactivated_member_of_a_collection_is_not_seeded() {
+        let off = face(r"E:\Fonts\Fam-Bold.ttf", "Fam", Some("Fam-Bold"));
+        let on = face(r"E:\Fonts\Fam-Regular.ttf", "Fam", Some("Fam-Regular"));
+        let mut state = store::AppState::default();
+        state
+            .collections
+            .insert("分组".to_string(), vec!["Fam".to_string()]);
+        state
+            .deactivated
+            .insert(r"E:\Fonts\Fam-Bold.ttf".to_string());
+        let inp = seed_input(&activation::probe(), &state);
+        assert!(
+            !is_seed_face(&off, &inp),
+            "deactivated 必须压过分组（R-16）：用户明确停用的字体不该被种子拉回来"
+        );
+        assert!(is_seed_face(&on, &inp), "同一族里没被停用的字面仍要进种子");
+    }
+
+    /// 台账命中的路径判定：大小写 + 斜杠 + `\\?\` 长路径前缀三种变体都要能对上。
+    /// 走 `seed_input` 验证（`state.activated` 存的是**原始写法**，归一化发生在这一层）。
+    #[test]
+    fn ledger_hit_tolerates_case_slash_and_verbatim_prefix() {
+        let mut state = store::AppState::default();
+        state.activated.insert(r"\\?\E:\Fonts\Mine.TTF".to_string());
+        let inp = seed_input(&activation::probe(), &state);
+        for path in [
+            r"e:\fonts\mine.ttf",
+            "E:/Fonts/Mine.TTF",
+            r"\\?\E:\Fonts\Mine.ttf",
+        ] {
+            assert!(
+                is_seed_face(&face(path, "Mine", None), &inp),
+                "台账命中判定漏了路径变体：{path}"
+            );
+        }
+    }
+
+    /// `seed_input` 的「台账 ∪ 注册表」并集：台账里的条目必须出现，且并集里**不含系统路径**
+    /// （系统路径由 `is_seed_face` 的第一条单独放行，混进 activated 只会让集合白变大）。
+    #[test]
+    fn seed_input_unions_ledger_with_registry_and_drops_system_paths() {
+        let mut state = store::AppState::default();
+        state.activated.insert(r"E:\Fonts\Ledger.ttf".to_string());
+        let inp = seed_input(&activation::probe(), &state);
+        assert!(
+            inp.activated
+                .contains(&activation::norm_path(r"E:\Fonts\Ledger.ttf")),
+            "台账条目没有并进 activated"
+        );
+        #[cfg(target_os = "windows")]
+        assert!(
+            !inp.activated.iter().any(|p| activation::is_system_font(p)),
+            "系统字体路径不该混进 activated（它们有单独的入种路径）"
+        );
+        // deactivated 同样要归一化，否则「停用过的字体」会被当成没停用
+        assert!(inp.deactivated.is_empty());
+    }
+
+    /// 同一路径同时命中**四路**（台账 + 分组族名 + 分组 faceKey + 快照旧格式 path）
+    /// → 种子只出 1 份。三路去重已经由 T5 覆盖，这里把第四路（旧格式快照 path）也压上。
+    #[test]
+    fn build_seed_dedupes_when_all_four_sources_hit_one_path() {
+        let p = touch("four-sources");
+        let f = face(&p, "Four", Some("Four-Regular"));
+        let mut cache = crate::fontcache::FontCache::empty();
+        cache.put(&p, 1, 1, FontSource::User, &[f.clone()]);
+
+        let mut state = store::AppState::default();
+        state.activated.insert(p.clone());
+        state
+            .collections
+            .insert("组".to_string(), vec!["Four".to_string()]);
+        state.prefs = serde_json::json!({
+            "collectionFaces": { "组": [crate::services::fonts::face_key(&f)] }
+        });
+        state.snapshots.push(store::Snapshot {
+            name: "s".to_string(),
+            created_at: 0,
+            entries: vec![store::SnapshotEntry {
+                key: String::new(),
+                path: Some(p.clone()),
+                family: String::new(),
+                style: String::new(),
+                system: false,
+            }],
+        });
+
+        let seed = build_seed(&cache, &activation::probe(), &state);
+        assert_eq!(seed.len(), 1, "四路同时命中只该出一份：{seed:?}");
+        assert_eq!(seed[0].path, p);
+    }
+
+    /// 缓存为空 → 种子为空，不 panic（D-1：缓存版本作废 / 文件损坏的降级路径）
+    #[test]
+    fn build_seed_on_empty_cache_is_empty_and_silent() {
+        let cache = crate::fontcache::FontCache::empty();
+        let mut state = store::AppState::default();
+        state.activated.insert(r"E:\Fonts\Whatever.ttf".to_string());
+        assert!(build_seed(&cache, &activation::probe(), &state).is_empty());
+    }
+
+    /// `ScanSink::seed` 必须有**默认空实现**：`api.rs` 的 `NullSink` 一行都没改就靠它。
+    /// 一旦有人把它改成必填方法，HTTP 侧立刻编译不过（那是 P0），但更隐蔽的是有人
+    /// 把「每进程只发一次」的守卫搬进 `scan_library` —— 本用例同时钉住「只实现
+    /// progress + batch 的 sink 也能编译运行」这条契约。
+    #[test]
+    fn scan_sink_seed_is_optional_for_http_side_sinks() {
+        struct HttpishSink;
+        impl ScanSink for HttpishSink {
+            fn progress(&self, _done: usize, _total: usize) {}
+            fn batch(&self, _faces: &[FontFace]) {}
+            // 刻意不实现 seed()
+        }
+        HttpishSink.seed(&[]); // 默认实现可调用 = 守卫不可能在这里生效
+    }
+
+    /// 端到端版的 R-16：同一条路径**同时**出现在 `state.activated`（台账）与
+    /// `state.deactivated`（用户明确停用过），且两者写法不同（大小写 / 斜杠）→ 必须不进种子。
+    ///
+    /// 这一条比 `deactivated_beats_ledger` 多测了一层：归一化发生在 `seed_input` 里，
+    /// 只要那一层漏了 `norm_path`，两边字符串就永远不相等，`deactivated` 静默失效 ——
+    /// 症状是「用户停用过的字体每次启动都被种子拉回来」，而且日志里看不出任何异常。
+    #[test]
+    fn seed_input_deactivated_beats_ledger_across_spellings() {
+        let mut state = store::AppState::default();
+        state.activated.insert(r"E:\Fonts\Conflict.ttf".to_string());
+        state
+            .deactivated
+            .insert("e:/fonts/CONFLICT.TTF".to_string());
+        let inp = seed_input(&activation::probe(), &state);
+        assert!(
+            !is_seed_face(&face(r"E:\Fonts\Conflict.ttf", "Conflict", None), &inp),
+            "deactivated 与台账写法不同时，R-16 就静默失效了"
         );
     }
 
