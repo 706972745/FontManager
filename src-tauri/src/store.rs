@@ -886,28 +886,23 @@ fn migrate_to_data_root(notes: &mut Vec<String>) -> MigrationOutcome {
     //      1. 目标账本已写入且真的能反序列化（证明不是搬了个空文件）；
     //      2. 白名单全部搬成功（不是「中途报错退出」）；
     //      3. 目标不是老位置本身（真的改道了）。
+    //
+    //    删除**必须在后台线程里跑**（2.1.5 实测）：`preview-cache` 383MB + `thumb-cache`
+    //    删一遍约 151 秒，而这一步在 `store::load()` 里、`tauri::Builder` 之前 ——
+    //    同步删会让首次升级启动**黑屏两分半**，用户以为卡死（其实账本早就落盘了）。
+    //    旧缓存目录已经不会再被读取（新缓存全部写进 `data\`），异步删是安全的。
+    //    已知限制：进程若在删完之前被强杀，会留下部分残留（下次启动不补删 ——
+    //    幂等出口看到 state.json 就直接返回了），用户可手动删，只占磁盘不影响功能。
     let state_ok = fs::read(&target_state)
         .ok()
         .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
         .is_some();
     if state_ok && failures.is_empty() {
-        for cache in ["preview-cache", "thumb-cache"] {
-            let dir = source.join(cache);
-            if !dir.is_dir() {
-                continue;
-            }
-            match fs::remove_dir_all(&dir) {
-                Ok(()) => notes.push(format!(
-                    "store: 已清理旧缓存目录 {}（纯生成物，会自动重建）",
-                    dir.display()
-                )),
-                // 文件被占用是常态（预览/缩略图还在被读），不重试也不影响功能。
-                Err(e) => notes.push(format!(
-                    "store: 旧缓存目录 {} 删不掉（不影响功能，用户可手动删）：{e}",
-                    dir.display()
-                )),
-            }
-        }
+        spawn_legacy_cache_cleanup(source.clone());
+        notes.push(format!(
+            "store: 已在后台清理旧缓存目录 {}\\preview-cache 与 \\thumb-cache（不阻塞启动）",
+            source.display()
+        ));
     } else if !failures.is_empty() {
         notes.push(format!(
             "store: 有 {} 项没能搬过去，旧缓存目录保留不删：{}",
@@ -921,6 +916,36 @@ fn migrate_to_data_root(notes: &mut Vec<String>) -> MigrationOutcome {
         target.display()
     ));
     MigrationOutcome::Done
+}
+
+/// 后台删掉老位置的两个纯缓存目录（**唯一**会删东西的地方，R-03）。
+///
+/// 为什么要开线程而不是就地删：实测删 `preview-cache`(383MB) + `thumb-cache` 约 151 秒，
+/// 而调用方在 `store::load()` 里、`tauri::Builder` 之前 —— 同步删会让首次升级启动
+/// 黑屏两分半，用户以为软件卡死（其实账本早已落盘，只是窗口还没建）。
+/// 旧缓存目录不会再被读取（新缓存都写进 `data\`），所以异步删是安全的。
+///
+/// 线程里的失败只记日志：文件被占用是常态（预览/缩略图可能还在被读），
+/// 不重试、不拦启动、不影响功能 —— 用户可手动删，只占磁盘。
+fn spawn_legacy_cache_cleanup(source: PathBuf) {
+    std::thread::spawn(move || {
+        for cache in ["preview-cache", "thumb-cache"] {
+            let dir = source.join(cache);
+            if !dir.is_dir() {
+                continue;
+            }
+            match fs::remove_dir_all(&dir) {
+                Ok(()) => crate::diag::log(&format!(
+                    "store: 已清理旧缓存目录 {}（纯生成物，会自动重建）",
+                    dir.display()
+                )),
+                Err(e) => crate::diag::log(&format!(
+                    "store: 旧缓存目录 {} 删不掉（不影响功能，用户可手动删）：{e}",
+                    dir.display()
+                )),
+            }
+        }
+    });
 }
 
 /// 写「搬家进行中」标记。内容只有时间戳与源路径，方便事后对着日志还原现场。
