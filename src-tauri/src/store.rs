@@ -232,7 +232,7 @@ impl AppState {
             }
             self.activated
                 .retain(|p| p != path && crate::activation::norm_path(p) != norm);
-            false
+            true
         }
     }
 
@@ -802,5 +802,60 @@ mod tests {
         assert_eq!(second["soundPref"], "on");
         assert!(!path.with_extension("json.tmp").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── 激活台账（2.1.4） ──────────────────────────────────────────
+
+    /// U13/U14：重复 add / 重复 remove 都是幂等的，返回值恰好表示「这次真的改了没有」。
+    /// 返回值直接决定要不要落盘（一次整份 state.json），改错的代价是每次点开关都多写 2MB。
+    #[test]
+    fn record_activated_is_idempotent() {
+        let mut state = AppState::default();
+        let path = r"E:\Fonts\幂等.ttf";
+        assert!(state.record_activated(path, true), "第一次 add 应该算改动");
+        assert!(!state.record_activated(path, true), "重复 add 不该再算改动");
+        assert_eq!(state.activated.len(), 1);
+        assert!(state.record_activated(path, false));
+        assert!(!state.record_activated(path, false), "重复 remove 不该再算改动");
+        assert!(state.activated.is_empty());
+    }
+
+    /// U13：同一文件的大小写 / 斜杠变体只留一条。
+    /// 反例（不清变体）：`D:\a.ttf` 与 `d:\A.TTF` 同时存在，台账随会话线性膨胀，
+    /// 而且下一次启动会为「同一个字体」算两条种子。
+    #[test]
+    fn record_activated_collapses_case_variants() {
+        let mut state = AppState::default();
+        assert!(state.record_activated(r"D:\a.ttf", true));
+        assert!(state.record_activated("d:/A.TTF", true));
+        assert_eq!(state.activated.len(), 1, "大小写变体必须被清掉");
+        // 撤一条时也要把变体一起撤掉，否则「停用了却还在台账里」
+        assert!(state.record_activated(r"D:\a.ttf", false));
+        assert!(state.activated.is_empty());
+    }
+
+    /// U12：系统字体路径不落账（PRD §6：台账里出现系统路径即视为脏数据）
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn record_activated_ignores_system_fonts() {
+        let mut state = AppState::default();
+        assert!(!state.record_activated(r"C:\Windows\Fonts\arial.ttf", true));
+        assert!(!state.record_activated("c:/windows/fonts/Arial.TTF", true));
+        assert!(state.activated.is_empty());
+    }
+
+    /// D10：台账按「本轮扫到的路径」裁剪 —— 但**不能**误删仍然存在的路径
+    /// （大小写 / 斜杠与台账里的写法不同也一样要留住）。
+    #[test]
+    fn retain_activated_keeps_live_paths() {
+        let mut state = AppState::default();
+        state.activated.insert(r"E:\Fonts\live.ttf".into());
+        state.activated.insert(r"E:\Fonts\gone.ttf".into());
+        let alive: HashSet<String> = [crate::activation::norm_path("e:/fonts/LIVE.ttf")]
+            .into_iter()
+            .collect();
+        assert_eq!(state.retain_activated(&alive), 1);
+        assert_eq!(state.activated.len(), 1);
+        assert!(state.activated.contains(r"E:\Fonts\live.ttf"), "活着的路径被误删了");
     }
 }
