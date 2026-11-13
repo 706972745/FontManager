@@ -5946,6 +5946,32 @@ h2.detail-title.copy-name {
   color: var(--text-primary);
   font-weight: 600;
 }
+/* 标签到期的红色小字（用户 2026-11-13：到期日直接删标签，日期要显眼） */
+.tag-expiry-date {
+  color: var(--expiry-red);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.tag-expiry-btn {
+  opacity: 0;
+  transition: opacity var(--t-quick) ease;
+}
+.tag-chip:hover .tag-expiry-btn {
+  opacity: 1;
+}
+.tag-expiry-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.tag-expiry-label {
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  flex: none;
+}
 /* 时间限制版权的到期日期设置 */
 .copyright-expiry-row {
   display: flex;

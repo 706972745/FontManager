@@ -37,6 +37,11 @@
   --warning: #d4d4d8;
   --error: #d4d4d8;
 
+  /* 标签到期的红色小字（用户 2026-11-13 明确点名「红色」）。
+     全局语义色都是灰度（见 app.css 的说明），只有这一处按用户要求给了真红，
+     别拿它当通用错误色用。 */
+  --expiry-red: #e5484d;
+
   --badge-otf: #d4d4d8;
   --badge-ttf: #d4d4d8;
   --badge-woff: #d4d4d8;
@@ -109,6 +114,7 @@
   --success: #3f3f46;
   --warning: #3f3f46;
   --error: #3f3f46;
+  --expiry-red: #d13438;
   --badge-otf: #3f3f46;
   --badge-ttf: #3f3f46;
   --badge-woff: #3f3f46;
