@@ -503,7 +503,7 @@ Release 说明中的 SHA-256。
    ├─ online\ Trash\          在线目录 / 许可证 / 回收站
 ```
 
-装到 `D://Apps//FontManager`，上面这些就全在 D 盘。若该目录当前用户不可写
+装到 `D:\Apps\FontManager`，上面这些就全在 D 盘。若该目录当前用户不可写
 （典型是 MSI 版装进 `Program Files`），数据会回退到
 `%LOCALAPPDATA%\FontManager\data`；`activation.log` 第一行永远写着实际位置：
 `data_root=… source=install|localappdata|roaming(fallback)`。
