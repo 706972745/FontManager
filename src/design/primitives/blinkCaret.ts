@@ -56,16 +56,19 @@ export function charLengthAt(value: string, idx: number): number {
 export interface CoveredCharBox {
   /** 块左缘：已做左缘裁切（滚出可视区左边的部分收回到 0）。 */
   left: number;
-  /** 块宽：被左缘裁切后可能小于字符 advance；右缘不裁，wrapper 的 overflow:hidden 兜住。 */
+  /** 块宽：被左缘裁切后可能变小；右缘不裁，wrapper 的 overflow:hidden 兜住。 */
   width: number;
   /** 被覆盖的字符（含完整增补平面对）；空输入为 null。 */
   char: string | null;
-  /** 白字形相对块左缘的偏移（左缘被裁时 > 0，让白字贴回字符的真实位置）。 */
+  /** 白字形相对块左缘的偏移（可为负：滚出可视区左边的部分由块 overflow:hidden 裁掉）。 */
   glyphShift: number;
 }
 
 /**
  * 算块状光标的几何：盖住光标前面那个字符。
+ *
+ * 「清晰度优先于严丝合缝」（用户 2026-11-13 补充口径）：块比字符**宽一档**
+ * （`blockPad` 左右各加几 px），白字四周留蓝边，一眼看清是哪个字。
  *
  * @param value       当前值
  * @param selectionStart 光标位置（code unit；越界先夹取）
@@ -75,7 +78,8 @@ export interface CoveredCharBox {
  * @param _contentWidth 输入框内容区宽度。**当前未用**：右缘裁切交给 wrapper 的
  *   overflow:hidden（块允许部分可见），左缘裁切在函数内做；留参数位以便将来
  *   需要按右缘收窄时不用改调用方。
- * @returns 盒子；空输入时 char = null（组件渲染 0.55em 空块）。
+ * @param blockPad    块比字符左右各多出的内边距（px）；0 = 严丝合缝。
+ * @returns 盒子；空输入时 char = null（组件渲染空块，宽度走 CSS）。
  */
 export function coveredCharBox(
   value: string,
@@ -84,17 +88,21 @@ export function coveredCharBox(
   charWidth: number,
   scrollLeft: number,
   _contentWidth: number,
+  blockPad = 0,
 ): CoveredCharBox {
   const idx = coveredIndexFor(value, selectionStart);
   if (idx < 0 || value.length === 0) {
     return { left: 0, width: 0, char: null, glyphShift: 0 };
   }
-  const rawLeft = startWidth - scrollLeft;
-  // 左缘裁切：字符滚出可视区左边的部分收回到 0，白字形用 glyphShift 贴回真实位置；
-  // 右缘交给 wrapper 的 overflow:hidden（块可以部分可见）。
+  const rawCharLeft = startWidth - scrollLeft;
+  // 块左缘 = 字符左缘 − blockPad；滚出可视区左边的部分夹回 0
+  const rawLeft = rawCharLeft - blockPad;
   const left = Math.max(0, rawLeft);
-  const glyphShift = left - rawLeft;
-  const width = Math.max(0, charWidth - glyphShift);
+  // 白字形相对块左缘的偏移：可为负（字符滚出左边时白字也被块裁掉一半，
+  // 与底下真实字形的可见部分保持一致）
+  const glyphShift = rawCharLeft - left;
+  // 块右缘 = 字符右缘 + blockPad；宽度 = 右缘 − 左缘
+  const width = Math.max(0, glyphShift + charWidth + blockPad);
   const char = value.slice(idx, idx + charLengthAt(value, idx));
   return { left, width, char, glyphShift };
 }
