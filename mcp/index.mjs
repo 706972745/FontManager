@@ -9,7 +9,10 @@
  * 用法：先在 FontManager 设置 → 本地 API 打开开关，再在 MCP 客户端里登记本脚本：
  *   { "mcpServers": { "fontmanager": { "command": "node", "args": ["<此文件绝对路径>"] } } }
  *
- * 服务发现：读 %APPDATA%\FontManager\api.json（端口 + 令牌 + base）。
+ * 服务发现：读「数据根」下的 api.json（端口 + 令牌 + base）。
+ *   2.1.5 起默认在 `<安装目录>\data\api.json`，NSIS 默认装到
+ *   %LOCALAPPDATA%\FontManager，所以常见位置是 %LOCALAPPDATA%\FontManager\data；
+ *   老版本与兜底位置是 %APPDATA%\FontManager\api.json。候选顺序见 apiJsonCandidates()。
  */
 
 import fs from "node:fs";
@@ -34,26 +37,63 @@ const CLIENT_NAME = (() => {
 })();
 const SERVER_INFO = { name: "fontmanager", version: "1.0.0" };
 
-function apiJsonPath() {
+function apiJsonCandidates() {
   const appData =
     process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-  return path.join(appData, "FontManager", "api.json");
+  const localAppData =
+    process.env.LOCALAPPDATA ||
+    path.join(os.homedir(), "AppData", "Local");
+  const out = [];
+  // 2.1.5 起 api.json 跟着「数据根」走，默认在 <安装目录>\data 下，而 NSIS 版默认就装在
+  // %LOCALAPPDATA%\FontManager —— 所以 %LOCALAPPDATA%\FontManager\data 同时覆盖了
+  // 「默认安装」与「装到 Program Files 后的回退位置」两种最常见情况。
+  //
+  // 装到 D:\Apps\FontManager 这类自定义目录时，MCP 这边无从推断（它只是个独立进程）。
+  // 两种出口：① 设置 → 本地 API 的报错文案里会显示 api.json 的**实际绝对路径**，
+  // 把这个路径塞进 ZFM_API_JSON 环境变量即可；② 也可以直接设 ZFM_DATA_DIR。
+  if (process.env.ZFM_API_JSON) out.push(process.env.ZFM_API_JSON);
+  if (process.env.ZFM_DATA_DIR)
+    out.push(path.join(process.env.ZFM_DATA_DIR, "api.json"));
+  out.push(path.join(localAppData, "FontManager", "data", "api.json"));
+  out.push(path.join(appData, "FontManager", "api.json"));
+  return out;
+}
+
+function apiJsonPath() {
+  // 报错文案里要给出「我们找过哪儿」，所以返回候选列表里的第一个存在的，
+  // 都不存在时返回第一个候选（= 最常见的位置），提示语才有意义。
+  const list = apiJsonCandidates();
+  for (const p of list) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      /* 权限问题就当它不存在，继续试下一个 */
+    }
+  }
+  return list[0];
 }
 
 function readApi() {
-  const p = apiJsonPath();
-  try {
-    const doc = JSON.parse(fs.readFileSync(p, "utf8"));
-    if (!doc.port || !doc.token) throw new Error("api.json 缺 port/token");
-    return {
-      base: doc.base || `http://127.0.0.1:${doc.port}/api/v1`,
-      token: doc.token,
-      port: doc.port,
-    };
-  } catch (e) {
-    const hint = `读不到 ${p}：${e.message}。请打开 FontManager → 设置 → 本地 API，把开关打开后再试。`;
-    throw new Error(hint);
+  const tried = [];
+  for (const p of apiJsonCandidates()) {
+    try {
+      const doc = JSON.parse(fs.readFileSync(p, "utf8"));
+      if (!doc.port || !doc.token) throw new Error("api.json 缺 port/token");
+      return {
+        base: doc.base || `http://127.0.0.1:${doc.port}/api/v1`,
+        token: doc.token,
+        port: doc.port,
+      };
+    } catch (e) {
+      tried.push(`${p}（${e.code === "ENOENT" ? "不存在" : e.message}）`);
+    }
   }
+  throw new Error(
+    `读不到 api.json，找过这些位置：\n  ${tried.join(
+      "\n  "
+    )}\n请打开 FontManager → 设置 → 本地 API，把开关打开后再试；` +
+      `装到自定义目录时可以用 ZFM_API_JSON 指向实际的 api.json。`
+  );
 }
 
 async function call(method, route, body) {

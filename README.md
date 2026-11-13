@@ -445,7 +445,9 @@ Manual steps (any version):
 4. Try it (PowerShell):
 
 ```powershell
-$cfg = Get-Content "$env:APPDATA\FontManager\api.json" | ConvertFrom-Json
+# api.json 现在跟着「数据根」走。默认安装（NSIS，装在 %LOCALAPPDATA%\FontManager）
+# 就是下面这个路径；装到别的目录时换成 <安装目录>\data\api.json。
+$cfg = Get-Content "$env:LOCALAPPDATA\FontManager\data\api.json" | ConvertFrom-Json
 curl.exe -H "Authorization: Bearer $($cfg.token)" $cfg.base/health
 curl.exe -H "Authorization: Bearer $($cfg.token)" "$($cfg.base)/fonts?q=noto&limit=10"
 curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: application/json" `
@@ -498,8 +500,11 @@ minted at enable time. **No FontManager change needed.** To see what you actuall
 }
 ```
 
-3. Done — the MCP server **reads `%APPDATA%\FontManager\api.json` automatically**
-   for port and token, so resetting the token never breaks your config.
+3. Done — the MCP server **finds `api.json` on its own** (it looks in
+   `%LOCALAPPDATA%\FontManager\data\`, then `%APPDATA%\FontManager\`) for port
+   and token, so resetting the token never breaks your config. If you installed
+   FontManager outside `%LOCALAPPDATA%`, point `ZFM_API_JSON` at the actual file —
+   the "Settings → Local API" error message prints the full path.
    WorkBuddy: connector manager → custom MCP → paste → "Trust"; Claude Desktop and
    Cursor work the same way.
 
@@ -559,6 +564,32 @@ Grab the latest installer from
 Both are **unsigned** builds; SmartScreen may ask for confirmation. Verify the
 SHA-256 in the release notes before running.
 
+**Where your data lives (2.1.5+)** — the app, your font library and everything the
+app produces stay inside the install folder, so moving or backing up FontManager is
+just moving one folder:
+
+```
+<install folder>\            NSIS default: %LOCALAPPDATA%\FontManager
+├─ fontmanager.exe
+├─ 字体库\                    your fonts (user assets — never auto-deleted)
+├─ plugins\                   plugins (user assets)
+└─ data\                      everything the app generates:
+   ├─ state.json              tags, collections, favorites, activation ledger, snapshots
+   ├─ prefs.json              settings
+   ├─ font-cache.json         parse cache (rebuilds itself)
+   ├─ api.json                local API port + token
+   ├─ activation.log          diagnostics
+   ├─ preview-cache\ thumb-cache\   regenerated on demand
+   ├─ online\ Trash\          downloads, licenses, recycle bin
+```
+
+Install it to `D://Apps//FontManager` and all of the above lives on `D:`.
+If the folder is not writable (typically the MSI build under `Program Files`),
+data falls back to `%LOCALAPPDATA%\FontManager\data`, and the first line of
+`activation.log` always tells you where: `data_root=… source=install|localappdata|roaming(fallback)`.
+Upgrading from 2.1.4 copies the old `%APPDATA%\FontManager` data into `data\`
+automatically and keeps the old folder as a backup.
+
 ### Uninstalling
 
 The NSIS uninstaller's confirmation page has a **"Delete app data"** checkbox:
@@ -567,10 +598,14 @@ The NSIS uninstaller's confirmation page has a **"Delete app data"** checkbox:
   plugins, runtimes, `state.json`, caches, notes and snapshots are kept, so a
   reinstall picks up right where you left off.
 - **Checked** — everything this app created is removed as well: `字体库`,
-  `plugins`, `python-runtime` and `node-runtime` inside the install folder,
+  `plugins`, `data` (state / prefs / caches / logs / online downloads / trash),
+  `python-runtime` and `node-runtime` inside the install folder,
   `%APPDATA%\FontManager` (plus the `ZFontManager` folder left behind by 0.8.x),
-  `%LOCALAPPDATA%\FontManager\字体库`, the three file-association registry keys,
-  and HKCU font-registry values whose data points into those font libraries.
+  `%LOCALAPPDATA%\FontManager\data` and `%LOCALAPPDATA%\FontManager\字体库`,
+  the three file-association registry keys, and HKCU font-registry values whose
+  data points into those font libraries. `data` is only removed when it actually
+  contains our own files (`state.json` / `font-cache.json` / `api.json` / the
+  `.zfm-data-root` marker).
 
 Cleanup is a strict allowlist: system fonts, system font-registry entries, fonts
 in user-selected library folders, unrelated files in the install folder, and

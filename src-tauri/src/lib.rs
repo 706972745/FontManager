@@ -2123,7 +2123,8 @@ fn open_folder(path: String) -> Result<(), String> {
     }
 }
 
-/// activation.log 的完整路径（`%APPDATA%\FontManager\activation.log`）。
+/// activation.log 的完整路径（2.1.5 起跟着数据根走，默认 `<安装目录>\data\activation.log`；
+/// 装到不可写目录时会落到 `%LOCALAPPDATA%\FontManager\data`，最后才兜底 `%APPDATA%\FontManager`）。
 ///
 /// 界面上「查看日志」按钮先问它要路径，再交给 [`open_file`] 打开。
 /// 只返回路径、不保证文件存在：首次启动还没写过日志时前端仍能把话说全。
@@ -2906,11 +2907,14 @@ pub fn run() {
                 }
             }
             // 预览修复缓存也要能被 asset 协议读到：它不在字体库目录里，
-            // 配置里的 $APPDATA 指向的是带应用标识的目录，覆盖不到这里
+            // 配置里的 $APPDATA 指向的是带应用标识的目录，覆盖不到这里。
+            // 2.1.5 起它跟着数据根走（`<安装目录>\data\preview-cache`）——
+            // **不需要改 CSP / scope 配置**，因为这两处 allow_dir 拿的就是缓存目录本身，
+            // 路径自动跟随（0.9.4 的 os error 3 就是漏了这一层）。
             if let Some(dir) = preview_font::cache_root() {
                 allow_dir(app.handle(), &dir);
             }
-            // 缩略图目录同理：它也在应用数据目录下，asset scope 覆盖不到
+            // 缩略图目录同理：它也在数据根下，asset scope 覆盖不到
             if let Some(dir) = thumb::root() {
                 allow_dir(app.handle(), &dir);
             }
