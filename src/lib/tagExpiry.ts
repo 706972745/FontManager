@@ -36,3 +36,25 @@ export function isTagExpired(date: string, now = new Date()): boolean {
 export function parseTagExpiry(raw: unknown): string | null {
   return typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
 }
+
+/**
+ * sweep 的单步收尾（纯函数，便于单测）：
+ * `removeTagEverywhere` 内部会吞掉逐族失败并回滚、**不抛出** —— 只能靠
+ * 「标签是否还挂在任何字族上」判断成败。部分失败时**保留到期键**（下一轮
+ * sweep 自然重试），只有真删干净才允许删键 + 发「已自动移除」toast。
+ *
+ * 返回新的 tagExpiry；返回 null = 失败，键保留、跳过 toast。
+ */
+export function sweepTagResult(
+  tagExpiry: Record<string, string>,
+  tags: Record<string, string[]>,
+  tag: string,
+): Record<string, string> | null {
+  const gone = !Object.values(tags).some(
+    (list) => Array.isArray(list) && list.includes(tag),
+  );
+  if (!gone) return null;
+  const next = { ...tagExpiry };
+  delete next[tag];
+  return next;
+}

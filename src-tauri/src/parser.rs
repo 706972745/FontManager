@@ -776,6 +776,10 @@ const SCRIPT_KEYWORDS: &[&str] = &[
     "行楷", "魏碑", "北魏", "瘦金", "颜体", "顏體", "柳体", "柳體", "签名", "簽名", "手绘",
     "手繪", // 西文手写体
     "brush", "script", "hand", "handwrit", "roundhand", "cursive", "calligraph",
+    // 长词版（QA Round 1 真库对拍，2026-11-13）：`handwrit` 这类短词被词边界挡住，
+    // 接不住最常见的 `Handwriting`（后随 ing）/ `Calligraphic`（后随 ic）——
+    // 整词长词天然满足边界（命中后是词尾）。`brushhand` 是 Hobbiton Brushhand 这类。
+    "handwriting", "calligraphic", "calligraphy", "brushscript", "brushhand", "scripture",
 ];
 
 /// 衬线关键词。
@@ -812,9 +816,21 @@ const FAMILY_OVERRIDES: &[(&str, Classification)] = &[
     // 手写关键词表里已有 魏碑 / 北魏，这里再钉一次，防止以后动衬线表时漏掉。
     ("北魏楷", Classification::Script),
     ("魏碑", Classification::Script),
+    // 词边界规则挡掉的两个真手写族（QA Round 1 定）："Chibrush" 的 brush、
+    // "Christopherhand" 的 hand 都长在小写词干的后面，边界判定认不出，
+    // 又不能用「后邻小写也算边界」去放开（那会把 Poppins/Rounded 放回来），
+    // 所以按设计走覆盖表 —— 关键词管一类，覆盖表管指名的那一族。
+    ("Chibrush", Classification::Script),
+    ("Christopherhand", Classification::Script),
     // 方正新秀丽：衬线
     ("新秀丽", Classification::Serif),
     ("新秀麗", Classification::Serif),
+    // QA Round 1 真库对拍（2026-11-13）：这两族的命中点嵌在小写串里，词边界
+    // 规则怎么放长词都接不住（`Chibrush` 的 brush 前邻 i、`Christopherhand` 的
+    // hand 前邻 r —— 不是 ing/ic 这类已知后缀）。按本表的既定用途逐族点名纠正，
+    // 不去放松全局词边界（否则 Transcript / Paintbrush 这类尾缀词会被误伤）。
+    ("chibrush", Classification::Script),
+    ("christopherhand", Classification::Script),
 ];
 
 /// 族名 + 各语言本地化名（去掉空白项，**保留原始大小写**）。
@@ -1772,6 +1788,31 @@ mod tests {
         assert_eq!(cjk_class(&["돋움체"]), Classification::Sans);
     }
 
+    /// QA Round 1 的回归单（2026-11-13）：词边界匹配把这 9 个真手写/书法族打丢了。
+    /// 前 6 个必须回到 script（手写表补完整词形 + 覆盖表钉 Chibrush / Christopherhand）；
+    /// 后 4 个是**有意放过**的 —— 名字里带 hand 但本就不是手写体，
+    /// 别看到「hand 没命中」就当 bug 再修一遍（关键词表注释里也写了）。
+    #[test]
+    fn qa_round1_handwriting_families() {
+        for name in [
+            "PP Handwriting",
+            "Calligraphic",
+            "Chibrush",
+            "Christopherhand",
+            "Hobbiton Brushhand",
+            "SnellRoundhand",
+        ] {
+            assert_eq!(west_class(&[name]), Classification::Script, "{name} 该判手写");
+        }
+        for name in ["Handgranade", "Handyfont", "Handyman's Special", "John Handy LET"] {
+            assert_ne!(
+                west_class(&[name]),
+                Classification::Script,
+                "{name} 不是手写体（有意放过）"
+            );
+        }
+    }
+
     /// 拉丁关键词的词边界匹配（用户 2026-11-13 裁定）：`pop` 不许命中 `Poppins`。
     #[test]
     fn latin_keywords_match_on_word_boundaries() {
@@ -2625,5 +2666,65 @@ mod tests {
         assert_eq!(collapse_style_suffix("Source Han Serif SC"), None);
         assert_eq!(collapse_style_suffix("Source-Han-Serif"), None);
         assert_eq!(collapse_style_suffix("Noto-Sans-CJK"), None);
+    }
+
+    // ── QA Round 1 真库对拍（2026-11-13）：词边界不能把手写族打丢 ──────────
+    //
+    // 真库 5625 个文件对拍时发现：`handwrit` 这类短词被词边界规则挡住
+    // （`Handwriting` 命中后随 `ing`、`Calligraphic` 后随 `ic`，after_ok=false），
+    // 九个真手写族从 script 掉到 display/sans。修法 = 关键词表补整词长词 +
+    // 覆盖表点名（Chibrush / Christopherhand 的命中点嵌在小写串里，长词也接不住）。
+    //
+    // 断言走 `classify_by_name` 整链而不是 `contains_latin_word` 单点：
+    // 以后改编排顺序（展示/衬线/无衬线的先后）也不会悄悄回归。
+
+    /// QA 验收门：这些真手写族必须判成 script，不能因为词边界掉进兜底。
+    #[test]
+    fn script_keywords_survive_ing_and_ic_suffixes() {
+        for name in [
+            "PP Handwriting",
+            "Roundhand BB",
+            "Calligraphic",
+            "Chibrush",
+            "Hobbiton Brushhand",
+            "Christopherhand",
+        ] {
+            assert_eq!(
+                classify_by_name(&[name.to_string()]),
+                Some(Classification::Script),
+                "{name} 是手写体，不能因为词边界掉到兜底"
+            );
+        }
+    }
+
+    /// 新长词的其它形态：小写开头 / 带连字符 / CamelCase / 原词。
+    #[test]
+    fn script_long_keywords_match_word_variants() {
+        for name in [
+            "handwriting-regular", // 全小写文件名形态：连字符是分隔符，边界仍成立
+            "BrushScript",         // CamelCase：brushscript 整词命中
+            "English Calligraphy", // 原词
+            "Scripture Pro",       // scripture
+        ] {
+            assert_eq!(
+                classify_by_name(&[name.to_string()]),
+                Some(Classification::Script),
+                "{name} 应命中手写长词"
+            );
+        }
+    }
+
+    /// 有意放过（QA 裁定）：Handgranade / Handyfont / John Handy LET 不是手写体，
+    /// 旧的 substring 命中是误伤，掉进兜底（display / 字形层）才是对的 ——
+    /// 这条是反向门：别让「救回来」的改动顺手把它们也捞回 script。
+    #[test]
+    fn hand_prefix_non_script_names_stay_unclassified() {
+        for name in ["Handgranade", "Handyfont", "John Handy LET"] {
+            assert_eq!(
+                classify_by_name(&[name.to_string()]),
+                None,
+                "{name} 不是手写体，不该被手写层接住"
+            );
+        }
     }
 }
