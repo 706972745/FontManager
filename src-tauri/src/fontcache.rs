@@ -29,7 +29,10 @@ use std::path::PathBuf;
 // v9：localizedNames 从「有 nameID 16 就丢掉 nameID 1」改成两组取并集 ——
 // 一批中文字体的中文名只写在 legacy 记录里，之前整个丢了（显示英文名、搜中文名搜不到）。
 // 名字是烤进缓存字面的，旧缓存必须重解析一次。
-const CACHE_VERSION: u32 = 9;
+// v10：分类判定重做（2026-11-13）—— 名字优先、逐层短路、判不出兜底成「展示」，
+// 不再产出 Unknown。`classification` 是烤进缓存字面的，v9 及以前的缓存里
+// 存着 2371 个字面的 Unknown（还有 迷你简综艺=script 这类错值），必须整库重算。
+const CACHE_VERSION: u32 = 10;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
