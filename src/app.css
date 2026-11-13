@@ -9826,3 +9826,12 @@ body.tour-qb .qb-actions .qb-btn-text {
   white-space: nowrap;
   font-family: var(--font-mono, ui-monospace, monospace); /* 只有这一行用等宽，错误信息对字符敏感 */
 }
+
+/* 上面那条省略号要生效，**左列必须先能收缩**：`.settings-plugin-row` 是 flex 容器，
+   左列那个裸 <div> 默认 `min-width: auto`，min-content 等于原因行 nowrap 的全宽
+   （真实崩溃消息带 Windows 绝对路径，实测 157 字符 / 765px），于是它压根不肯窄，
+   省略号永远不触发，整行被撑开、右边三个按钮被顶出面板，还让整个设置面板出现横向滚动条。
+   给 flex item 松绑：`min-width: 0`。*/
+.settings-plugin-group .settings-plugin-row > div:not(.settings-plugin-actions) {
+  min-width: 0;
+}
