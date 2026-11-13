@@ -3,7 +3,8 @@
 ; Tauri 内置卸载确认页已经有「删除应用数据」复选框：
 ;   $DeleteAppDataCheckboxState = 1  -> 用户勾选「同时删除全部数据」
 ; 内置脚本只清 $APPDATA\<bundleId> / $LOCALAPPDATA\<bundleId>（WebView2 缓存），
-; 但本软件的数据在 %APPDATA%\FontManager、0.8.x 一路用下来的旧目录 ZFontManager、
+; 但本软件的数据自 2.1.5 起在 <安装目录>\data（老版本与回退情况在 %APPDATA%\FontManager）、
+; 0.8.x 一路用下来的旧目录 ZFontManager、
 ; 以及安装目录下的字体库 / plugins / *-runtime，还有 HKCU 字体表与文件关联，这里补齐。
 ;
 ; 原则（重要）：白名单精确删除。
@@ -25,6 +26,37 @@
   DetailPrint "正在等待 FontManager 的 WebView2 进程退出…"
   nsExec::ExecToLog 'powershell.exe -NoProfile -EncodedCommand ZgBvAHIAKAAkAGkAPQAwADsAJABpACAALQBsAHQAIAAxADIAMAA7ACQAaQArACsAKQB7ACQAbAA9AEcAZQB0AC0AQwBpAG0ASQBuAHMAdABhAG4AYwBlACAAVwBpAG4AMwAyAF8AUAByAG8AYwBlAHMAcwAgAC0ARgBpAGwAdABlAHIAIAAiAE4AYQBtAGUAPQAnAG0AcwBlAGQAZwBlAHcAZQBiAHYAaQBlAHcAMgAuAGUAeABlACcAIgAgAHwAIABXAGgAZQByAGUALQBPAGIAagBlAGMAdAB7ACQAXwAuAEMAbwBtAG0AYQBuAGQATABpAG4AZQAgAC0AYQBuAGQAIAAkAF8ALgBDAG8AbQBtAGEAbgBkAEwAaQBuAGUALgBDAG8AbgB0AGEAaQBuAHMAKAAnAGYAbwBuAHQAbQBhAG4AYQBnAGUAcgAuAGUAeABlACcAKQB9ADsAIABpAGYAKAAtAG4AbwB0ACAAJABsACkAewBiAHIAZQBhAGsAfQA7ACAAUwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBNAGkAbABsAGkAcwBlAGMAbwBuAGQAcwAgADIANQAwAH0A'
   Pop $R9
+!macroend
+
+; 1.8.8 起：安装器创建/写 $INSTDIR\data 与 .zfm-data-root 标记（2.1.5）
+;
+; 只做三件事：建目录、探针、写标记。**绝不**在这里建 字体库 / plugins：
+;   · 字体库的位置由程序自己决定（它有三级回退 + `pin_legacy_library` 钉住老库）；
+;   · plugins 有它自己的「老用户不搬家」规则，安装器插一手会和程序打架。
+; 探针写不进去（Program Files + 普通用户）就什么都不做 —— 程序启动时自己会探针并
+; 回退到 %LOCALAPPDATA%\FontManager\data，装不进去不是错误，只是要换个地方写。
+;
+; 为什么标记文件用追加（"a"）而不是覆盖（"w"）：程序迁移成功后会往同一个文件
+; 追加 migrated=1，升级安装时如果把文件重写一遍，那行历史就没了（不致命，
+; 但排查「这台机器到底迁过没有」时少一条证据）。
+!macro NSIS_HOOK_POSTINSTALL
+  CreateDirectory "$INSTDIR\data"
+  ClearErrors
+  FileOpen $R8 "$INSTDIR\.zfm-data-probe" w
+  ${If} ${Errors}
+    DetailPrint "安装目录当前用户不可写，运行时数据将回退到 %LOCALAPPDATA%\FontManager\data"
+  ${Else}
+    FileClose $R8
+    Delete "$INSTDIR\.zfm-data-probe"
+
+    ClearErrors
+    FileOpen $R8 "$INSTDIR\data\${ZFM_DATA_MARKER}" a
+    ${IfNot} ${Errors}
+      FileWrite $R8 "v=1$\r$\n"
+      FileWrite $R8 "version=${VERSION}$\r$\n"
+      FileClose $R8
+    ${EndIf}
+  ${EndIf}
 !macroend
 
 ; 判断 $R2（HKCU Fonts 值的数据 = 字体文件绝对路径）是否落在指定前缀内。
@@ -71,6 +103,28 @@
     Delete "$INSTDIR\snapshot-icon.ico"
     Delete "$INSTDIR\pack-icon.ico"
     Delete "$INSTDIR\data-icon.ico"
+
+    ; 2.1b 2.1.5 的数据根（<安装目录>\data，账本 / 偏好 / 缓存 / 日志 / 在线目录都在里面）
+    ;
+    ; ⚠️ 这一段**必须**留在上面那个 ${If} $DeleteAppDataCheckboxState = 1 ${AndIf}
+    ;    $UpdateMode <> 1 括号里面。挪出去 = 升级（/UPDATE）时把用户 1.7MB 的账本
+    ;    （标签/分组/收藏/台账/快照）连带删掉，且卸载器不会问一句 —— 这是 2.1.5
+    ;    最容易被「顺手优化」搞出来的事故（设计文档 R-04）。
+    ;
+    ; 先认特征文件再整删：用户完全可能把自建文件丢进 data\（目录名太普通了），
+    ; 一个特征文件都没有就说明这目录不是我们建的，别动。
+    ${If} ${FileExists} "$INSTDIR\data\state.json"
+    ${OrIf} ${FileExists} "$INSTDIR\data\font-cache.json"
+    ${OrIf} ${FileExists} "$INSTDIR\data\api.json"
+    ${OrIf} ${FileExists} "$INSTDIR\data\${ZFM_DATA_MARKER}"
+      RMDir /r "$INSTDIR\data"
+    ${EndIf}
+
+    ; 2.1c 程序在「安装目录不可写」时的回退位置（MSI 装到 Program Files、或用户强行
+    ;      /D 装到 Program Files 时数据会跑到这里）。同样先认特征文件。
+    ${If} ${FileExists} "$LOCALAPPDATA\FontManager\data\state.json"
+      RMDir /r "$LOCALAPPDATA\FontManager\data"
+    ${EndIf}
 
     ; 2.2 应用数据目录：确认含有本软件特征文件才整体删除
     ${If} ${FileExists} "$APPDATA\FontManager\state.json"
@@ -126,6 +180,11 @@
     !insertmacro ZFM_MATCH_FONT_PREFIX "$LOCALAPPDATA\FontManager\字体库\"
     !insertmacro ZFM_MATCH_FONT_PREFIX "$APPDATA\FontManager\"
     !insertmacro ZFM_MATCH_FONT_PREFIX "$APPDATA\ZFontManager\"
+    ; 2.1.5 预防性一条：当前字体库**不在** data 下（见 ADR-D2，字体是用户资产，
+    ; 不跟数据混在一层），所以这条今天匹配不到任何东西。
+    ; 留着是因为将来若真把库搬进 data\，忘了加这条的后果是「卸载后 HKCU 里残留
+    ; 一堆指向已删文件的字体项」—— 那比多一行没用的前缀难查得多。
+    !insertmacro ZFM_MATCH_FONT_PREFIX "$INSTDIR\data\"
     ${If} $R6 = 1
       ClearErrors
       DeleteRegValue HKCU "Software\Microsoft\Windows NT\CurrentVersion\Fonts" "$R1"
