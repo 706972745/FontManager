@@ -2508,6 +2508,24 @@ mod tests {
         );
     }
 
+    /// 上一条测试只能证明「plugins.rs 这边拼出来的名字对」，证明不了「diag.rs 那边
+    /// rename 的落点也是这个名字」—— 两边各写了一遍字面量 `old.log`。
+    ///
+    /// 这条直接把 diag.rs 的源码读进来，确认轮转那一行还是
+    /// `path.with_extension("old.log")`。diag.rs 一旦改轮转名（或换成
+    /// `with_file_name("activation.bak")`），这里立刻红，不会出现「测试全绿但线上捞不到」。
+    ///
+    /// 注：理想做法是 diag.rs 暴露 `rotated_log_path()`，两边都调它，就不用这条字符串检查了。
+    #[test]
+    fn diag_rotation_source_uses_same_extension() {
+        let src = include_str!("diag.rs");
+        assert!(
+            src.contains(r#"path.with_extension("old.log")"#),
+            "diag.rs 的轮转落点不再是 path.with_extension(\"old.log\")；\
+             plugins::last_error_for 的兜底路径已对不上，必须同步修改"
+        );
+    }
+
     #[test]
     fn install_zip_updates_existing_dir_with_same_id() {
         // 目录名 font-sync != id com.fontmanager.font-sync：更新必须落进旧目录，
