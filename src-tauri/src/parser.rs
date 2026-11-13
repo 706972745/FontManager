@@ -1785,6 +1785,27 @@ mod tests {
         assert_eq!(cjk_class(&["돋움체"]), Classification::Sans);
     }
 
+    /// 覆盖表键必须**全小写**（QA Round 1 之后钉死的守卫）。
+    ///
+    /// 匹配是 `lowered_name.contains(kw)` —— 带大写的键永远命不中，是**死条目**：
+    /// 它不报错、不生效，测试绿了也是「碰巧被别人的正确实现兜住」（2a69bbc 里
+    /// 的 `("Chibrush", …)` 大写键就是活例，直到 4d3c166 才清掉）。谁再往表里
+    /// 塞带大写的键，这条立刻红。
+    #[test]
+    fn family_overrides_keys_are_lowercase() {
+        assert!(
+            !FAMILY_OVERRIDES.is_empty(),
+            "覆盖表被清空了？这张表是纠错机制，不该是空的"
+        );
+        for (key, _) in FAMILY_OVERRIDES {
+            assert_eq!(
+                *key,
+                key.to_lowercase(),
+                "覆盖表键「{key}」带大写 —— 它永远命不中（匹配前名字会被小写化），请改成全小写"
+            );
+        }
+    }
+
     /// QA Round 1 的回归单（2026-11-13）：词边界匹配把这 9 个真手写/书法族打丢了。
     /// 前 6 个必须回到 script（手写表补完整词形 + 覆盖表钉 Chibrush / Christopherhand）；
     /// 后 4 个是**有意放过**的 —— 名字里带 hand 但本就不是手写体，
