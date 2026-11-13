@@ -265,15 +265,27 @@ Function ZfmWelcome
   ; 整页白底：给内页本身刷背景色，否则会露出系统灰
   SetCtlColors $0 "0x241C1C" "0xFFFFFF"
 
+  ; ── 版面（2026-11-13 截图实测后重排的，别再凭感觉改）──
+  ;   · 内页可用高度约 **153u**，不是 200u+。第一版按 200u 排版，页脚 -22u 解析成
+  ;     「距顶 153-22≈131u」，正好压在正文 L2（124u 起）上 —— 屏幕上两行字叠在一起。
+  ;   · 100% DPI 下 **1u ≈ 1.88px**（截图客户端 662×416、内页起点 y≈84px 实测）。
+  ;   · **负值坐标 = 距底**，按页面**实际高度**解析，不是固定像素：
+  ;     -18u → 距顶 ≈ 153-18 = 135u。所以负值的落点会随内页高度/DPI 变，
+  ;     改版面前先确认这两个数（153u / 1.88px）是否仍然成立。
+  ;   · 布局表（自上而下，y 为距顶，h 为高）：
+  ;       大标题 26u/30u → 副标题 58u/14u → 细线 82u/1u → 正文 L1 92u/12u
+  ;       → 正文 L2 108u/12u（底边 120u）→ 页脚 -18u/10u（距顶约 135u，与 L2 隔 15u）
+  ;   · L2 底边与页脚之间至少 12u 间距是硬要求（截图量出来的最小不重叠距离）。
+
   ; 大标题 22pt/700（#1c1c24）
-  ${NSD_CreateLabel} 16u 40u -32u 30u "$(ZM_WELCOME_TITLE)"
+  ${NSD_CreateLabel} 16u 26u -32u 30u "$(ZM_WELCOME_TITLE)"
   Pop $1
   CreateFont $2 "$(^Font)" "22" "700"
   SendMessage $1 ${WM_SETFONT} $2 0
   SetCtlColors $1 "0x241C1C" "0xFFFFFF"
 
   ; 副标题 10pt/400（#727279）
-  ${NSD_CreateLabel} 16u 72u -32u 14u "$(ZM_WELCOME_SUB)"
+  ${NSD_CreateLabel} 16u 58u -32u 14u "$(ZM_WELCOME_SUB)"
   Pop $3
   CreateFont $4 "$(^Font)" "10" "400"
   SendMessage $3 ${WM_SETFONT} $4 0
@@ -281,20 +293,20 @@ Function ZfmWelcome
 
   ; 1u 高的「细线」：NSIS 没有 Line 控件，用一个实心背景的静态控件模拟（标准做法）。
   ; 用 u 不用 px —— 150% 下 1px 会消失，1u 会变成约 2px（可接受）。
-  ${NSD_CreateLabel} 16u 96u -32u 1u ""
+  ${NSD_CreateLabel} 16u 82u -32u 1u ""
   Pop $5
   SetCtlColors $5 "0xEFEFEF" "0xEFEFEF"
 
   ; 正文两行：拆成两个 Label，不用 $\r$\n —— 不同 DPI 下 $\r$\n 的折行位置不可控
-  ${NSD_CreateLabel} 16u 108u -32u 12u "$(ZM_WELCOME_L1)"
+  ${NSD_CreateLabel} 16u 92u -32u 12u "$(ZM_WELCOME_L1)"
   Pop $6
   SetCtlColors $6 "0x797272" "0xFFFFFF"
-  ${NSD_CreateLabel} 16u 124u -32u 12u "$(ZM_WELCOME_L2)"
+  ${NSD_CreateLabel} 16u 108u -32u 12u "$(ZM_WELCOME_L2)"
   Pop $7
   SetCtlColors $7 "0x797272" "0xFFFFFF"
 
-  ; 页脚小字（#9b9ba0）：y 用负数 = 距底 22u
-  ${NSD_CreateLabel} 16u -22u -32u 10u "$(ZM_FOOT)"
+  ; 页脚小字（#9b9ba0）：y 用负值 = 距底（见上面版面表里的实测说明）
+  ${NSD_CreateLabel} 16u -18u -32u 10u "$(ZM_FOOT)"
   Pop $8
   SetCtlColors $8 "0xA09B9B" "0xFFFFFF"
 
@@ -386,6 +398,17 @@ Function PageReinstall
     StrCpy $R1 "$(olderOrUnknownVersionInstalled)"
     StrCpy $R2 "$(uninstallBeforeInstalling)"
     StrCpy $R3 "$(dontUninstall)"
+    ; ★ 2.1.5 一行默认值修正（不是语义变更）：默认勾选**第 2 个** radio。
+    ;   $R3 = dontUninstall = 「直接覆盖安装（推荐）」。不改的话默认停在第 1 个
+    ;   （uninstallBeforeInstalling = 先卸载再安装）上，用户直接点下一步就走了卸载分支，
+    ;   卸载成功但安装失败 = 这台机器上没软件了。
+    ;   ⚠️ 这里只写 $ReinstallPageCheck 的**初值**；上面 $R1/$R2/$R3 的映射与
+    ;   PageLeaveReinstall 的分支逻辑一个字节都不许动（R-18 红线）。
+    ;   `== 0` 守卫：用户返回上一页再进来时，保留他上次的选择
+    ;   （PageReinstallUpdateSelection 只在点过 radio 之后才写 1/2）。
+    ${If} $ReinstallPageCheck == 0
+      StrCpy $ReinstallPageCheck 2
+    ${EndIf}
     !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(choowHowToInstall)"
   ; Downgrading
   ${ElseIf} $R0 = -1
@@ -393,8 +416,14 @@ Function PageReinstall
     StrCpy $R2 "$(uninstallBeforeInstalling)"
     !if "${ALLOWDOWNGRADES}" == "true"
       StrCpy $R3 "$(dontUninstall)"
+      ; 同上：默认停在第 2 个（= 直接覆盖安装）。只改初值，不动 R-18 映射。
+      ${If} $ReinstallPageCheck == 0
+        StrCpy $ReinstallPageCheck 2
+      ${EndIf}
     !else
       StrCpy $R3 "$(dontUninstallDowngrade)"
+      ; 这里**不**改默认：禁止降级时第 2 个 radio 是禁用的（下面 EnableWindow 0），
+      ; 默认勾一个灰掉的选项等于给用户一个点不动的「推荐」。
     !endif
     !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(choowHowToInstall)"
   ${Else}
