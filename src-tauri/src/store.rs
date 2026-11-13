@@ -844,6 +844,23 @@ mod tests {
         assert!(state.activated.is_empty());
     }
 
+    /// 撤一条台账时，写法与台账里那条**不同**（大小写 / 斜杠）也必须撤掉。
+    ///
+    /// 反例：只用 `p != path` 判存在性 → `existed == false` → 提前 return，
+    /// 于是「用文件夹里的大小写点停用」永远撤不掉台账，下次启动又被种子拉回来 ——
+    /// 用户会觉得「这个字体停用不掉」。`had_variant` 这一支必须参与判断。
+    #[test]
+    fn record_activated_remove_matches_variant_spelling() {
+        let mut state = AppState::default();
+        assert!(state.record_activated(r"E:\Fonts\V.ttf", true));
+        // 只有变体、没有逐字相同的那条
+        assert!(
+            state.record_activated("e:/fonts/v.TTF", false),
+            "变体写法撤账也必须算改动（否则不会落盘）"
+        );
+        assert!(state.activated.is_empty());
+    }
+
     /// D10：台账按「本轮扫到的路径」裁剪 —— 但**不能**误删仍然存在的路径
     /// （大小写 / 斜杠与台账里的写法不同也一样要留住）。
     #[test]
