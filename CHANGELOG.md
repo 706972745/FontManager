@@ -4,6 +4,111 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.5] — 2026-11-13
+
+> **数据跟着安装目录走**：装到 D 盘，标签 / 分组 / 收藏 / 台账 / 快照 / 缓存 / 日志 / 在线下载全在
+> `D:\…\data` 下，C 盘不再新增长出来的软件数据；安装器界面同时重做成黑白灰的现代排版，
+> 换掉了那张 NSIS 自带的蓝色侧栏图。升级老版本时数据自动搬过去，旧目录留一份当退路。
+
+### 安装器 · 观感与排版
+
+- **蓝色侧栏图没了**。此前欢迎页/完成页左侧是 NSIS 自带的 `win.bmp`（一张 2003 年风格的蓝天图），
+  和主程序的黑白灰完全不搭。现在换成白底 + 一根细线 + 居中单色图标。注意这里不是「放不放图」的选择题：
+  `MUI_WELCOMEFINISHPAGE_BITMAP` 的默认值就是那张蓝图，**置空会编译期报错**，所以必须提供自己的
+  `sidebar.bmp`（164×314 24bit，由 `src-tauri/windows/gen-nsis-images.py` 用纯标准库生成，可重新生成）。
+- **一屏五行废话砍到三行**。此前欢迎页是 MUI 默认文案（「建议关闭其它所有程序」之类），
+  占满一屏还没说清这软件是干什么的。现在标题 + 两行说明 + 版本号，其余留白。
+- **完成页会告诉你数据在哪**。此前装完只有一句「完成」。现在多一行「数据保存在安装目录的 data 文件夹，
+  卸载时可选择是否保留」—— 「装到 D 盘数据在哪」这个问题不该让用户去翻文档。
+- **安装位置页顶部有一句人话**：「程序、字体库和全部数据都会保存在这个目录下。以后想整体搬走，
+  直接搬这个文件夹即可。」
+- **选中 `C:\Program Files` 会当场被拦下**。此前普通用户选 Program Files 时，NSIS 会在写 exe
+  那一步报 `Error opening file for writing`，然后留下一个「目录建了、文件没写、注册表没写全」的半装状态。
+  现在目录页离开时先做写探针（建目录 → 写一个 0 字节文件 → 删掉），失败就弹提示并停在原页。
+- **升级时目录页被跳过、装回原目录**。此前理论上允许升级时改安装目录 —— 老用户手滑把
+  `%LOCALAPPDATA%\FontManager` 改成 `D:\FontManager`，装完就是两套（快捷方式指向新的，
+  字体库和账本留在旧的），用户看到的是「升个级标签分组全没了」。现在注册表里已有安装目录时
+  直接跳过这一页并锁回去（显式 `/D=` 仍然按用户意愿执行，留给企业静默部署）。
+- **中英双语，跟随系统**。此前只有英文（MUI 默认）。现在 `languages: ["SimpChinese","English"]`，
+  不显示语言选择框；文案集中在 `src-tauri/windows/zfm-strings.nsh`，与模板分离。
+- **全程没有 `SetDetailsPrint none`**：安装过程中的 DetailPrint 明细仍可在「显示详细信息」里展开。
+  好看不能以「静默安装失败时零线索」为代价。
+
+### 数据落盘 · 全部收进安装目录
+
+- **`<安装目录>\data` 成为唯一数据根**。此前是 `%APPDATA%\FontManager`（1.2.4 至今），
+  装到 D 盘也只是程序在 D 盘、数据留在 C 盘。现在 `state.json` / `prefs.json` / `font-cache.json` /
+  `system-ps.json` / `api.json` / `activation.log` / `preview-cache` / `thumb-cache` / `online` /
+  `staging` / `Trash` 全在 `data` 下。
+- **`字体库` 与 `plugins` 故意**不**搬进 `data`**：它们本来就在安装目录下（用户的原话是「都放在
+  安装地址下面」，这两个已经满足），而且字体是**用户资产**、插件自带运行时。搬一次要改 4 处口径、
+  动几个 GB 的文件、改写 state 里几千条绝对路径 —— 收益为 0，事故面极大。
+- **四条判定链，只锚定一次**：`ZFM_DATA_DIR`（排障用，需绝对路径且真的可写）→ `<安装目录>\data`
+  已存在即锚定 → 可写就建 → `%LOCALAPPDATA%\FontManager\data` → 最后兜底 `%APPDATA%\FontManager`。
+  为什么不每次重新探测：用户今天以管理员身份跑一次（Program Files 可写）、明天普通权限跑
+  （不可写），数据就会在两处之间横跳，表现为「我的标签怎么少了一半」。
+- **`activation.log` 第一行就写数据位置**：`data_root=<路径> source=install|localappdata|roaming(fallback)`。
+  四条分支在界面上长得一模一样，有这一行，「你的数据在哪」一句话就能答。
+- **修掉一处会让老用户插件全消失的隐患**：`plugins::legacy_plugins_dir()` 原本写成
+  `app_data_dir().join("plugins")`。`app_data_dir()` 语义一改，这个「老位置」会漂到
+  `<安装目录>\data\plugins`，于是「老位置有插件 → 沿用老位置」的规则判定成「老位置什么都没有」，
+  老用户几十个插件会在界面上全部消失（文件其实还在 `%APPDATA%` 里）。现已钉死到
+  `legacy_app_data_dir()`。
+- **本地 API 的报错文案不再骗人**：此前硬编码「令牌在 `%APPDATA%\FontManager\api.json`」，
+  路径一改就是让用户去空目录里找。现在动态拼实际路径。
+- **MCP 服务发现跟着改**：`mcp/index.mjs` 依次找 `ZFM_API_JSON` → `$ZFM_DATA_DIR\api.json` →
+  `%LOCALAPPDATA%\FontManager\data\api.json` → `%APPDATA%\FontManager\api.json`
+  （后两个覆盖「默认安装」与「装到 Program Files 后的回退」两种常见情况）。
+
+### 升级迁移 · 一个都不能少
+
+- **自动把 `%APPDATA%\FontManager` 的数据复制进 `data\`**，然后才切过去：`state.json`（标签 / 分组 /
+  收藏 / 启停台账 / 快照）、`state.json.bak*`（滚动备份是救命绳）、`prefs.json*`、`font-cache.json`、
+  `system-ps.json`、`api.json`、`activation.log*`、`Trash\`、`online\`、`Deactivated\`、`plugins\`
+  （仅当 `<安装目录>\plugins` 还不存在时）。
+- **`preview-cache`（实测 385 MB）与 `thumb-cache`（上限 256 MB）不搬**：纯生成物，搬一遍要读 640 MB
+  写 640 MB，机械盘上是分钟级，而用户的感受是「升级卡住了」。
+- **copy 不 move**：搬到一半失败（磁盘满 / 权限 / 杀软拦）时源文件已经没了的场景绝不允许发生；
+  而且用户回退到 2.1.4 时还能接着用旧位置。代价是 `%APPDATA%\FontManager` 剩一份约 9 MB 的副本。
+- **账本先写 `.tmp` 再 rename**，且回读校验字节数：直接 copy 到 `state.json` 被打断会留下半份文件，
+  下次启动会被当成「坏文件」走留证 + 回滚流程，用户看到的是「标签少了一半」。
+- **`.zfm-migrate-in-progress` 标记**挡住最致命的一条链：迁移中途失败 → data 目录只剩半个 `.tmp` →
+  下次启动当成全新安装 → 把默认 state 写进去 → **几年的账本被一份空账本覆盖**。
+  只要标记在，`load()` 就绝不会以「空账本」启动；老位置也没有可用账本时宁可用弹窗报错并停下。
+- **任一失败就回退老位置**：搬不动就继续用 `%APPDATA%\FontManager`，功能完全正常，下次启动重试。
+- **只有一处会删东西**：老位置的 `preview-cache` / `thumb-cache`，且必须同时满足「目标账本已写入
+  并能反序列化」「白名单全部搬成功」「目标不是老位置本身」三个条件。
+- **幂等**：唯一判据是 `data\state.json` 是否存在。它还有两个副作用 —— 卸载时保留数据再装到别的目录，
+  会自动「收养」旧账本；连续启动多次不会重复搬。
+- **迁移期间的日志延后写**：迁移过程中数据根还可能回退，那时写日志会分裂到两个文件、
+  还会先建一个空的 `activation.log` 再被 copy 覆盖（丢掉会话头）。现在先收集，等路径定下来再统一落。
+
+### 卸载 · 口径只加不减
+
+- 勾「同时删除应用数据」时新增两条白名单：`<安装目录>\data`（先认 `state.json` /
+  `font-cache.json` / `api.json` / `.zfm-data-root` 任一特征文件，避免误删用户塞进同名目录的东西）
+  与 `%LOCALAPPDATA%\FontManager\data`（Program Files 安装时的回退位置）。
+- **这两段在 `$UpdateMode <> 1` 括号里面**，覆盖升级（`/UPDATE`）时一个字节都不动 ——
+  挪出去等于升级时把用户 1.7 MB 的账本连根删掉。
+- `RMDir "$INSTDIR"` 保持非递归：`data` 存在时它自动失败，正是我们要的。
+- 字体注册项的前缀白名单追加 `$INSTDIR\data\`（**预防性**：当前字体库不在 data 下，
+  这条今天匹配不到任何东西；留着是为了将来若真把库搬进 data，不会残留一堆指向已删文件的字体项）。
+
+### 已知差异（不是 bug）
+
+- **MSI 版**（按机器装进 `Program Files`）在普通权限下写不了程序目录，数据会走
+  `%LOCALAPPDATA%\FontManager\data` 回退分支 —— 这是「程序目录不可写」的自洽行为。
+  MSI 卸载也没有「删除应用数据」复选框，数据永远保留。
+- **`bundle.targets` 仍是 `"all"`**，NSIS 与 MSI 都出。
+- **安装器不是无边框自绘窗口**：进度条、目录树、按钮仍由 Windows 主题绘制，
+  做不到参考图那种「控件全自绘」的排版。理由写在模板头部注释里：自绘等于把
+  拖拽、DPI 换屏、键盘可达性、高对比度全部自己兜，维护成本远超收益。
+- **设置页没有「数据位置」这一行**（需要 3 个 i18n key × 9 种语言，列 P2）：
+  位置信息这一版由「安装器完成页文案 + 启动日志第一行 + README」三处承担。
+- **安装器模板是从 Tauri CLI 2.12.2 内嵌模板 fork 的**（984 行 handlebars）。
+  升级 Tauri 时必须重新提取上游模板与 `src-tauri/windows/installer.nsi` 做 diff，
+  否则上游对安装器的修复不会自动进来，而且**不会有任何报错**。
+
 ## [2.1.4] — 2026-11-13
 
 > **打开就能用**：启动时先只装载「上次已启用 + 系统字体 + 分组内 + 快照内」这一批字体并立即可用，

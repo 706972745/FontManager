@@ -7,7 +7,11 @@
 
 1. FontManager 在运行；
 2. FontManager → 设置 → 本地 API，开关打开（端口自动即可）；
-3. 服务器自己读 `%APPDATA%\FontManager\api.json` 拿端口和令牌，**不需要你手动填**。
+3. 服务器自己找 `api.json` 拿端口和令牌，**不需要你手动填**。2.1.5 起它默认在
+   `<安装目录>\data\api.json`（NSIS 默认装在 `%LOCALAPPDATA%\FontManager`，所以
+   常见位置是 `%LOCALAPPDATA%\FontManager\data\api.json`）；MCP 会依次找
+   `%LOCALAPPDATA%\FontManager\data\`、`%APPDATA%\FontManager\`。装在自定义目录时
+   用环境变量 `ZFM_API_JSON` 指向实际文件即可。
    （重置令牌后不用改配置 —— api.json 会更新，MCP 下次调用自动用新的。）
 
 ## 接入方法

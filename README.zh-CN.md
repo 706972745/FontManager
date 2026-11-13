@@ -367,7 +367,9 @@ fontTools，位于软件目录 `python-runtime/`）——**机器上没装 Pytho
 4. 试试看（PowerShell / curl）：
 
 ```powershell
-$cfg = Get-Content "$env:APPDATA\FontManager\api.json" | ConvertFrom-Json
+# api.json 现在跟着「数据根」走。默认安装（NSIS，装在 %LOCALAPPDATA%\FontManager）
+# 就是下面这个路径；装到别的目录时换成 <安装目录>\data\api.json。
+$cfg = Get-Content "$env:LOCALAPPDATA\FontManager\data\api.json" | ConvertFrom-Json
 # 健康检查
 curl.exe -H "Authorization: Bearer $($cfg.token)" $cfg.base/health
 # 搜字体
@@ -427,8 +429,10 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
 }
 ```
 
-3. 完事。MCP 服务器**自动读** `%APPDATA%\FontManager\api.json` 拿端口和令牌，
-   重置令牌也不用改配置。WorkBuddy：连接器管理 → 自定义 MCP → 粘贴配置 → 点「信任」；
+3. 完事。MCP 服务器**自己找** `api.json`（先看 `%LOCALAPPDATA%\FontManager\data\`，
+   再看 `%APPDATA%\FontManager\`）拿端口和令牌，重置令牌也不用改配置。
+   如果你把 FontManager 装在了 `%LOCALAPPDATA%` 以外的地方，用 `ZFM_API_JSON`
+   指向实际的 api.json —— 「设置 → 本地 API」的报错文案里会打印它的完整路径。WorkBuddy：连接器管理 → 自定义 MCP → 粘贴配置 → 点「信任」；
    Claude Desktop / Cursor 同理。
 
 之后就可以在对话里说「列出我的思源字体」「应用快照 上班配置」——
@@ -481,6 +485,31 @@ Español · Français · Português (Brasil) · Русский。
 两个安装包都**未做代码签名**，SmartScreen 可能会请求确认。运行前请先核对
 Release 说明中的 SHA-256。
 
+**数据放在哪（2.1.5 起）**—— 程序、字体库和软件产生的一切都在安装目录里，
+想整体搬走 / 备份就是搬一个文件夹：
+
+```
+<安装目录>\                  NSIS 默认：%LOCALAPPDATA%\FontManager
+├─ fontmanager.exe
+├─ 字体库\                    你的字体（用户资产，绝不自动删）
+├─ plugins\                   插件（用户资产）
+└─ data\                      软件自己产生的一切：
+   ├─ state.json              标签 / 分组 / 收藏 / 启停台账 / 快照
+   ├─ prefs.json              偏好
+   ├─ font-cache.json         解析缓存（删了自动重建）
+   ├─ api.json                本地 API 端口 + 令牌
+   ├─ activation.log          诊断日志
+   ├─ preview-cache\ thumb-cache\   预览与缩略图（按需重建）
+   ├─ online\ Trash\          在线目录 / 许可证 / 回收站
+```
+
+装到 `D://Apps//FontManager`，上面这些就全在 D 盘。若该目录当前用户不可写
+（典型是 MSI 版装进 `Program Files`），数据会回退到
+`%LOCALAPPDATA%\FontManager\data`；`activation.log` 第一行永远写着实际位置：
+`data_root=… source=install|localappdata|roaming(fallback)`。
+从 2.1.4 升级时会把旧的 `%APPDATA%\FontManager` 数据自动复制进 `data\`，
+旧目录保留当备份（回退到 2.1.4 仍能用）。
+
 ### 卸载
 
 用「设置 → 应用」或卸载程序卸载 NSIS 版时，确认页有一个
@@ -489,10 +518,14 @@ Release 说明中的 SHA-256。
 - **不勾（默认）**：只删程序本体。字体库、插件、运行时、`state.json`、缓存、
   备注、快照全部保留，重装后接着用。
 - **勾选**：除程序本体外，把本软件自己创建／下载的内容按白名单清干净 ——
-  安装目录下的 `字体库`、`plugins`、`python-runtime`、`node-runtime`，
+  安装目录下的 `字体库`、`plugins`、`data`（账本 / 偏好 / 缓存 / 日志 / 在线目录 / 回收站）、
+  `python-runtime`、`node-runtime`，
   `%APPDATA%\FontManager`（及 0.8.x 留下的 `ZFontManager` 目录），
-  `%LOCALAPPDATA%\FontManager\字体库`，三个文件关联注册键，以及 HKCU 字体表里
+  `%LOCALAPPDATA%\FontManager\data`、`%LOCALAPPDATA%\FontManager\字体库`，
+  三个文件关联注册键，以及 HKCU 字体表里
   **值数据指向本软件字体库**的注册项；恢复到像没装过的状态。
+  `data` 只在确实有我们自己的文件（`state.json` / `font-cache.json` / `api.json` /
+  `.zfm-data-root`）时才整删。
 
 清理**不会**动系统字体、系统字体注册项、用户自定义字体库里的字体、用户放进
 安装目录的其它文件，也不会删你导出到文档或其它位置的快照与样张。
