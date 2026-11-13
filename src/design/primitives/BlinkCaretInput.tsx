@@ -42,9 +42,10 @@ export type BlinkCaretInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "
  * `flex:1 / width:100%` 位）> `<input>`（原 props 全量透传）+ `.blink-caret`（2px 竖条）
  * + `.blink-caret-mirror`（隐藏测宽镜像）。
  *
- * ref 透传到 input（ContextMenu 的 searchRef 要 focus()）。type 非 text/search/url/
- * tel 时直接渲染普通 input，不自绘、也不包 wrapper（password 同样在集合外：
- * 镜像 span 会把明文密码塞进 DOM，见 blinkCaret.ts 的注释）。
+ * ref 透传到 input（ContextMenu 的 searchRef 要 focus()）。type 不在 CARET_TYPES
+ * （text / search / url / tel，见 blinkCaret.ts）里的直接渲染普通 input，不自绘、
+ * 也不包 wrapper（password 同样在集合外：镜像 span 会把明文密码塞进 DOM，
+ * 见 blinkCaret.ts 的注释）。
  */
 export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps>(
   function BlinkCaretInput(props, ref) {
