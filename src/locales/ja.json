@@ -1121,6 +1121,5 @@
   "load.backgroundReading": "バックグラウンドでフォントを読み込み中 {done}/{total}",
   "load.seedReady": "フォントライブラリの準備ができました",
   "load.partialData": "読み込みが完了していないため、一部のフォントは表示されません",
-  "load.retry": "読み込みをやり直す",
-  "toast.ledgerWriteFailed": "有効化の記録を保存できませんでした。次回起動時に自動復元されない可能性があります"
+  "load.retry": "読み込みをやり直す"
 }

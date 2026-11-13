@@ -1157,6 +1157,5 @@
   "load.backgroundReading": "背景讀取字型庫 {done}/{total}",
   "load.seedReady": "字型庫已就緒",
   "load.partialData": "讀取未完成，部分字型暫時看不到",
-  "load.retry": "重新讀取",
-  "toast.ledgerWriteFailed": "啟用紀錄沒能儲存，下次啟動可能不會自動還原"
+  "load.retry": "重新讀取"
 }

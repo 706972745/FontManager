@@ -1165,6 +1165,5 @@
   "load.backgroundReading": "后台读取字体库 {done}/{total}",
   "load.seedReady": "字体库已就绪",
   "load.partialData": "读取未完成，部分字体暂不可见",
-  "load.retry": "重试读取",
-  "toast.ledgerWriteFailed": "启用记录没能保存，下次启动可能不会自动恢复"
+  "load.retry": "重试读取"
 }
