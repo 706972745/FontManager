@@ -1487,6 +1487,14 @@ h2.detail-title.copy-name {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+/* 版权状态 radiogroup 容器：roving tabindex 的落点。已设 paid 的族没有一枚
+   chip 是 tabIndex=0，Tab 必须能落进容器（QA Round 3 a11y 回归），方向键
+   在 onKeyDown 里把焦点交给对应 chip。给键盘用户一个可见焦点框。 */
+.copyright-status-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
 .detail-path {
   line-height: 1.3;
 }
