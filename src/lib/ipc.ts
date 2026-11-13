@@ -814,7 +814,9 @@ export interface PluginInfo {
   requirements: PluginRequirements | null;
   /**
    * 崩溃/启动失败时，activation.log 里这个插件的最后一条错误（已剥掉时间戳与前缀）。
-   * 只在 `error` 非空时才有值；日志里没线索就是 null，界面回落到一句通用的提示。
+   * 只在 `error` 非空时才有值，且可能仍是 null（日志里没线索）。
+   * 界面上**只有它有值时才多渲染那一行原因**；null 时安静地不显示 ——
+   * `error` 的来源不止崩溃（还有「API 级别不兼容」这类），那种情况说「日志里没线索」是噪音。
    */
   lastLog?: string | null;
 }
