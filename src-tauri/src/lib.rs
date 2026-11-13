@@ -557,7 +557,9 @@ fn sync_family_copyright(
                     dir.display(),
                     target.display()
                 ));
-                errors.push(e);
+                // 带上具体哪个目录（用户 2026-11-13）：状态已记，但文件夹名没改成，
+                // 用户得知道是哪一个族卡住了（多半是字体文件正被 Photoshop 占用）
+                errors.push(format!("{}：{e}", dir.display()));
             }
         }
     }
@@ -926,7 +928,8 @@ fn move_dir_contents(
     }
 
     // 目标已存在（同名目录合并）或整目录改不动：退化成逐个文件搬，但失败就整批回滚
-    fs::create_dir_all(target).map_err(|e| format!("创建目录失败：{e}"))?;
+    // 错误里带上目标目录（用户 2026-11-13：toast 要能说出是哪个文件夹没改成）
+    fs::create_dir_all(target).map_err(|e| format!("创建目录失败 {}：{e}", target.display()))?;
     let mut moved: Vec<(String, String)> = Vec::new();
     let attempt = (|| -> Result<(), String> {
         let mut stack: Vec<(std::path::PathBuf, std::path::PathBuf)> =
