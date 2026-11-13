@@ -503,7 +503,11 @@ Release 说明中的 SHA-256。
    ├─ online\ Trash\          在线目录 / 许可证 / 回收站
 ```
 
-装到 `D:\Apps\FontManager`，上面这些就全在 D 盘。若该目录当前用户不可写
+装到 `D:\Apps\FontManager`，上面这些就全在 D 盘。从 2.1.4 升级时数据会迁进 `data\`，
+随后**刻意清掉旧的 `preview-cache` / `thumb-cache`**——它们是纯生成物，留着等于在 C 盘
+继续占 400MB，与「缓存都放在安装目录下面」的要求相反；升级后第一次预览/缩略图会慢一点，
+因为要在新位置重建。**这是设计行为，不是没删干净**：标签、分组、收藏、台账、快照、插件
+一个字节都不会少，那才是「可回滚」真正要保的东西。若该目录当前用户不可写
 （典型是 MSI 版装进 `Program Files`），数据会回退到
 `%LOCALAPPDATA%\FontManager\data`；`activation.log` 第一行永远写着实际位置：
 `data_root=… source=install|localappdata|roaming(fallback)`。

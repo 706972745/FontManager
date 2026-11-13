@@ -91,8 +91,12 @@ All notable changes to FontManager are documented here. The format follows
   收藏 / 启停台账 / 快照）、`state.json.bak*`（滚动备份是救命绳）、`prefs.json*`、`font-cache.json`、
   `system-ps.json`、`api.json`、`activation.log*`、`Trash\`、`online\`、`Deactivated\`、`plugins\`
   （仅当 `<安装目录>\plugins` 还不存在时）。
-- **`preview-cache`（实测 385 MB）与 `thumb-cache`（上限 256 MB）不搬**：纯生成物，搬一遍要读 640 MB
-  写 640 MB，机械盘上是分钟级，而用户的感受是「升级卡住了」。
+- **`preview-cache`（实测 385 MB）与 `thumb-cache`（上限 256 MB）不搬，而且升级后旧的那份刻意不保留**：
+  它们是纯生成物，搬一遍要读 640 MB 写 640 MB，机械盘上是分钟级，而用户的感受是「升级卡住了」；
+  留一份旧的又等于在 C 盘继续占 400 MB，与「缓存都放到安装目录下面」的要求相反。
+  所以迁移成功后旧缓存会被清掉、由新位置按需重新生成（首次预览/缩略图会慢一点）——
+  **这是设计行为（验收项 A-06），不是「没删干净」**；账本类（标签/分组/收藏/台账/快照/插件）
+  一个字节都不会少，那是「可回滚」真正要保的东西。
 - **copy 不 move**：搬到一半失败（磁盘满 / 权限 / 杀软拦）时源文件已经没了的场景绝不允许发生；
   而且用户回退到 2.1.4 时还能接着用旧位置。代价是 `%APPDATA%\FontManager` 剩一份约 9 MB 的副本。
 - **账本先写 `.tmp` 再 rename**，且回读校验字节数：直接 copy 到 `state.json` 被打断会留下半份文件，
