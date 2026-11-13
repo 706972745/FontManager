@@ -583,7 +583,8 @@ pub fn revert_session(state: &mut crate::store::AppState) -> usize {
     };
     let mut n = 0;
     for p in &paths {
-        if crate::activation::sync(state, p, false).is_ok() {
+        // 亲和会话（退出即撤销）：不是用户意图，不记台账
+        if crate::activation::sync(state, p, false, false).is_ok() {
             n += 1;
         }
     }

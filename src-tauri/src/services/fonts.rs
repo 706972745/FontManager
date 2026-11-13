@@ -187,7 +187,8 @@ pub fn set_paths_active(store: &Store, paths: &[String], active: bool) -> Result
     }
     let skipped = count_system(paths);
     let mut state = store.0.lock().map_err(|e| e.to_string())?;
-    let failed = activation::sync_batch(&mut state, paths, active);
+    // 插件 / HTTP 侧的批量启停就是用户的持久意图，计入台账（§5.2 表格）
+    let failed = activation::sync_batch(&mut state, paths, active, true);
     store::save(&state)?;
     drop(state);
     activation::batch_error(&failed, paths.len())?;
@@ -218,7 +219,8 @@ pub fn activate_session(store: &Store, paths: &[String]) -> Result<ActivateRepor
     let mut failed = Vec::new();
     let mut activated = Vec::with_capacity(paths.len());
     for path in paths {
-        match activation::sync(&mut state, path, true) {
+        // 会话级启用（退出即撤销）：不记台账，否则下次启动会把试用当成长期状态
+        match activation::sync(&mut state, path, true, false) {
             Ok(()) => activated.push(path.clone()),
             Err(e) => failed.push(e),
         }
@@ -253,7 +255,7 @@ pub fn revert_session(store: &Store) -> usize {
         return 0;
     };
     for p in &paths {
-        let _ = activation::sync(&mut state, p, false);
+        let _ = activation::sync(&mut state, p, false, false);
     }
     let _ = store::save(&state);
     paths.len()
