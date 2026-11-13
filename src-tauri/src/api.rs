@@ -2,7 +2,8 @@
 //!
 //! 设计要点（与路线图 §3 阶段 ② 一致）：
 //! - **只绑回环**：局域网 / 外网看不见；端口由系统随机分配，写进
-//!   `%APPDATA%\FontManager\api.json`（含端口 + 令牌），外部程序读它发现服务。
+//!   `api.json`（含端口 + 令牌），外部程序读它发现服务。2.1.5 起这个文件在
+//!   「数据根」下（默认 `<安装目录>\data\api.json`，路径只从 `store::api_json_path` 拼）。
 //! - **默认关闭**：设置页开关关掉就根本不起监听（`netstat` 查不到）。
 //! - **令牌**：主令牌在设置页可看 / 可重置；插件拿到的是**受限令牌**（按 permissions 过滤路由）。
 //! - **危险写**（卸载 / 清空 / 覆盖导入）默认拒绝，需在设置里单独勾选。
@@ -167,7 +168,7 @@ fn prefs_str(prefs: &Value, key: &str) -> Option<String> {
 /// 清掉上一个进程留下的 `api.json`。
 ///
 /// 正常退出会走 `RunEvent::Exit` → `stop()` → 删文件；但任务管理器强杀、蓝屏、
-/// 断电都走不到那里，文件会带着端口和令牌一直留在 `%APPDATA%` 里。下一个进程
+/// 断电都走不到那里，文件会带着端口和令牌一直留在数据目录里。下一个进程
 /// 要是没开 API，这份残留就再没人管了，客户端照着它连只会得到「拒绝连接」。
 fn cleanup_stale() {
     let path = api_json_path();
@@ -319,7 +320,9 @@ pub fn new_plugin_token() -> String {
 }
 
 fn api_json_path() -> std::path::PathBuf {
-    store::app_data_dir().join("api.json")
+    // 2.1.5：跟着数据根走。插件 / MCP 客户端是靠这个文件发现服务的，
+    // 所以设置页与报错文案都必须拿同一个函数的结果去拼，别再手写路径。
+    store::data_root().join("api.json")
 }
 
 #[derive(Serialize)]
@@ -346,7 +349,7 @@ fn write_api_json(port: u16, token: &str, dangerous: bool) {
         started_at: services::now_ms(),
         pid: std::process::id(),
     };
-    let _ = std::fs::create_dir_all(store::app_data_dir());
+    let _ = std::fs::create_dir_all(store::data_root());
     if let Ok(text) = serde_json::to_string_pretty(&doc) {
         let _ = std::fs::write(api_json_path(), text);
     }
@@ -627,7 +630,16 @@ async fn auth(State(hub): State<Arc<Hub>>, mut req: Request, next: Next) -> Resp
         );
     }
     let Some(token) = bearer(req.headers()) else {
-        return fail(StatusCode::UNAUTHORIZED, "缺少 Authorization: Bearer <token>；令牌在设置 → 本地 API 里看（或读 %APPDATA%\\FontManager\\api.json）");
+        // 2.1.5：路径不能写死。数据根改道后 `api.json` 可能在 `<安装目录>\data` 下，
+        // 也可能是 %LOCALAPPDATA% 的回退位置 —— 写死一句 "读 %APPDATA%\FontManager\api.json"
+        // 等于让用户按提示去一个空目录里找，排查时间从 1 分钟变成 10 分钟。
+        return fail(
+            StatusCode::UNAUTHORIZED,
+            &format!(
+                "缺少 Authorization: Bearer <token>；令牌在设置 → 本地 API 里看（或读 {}）",
+                api_json_path().display()
+            ),
+        );
     };
     let scope = hub.tokens.lock().ok().and_then(|t| t.get(&token).cloned());
     match scope {
