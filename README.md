@@ -583,7 +583,7 @@ just moving one folder:
    ├─ online\ Trash\          downloads, licenses, recycle bin
 ```
 
-Install it to `D://Apps//FontManager` and all of the above lives on `D:`.
+Install it to `D:\Apps\FontManager` and all of the above lives on `D:`.
 If the folder is not writable (typically the MSI build under `Program Files`),
 data falls back to `%LOCALAPPDATA%\FontManager\data`, and the first line of
 `activation.log` always tells you where: `data_root=… source=install|localappdata|roaming(fallback)`.
