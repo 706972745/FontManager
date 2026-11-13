@@ -4,6 +4,15 @@
 ; 来源：Tauri CLI 2.12.2 内嵌的 NSIS 模板（@tauri-apps/cli-win32-x64-msvc 里
 ;      以 handlebars 原文嵌入，共 984 行）。**不要凭空手写这份文件** ——
 ;      升级 Tauri 时的正确做法是重新提取上游模板与这份做 diff，再决定怎么合并。
+;      执行器已经入库：`tools/nsis-fork-audit.js`（QA 写的溯源 + UI-only 审计），
+;        git show 0b4f117:src-tauri/windows/installer.nsi > ../../_tmp/pristine.nsi
+;        node tools/nsis-fork-audit.js ../../_tmp/pristine.nsi src-tauri/windows/installer.nsi
+;      三段输出：[溯源] 未命中=0（pristine 逐字命中 CLI 内嵌模板，才配当基线）
+;               → [审计] 被删/新增行 → [红线] 命中 Section Install / .onInit /
+;               un.ConfirmShow / handlebars 循环（#each）即 exit 1。
+;      ⚠️ 这类 diff **按「出现次数」（多重集）比，不能按集合比**：像
+;         `MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive` 这种行在基线里本来就有多个合法
+;         实例（许可页/完成页各一处），集合比会把「删掉一处但别处还留着」误判成「没删」。
 ;
 ; 本 fork 只改了「看得见的部分」：
 ;   · 配色（白底 + 近黑字）、欢迎页/完成页的文案与留白、目录页的写探针、
@@ -407,9 +416,17 @@ Function PageReinstall
     ;   卸载成功但安装失败 = 这台机器上没软件了。
     ;   ⚠️ 这里只写 $ReinstallPageCheck 的**初值**；上面 $R1/$R2/$R3 的映射与
     ;   PageLeaveReinstall 的分支逻辑一个字节都不许动（R-18 红线）。
-    ;   `== 0` 守卫：用户返回上一页再进来时，保留他上次的选择
+    ;
+    ;   ★★ 这个守卫必须写 `= 0`（数值比较），**不能**写 `== 0`（字符串比较）。
+    ;   LogicLib 的语义（Include\LogicLib.nsh）：
+    ;     `==` → StrCmp（字符串比较）；`=` → IntCmp（数值比较，空串按 0）
+    ;   而 `Var ReinstallPageCheck` 的初值是**空串**：
+    ;     StrCmp("", "0") 恒假 → 守卫从不触发 → 默认永远停在第 1 个 radio；
+    ;     IntCmp("", 0) 成立 → 空串算 0 → 守卫按预期触发。
+    ;   用户点过 radio 之后值是 "1"/"2"，IntCmp("1",0) 为假，返回上一页时的选择原样保留
     ;   （PageReinstallUpdateSelection 只在点过 radio 之后才写 1/2）。
-    ${If} $ReinstallPageCheck == 0
+    ;   教训一句话：**判「变量还没被赋值」必须用 `=`，用 `== 0` 永远不成立。**
+    ${If} $ReinstallPageCheck = 0
       StrCpy $ReinstallPageCheck 2
     ${EndIf}
     !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(choowHowToInstall)"
@@ -420,7 +437,8 @@ Function PageReinstall
     !if "${ALLOWDOWNGRADES}" == "true"
       StrCpy $R3 "$(dontUninstall)"
       ; 同上：默认停在第 2 个（= 直接覆盖安装）。只改初值，不动 R-18 映射。
-      ${If} $ReinstallPageCheck == 0
+      ; 守卫同样是 `= 0`（数值），理由见上面那段 LogicLib 说明。
+      ${If} $ReinstallPageCheck = 0
         StrCpy $ReinstallPageCheck 2
       ${EndIf}
     !else
