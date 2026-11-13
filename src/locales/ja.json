@@ -1118,7 +1118,7 @@
   "online.sourcesOpen": "開く",
   "online.subsetsLabel": "文字セット",
   "load.restoringSeed": "有効化済み・グループ・スナップショットのフォントを読み込み中…",
-  "load.backgroundReading": "バックグラウンドでフォントを読み込み中 {done}/{total}",
+  "load.backgroundReading": "バックグラウンドでフォントを読み込み中 {done}/{total}（{percent}%）",
   "load.seedReady": "フォントライブラリの準備ができました",
   "load.partialData": "読み込みが完了していないため、一部のフォントは表示されません",
   "load.retry": "読み込みをやり直す"

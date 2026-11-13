@@ -69,7 +69,7 @@ export function LoadProgress({ compact = false }: { compact?: boolean }) {
           ? t("load.finding")
           : t("load.restoringSeed")
         : seeded
-          ? t("load.backgroundReading", { done, total })
+          ? t("load.backgroundReading", { done, total, percent })
           : t("load.reading", { done, total, percent });
 
   return (

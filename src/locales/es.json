@@ -1152,7 +1152,7 @@
   "online.sourcesOpen": "Abrir",
   "online.subsetsLabel": "Conjunto de caracteres",
   "load.restoringSeed": "Cargando las fuentes activadas, de grupo y de instantánea…",
-  "load.backgroundReading": "Leyendo fuentes en segundo plano {done}/{total}",
+  "load.backgroundReading": "Leyendo fuentes en segundo plano {done}/{total} ({percent} %)",
   "load.seedReady": "Biblioteca de fuentes lista",
   "load.partialData": "La lectura no ha terminado: algunas fuentes aún no aparecen",
   "load.retry": "Volver a leer"

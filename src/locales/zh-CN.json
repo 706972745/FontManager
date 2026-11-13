@@ -1162,7 +1162,7 @@
   "settings.apiClientAddBad": "格式要像 mcp:claude 或 api:backup（冒号前是 api / mcp）",
   "settings.apiDangerousAllowHint": "勾 api / mcp = 这一类全部允许（含带名字的）；想只放行某一个，就按 mcp:名字 单独添加。",
   "load.restoringSeed": "正在装载已启用、分组与快照字体…",
-  "load.backgroundReading": "后台读取字体库 {done}/{total}",
+  "load.backgroundReading": "后台读取字体库 {done}/{total}（{percent}%）",
   "load.seedReady": "字体库已就绪",
   "load.partialData": "读取未完成，部分字体暂不可见",
   "load.retry": "重试读取"
