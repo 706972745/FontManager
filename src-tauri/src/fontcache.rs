@@ -36,7 +36,12 @@ use std::path::PathBuf;
 // （宋黑合体/魏碑/日韩）、拉丁词边界（CamelCase 感知）、手写词补全 + 覆盖表扩充。
 // classification 同样烤在字面上，v10 缓存的分类是旧规则算的，必须整库重算，
 // 否则用户看到的还是改版前的结果（QA 与 2.1.2 验收都依赖这次重算）。
-const CACHE_VERSION: u32 = 11;
+// v12（2.1.7）：FontFace 新增 `panose` / `sFamilyClass` 两个**原始证据**字段，供前端
+// 派生标签（自动标签）使用。分类主链一行没改，但它们同样是「烤进缓存字面」的解析产物：
+// 不升版本的话老缓存里这两个字段恒为 null，自动标签会少掉 vox / form 那一半
+// （真库 34.7% 的风格覆盖会掉到 11% 左右），而且用户没有任何提示。
+// 代价只是升级后第一次启动重解析一遍字体库（本机 5552 个文件，秒级）。
+const CACHE_VERSION: u32 = 12;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

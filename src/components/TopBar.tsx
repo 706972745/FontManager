@@ -12,17 +12,21 @@ import {
   Star,
   Type,
   X,
+  Sparkles,
+  Tag,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { spring, springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
-import { familiesFor, MIN_PREVIEW_SIZE_INDEX, SIZES, allTags, useFontStore, type SortMode } from "../state/fontStore";
+import { familiesFor, familyTagCounts, MIN_PREVIEW_SIZE_INDEX, SIZES, useFontStore, type SortMode } from "../state/fontStore";
+import { tagLabel } from "../lib/tagLabels";
+import { isAutoTagId } from "../lib/tagVocabulary";
 import { SearchSuggest, type Suggestion } from "./SearchSuggest";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { openPluginSettings } from "../lib/pluginMenu";
 import { useFontCss } from "../lib/fontLoader";
-import type { Classification, FontFormat } from "../lib/ipc";
+import type { FontFormat } from "../lib/ipc";
 import { useT, type TKey } from "../lib/i18n";
 
 const NAV_KEYS = ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"];
@@ -148,13 +152,8 @@ export function SortMenu() {
   );
 }
 
-const CLASS_FILTERS = [
-  "serif",
-  "sans",
-  "mono",
-  "display",
-  "script",
-] as const satisfies readonly Classification[];
+// 一级分类不再是筛选维度：2.1.7 起它变成 `class:*` 自动标签（可手工增删、可被否决），
+// 用户从侧栏或「标签」分组里筛，口径跟其它标签完全一致。
 
 const SCRIPT_FILTERS = [
   "latin",
@@ -228,8 +227,6 @@ function FilterSubTrigger({
 
 export function FilterMenu({ membership = false }: { membership?: boolean } = {}) {
   const t = useT();
-  const classFilter = useFontStore((s) => s.classFilter);
-  const toggleClassFilter = useFontStore((s) => s.toggleClassFilter);
   const scriptFilter = useFontStore((s) => s.scriptFilter);
   const toggleScriptFilter = useFontStore((s) => s.toggleScriptFilter);
   const variableOnly = useFontStore((s) => s.variableOnly);
@@ -260,6 +257,12 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
   const tagFilter = useFontStore((s) => s.tagFilter);
   const toggleTagFilter = useFontStore((s) => s.toggleTagFilter);
   const tags = useFontStore((s) => s.tags);
+  const fonts = useFontStore((s) => s.fonts);
+  // 自动标签的开关 / 「不再建议」黑名单虽然不改 `tags`，却会改变 `familiesFor` 的结果
+  // （自动标签是按这两个字段现算出来的），所以必须订阅，否则用户点了「不再建议」后
+  // 顶栏筛选菜单里的标签清单与计数不刷新（只有详情面板会刷）。
+  const autoTagDenied = useFontStore((s) => s.autoTagDenied);
+  const autoTagEnabled = useFontStore((s) => s.autoTagEnabled);
   const collections = useFontStore((s) => s.collections);
   const snapshots = useFontStore((s) => s.snapshots);
   const { open, toggle, close, triggerRef, listRef } = usePopoverMenu("filter-menu");
@@ -333,7 +336,13 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
     };
     subTimer.current = window.setTimeout(tick, 240);
   };
-  const tagCounts = useMemo(() => allTags(tags), [tags]);
+  // 标签清单按「当前库里的族」统计，并把自动标签一起算进来。
+  // 直接用 `allTags(tags)` 的话，自动标签一个都不会出现在筛选菜单里 ——
+  // 而筛选菜单是用户唯一能勾选标签的地方，等于自动标签只能看不能筛。
+  const { counts: tagCounts } = useMemo(
+    () => familyTagCounts(familiesFor(fonts, tags)),
+    [fonts, tags, autoTagDenied, autoTagEnabled],
+  );
   const collectionNames = useMemo(() => Object.keys(collections).sort(), [collections]);
 
   useEffect(() => {
@@ -347,7 +356,6 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
   }, [open]);
 
   const activeCount =
-    classFilter.length +
     scriptFilter.length +
     formatFilter.length +
     featureFilter.length +
@@ -497,23 +505,6 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   >
                     <span>{t(`source.${src}`)}</span>
                     {sourceFilter === src && <Check size={13} strokeWidth={2} />}
-                  </button>
-                </li>
-              ))}
-              <li className="sort-sep" role="none" />
-              <li className="filter-heading" role="none">
-                {t("filter.classification")}
-              </li>
-              {CLASS_FILTERS.map((c) => (
-                <li key={c}>
-                  <button
-                    role="option"
-                    aria-selected={classFilter.includes(c)}
-                    className={classFilter.includes(c) ? "sort-item sort-active" : "sort-item"}
-                    onClick={() => toggleClassFilter(c)}
-                  >
-                    <span>{t(`class.${c}`)}</span>
-                    {classFilter.includes(c) && <Check size={13} strokeWidth={2} />}
                   </button>
                 </li>
               ))}
@@ -674,7 +665,17 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   className={tagFilter.includes(tagName) ? "sort-item sort-active" : "sort-item"}
                   onClick={() => toggleTagFilter(tagName)}
                 >
-                  <span className="filter-sub-name">{tagName}</span>
+                  <span className="filter-sub-name">
+                    {/* 两种图标都要画，只是图形不同：原来只在自动标签前插魔棒，
+                        用户自己打的标签前面就是空的，同一列里文字左右错开（用户 2026-11-14 截图）。
+                        图形按**名字**判（同 B73）：词表里的名字魔棒，自造词用标签图标。 */}
+                    {isAutoTagId(tagName) ? (
+                      <Sparkles size={11} strokeWidth={1.6} className="filter-sub-auto" />
+                    ) : (
+                      <Tag size={11} strokeWidth={1.5} className="filter-sub-manual" />
+                    )}
+                    {tagLabel(tagName, t)}
+                  </span>
                   <span className="filter-sub-count tabular">{count}</span>
                   {tagFilter.includes(tagName) && <Check size={12} strokeWidth={2} />}
                 </button>

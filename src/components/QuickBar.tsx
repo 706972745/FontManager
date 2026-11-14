@@ -433,7 +433,6 @@ export function QuickBar() {
    * 控件，速览也跟着变」，两处口径纠缠不清 —— 所以这里连 state 都不读。
    */
   // 顶栏「筛选」的条件与完整界面共用同一份状态、同一套口径
-  const classFilter = useFontStore((s) => s.classFilter);
   const scriptFilter = useFontStore((s) => s.scriptFilter);
   const formatFilter = useFontStore((s) => s.formatFilter);
   const featureFilter = useFontStore((s) => s.featureFilter);
@@ -595,7 +594,6 @@ export function QuickBar() {
       isEnabledNow(f, sessionActivated),
     );
     const filtered = applyFamilyFilters(enabled, {
-      classFilter,
       scriptFilter,
       formatFilter,
       featureFilter,
@@ -658,7 +656,7 @@ export function QuickBar() {
     return sortFamilies(hit, "activated", activatedAt);
   }, [
     fonts, tags, sessionActivated, notes, query,
-    classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter,
+    scriptFilter, formatFilter, featureFilter, sourceFilter,
     charFilter, charMatches, variableOnly, toggleableOnly, licenseFilter, copyrightStatus,
     ratings, ratingFilter, activatedAt,
     favoriteOnly, collectionFilter, snapshotFilter, favorites, collections, collectionFaces, snapshots,

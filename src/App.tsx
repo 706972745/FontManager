@@ -239,7 +239,6 @@ function MainContent() {
   const lastImported = useFontStore((s) => s.lastImported);
   const notes = useFontStore((s) => s.notes);
   const search = useFontStore((s) => s.search);
-  const classFilter = useFontStore((s) => s.classFilter);
   const scriptFilter = useFontStore((s) => s.scriptFilter);
   const variableOnly = useFontStore((s) => s.variableOnly);
   const toggleableOnly = useFontStore((s) => s.toggleableOnly);
@@ -263,12 +262,12 @@ function MainContent() {
     () =>
       selectVisibleFamilies({
         fonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search,
-        classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
+        scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches,
         variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort,
         tagFilter, collectionFilter, snapshotFilter,
         ratings, ratingFilter, activatedAt,
       }),
-    [fonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, classFilter, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort, ratings, ratingFilter, activatedAt, tagFilter, collectionFilter, snapshotFilter],
+    [fonts, tags, collections, collectionFaces, snapshots, favorites, sessionActivated, lastImported, notes, search, scriptFilter, formatFilter, featureFilter, sourceFilter, charFilter, charMatches, variableOnly, toggleableOnly, incompleteOnly, licenseFilter, copyrightStatus, nav, sort, ratings, ratingFilter, activatedAt, tagFilter, collectionFilter, snapshotFilter],
   );
 
   // 非字族浏览页面（回收站 / 关于 / 在线栏目）没有「可见字族顺序」，必须清空：
@@ -364,7 +363,6 @@ function MainContent() {
         nav={nav}
         searching={search.trim().length > 0}
         filtered={
-          classFilter.length > 0 ||
           scriptFilter.length > 0 ||
           formatFilter.length > 0 ||
           featureFilter.length > 0 ||

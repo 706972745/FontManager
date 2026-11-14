@@ -2,6 +2,14 @@ import { create } from "zustand";
 import { formatBytes, setUnpreviewableHook } from "../lib/fontLoader";
 import { pickRemovedFamilyNames, withoutFamilies } from "../lib/containerRemove";
 import { motionReduced } from "../lib/motion";
+import { tagLabel } from "../lib/tagLabels";
+import { t as translate } from "../lib/i18n";
+import {
+  deriveTags,
+  normalizeTag,
+  type DerivedTag,
+  type FamilyFacts,
+} from "../lib/derivedTags.ts";
 
 /** 快照数量上限（与后端 MAX_SNAPSHOTS 一致）：超过就拒绝，不再悄悄淘汰最旧的 */
 export const SNAPSHOT_LIMIT = 5;
@@ -108,6 +116,7 @@ import {
 } from "../lib/i18n";
 import { familyMatches, searchTokens, type LabelMaps, type SearchableFamily } from "../lib/familySearch";
 import { isTagExpired, parseTagExpiry, sweepTagResult } from "../lib/tagExpiry";
+import { isAutoTagId } from "../lib/tagVocabulary";
 
 export const SIZES = [8, 14, 18, 24, 32, 48, 64, 96] as const;
 
@@ -203,6 +212,12 @@ export interface Family {
   activeCount: number;
   deactivatable: boolean;
   tags: string[];
+  /**
+   * 自动标签（运行时按族推导，**不落盘**）。只放 `applied` 档 —— 参与筛选与搜索，
+   * 但**永远**和 `tags`（用户手工）分开放：标签到期、整包导入导出、font-sync 同步
+   * 都只认 `tags`，把推断混进去等于把猜测伪装成事实。
+   */
+  autoTags?: DerivedTag[];
   totalSize: number;
   foundry: string | null;
   classification: Classification;
@@ -321,7 +336,20 @@ interface FontStore {
   /** 记一条用户决策（扫描期间才生效，其他时候直接返回，避免 map 无限增长） */
   noteOverrides: (paths: readonly string[], active: boolean) => void;
   fonts: FontFace[];
+  /**
+   * **用户手工**标签（`state.json` 里唯一那份标签真值）。
+   *
+   * 自动标签永远不写进这里 —— 见 `Family.autoTags`。这样标签到期、整包导入导出、
+   * font-sync 同步都不需要区分「谁打的」，也不会因为规则改了就留下历史脏标签。
+   *
+   * 另一个刻意的行为（2.1.7 起）：**删字体不删标签**。标签按族名存，删掉字体再装回来
+   * （哪怕是同事发来的同一款）标签还在。用户在 2026-11-14 明确要求这一点。
+   */
   tags: Record<string, string[]>;
+  /** 自动标签总开关（prefs.autoTagEnabled），默认开 */
+  autoTagEnabled: boolean;
+  /** 按族的否决名单（prefs.autoTagDenied）：族名 → 用户拒绝过的自动标签 */
+  autoTagDenied: Record<string, string[]>;
   collections: Record<string, string[]>;
   /**
    * 分组里的**字重级**成员（0.9.9-13）：分组名 → `faceKey` 列表。
@@ -415,8 +443,6 @@ interface FontStore {
   viewMode: ViewMode;
   sort: SortMode;
   search: string;
-
-  classFilter: Classification[];
 
   scriptFilter: string[];
   formatFilter: FontFormat[];
@@ -540,6 +566,14 @@ interface FontStore {
   emptyTrash: () => Promise<void>;
   setFamilyTags: (family: string, tags: string[]) => Promise<void>;
   removeTagEverywhere: (tag: string) => Promise<void>;
+  /** 自动标签总开关：关掉后立刻回到「只有手工标签」的状态，不需要重扫 */
+  setAutoTagEnabled: (enabled: boolean) => void;
+  /** 「不再建议」：把这个自动标签记进该族否决名单，重启后也不复发 */
+  denyAutoTag: (family: string, tag: string) => void;
+  /** 撤销否决（把标签放回可选状态） */
+  allowAutoTag: (family: string, tag: string) => void;
+  /** 清空某族的否决名单（详情面板「恢复自动标签」） */
+  clearAutoTagDenials: (family: string) => void;
   createCollection: (name: string) => Promise<void>;
   deleteCollection: (name: string) => Promise<void>;
   /**
@@ -675,7 +709,6 @@ interface FontStore {
   setRating: (family: string, stars: number) => void;
   setRatingFilter: (n: number) => void;
   setSearch: (s: string) => void;
-  toggleClassFilter: (c: Classification) => void;
   toggleScriptFilter: (s: string) => void;
   setVariableOnly: (on: boolean) => void;
   setToggleableOnly: (on: boolean) => void;
@@ -1225,6 +1258,9 @@ function persistPrefs(get: () => FontStore) {
       copyrightExpiry: s.copyrightExpiry,
       tagExpiry: s.tagExpiry,
       ratings: s.ratings,
+      // 自动标签：开关与按族的否决名单。只写这两个键，`tags` 结构一个字都没动
+      autoTagEnabled: s.autoTagEnabled,
+      autoTagDenied: s.autoTagDenied,
       activatedAt: s.activatedAt,
       // 一次性迁移标记：写进去之后，用户自己拨回 24px 才不会被改回 32px
       [PREVIEW_SIZE_MIGRATED_KEY]: true,
@@ -1754,6 +1790,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   fullScanDone: false,
   fonts: [],
   tags: {},
+  autoTagEnabled: true,
+  autoTagDenied: {},
   collections: {},
   collectionFaces: {},
   snapshots: [],
@@ -1817,7 +1855,6 @@ export const useFontStore = create<FontStore>((set, get) => ({
   quickbarHotkeyOpens: true,
   morph: null,
   search: "",
-  classFilter: [],
   scriptFilter: [],
   formatFilter: [],
   featureFilter: [],
@@ -2007,6 +2044,20 @@ export const useFontStore = create<FontStore>((set, get) => ({
             : get().tagExpiry,
         // 评分：只认 1~5 的整数，坏值整条丢掉（老备份里可能混进 0 / 字符串）
         ratings: normalizeRatings(prefs.ratings),
+        // 自动标签：开关 + 按族的否决名单。默认**开**（用户要的是「导入就能筛」），
+        // 关掉立刻回到只有手工标签的状态，不需要重扫。
+        autoTagEnabled: prefs.autoTagEnabled !== false,
+        autoTagDenied: (() => {
+          const raw = prefs.autoTagDenied;
+          if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+          const out: Record<string, string[]> = {};
+          for (const [family, v] of Object.entries(raw as Record<string, unknown>)) {
+            if (!Array.isArray(v)) continue;
+            const tags = v.filter((t): t is string => typeof t === "string" && t.length > 0);
+            if (tags.length > 0) out[family] = tags;
+          }
+          return out;
+        })(),
         activatedAt: (() => {
           const raw = prefs.activatedAt;
           if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
@@ -2031,6 +2082,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
           return out;
         })(),
       });
+      // 配置对象要在任何 familiesFor() 之前换掉，否则第一屏会按默认配置算一次
+      setAutoTagConfig({ enabled: get().autoTagEnabled, denied: get().autoTagDenied });
       setSoundLevel(get().soundPref);
       hydrateLocalePref(get().localePref);
       // 启动先扫一遍到期标签：用户隔了几天才打开软件，到期粒度是天，
@@ -2566,8 +2619,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
       });
 
       if (!familyAlive) {
-        const { tags, favorites, collections } = get();
-        if (tags[family]) void get().setFamilyTags(family, []);
+        const { favorites, collections } = get();
+        // **不清标签**（2.1.7 起，用户 2026-11-14 明确要求）：标签按族名存，
+        // 删掉字体再从同事那里装回同一款，标签还是用户当初打的那份。
+        // 清空过一次就再也找不回来了，而留着只是一条几十字节的 JSON。
         if (favorites.includes(family)) void get().toggleFavorite(family);
         for (const [name, members] of Object.entries(collections)) {
           if (members.includes(family)) {
@@ -2722,9 +2777,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
       });
 
       if (!keepMeta) {
-        const { tags, favorites, collections } = get();
+        const { favorites, collections } = get();
         for (const family of gone) {
-          if (tags[family]) void get().setFamilyTags(family, []);
+          // 同上：批量删除也不清标签（标签是用户资产，不是字体文件的附属物）
           if (favorites.includes(family)) void get().toggleFavorite(family);
         }
         for (const [name, members] of Object.entries(collections)) {
@@ -2833,8 +2888,62 @@ export const useFontStore = create<FontStore>((set, get) => ({
     }
   },
 
+  setAutoTagEnabled: (enabled) => {
+    // 配置对象换新身份 → familiesFor 的三层缓存自然失效，下一次取字族就按新开关重算
+    setAutoTagConfig({ ...currentAutoTagConfig(), enabled });
+    set({ autoTagEnabled: enabled });
+    persistPrefs(() => useFontStore.getState());
+  },
+
+  denyAutoTag: (family, tag) => {
+    const cfg = currentAutoTagConfig();
+    const prev = cfg.denied[family] ?? [];
+    if (prev.includes(tag)) return;
+    const denied = { ...cfg.denied, [family]: [...prev, tag] };
+    setAutoTagConfig({ ...cfg, denied });
+    set({ autoTagDenied: denied });
+    persistPrefs(() => useFontStore.getState());
+  },
+
+  allowAutoTag: (family, tag) => {
+    const cfg = currentAutoTagConfig();
+    const prev = cfg.denied[family];
+    if (!prev || !prev.includes(tag)) return;
+    const next = prev.filter((t) => t !== tag);
+    const denied = { ...cfg.denied };
+    if (next.length === 0) delete denied[family];
+    else denied[family] = next;
+    setAutoTagConfig({ ...cfg, denied });
+    set({ autoTagDenied: denied });
+    persistPrefs(() => useFontStore.getState());
+  },
+
+  clearAutoTagDenials: (family) => {
+    const cfg = currentAutoTagConfig();
+    if (!cfg.denied[family]) return;
+    const denied = { ...cfg.denied };
+    delete denied[family];
+    setAutoTagConfig({ ...cfg, denied });
+    set({ autoTagDenied: denied });
+    persistPrefs(() => useFontStore.getState());
+  },
+
   setFamilyTags: async (family, tags) => {
     const prevOwn = get().tags[family];
+    // 用户把某个标签摘掉了：如果它正是软件自己想推的，记进该族的否决名单。
+    // 这是「手动改过的标签不许被自动那套盖回来」的第二道闸（第一道在 deriveTags 里：
+    // 手工已有同名标签 / 同互斥命名空间时不产）。
+    const dropped = (prevOwn ?? []).filter((t) => !tags.includes(t));
+    if (dropped.length > 0) {
+      const fam = familiesFor(get().fonts, get().tags).get(family);
+      if (fam) {
+        const potential = potentialAutoTags(fam);
+        for (const t of dropped) {
+          const n = normalizeTag(t);
+          if (potential.has(n)) get().denyAutoTag(family, n);
+        }
+      }
+    }
     const next = { ...get().tags };
     if (tags.length === 0) delete next[family];
     else next[family] = tags;
@@ -2862,6 +2971,22 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const targets = Object.entries(get().tags)
       .filter(([, list]) => list.includes(tag))
       .map(([family, list]) => ({ family, next: list.filter((t) => t !== tag) }));
+
+    // 自动标签也要能被「从所有字体移除」：
+    // ① 手工标签被移除的那些族，如果软件本来就会推同一个标签 → 记否决，否则立刻长回来；
+    // ② 只有自动标签的那些族（`tags` 里根本没有这条）→ 同样记否决，否则这个入口等于点不动。
+    const familyMap = familiesFor(get().fonts, get().tags);
+    const norm = normalizeTag(tag);
+    const autoOnly: string[] = [];
+    for (const fam of familyMap.values()) {
+      const manualHas = (get().tags[fam.name] ?? []).includes(tag);
+      if (!manualHas) {
+        if ((fam.autoTags ?? []).some((d) => d.tag === norm)) autoOnly.push(fam.name);
+        continue;
+      }
+      if (potentialAutoTags(fam).has(norm)) get().denyAutoTag(fam.name, norm);
+    }
+    for (const family of autoOnly) get().denyAutoTag(family, norm);
     if (targets.length === 0) return;
     // 一次 set 完成乐观更新，界面不要闪 N 次
     const optimistic = { ...get().tags };
@@ -4324,10 +4449,6 @@ export const useFontStore = create<FontStore>((set, get) => ({
     persistPrefs(get);
   },
   setSearch: (search) => set({ search }),
-  toggleClassFilter: (c) => {
-    const cur = get().classFilter;
-    set({ classFilter: cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c] });
-  },
   toggleScriptFilter: (s) => {
     const cur = get().scriptFilter;
     set({ scriptFilter: cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s] });
@@ -4421,7 +4542,9 @@ export const useFontStore = create<FontStore>((set, get) => ({
   },
   sweepExpiredTags: async () => {
     const expired = Object.entries(get().tagExpiry)
-      .filter(([, date]) => isTagExpired(date))
+      // 自动标签不参与到期（用户 2026-11-14）：按名字判，老数据里残留的日期也不执行 ——
+      // 否则会把 class:serif / cn:song 这类标签从全库删掉，而下一轮推导又把它加回来。
+      .filter(([tag, date]) => !isAutoTagId(tag) && isTagExpired(date))
       .map(([tag]) => tag);
     for (const tag of expired) {
       // removeTagEverywhere 自带逐族写盘 + 失败回退 + 导航跳转，直接复用。
@@ -4721,6 +4844,166 @@ const familyKeyOf = (f: FontFace): string => {
   return base.replace(/\.[^.]+$/, "") || "Unknown";
 };
 
+/**
+ * 自动标签（派生标签）的运行时配置。
+ *
+ * 三个字段的关系：`enabled` 是总开关，`denied` 是**按族**的否决名单
+ * （族名 → 用户拒绝过的标签）。用族名做键是刻意的 —— 标签本来就是按族名存的
+ * （`state.json.tags` 也是族名做键），这样「删字体再装回来」「换字体库再切回来」
+ * 之后用户的意志还在，不会因为字体文件换了条路径就失效。
+ *
+ * **不落 `tags`**：这里只影响运行时展示与筛选，`state.json.tags` 永远是用户亲手打的。
+ */
+export interface AutoTagConfig {
+  enabled: boolean;
+  denied: Record<string, string[]>;
+}
+
+const createDefaultAutoTagConfig = (): AutoTagConfig => ({ enabled: true, denied: {} });
+
+/**
+ * 当前生效的自动标签配置。放在模块级而不是 store 里，是为了让 `familiesFor()`
+ * 的十几个调用点（详情面板、速览、比较、命令面板…）不必逐个改签名就能拿到同一份口径 ——
+ * 它们以前都是 `familiesFor(fonts, tags)`，多传一个参数迟早有人漏传，
+ * 漏传的后果是「同一个族在列表里有自动标签、在详情面板里没有」这种鬼故事。
+ *
+ * 换配置**必须在 `set({...})` 之前调用**：`familiesFor` 的缓存键带着这个对象的身份，
+ * 顺序反了就会用旧配置算一次，界面要等下一次渲染才对。
+ */
+let autoTagConfig: AutoTagConfig = createDefaultAutoTagConfig();
+
+export function setAutoTagConfig(next: AutoTagConfig): void {
+  autoTagConfig = next;
+}
+
+export function currentAutoTagConfig(): AutoTagConfig {
+  return autoTagConfig;
+}
+
+/** 从字面聚合出规则需要的事实（全部是扫描产物，不重新读文件） */
+function factsOfFamily(fam: Family): FamilyFacts {
+  const axes: string[] = [];
+  const localizedNames: string[] = [];
+  const styles: string[] = [];
+  const weights: number[] = [];
+  let italic = false;
+  let monospaced = false;
+  let panose: readonly number[] | null = null;
+  let sFamilyClass: number | null = null;
+
+  for (const f of fam.faces) {
+    for (const a of f.axes ?? []) {
+      const tag = (a?.tag ?? "").toLowerCase();
+      if (tag && !axes.includes(tag)) axes.push(tag);
+    }
+    for (const n of f.localizedNames ?? []) {
+      const name = (n?.name ?? "").trim();
+      if (name && !localizedNames.includes(name)) localizedNames.push(name);
+    }
+    const style = (f.style ?? "").trim();
+    if (style && !styles.includes(style)) styles.push(style);
+    if (!weights.includes(f.weight)) weights.push(f.weight);
+    italic ||= f.italic === true;
+    monospaced ||= f.monospaced === true;
+    // 同族各字面的 PANOSE 应当一致；取第一个有值的就够，不一致的情况极少见
+    if (!panose && f.panose && f.panose.length >= 10) panose = f.panose;
+    if (sFamilyClass === null && typeof f.sFamilyClass === "number" && f.sFamilyClass > 0) {
+      sFamilyClass = f.sFamilyClass;
+    }
+  }
+
+  return {
+    name: fam.name,
+    localizedNames,
+    styles,
+    classification: fam.classification,
+    scripts: fam.scripts,
+    features: fam.features,
+    isVariable: fam.isVariable,
+    axes,
+    monospaced,
+    weights,
+    italic,
+    panose,
+    sFamilyClass,
+  };
+}
+
+/**
+ * 这个族「软件本来会给」的标签（**不看**用户已经手工打了哪些）。
+ *
+ * 只给「用户删掉了某个标签」时判案用：删掉的标签如果在这份集合里，说明软件待会儿
+ * 还会把它推回来，必须记进否决名单。用 `autoTags` 判会漏 —— 那份是已经把手动标签
+ * 排除过的，用户删掉的那条恰好不会出现在里面。
+ */
+function potentialAutoTags(fam: Family): Set<string> {
+  const cfg = currentAutoTagConfig();
+  if (!cfg.enabled) return new Set();
+  const list = deriveTags(factsOfFamily(fam), { denied: cfg.denied[fam.name] });
+  return new Set(list.map((d) => d.tag));
+}
+
+/** 只要自动标签里**生效**的那部分；建议档不进筛选，也不进 `Family.autoTags` */
+function deriveAutoTags(fam: Family): DerivedTag[] {
+  const cfg = autoTagConfig;
+  if (!cfg.enabled) return [];
+  const derived = deriveTags(factsOfFamily(fam), {
+    manualTags: fam.tags,
+    denied: cfg.denied[fam.name],
+  });
+  const applied = derived.filter((d) => d.state === "applied");
+  return applied.length > 0 ? applied : [];
+}
+
+/**
+ * 这个族是否带某个标签（手工 ∪ 自动）。
+ * 筛选、侧栏计数、搜索建议都必须走这一个函数，否则会出现
+ * 「侧栏数出 20 个、点进去只有 3 个」这种对不上账的情况。
+ */
+export function familyHasTag(fam: Family, tag: string): boolean {
+  if (fam.tags.includes(tag)) return true;
+  const list = fam.autoTags;
+  if (!list || list.length === 0) return false;
+  for (const d of list) if (d.tag === tag) return true;
+  return false;
+}
+
+/**
+ * 族列表 → 「标签 → 有多少个族（当前库里真实存在的）」，手工与自动合并计数。
+ *
+ * 标签清单 / 计数**只走这里**：入参是 `familiesFor(...)` 算出来的族。
+ * 不要再写「直接遍历 state.json 里 `tags` 记录」的那种版本（2.1.7 起已删除）——
+ * 那是原始记录，删掉的字体、移走的字体库留下的标签都还在里面，
+ * 会数出「侧栏 20 个、点进去 0 个」，而且自动标签一条都进不来。
+ */
+export function familyTagCounts(
+  families: Map<string, Family> | Iterable<Family>,
+): { counts: Map<string, number>; autoOnly: Set<string> } {
+  const counts = new Map<string, number>();
+  const manualSeen = new Set<string>();
+  const autoSeen = new Set<string>();
+  const bump = (tag: string) => counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  const list = families instanceof Map ? families.values() : families;
+  for (const fam of list) {
+    for (const t of fam.tags) {
+      if (!t) continue;
+      bump(t);
+      manualSeen.add(t);
+    }
+    for (const d of fam.autoTags ?? []) {
+      if (fam.tags.includes(d.tag)) continue;
+      bump(d.tag);
+      autoSeen.add(d.tag);
+    }
+  }
+  const autoOnly = new Set<string>();
+  for (const t of autoSeen) if (!manualSeen.has(t)) autoOnly.add(t);
+  return {
+    counts: new Map([...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))),
+    autoOnly,
+  };
+}
+
 export function computeFamilies(
   fonts: FontFace[],
   tags: Record<string, string[]>,
@@ -4807,6 +5090,11 @@ export function computeFamilies(
     // 全坏才算「整个字族不可用」；部分坏只是标注，别让用户以为这族废了
     fam.brokenAll = fam.brokenFaces > 0 && fam.brokenFaces === fam.faces.length;
     Object.assign(fam, familyActivation(fam.faces));
+    // 自动标签必须在分类、脚本、特性都聚合完之后算（规则吃的就是这些事实）。
+    // `fam.tags` 仍是**用户手工**的那份，自动标签单独挂在 `autoTags` 上 ——
+    // 一旦两者混在同一个数组里，导出、同步、标签到期就再也分不清哪条是猜的了。
+    const auto = deriveAutoTags(fam);
+    if (auto.length > 0) fam.autoTags = auto;
   }
   return map;
 }
@@ -4843,7 +5131,6 @@ export function sortFamilies(
 
 /** 筛选条件（完整界面顶栏「筛选」菜单里的所有维度） */
 export type FamilyFilterState = {
-  classFilter: Classification[];
   scriptFilter: string[];
   formatFilter: FontFormat[];
   featureFilter: string[];
@@ -4866,9 +5153,6 @@ export type FamilyFilterState = {
  * 完整界面和速览界面共用这一份，避免两处口径慢慢跑偏。
  */
 export function applyFamilyFilters(out: Family[], s: FamilyFilterState): Family[] {
-  if (s.classFilter.length > 0) {
-    out = out.filter((f) => s.classFilter.includes(f.classification));
-  }
   if (s.scriptFilter.length > 0) {
     out = out.filter((f) => s.scriptFilter.every((sc) => f.scripts.includes(sc)));
   }
@@ -4940,7 +5224,6 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
   lastImported: string[];
   notes: Record<string, string>;
   search: string;
-  classFilter: Classification[];
   scriptFilter: string[];
   formatFilter: FontFormat[];
   featureFilter: string[];
@@ -4973,7 +5256,9 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
   const collectionFilter = s.collectionFilter ?? [];
   const snapshotFilter = s.snapshotFilter ?? [];
   if (tagFilter.length > 0) {
-    out = out.filter((f) => tagFilter.every((tg) => f.tags.includes(tg)));
+    // 手工标签与自动标签一起算（AND 语义不变）。`familyHasTag` 是唯一的判定口径，
+    // 侧栏计数、搜索结果都用它，避免「数出来 20 个、点进去只有 3 个」。
+    out = out.filter((f) => tagFilter.every((tg) => familyHasTag(f, tg)));
   }
   if (collectionFilter.length > 0) {
     const memberNames = new Set<string>();
@@ -4999,7 +5284,8 @@ export function selectVisibleFamilies(s: {  fonts: FontFace[];
   }
   if (s.nav.kind === "tag") {
     const tag = s.nav.tag;
-    out = out.filter((f) => f.tags.includes(tag));
+    // 点侧栏的标签进列表，同样要吃到自动标签（否则自动标签在侧栏有计数、点进去是空的）
+    out = out.filter((f) => familyHasTag(f, tag));
   }
   if (s.nav.kind === "collection") {
     const name = s.nav.name;
@@ -5098,20 +5384,22 @@ export function searchLabelMaps(): LabelMaps {
   return maps;
 }
 
-export function allTags(tags: Record<string, string[]>): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const list of Object.values(tags)) {
-    for (const t of list) m.set(t, (m.get(t) ?? 0) + 1);
-  }
-  return new Map([...m.entries()].sort((a, b) => a[0].localeCompare(b[0])));
-}
-
 export interface FontConflict {
   key: string;
   paths: string[];
 }
 
-const familyCache = new WeakMap<FontFace[], WeakMap<object, Map<string, Family>>>();
+/**
+ * 三层缓存：字体数组（扫描结果）→ 标签表（用户编辑就换一份）→ 自动标签配置（开关 / 否决）。
+ *
+ * 第三层是 2.1.7 加的：自动标签的开关与否决名单变了，缓存必须跟着失效，
+ * 否则用户点了「不再建议」、标签还挂在列表上。用**对象身份**做键而不是序列化字符串 ——
+ * 配置是不可变对象，换一次就是新身份，比每次把所有族名拼成签名便宜得多。
+ */
+const familyCache = new WeakMap<
+  FontFace[],
+  WeakMap<object, WeakMap<AutoTagConfig, Map<string, Family>>>
+>();
 
 export function familiesFor(
   fonts: FontFace[],
@@ -5122,10 +5410,15 @@ export function familiesFor(
     byTags = new WeakMap();
     familyCache.set(fonts, byTags);
   }
-  let result = byTags.get(tags);
+  let byAuto = byTags.get(tags);
+  if (!byAuto) {
+    byAuto = new WeakMap();
+    byTags.set(tags, byAuto);
+  }
+  let result = byAuto.get(autoTagConfig);
   if (!result) {
     result = computeFamilies(fonts, tags);
-    byTags.set(tags, result);
+    byAuto.set(autoTagConfig, result);
   }
   return result;
 }
@@ -5151,9 +5444,19 @@ const familyLowerCache = new WeakMap<
  * 于是「名称列写着微软雅黑、搜微软雅黑却搜不到」（用户 2026-11-11）。
  */
 export function searchableFamily(f: Family, note: string | null): SearchableFamily {
+  // 搜索要能同时搜到 **原值** 与 **显示名**：
+  // 用户看到卡片上写着「宋体」，就会去搜「宋体」；而中文界面下 `cn:song` 是他从没见过的。
+  // 两边都塞进去，成本是每个自动标签多一次语言查表（4000 族 × 几个标签，可忽略）。
+  const autoTags = f.autoTags ?? [];
+  const tagIndex = f.tags.slice();
+  for (const d of autoTags) {
+    if (!tagIndex.includes(d.tag)) tagIndex.push(d.tag);
+    const label = tagLabel(d.tag, translate);
+    if (label !== d.tag && !tagIndex.includes(label)) tagIndex.push(label);
+  }
   return {
     name: f.name,
-    tags: f.tags,
+    tags: tagIndex,
     formats: f.formats,
     foundry: f.foundry,
     license: f.license,

@@ -17,15 +17,29 @@
 
 !include "LogicLib.nsh"
 
-; ── 静默升级的 WebView2 等待（1.8.8）─────────────────────────────────────
-; 覆盖安装时宿主刚退、msedgewebview2 子进程还握着 fontmanager.exe 的映像句柄；
-; 不等它们退出，NSIS 的 File 覆盖失败会在 /S 下静默中止 —— 看起来升级成功，
-; 实际文件没换。这里等「命令行带本程序名的 msedgewebview2」全部退出（最多 30s）。
+; ── 静默升级前清理残留的 WebView2 进程（1.8.8；2.1.7 改「杀」不再「等」）──
+; 覆盖安装时宿主刚退、msedgewebview2 子进程还握着 fontmanager.exe 的映像句柄与
+; EBWebView 配置目录；不处理它们，NSIS 的 File 覆盖可能失败，而 /S 下会静默中止
+; —— 看起来装好了，其实文件没换。
+;
+; **1.8.8 的写法是「干等」**：for($i=0;$i -lt 120;$i++){…; Start-Sleep 250ms}，
+; 每圈还跑一次 Get-CimInstance Win32_Process（一次 200~400ms）。问题是这些残留
+; WebView2 进程**永远不会自己退出**（宿主已经被关掉，只剩浏览器进程），于是循环每次
+; 都跑满 120 圈 → 每台机器、每次安装都白等 **40~45 秒**（用户 2026-11-14 反馈
+; 「解压要 40 多秒」）。而且路线 C 的安装界面自己也是 fontmanager.exe 起的 WebView2，
+; 等它退出等于等自己 —— 构造性死锁，只能靠那 120 圈封顶。
+;
+; 现在改成「先杀、再确认」：一次 CIM 查询拿到所有命令行里带 fontmanager.exe 的
+; msedgewebview2，直接 Stop-Process；**排除安装界面自己的**（它的 user-data-dir 是
+; `$TEMP\FontManager-setup-webview`，杀了界面就白屏）。宿主在走到这一步之前已经被
+; 关掉了（界面会先请求退出，静默安装走 Restart Manager），所以剩下的必然是孤儿。
+; 常见情况 1 秒内，最坏 1.5 秒。
+;
 ; 用 -EncodedCommand 是因为 NSIS 单引号字符串里塞脚本引号太难写对；
-; 这段 base64 解出来就是上面那行等待循环（UTF-16LE）。
+; 这段 base64 解出来就是上面那行脚本（UTF-16LE）。
 !macro NSIS_HOOK_PREINSTALL
-  DetailPrint "正在等待 FontManager 的 WebView2 进程退出…"
-  nsExec::ExecToLog 'powershell.exe -NoProfile -EncodedCommand ZgBvAHIAKAAkAGkAPQAwADsAJABpACAALQBsAHQAIAAxADIAMAA7ACQAaQArACsAKQB7ACQAbAA9AEcAZQB0AC0AQwBpAG0ASQBuAHMAdABhAG4AYwBlACAAVwBpAG4AMwAyAF8AUAByAG8AYwBlAHMAcwAgAC0ARgBpAGwAdABlAHIAIAAiAE4AYQBtAGUAPQAnAG0AcwBlAGQAZwBlAHcAZQBiAHYAaQBlAHcAMgAuAGUAeABlACcAIgAgAHwAIABXAGgAZQByAGUALQBPAGIAagBlAGMAdAB7ACQAXwAuAEMAbwBtAG0AYQBuAGQATABpAG4AZQAgAC0AYQBuAGQAIAAkAF8ALgBDAG8AbQBtAGEAbgBkAEwAaQBuAGUALgBDAG8AbgB0AGEAaQBuAHMAKAAnAGYAbwBuAHQAbQBhAG4AYQBnAGUAcgAuAGUAeABlACcAKQB9ADsAIABpAGYAKAAtAG4AbwB0ACAAJABsACkAewBiAHIAZQBhAGsAfQA7ACAAUwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBNAGkAbABsAGkAcwBlAGMAbwBuAGQAcwAgADIANQAwAH0A'
+  DetailPrint "正在清理残留的 FontManager WebView2 进程…"
+  nsExec::ExecToLog 'powershell.exe -NoProfile -EncodedCommand JAB3AD0AQAAoAEcAZQB0AC0AQwBpAG0ASQBuAHMAdABhAG4AYwBlACAAVwBpAG4AMwAyAF8AUAByAG8AYwBlAHMAcwAgAC0ARgBpAGwAdABlAHIAIAAiAE4AYQBtAGUAPQAnAG0AcwBlAGQAZwBlAHcAZQBiAHYAaQBlAHcAMgAuAGUAeABlACcAIgAgAHwAIABXAGgAZQByAGUALQBPAGIAagBlAGMAdAB7ACQAXwAuAEMAbwBtAG0AYQBuAGQATABpAG4AZQAgAC0AYQBuAGQAIAAkAF8ALgBDAG8AbQBtAGEAbgBkAEwAaQBuAGUALgBDAG8AbgB0AGEAaQBuAHMAKAAnAGYAbwBuAHQAbQBhAG4AYQBnAGUAcgAuAGUAeABlACcAKQAgAC0AYQBuAGQAIAAtAG4AbwB0ACAAJABfAC4AQwBvAG0AbQBhAG4AZABMAGkAbgBlAC4AQwBvAG4AdABhAGkAbgBzACgAJwBGAG8AbgB0AE0AYQBuAGEAZwBlAHIALQBzAGUAdAB1AHAALQB3AGUAYgB2AGkAZQB3ACcAKQB9ACkAOwAgAGYAbwByAGUAYQBjAGgAKAAkAHAAIABpAG4AIAAkAHcAKQB7AHQAcgB5AHsAUwB0AG8AcAAtAFAAcgBvAGMAZQBzAHMAIAAtAEkAZAAgACQAcAAuAFAAcgBvAGMAZQBzAHMASQBkACAALQBGAG8AcgBjAGUAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAdABvAHAAfQBjAGEAdABjAGgAewB9AH0AOwAgAGkAZgAoACQAdwAuAEMAbwB1AG4AdAAgAC0AZwB0ACAAMAApAHsAUwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBNAGkAbABsAGkAcwBlAGMAbwBuAGQAcwAgADQAMAAwAH0A'
   Pop $R9
 !macroend
 

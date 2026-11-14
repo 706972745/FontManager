@@ -3503,6 +3503,64 @@ mod session_tests {
 }
 
 #[cfg(test)]
+mod uninstall_tests {
+    use super::*;
+
+    /// 卸载 / 移到回收站**不许动用户的标签**（策展数据保护，2.1.7）。
+    ///
+    /// 为什么是「函数体文本断言」而不是行为测试：`uninstall_one` 真正干活的是
+    /// `activation::sync` 与 `installer::uninstall_quiet` —— 前者改注册表、后者搬文件，
+    /// 而 `store::AppState` 没有脱离文件系统的轻量构造（`load()` 直接读 state.json）。
+    /// 想「造一条 tags、调用一次、断言 tags 还在」，跑起来就会是一条真的去动注册表的测试，
+    /// 在开发机和 CI 上都不该发生（同目录的 `library_switch_tests` 能动，是因为
+    /// `retire_old_library` 只碰内存里的登记表）。所以退化成本测试：
+    /// 编译期读回 lib.rs 源码，切出 `uninstall_one` 的函数体，断言里面一个标签写操作都没有。
+    ///
+    /// 它守的是这条具体的回归：**有人重新把「顺手清掉这个族的标签」加回卸载流程就会红**。
+    /// 以前这件事只靠 `uninstall_one` 里的一句源码注释提醒，注释删掉就没人拦得住了。
+    /// 语义边界：删掉的字体不再出现在列表里，但用户打过 / 拒绝过的标签必须留在 state.json ——
+    /// 重新导入同一族时标签要能回来，用户也不该因为「删过一次」就丢掉自己的整理结果。
+    #[test]
+    fn uninstall_one_keeps_curation_tags() {
+        let src = include_str!("lib.rs");
+        let sig = "fn uninstall_one(";
+        let start = src
+            .find(sig)
+            .unwrap_or_else(|| panic!("源码里找不到 `{sig}`，本测试的切片规则需要跟着改"));
+
+        // 函数体直到下一个**顶格** `}`：函数内部所有块的收尾都是缩进的，
+        // 所以 `\n}` 只可能命中 `uninstall_one` 自己的结尾。
+        let rest = &src[start..];
+        let end = rest
+            .find("\n}")
+            .unwrap_or_else(|| panic!("`uninstall_one` 的函数体没有找到顶格结尾 `}}`"));
+        let body = &rest[..end];
+
+        // 切片自检：切空 / 切错时下面的断言会「空着通过」，那等于没写这条测试。
+        assert!(
+            body.contains("installer::uninstall_quiet"),
+            "切出来的不是 `uninstall_one` 的函数体：\n{body}"
+        );
+
+        for bad in [
+            "tags.remove",
+            "tags.clear",
+            "tags.retain",
+            "tags.insert",
+            "state.tags",
+            "remove_tags",
+            "clear_tags",
+        ] {
+            assert!(
+                !body.contains(bad),
+                "`uninstall_one` 里出现了 `{bad}`：卸载字体不能删用户的标签。\
+                 字体可以移走，标签（含「不再建议」的否决记录）必须留在 state.json 里。"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod library_switch_tests {
     use super::*;
 

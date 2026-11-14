@@ -280,7 +280,11 @@ body,
 .nav-icon,
 .nav-label,
 .nav-count,
-.nav-no {
+.nav-no,
+/* 侧栏标签行的红色到期日也要在选中块（.nav-pill）之上：
+   pill 是绝对定位背景，行内非定位内容会被它盖住 —— 计数有 z-index:1，
+   红字（NavRow 的 trailing）原来漏了，选中该行时 11-20 就被色块吃掉（用户 2026-11-14）。 */
+.nav-row .tag-expiry-date {
   position: relative;
   z-index: 1;
 }
@@ -3083,7 +3087,10 @@ h2.detail-title.copy-name {
 }
 
 .tag-chip {
-  transition: background var(--t-quick) ease, transform var(--t-quick) ease;
+  /* 只过渡颜色：chip 的 transform 由 motion 逐帧写内联（入场 scale），
+     这里再挂一条 transform 过渡会让每一帧都被 CSS 再延迟一次，
+     收尾时看起来像「标签慢半拍才归位」。 */
+  transition: background var(--t-quick) ease;
 }
 .tag-chip:hover {
   background: var(--e3);
@@ -10121,4 +10128,320 @@ body.tour-qb .qb-actions .qb-btn-text {
    16px 的标题会贴在上面那块内容的底下，反而更挤。 */
 .settings-section + .settings-section {
   margin-top: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   自动标签（2.1.7）· R9 追加段：删整段即回滚，不动上面任何规则
+   ─────────────────────────────────────────────────────────────────────────────
+   视觉上必须和手工标签分得开（虚线 + 魔棒），因为两者的语义完全不同：
+   手工标签是**用户事实**，会落到 state.json、会参与同步与导入导出；
+   自动标签是**运行时推断**，规则一改就变，关掉开关就消失。
+   只靠颜色区分不行（色弱用户分不出），所以用边框形态 + 图标双编码。
+   ───────────────────────────────────────────────────────────────────────────── */
+.tag-auto-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  margin-top: 2px;
+}
+.tag-chip-auto {
+  background: transparent;
+  border-style: dashed;
+  border-color: rgba(var(--ink-rgb), 0.22);
+  color: var(--text-secondary);
+  padding-left: 8px;
+}
+.tag-chip-auto:hover {
+  background: var(--e1);
+}
+.tag-chip-auto .tag-auto-spark {
+  color: var(--accent-a);
+  opacity: 0.9;
+  flex: 0 0 auto;
+}
+.tag-auto-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  transition: color var(--t-quick) ease;
+}
+.tag-auto-restore:hover {
+  color: var(--text-secondary);
+}
+/* 筛选菜单里「只有自动标签」的那些行：前面一个小魔棒，和侧栏同一个口径 */
+.filter-sub-auto {
+  color: var(--accent-a);
+  opacity: 0.9;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+/* OS/2 分类的 classId 小角标：让「Sans Serif」旁边有个数字，方便对着别家软件的原始值看 */
+.detail-os2-id {
+  margin-left: 6px;
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  opacity: 0.75;
+}
+
+/* 手工标签的图标：与自动标签的魔棒同一套线性图标、同尺寸同描边，只靠图形与颜色区分。
+   手工 = 中性灰（用户自己的东西，不该抢视线）；自动 = 品牌色 + 虚线边框（软件猜的，要提醒但不喧宾）。 */
+.tag-chip-iconed {
+  padding-left: 8px;
+}
+.tag-manual-icon {
+  color: var(--text-tertiary);
+  opacity: 0.85;
+  flex: 0 0 auto;
+}
+
+/* ── 「从已有标签里选」：按钮 + 多选浮层（2.1.7） ─────────────────────────────
+   为什么要有：手打标签既要记得住名字，又容易打出 `宋体` / `宋体体` 这种变体；
+   库里现成的标签直接勾，多选一次写入。浮层宽度跟面板对齐，不做居中弹窗。 */
+.tag-pick-wrap {
+  /* 不做绝对定位浮层：详情面板本身是 `overflow-y: auto` 的滚动容器，
+     浮层会被裁在面板底边上（还会凭空多出滚动高度）。这里让它**顺着文档流展开**，
+     打开时把下面的内容往下推 —— 面板窄，用户不会因此迷失位置。 */
+  width: 100%;
+  margin-top: 6px;
+}
+.tag-pick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  border: 1px dashed rgba(var(--ink-rgb), 0.2);
+  border-radius: 4px;
+  transition: color var(--t-quick) ease, border-color var(--t-quick) ease, background var(--t-quick) ease;
+}
+.tag-pick-btn:hover,
+.tag-pick-btn.open {
+  color: var(--text-secondary);
+  border-color: rgba(var(--ink-rgb), 0.34);
+  background: var(--e1);
+}
+.tag-pick-badge {
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  opacity: 0.75;
+}
+.tag-picker {
+  margin-top: 6px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--e2);
+  border: 1px solid rgba(var(--ink-rgb), 0.1);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+  overflow: hidden;
+}
+.tag-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 7px 6px;
+  border-bottom: 1px solid rgba(var(--ink-rgb), 0.07);
+}
+.tag-picker-head input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  font-size: var(--fs-11);
+  color: var(--text-primary);
+  background: var(--e1);
+  border: 1px solid rgba(var(--ink-rgb), 0.08);
+  border-radius: 4px;
+}
+.tag-picker-head input:focus {
+  outline: none;
+  border-color: var(--accent-glow);
+}
+.tag-picker-close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+}
+.tag-picker-close:hover {
+  color: var(--text-primary);
+  background: var(--e1);
+}
+.tag-picker-list {
+  /* 上限由 DetailPanel 的 fitPicker() 按「按钮下方还剩多少可见空间」写成内联
+     max-height（96 ~ 320），这里的 196 只是没有 JS 时的兜底。
+     固定值会出两个问题：面板靠下时底边被详情面板裁掉，用户每次都要手动滚一下；
+     窗口高的时候又白留一大片。 */
+  max-height: 196px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.tag-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  text-align: left;
+}
+.tag-picker-item:hover {
+  background: var(--e1);
+}
+.tag-picker-mark {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(var(--ink-rgb), 0.24);
+  border-radius: 3px;
+  color: var(--bg);
+}
+/* 勾选态用「前景色底 + 背景色勾」：两套主题下都自动是高对比，不依赖品牌色深浅 */
+.tag-picker-item.on .tag-picker-mark {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+}
+.tag-picker-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-picker-count {
+  flex: 0 0 auto;
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+}
+.tag-picker-empty {
+  padding: 14px 10px;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.tag-picker-foot {
+  padding: 6px;
+  border-top: 1px solid rgba(var(--ink-rgb), 0.07);
+}
+.tag-picker-add {
+  width: 100%;
+  height: 26px;
+  border-radius: 4px;
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--e1);
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  transition: background var(--t-quick) ease, border-color var(--t-quick) ease;
+}
+.tag-picker-add:hover:not(:disabled) {
+  border-color: var(--accent-glow);
+  background: var(--e2);
+}
+.tag-picker-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── 标签到期日：自动标签不给日期 + 波及面提示（2.1.7，用户 2026-11-14） ─────
+   ① 自动标签是按规则现算的，删了下次推导又会长回来，所以 chip 上不画日历按钮；
+   ② 手工标签的日期会连带删掉**其它字体**上的同名标签，超过两个就先在这里问一句。 */
+.tag-expiry-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 9px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 26%, transparent);
+}
+.tag-expiry-warn-icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--warning);
+}
+.tag-expiry-warn-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-10);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.tag-expiry-warn-text strong {
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.tag-expiry-warn-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tag-expiry-warn-ok,
+.tag-expiry-warn-cancel {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: var(--fs-10);
+  white-space: nowrap;
+  transition: color var(--t-quick) ease, background var(--t-quick) ease, border-color var(--t-quick) ease;
+}
+.tag-expiry-warn-ok {
+  color: var(--text-primary);
+  background: var(--e1);
+  border: 1px solid rgba(var(--ink-rgb), 0.16);
+}
+.tag-expiry-warn-ok:hover {
+  border-color: var(--warning);
+}
+.tag-expiry-warn-cancel {
+  color: var(--text-tertiary);
+}
+.tag-expiry-warn-cancel:hover {
+  color: var(--text-primary);
+  background: var(--e1);
+}
+
+/* 筛选菜单二级列表里手工标签的图标：和魔棒同一尺寸/同一占位，否则两行文字左右错开 */
+.filter-sub-manual {
+  color: var(--text-tertiary);
+  opacity: 0.85;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+/* 「从已有标签选」里已经在本字体上的行：勾着、灰一点、不可点（说明「库里有，只是已用上」） */
+.tag-picker-item.applied {
+  opacity: 0.55;
+  cursor: default;
+}
+.tag-picker-item.applied:hover {
+  background: none;
+}
+
+/* 「留空 = 永久」：日期输入框为空时的说明（软件里所有到期日都是这个语义） */
+.expiry-forever {
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }

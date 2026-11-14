@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1.6-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.1.7-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,14 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.1.7 — Automatic tags, so imported fonts are filterable from day one**
+
+- **Filter by style without tagging by hand**: CJK families get Song / Hei / Kai / Li / Wei-Bei / running script / rounded / FangSong / decorative; Latin families get Vox subclasses. On top: decorative treatments (outline, shadow, pixel, inline…), form (heavy, high-contrast, condensed) and technical traits (weight axis, small caps, tabular figures).
+- **Evidence, not vibes**: every automatic tag shows why it fired (family name? PANOSE? OS/2 class?).
+- **Never written into your tags**: your own tags always win, and any automatic tag you delete or reject is remembered per family — across restarts, library switches and re-installs of the same font.
+- **Deleting a font no longer deletes its tags**: tags are keyed by family name, so re-importing the same font from a colleague brings your tags back.
+- **A single switch in Settings**, on by default; turning it off leaves only your own tags, no rescan needed.
 
 **2.1.6 — A splash twice the size, and an installer that draws its own UI**
 

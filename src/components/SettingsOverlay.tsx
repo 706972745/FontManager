@@ -1,6 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, SunMoon, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, Sparkles, SunMoon, Volume2, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -12,7 +12,7 @@ import { openPluginMenu, openPluginSettings } from "../lib/pluginMenu";
 import { usePluginStore } from "../lib/pluginStore";
 import { refreshPluginMenus } from "../lib/pluginMenuBridge";
 import { toast } from "../design/primitives/Toast";
-import { useFontStore } from "../state/fontStore";
+import { familiesFor, useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
 import { useT } from "../lib/i18n";
@@ -167,6 +167,57 @@ function portText(port: number | undefined): string {
 function maskToken(token: string): string {
   if (token.length <= 10) return "•".repeat(12);
   return `${token.slice(0, 4)}${"•".repeat(16)}${token.slice(-4)}`;
+}
+
+/**
+ * 自动标签总开关 + 一句实话的统计。
+ *
+ * 为什么只给一个开关、不给「阈值滑条」：置信度阈值是**校准参数**，不是偏好设置。
+ * 用户把它调低换覆盖率，换来的是一批假标签（同事文档 §6.6.4 有真库数字：
+ * `form:condensed` 一旦自动生效会一次多出 835 族）。要提覆盖只能改规则，不能放水。
+ */
+function AutoTagSection() {
+  const t = useT();
+  const enabled = useFontStore((s) => s.autoTagEnabled);
+  const setAutoTagEnabled = useFontStore((s) => s.setAutoTagEnabled);
+  const fonts = useFontStore((s) => s.fonts);
+  const tags = useFontStore((s) => s.tags);
+
+  // 4000 个族走一遍缓存好的字族表，几十万次字符串比较以内，不值得再上 useMemo
+  let families = 0;
+  let instances = 0;
+  if (enabled) {
+    for (const fam of familiesFor(fonts, tags).values()) {
+      const list = fam.autoTags;
+      if (!list || list.length === 0) continue;
+      families += 1;
+      instances += list.length;
+    }
+  }
+
+  return (
+    <section className="settings-section">
+      <div className="detail-heading">{t("settings.autoTag")}</div>
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">
+            <Sparkles size={13} strokeWidth={1.5} /> {t("settings.autoTag")}
+            <SettingHint text={t("settings.autoTagSub")} />
+          </div>
+          <div className="settings-sub tabular">
+            {enabled
+              ? t("settings.autoTagStats", { count: instances, families })
+              : t("settings.autoTagStatsOff")}
+          </div>
+        </div>
+        <PillToggle
+          on={enabled}
+          onChange={(on) => setAutoTagEnabled(on)}
+          label={t("settings.autoTag")}
+        />
+      </div>
+    </section>
+  );
 }
 
 export function SettingsOverlay() {
@@ -1654,6 +1705,8 @@ ${t("settings.labelResyncWhy")}`}
                 </div>
               </div>
             </section>
+
+            <AutoTagSection />
 
             <UpdateSection />
 
