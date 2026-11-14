@@ -1109,7 +1109,6 @@
   "toast.pluginsScanEmpty": "Aún no hay complementos en la carpeta",
   "toast.pluginsMasterOn": "Complementos activados",
   "toast.pluginsMasterOff": "Todos los complementos detenidos",
-  "about.linksTitle": "Surgió a partir de ZFontManager 0.8.0",
   "about.localTitle": "Este proyecto",
   "about.featuresTitle": "Qué hace FontManager",
   "about.featPreview": "Vista previa en vivo: miles de fuentes navegando sin tirones",

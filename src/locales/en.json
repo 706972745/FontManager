@@ -1121,7 +1121,6 @@
   "toast.pluginsScanEmpty": "No plugins in the plugins folder yet",
   "toast.pluginsMasterOn": "Plugins enabled",
   "toast.pluginsMasterOff": "All plugins stopped",
-  "about.linksTitle": "Started from ZFontManager 0.8.0",
   "about.localTitle": "This project",
   "about.featuresTitle": "What FontManager does",
   "about.featPreview": "Live previews: browse and search ten-thousand-font libraries smoothly",

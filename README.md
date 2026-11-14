@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1.7-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.1.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -46,13 +46,15 @@ and MCP when you want your tools to join in.
 
 ## 🆕 What's new
 
-**2.1.7 — A bigger splash, and the installer stops fighting itself**
+**2.1.6 — A splash twice the size, and an installer that draws its own UI**
 
-- **Installer asks before it bites**: if FontManager is still running when you start an install or an uninstall, a dialog says so and lets you pick "close it and continue" or "cancel". It no longer deletes files out from under your own open window.
-- **Splash screen redrawn at 2×**: the startup card is now 1120 × 760 with everything — icon, title, progress bar, status lines — scaled to match. It stays up for at least 1.5 s on every launch, even on a hot start where fonts are ready in milliseconds.
-- **Strict hand-off**: the splash closes first, then the main window appears. No more both-at-once flash.
-- **Installer and uninstaller share the app's own UI**: same fonts, same light/dark theme, same wording as the app — and a silent install (`/S`) stays genuinely silent.
-- **Cleaner uninstall**: leftover icon files and the empty `plugins` / font-library shells are removed; "delete my data too" is a separate, explicit choice.
+- **Splash redrawn at 2×**: 1120 × 760, with the icon, title, progress bar and status lines all scaled to match. It stays up for at least 1.5 s on every launch, even on a hot start where fonts are ready in milliseconds; the splash closes first, then the main window appears. In dark mode the glow behind the icon is now pale blue instead of deep royal.
+- **Installer and uninstaller draw their own UI**: same fonts, same light/dark theme and same wording as the app — no more system-grey NSIS controls. A silent install (`/S`) stays genuinely silent, and the art panel on the right is toned down so it no longer pulls your eyes off the text.
+- **It asks before it bites**: if FontManager is still running when you start an install or uninstall, a dialog lets you pick "close it and continue" or "cancel". No more "file in use" or "uninstalled but still there".
+- **The progress screen no longer plays dead**: the elapsed counter actually counts, the bar breathes, and a reinstall no longer pretends to jump to 88% and then sit there for forty seconds.
+- **Settings typography fixed**: the "Settings" title is now the largest thing on screen, section headings clearly outrank row labels, and size + weight carry the hierarchy.
+- **Cleaner uninstall**: leftover icon files and empty `plugins` / font-library shells are removed; "delete my data too" stays a separate, explicit choice.
+- **Fully decoupled from ZFontManager**: its old folders and wording are no longer cleaned up or mentioned.
 
 **2.1.5 — Your data follows the install folder**
 
@@ -629,7 +631,7 @@ The NSIS uninstaller's confirmation page has a **"Delete app data"** checkbox:
 - **Checked** — everything this app created is removed as well: `字体库`,
   `plugins`, `data` (state / prefs / caches / logs / online downloads / trash),
   `python-runtime` and `node-runtime` inside the install folder,
-  `%APPDATA%\FontManager` (plus the `ZFontManager` folder left behind by 0.8.x),
+  `%APPDATA%\FontManager` (the `ZFontManager` folder from 0.8.x is no longer touched since 2.1.6),
   `%LOCALAPPDATA%\FontManager\data` and `%LOCALAPPDATA%\FontManager\字体库`,
   the three file-association registry keys, and HKCU font-registry values whose
   data points into those font libraries. `data` is only removed when it actually

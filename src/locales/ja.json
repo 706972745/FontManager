@@ -1075,7 +1075,6 @@
   "toast.pluginsScanEmpty": "プラグインフォルダーにプラグインがありません",
   "toast.pluginsMasterOn": "プラグインを有効にしました",
   "toast.pluginsMasterOff": "すべてのプラグインを停止しました",
-  "about.linksTitle": "ZFontManager 0.8.0 から発展",
   "about.localTitle": "このプロジェクト",
   "about.featuresTitle": "FontManager にできること",
   "about.featPreview": "ライブプレビュー：数千フォントも快適に閲覧・検索",

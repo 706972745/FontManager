@@ -625,6 +625,24 @@ fn setup_install(
         let main_exe = dir.join("fontmanager.exe");
         let uninstaller = dir.join("uninstall.exe");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+        // **覆盖安装（2.1.8）**：这两条"事实"在覆盖安装时开头就成立 —— 文件上一步还在。
+        // 只按 `exists()` 判，界面会在第 0.1 秒直接跳到 88%、然后把「已用 0 秒」冻在
+        // 那儿四十多秒（用户实测："等太久，我还以为卡了"）。所以先记下开局状态：
+        //   · 主程序：开局就有 → 不再拿它当进度信号（NSIS 的 File 会保留源文件 mtime，
+        //     mtime 比对也识别不出重写，只能放弃这条）
+        //   · 卸载程序：WriteUninstaller 是"现写"，mtime 一定是新的 → 可以用 mtime 判
+        let had_exe = main_exe.exists();
+        // 不存 `had_un` 的布尔值：下面 `un_fresh()` 用 mtime 比对，开局不存在时
+        // `un_mtime0` 就是 `None`，`(None, Some(_))` 直接判"新的"，一条判据覆盖两种情况。
+        let un_mtime0 = std::fs::metadata(&uninstaller).and_then(|m| m.modified()).ok();
+        let un_fresh = || {
+            let now = std::fs::metadata(&uninstaller).and_then(|m| m.modified()).ok();
+            match (un_mtime0, now) {
+                (Some(a), Some(b)) => b > a,
+                (None, Some(_)) => true,
+                _ => false,
+            }
+        };
         let mut step_exe = false;
         let mut step_un = false;
 
@@ -679,7 +697,9 @@ fn setup_install(
                 break;
             }
 
-            if !step_exe && main_exe.exists() {
+            // 首次安装：main_exe 从无到有 ≈ 解压刚结束。覆盖安装时它开局就在，
+            // 这条信号无效（见上），进度就停在 12% 等卸载程序现身 —— 那才是真的尾巴。
+            if !step_exe && !had_exe && main_exe.exists() {
                 step_exe = true;
                 emit(
                     &handle,
@@ -694,7 +714,9 @@ fn setup_install(
                     },
                 );
             }
-            if step_exe && !step_un && uninstaller.exists() {
+            // 不再要求 step_exe：覆盖安装时上面那条永远不会亮，`uninstall.exe` 的
+            // mtime 更新才是唯一可靠的"快装完了"。
+            if !step_un && uninstaller.exists() && un_fresh() {
                 step_un = true;
                 emit(
                     &handle,

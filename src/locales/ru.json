@@ -1126,7 +1126,6 @@
   "toast.pluginsScanEmpty": "В папке плагинов пока ничего нет",
   "toast.pluginsMasterOn": "Плагины включены",
   "toast.pluginsMasterOff": "Все плагины остановлены",
-  "about.linksTitle": "Начат как ZFontManager 0.8.0",
   "about.localTitle": "Этот проект",
   "about.featuresTitle": "Что умеет FontManager",
   "about.featPreview": "Живой просмотр: десятки тысяч шрифтов листаются плавно",

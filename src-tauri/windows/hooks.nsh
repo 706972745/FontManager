@@ -4,8 +4,9 @@
 ;   $DeleteAppDataCheckboxState = 1  -> 用户勾选「同时删除全部数据」
 ; 内置脚本只清 $APPDATA\<bundleId> / $LOCALAPPDATA\<bundleId>（WebView2 缓存），
 ; 但本软件的数据自 2.1.5 起在 <安装目录>\data（老版本与回退情况在 %APPDATA%\FontManager）、
-; 0.8.x 一路用下来的旧目录 ZFontManager、
 ; 以及安装目录下的字体库 / plugins / *-runtime，还有 HKCU 字体表与文件关联，这里补齐。
+; 2.1.6 起**不再处理 ZFontManager 时期的旧目录**（`%APPDATA%\ZFontManager`）：那个产品
+; 和本软件已经不是同一个东西，用户 2026-11-14 明确「不需要兼容」。
 ;
 ; 原则（重要）：白名单精确删除。
 ;   - 只删本软件自己创建 / 下载的目录、文件与注册表值；
@@ -155,14 +156,6 @@
       RMDir /r "$APPDATA\FontManager"
     ${EndIf}
 
-    ; 1.2.4 改名前的旧数据目录（0.8.x 一路沿用下来的），同样只删确认属于本软件的
-    ${If} ${FileExists} "$APPDATA\ZFontManager\state.json"
-    ${OrIf} ${FileExists} "$APPDATA\ZFontManager\font-cache.json"
-    ${OrIf} ${FileExists} "$APPDATA\ZFontManager\api.json"
-    ${OrIf} ${FileExists} "$APPDATA\ZFontManager\activation.log"
-      RMDir /r "$APPDATA\ZFontManager"
-    ${EndIf}
-
     ; 2.3 MSI 版回退字体库：只删软件创建的子目录，不动目录里的其它内容。
     ;     绝不触碰 %LOCALAPPDATA%\Microsoft\Windows\Fonts（系统/用户字体目录）。
     RMDir /r "$LOCALAPPDATA\FontManager\字体库"
@@ -199,7 +192,8 @@
     !insertmacro ZFM_MATCH_FONT_PREFIX "$INSTDIR\字体库\"
     !insertmacro ZFM_MATCH_FONT_PREFIX "$LOCALAPPDATA\FontManager\字体库\"
     !insertmacro ZFM_MATCH_FONT_PREFIX "$APPDATA\FontManager\"
-    !insertmacro ZFM_MATCH_FONT_PREFIX "$APPDATA\ZFontManager\"
+    ; 2.1.6 起不再认 `%APPDATA%\ZFontManager`（2026-11-14 用户定：本软件与
+    ; ZFontManager 已不是同一个东西，不做旧产品残留的清理与兼容）。
     ; 2.1.5 预防性一条：当前字体库**不在** data 下（见 ADR-D2，字体是用户资产，
     ; 不跟数据混在一层），所以这条今天匹配不到任何东西。
     ; 留着是因为将来若真把库搬进 data\，忘了加这条的后果是「卸载后 HKCU 里残留

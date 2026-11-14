@@ -35,9 +35,9 @@ type LinkItem = { key: TKey; sub: string; url: string; icon: React.ReactNode };
  * 链接区只有一层：**本项目自己的两个仓库**（应用 + 插件）。
  *
  * 2026-11-12 用户定：本项目与迭代起点（ZFontManager 0.8.0）早已没有关系，
- * 页面上不再出现上游仓库 / 作者 / 网站那组卡片 —— 只留一句「从 0.8.0 迭代而来」
- * 的说明（`about.linksTitle`），既不误导读者以为还要去别处看代码，也守住了出处。
- * 原来那层「② 上游项目」是按 2026-11-10 的参考图排的，现在整组删掉。
+ * 页面上不再出现上游仓库 / 作者 / 网站那组卡片。
+ * 2026-11-14 追加：连「从 0.8.0 迭代而来」那一行也去掉（`about.linksTitle` 已从
+ * 9 份 locale 里删除）。出处只留在 LICENSE 的 0.8.0 版权声明里，GPL 的要求仍然满足。
  *
  * 版式不变：**圆角玻璃卡、两列铺开、左图标 + 标题 + 一行描述**（R4 那套）。
  */
@@ -150,9 +150,8 @@ export function AboutView() {
           <LinkCard key={l.url} item={l} delay={staggerDelay(i)} />
         ))}
       </div>
-      {/* 出处只写这一句：从 ZFontManager 0.8.0 迭代而来。不再给上游链接与作者卡片 ——
-          两个项目现在没有关系，放一排「去上游看代码」的卡片只会让人以为代码在别处。 */}
-      <p className="about-upstream-note">{t("about.linksTitle")}</p>
+      {/* 2026-11-14 用户定：不再写「从 ZFontManager 0.8.0 迭代而来」——这个软件已经和
+          那个项目不是同一个东西。出处只保留在 LICENSE 的 0.8.0 版权声明里（GPL 要求）。 */}
     </motion.div>
   );
 }
