@@ -1,0 +1,693 @@
+/**
+ * 安装器 / 卸载器界面样式（规格书 §4、§4A）。
+ *
+ * 与原型 docs/installer-splash-ui-demo.html 是同一套数值 —— 改这里之前先看规格书，
+ * 别在原型里改完忘了回写（规格书是唯一口径，原型只是可点的说明书）。
+ *
+ * 几条不许动的：
+ * - 圆角 16 是窗口边缘。窗口 transparent + shadow:false，外面那圈透明由桌面透出来。
+ * - 左栏固定 486（1000 - 44 左内边距 - 40 右内边距 - 396 右图 - 34 gap），文字最大宽 400。
+ * - 主按钮是墨黑（--ink），不是彩色；红只给"出错"。
+ * - 不写半像素字号。
+ */
+
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+:root {
+  --ink: #16161a;
+  --ink-2: #4e4e58;
+  --ink-3: #8a8a93;
+  --ink-4: #a8a8b0;
+  --line: #ececef;
+  --green: #0b3a22;
+  --blue: #1230c8;
+  --paper: #fbfaf5;
+  --font-ui: "Inter Variable", "Inter", "Segoe UI", system-ui, "Microsoft YaHei", "PingFang SC",
+    "Hiragino Sans GB", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--font-ui);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* ───────────────── 窗口 ───────────────── */
+.win {
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid rgba(20, 20, 32, 0.07);
+  overflow: hidden;
+  position: relative;
+}
+
+/* 环境探测完之前不闪一屏空壳（boot 只有几十毫秒，但白屏闪一下很廉价） */
+body:not(.ready) .win-body {
+  opacity: 0;
+}
+.win-body {
+  transition: opacity 120ms ease-out;
+}
+
+/* ───────────────── 控件条 ───────────────── */
+.chrome {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  padding: 0 24px 0 0;
+  cursor: default;
+}
+
+.chrome span {
+  display: block;
+  width: 11px;
+  height: 11px;
+  opacity: 0.42;
+  transition: opacity 0.15s;
+  position: relative;
+  cursor: pointer;
+}
+.chrome span:hover {
+  opacity: 0.85;
+}
+.chrome .c-min::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 5px;
+  height: 1.2px;
+  background: var(--ink);
+}
+.chrome .c-close::before,
+.chrome .c-close::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: 5px;
+  height: 1.2px;
+  background: var(--ink);
+}
+.chrome .c-close::before {
+  transform: rotate(45deg);
+}
+.chrome .c-close::after {
+  transform: rotate(-45deg);
+}
+
+.win-body {
+  display: grid;
+  grid-template-columns: 1fr 396px;
+  gap: 34px;
+  padding: 2px 40px 26px 44px;
+  height: calc(100% - 44px);
+}
+
+/* ───────────────── 左栏 ───────────────── */
+.left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--paper);
+  border: 1px solid #e9e6df;
+  padding: 5px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 2px rgba(20, 20, 32, 0.05);
+}
+.brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.brand-name {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.brand-name h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.ver {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: #6b6b74;
+  background: #f3f3f5;
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+/* ───────────────── 屏 ───────────────── */
+.state {
+  display: none;
+}
+/* 安装模式只放安装屏，卸载模式只放卸载屏 —— 两套 data-step 互不干扰 */
+body.mode-install .state[data-ustep],
+body.mode-uninstall .state[data-istep] {
+  display: none !important;
+}
+.state.on {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  animation: fadeUp 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.copy {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 28px;
+}
+
+.lead {
+  font-size: 13px;
+  line-height: 1.72;
+  color: var(--ink-2);
+  margin: 0;
+  margin-top: 12px;
+  max-width: 400px;
+}
+.lead + .lead {
+  margin-top: 6px;
+}
+
+.h2 {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+  margin-top: 30px;
+}
+
+.status {
+  margin-top: 30px;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  letter-spacing: -0.005em;
+  min-height: 18px;
+}
+
+/* 状态行里的"12.4 MB / 23.7 MB"要和前半句同色同距：
+   用 flex + gap 会把每一段文字都当成独立块，字距立刻散架（11-14 踩过），
+   所以状态行内部一律 **单个 span、纯文本**，不做分段着色。 */
+.status span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prog {
+  margin-top: 11px;
+  height: 3px;
+  width: 100%;
+  max-width: 400px;
+  border-radius: 99px;
+  background: #ededf0;
+  overflow: hidden;
+}
+.prog i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #0b3a22 0%, #16408f 62%, #1230c8 100%);
+  transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.sub {
+  font-size: 11px;
+  color: var(--ink-4);
+  margin-top: 9px;
+  letter-spacing: 0.005em;
+  min-height: 14px;
+}
+
+.meta {
+  margin: 0;
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 20px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.95;
+  color: var(--ink-3);
+  max-width: 420px;
+}
+.meta dt {
+  color: #b3b3ba;
+}
+.meta dd {
+  margin: 0;
+  color: #77777f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field {
+  margin-top: 22px;
+  max-width: 400px;
+  height: 38px;
+  border: 1px solid #e4e4e8;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 12px;
+  background: #fcfcfd;
+}
+.field code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: #3a3a44;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+.btn {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: 0.005em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
+  white-space: nowrap;
+}
+.btn:active {
+  transform: translateY(0.5px);
+}
+.btn-sm {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 11.5px;
+  border-radius: 7px;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-2);
+}
+.btn-ghost:hover {
+  background: #f4f4f6;
+}
+.btn-outline {
+  background: #fff;
+  border-color: #e4e4e8;
+  color: var(--ink);
+}
+.btn-outline:hover {
+  border-color: #d2d2d8;
+  background: #fafafb;
+}
+.btn-primary {
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(20, 20, 32, 0.22);
+}
+.btn-primary:hover {
+  background: #000;
+}
+.btn-primary[data-busy="1"] {
+  opacity: 0.42;
+  pointer-events: none;
+}
+.btn:disabled {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.foot {
+  margin-top: auto;
+  padding-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.foot .sign {
+  font-size: 11px;
+  color: var(--ink-4);
+  letter-spacing: 0.01em;
+}
+.foot .acts {
+  display: flex;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.log {
+  margin-top: 20px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 2;
+  color: #a2a2ab;
+  max-width: 420px;
+  min-height: 105px;
+  overflow: hidden;
+}
+.log div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: logIn 0.3s ease both;
+}
+.log div:first-child {
+  color: #6f6f78;
+}
+@keyframes logIn {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.done-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--green);
+  display: grid;
+  place-items: center;
+  margin-top: 26px;
+}
+.done-badge svg {
+  width: 14px;
+  height: 14px;
+}
+.done-badge.bad {
+  background: #b4322c;
+}
+
+.checks {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.box {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.4px solid #cfcfd6;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  flex: none;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.box.on {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.box svg {
+  width: 9px;
+  height: 9px;
+  opacity: 0;
+}
+.box.on svg {
+  opacity: 1;
+}
+
+/* ───────────────── 右栏：品牌图（纯 CSS 合成，不烘位图 → 0 体积） ───────────────── */
+.art {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(90% 70% at 78% 8%, rgba(24, 74, 46, 0.55) 0%, rgba(9, 40, 24, 0) 60%),
+    linear-gradient(158deg, #0d4429 0%, #093219 46%, #04170d 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.055) 0 1px,
+    transparent 1px 56px
+  );
+  mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+}
+
+.art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.13;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.art .aa {
+  position: absolute;
+  left: 22px;
+  top: 12px;
+  font-size: 46px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: rgba(255, 255, 255, 0.085);
+  z-index: 1;
+}
+
+.disc {
+  position: absolute;
+  right: 26px;
+  bottom: 128px;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 26%, #3455f2 0%, #1429bb 62%, #0d1c85 100%);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
+  z-index: 4;
+}
+
+.ghost {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 70%;
+  aspect-ratio: 1 / 1;
+  transform: translate(-44%, -55%) rotate(5deg);
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 12px;
+  z-index: 2;
+}
+
+.sheet {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 70%;
+  transform: translate(-50%, -50%) rotate(-3deg);
+  border-radius: 11px;
+  z-index: 3;
+  box-shadow:
+    0 28px 52px -14px rgba(0, 0, 0, 0.55),
+    0 4px 10px rgba(0, 0, 0, 0.18);
+}
+
+.art .tag {
+  position: absolute;
+  left: 20px;
+  bottom: 18px;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.38);
+  z-index: 5;
+}
+
+/* ───────────────── 减弱动效（与主程序同一口径：裁位移、只留透明度） ───────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .state.on {
+    animation: fadeUpSoft 0.2s ease both;
+  }
+  @keyframes fadeUpSoft {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .prog i {
+    transition-duration: 0.12s;
+  }
+  .log div {
+    animation: none;
+  }
+}
+
+/* ───────────────── 遮罩：程序还在运行（2.1.7） ───────────────── */
+/*
+ * 只用于一件事：发现 fontmanager.exe 还开着时，问用户"关掉继续还是取消"。
+ * 尺寸走圆角档位里"面板"这一档（12），和主程序的设置/确认对话框同一套。
+ * 不用 .btn-primary 的红：这里不是错误，是"需要你做个决定"。
+ */
+.modal {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(16, 16, 22, 0.3);
+  /* 遮罩挡住下面所有交互：决定之前不许再点"安装"第二下 */
+  cursor: default;
+}
+/* display:grid 会压掉 hidden 的默认表现，必须显式还回去 */
+.modal[hidden] {
+  display: none;
+}
+
+.modal-card {
+  width: 396px;
+  padding: 22px 24px 18px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid rgba(20, 20, 32, 0.09);
+  box-shadow:
+    0 24px 60px -24px rgba(20, 20, 32, 0.42),
+    0 2px 8px -2px rgba(20, 20, 32, 0.12);
+  animation: modalIn 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.modal-icon {
+  width: 22px;
+  height: 22px;
+  color: #b4322c;
+  margin-bottom: 12px;
+}
+.modal-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.modal-body {
+  margin: 9px 0 0;
+  font-size: 12.5px;
+  line-height: 1.72;
+  color: var(--ink-2);
+}
+
+.modal-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.modal-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+/* 处理中：按钮只置灰，不换成"正在关闭…"——关进程通常 <1 秒，换文案反而闪 */
+.modal-acts .btn[disabled] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-card {
+    animation: none;
+  }
+}

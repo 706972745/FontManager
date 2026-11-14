@@ -23,6 +23,43 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "UI设计交付规格书.md")
 DST = os.path.join(HERE, "UI设计交付规格书.html")
 
+# 每份文档一个条目：md 是唯一事实来源，html 由本脚本生成。
+# 用法：python docs/make-spec-html.py [spec|installer]   默认 spec。
+DOCS = {
+    "spec": {
+        "src": SRC,
+        "dst": DST,
+        "src_name": "docs/UI设计交付规格书.md",
+        "title": "FontManager · UI 设计交付规格书",
+        "kicker": "DESIGN HANDOFF SPECIFICATION / SOURCE-CALIBRATED",
+        "h1": "FontManager<br>UI 设计交付规格书",
+        "sub": "字体管理软件 · 纸墨两色 + 单一蓝强调 · 本文写的是软件里「实际生效」的规格，不是提案",
+        "meta": [
+            ("当前版本", "1.7.7"),
+            ("覆盖", "速览 / 主界面 / 设置 / 菜单 / Toast / 在线库 / 插件分区 / 插件面板"),
+            ("语言", "9 种"),
+            ("来源", "docs/UI设计交付规格书.md"),
+        ],
+        "footer": "数值以源码为准；若两者不一致，以代码为准并补齐 Markdown。",
+    },
+    "installer": {
+        "src": os.path.join(HERE, "安装器与启动页-UI交付规格书.md"),
+        "dst": os.path.join(HERE, "安装器与启动页-UI交付规格书.html"),
+        "src_name": "docs/安装器与启动页-UI交付规格书.md",
+        "title": "FontManager · 安装器与启动页 UI 交付规格书",
+        "kicker": "INSTALLER & SPLASH / DESIGN HANDOFF",
+        "h1": "FontManager<br>安装器 & 启动页<br>UI 交付规格书",
+        "sub": "白卡 + 左文字 / 右品牌图 · 深林绿 + 宝蓝 · 每个数值都能在原型里量到",
+        "meta": [
+            ("适用版本", "2.1.6"),
+            ("覆盖", "安装器 4 屏 / 启动页 / NSIS 备选版"),
+            ("单位", "逻辑像素（100%）"),
+            ("原型", "docs/installer-splash-ui-demo.html"),
+        ],
+        "footer": "数值以原型为准；若两者不一致，以原型为准并补齐 Markdown。",
+    },
+}
+
 # ── 样式（与 handoff/QuickBar-设计交付规格书.html 同一套视觉语言） ─────────────
 CSS = """
 @page { size: A4; margin: 22mm 18mm; }
@@ -192,6 +229,16 @@ def convert(md):
             i += 1
             continue
 
+        # 图片：![alt](path) 独占一行 → <figure>
+        m = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", stripped)
+        if m:
+            out.append(
+                '<figure><img src="%s" alt="%s"><figcaption>%s</figcaption></figure>'
+                % (m.group(2), html_mod.escape(m.group(1)), inline(m.group(1)))
+            )
+            i += 1
+            continue
+
         # 表格
         if stripped.startswith("|") and i + 1 < n and re.match(r"^\|[\s:|-]+\|$", lines[i + 1].strip()):
             head = split_row(stripped)
@@ -279,8 +326,24 @@ def convert(md):
     return "\n".join(out), toc
 
 
+def plain(text):
+    """目录用：去掉 Markdown 标记，只留纯文本（标题里允许加粗，目录里不该出现 **）。"""
+    t = re.sub(r"`([^`]+)`", r"\1", text)
+    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)
+    t = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"\1", t)
+    return t
+
+
 def main():
-    md = io.open(SRC, encoding="utf-8").read()
+    import sys
+
+    key = sys.argv[1] if len(sys.argv) > 1 else "spec"
+    if key not in DOCS:
+        print("未知文档：%s（可选：%s）" % (key, " / ".join(DOCS)))
+        raise SystemExit(2)
+    cfg = DOCS[key]
+
+    md = io.open(cfg["src"], encoding="utf-8").read()
     body, toc = convert(md)
 
     toc_html = ["<nav class=\"doc-toc\"><h2>目录</h2><ul>"]
@@ -288,23 +351,24 @@ def main():
         cls = "" if level == 2 else (" toc-l3" if level == 3 else " toc-l4")
         toc_html.append(
             '<li class="%s"><a href="#%s">%s</a></li>'
-            % (cls.strip(), sid, html_mod.escape(text))
+            % (cls.strip(), sid, html_mod.escape(plain(text)))
         )
     toc_html.append("</ul></nav>")
 
+    meta_html = "".join(
+        "<span>%s <b>%s</b></span>" % (label, value) for label, value in cfg["meta"]
+    )
+
     doc = """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FontManager · UI 设计交付规格书</title>
+<title>%s</title>
 <style>%s</style></head><body>
 <section class="cover">
-  <div class="kicker">DESIGN HANDOFF SPECIFICATION / SOURCE-CALIBRATED</div>
-  <h1>FontManager<br>UI 设计交付规格书</h1>
-  <div class="sub">字体管理软件 · 纸墨两色 + 单一蓝强调 · 本文写的是软件里「实际生效」的规格，不是提案</div>
+  <div class="kicker">%s</div>
+  <h1>%s</h1>
+  <div class="sub">%s</div>
   <div class="meta">
-    <span>当前版本 <b>1.7.7</b></span>
-    <span>覆盖 <b>速览 / 主界面 / 设置 / 菜单 / Toast / 在线库 / 插件分区 / 插件面板</b></span>
-    <span>语言 <b>9 种</b></span>
-    <span>来源 <b>docs/UI设计交付规格书.md</b></span>
+    %s
   </div>
 </section>
 
@@ -313,14 +377,28 @@ def main():
 %s
 
 <div class="footer">
-本页由 docs/make-spec-html.py 从 docs/UI设计交付规格书.md 生成，请勿手工修改 HTML。<br>
-数值以源码为准；若两者不一致，以代码为准并补齐 Markdown。
+本页由 docs/make-spec-html.py 从 %s 生成，请勿手工修改 HTML。<br>
+%s
 </div>
 </body></html>
-""" % (CSS, "\n".join(toc_html), body)
+""" % (
+        cfg["title"],
+        CSS,
+        cfg["kicker"],
+        cfg["h1"],
+        cfg["sub"],
+        meta_html,
+        "\n".join(toc_html),
+        body,
+        cfg["src_name"],
+        cfg["footer"],
+    )
 
-    io.open(DST, "w", encoding="utf-8", newline="\n").write(doc)
-    print("已生成 %s（%d 字符，目录 %d 条）" % (os.path.basename(DST), len(doc), len(toc)))
+    io.open(cfg["dst"], "w", encoding="utf-8", newline="\n").write(doc)
+    print(
+        "已生成 %s（%d 字符，目录 %d 条）"
+        % (os.path.basename(cfg["dst"]), len(doc), len(toc))
+    )
 
 
 if __name__ == "__main__":

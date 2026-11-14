@@ -21,6 +21,16 @@ pub trait ScanSink {
     /// 不能放在 `scan_library` 里 —— HTTP 侧先扫一次就会把这一次「吃掉」，
     /// 界面从此永远收不到种子（ADR-05 记录的那个真 bug）。
     fn seed(&self, _faces: &[FontFace]) {}
+    /// 种子装载进度（2.1.6 启动页，规格书 §5.3）：`done` / `total` 都是**字族数**。
+    ///
+    /// 为什么要有这一条：启动页画的是「种子装载」这段进度，种子一就绪就开主界面，
+    /// 剩下的全库字族由主界面底部的细进度条继续报。没有这条回调，启动页只能
+    /// 干等一个没有刻度的静默期。
+    ///
+    /// 默认空实现，理由同 `seed`：HTTP 侧的 `NullSink` 靠 job 表轮询拿结果，
+    /// 不需要这个过程量。**别把它改成必填**（`scan_sink_seed_is_optional_for_http_side_sinks`
+    /// 那条契约单测钉的就是「只实现 progress + batch 也能编译」）。
+    fn seed_progress(&self, _done: usize, _total: usize) {}
 }
 
 fn file_time(path: &str, birth: bool) -> Option<u64> {
@@ -100,6 +110,7 @@ fn build_seed(
     cache: &crate::fontcache::FontCache,
     probe: &activation::Probe,
     state: &store::AppState,
+    sink: &dyn ScanSink,
 ) -> Vec<FontFace> {
     let inp = seed_input(probe, state);
     // 去重键用 (归一化路径, face_index)：
@@ -107,10 +118,19 @@ fn build_seed(
     //   · 一个 ttc 里有多个字面（face_index 不同），不能按路径去重；
     //   · 不能用 `face.id`：缓存里的 id 是上一次扫描时拼的，历史上出现过路径大小写不一致
     //     导致同一字体两个 id 的情况，按归一化路径更稳。
+    //
+    // 第一遍只做「该不该进种子」这个**便宜**判定（`is_seed_face` 是纯函数，判定条件一个字没动），
+    // 顺带算出分母：种子的**字族数**（不是字面数、更不是全库）。
+    // 分两遍的唯一目的是让启动页一开始就拿到正确的分母 —— 分母要是全库 4214，
+    // 进度条爬到 9% 就长时间不动，用户会以为卡死（§5.3 第 3 条）。
     let mut seen: HashSet<(String, u32)> = HashSet::new();
-    let mut out: Vec<FontFace> = Vec::new();
-    let mut gone = 0usize;
+    let mut candidates: Vec<(&FontFace, String)> = Vec::new();
+    let mut families: HashSet<String> = HashSet::new();
+    // 全库字族数：只用来算启动页副状态那行的「其余 N 个」。这一遍本来就要走完整个缓存，
+    // 顺手数一遍是零成本；放到 `build_seed` 之后去数等于再走一遍缓存。
+    let mut all_families: HashSet<String> = HashSet::new();
     for face in cache.faces() {
+        all_families.insert(face.family.to_lowercase());
         if !is_seed_face(face, &inp) {
             continue;
         }
@@ -118,6 +138,23 @@ fn build_seed(
         if !seen.insert((norm.clone(), face.face_index)) {
             continue;
         }
+        families.insert(face.family.to_lowercase());
+        candidates.push((face, norm));
+    }
+    let total = families.len();
+    // 副状态那行在**装载过程中**就要能显示（参考稿就是这样），所以这里算完立刻推出去。
+    // 放到种子发完之后再算，它会只在 100% 那一瞬间存在 —— 等于永远看不到。
+    crate::splash_rest(all_families.len().saturating_sub(total));
+    // 先把分母推出去：启动页拿到 total 才会从「不确定态」切到确定态
+    sink.seed_progress(0, total);
+
+    // 第二遍才动 is_file / is_active / added_at 这些真正花时间的调用。
+    let mut out: Vec<FontFace> = Vec::new();
+    // 分子按「新出现的族」推进：与分母同口径，否则一个 12 字重的族会让进度条跳 12 次，
+    // 而旁边那个只有 1 个字重的族一动不动 —— 数字和手上的事对不上。
+    let mut done_families: HashSet<String> = HashSet::new();
+    let mut gone = 0usize;
+    for (face, norm) in candidates {
         // 预检：种子只有几百个文件，一次 stat 不到 20ms。不预检的反例 ——
         // 「字体被删了但还没触发任何扫描就重启」时，首帧会出现一张永远打不开的卡片
         // （用户在首帧就点了它，全量扫描又要十几秒才把它拿走）。
@@ -137,8 +174,16 @@ fn build_seed(
         if state.unpreviewable.contains(&f.id) && f.incomplete.is_none() {
             f.incomplete = Some(crate::parser::UNPREVIEWABLE_REASON.to_string());
         }
+        // 每 8 个族推一次：100ms 一拍轮询 × 8 个族，视觉上正好是连续爬升，
+        // 又不会让几百次 IPC 抢走首帧的时间
+        if done_families.insert(f.family.to_lowercase()) && done_families.len() % 8 == 0 {
+            sink.seed_progress(done_families.len(), total);
+        }
         out.push(f);
     }
+    // 收口无条件补一次：文件被删掉的那几个族永远不会出现在 done_families 里，
+    // 少了这一句进度条会永远停在 9x%（§5.3「拿到总数后立刻切确定态」的另一半要求）。
+    sink.seed_progress(total, total);
     if gone > 0 {
         diag::log(&format!(
             "[seed] {gone} 个种子路径已不存在（文件被删但还没扫描过），已剔除"
@@ -300,7 +345,7 @@ pub fn scan_library(store: &Store, sink: &dyn ScanSink) -> Result<Vec<FontFace>,
     );
     {
         let state = store.0.lock().map_err(|e| e.to_string())?;
-        let seed = build_seed(&cache, &probe, &state);
+        let seed = build_seed(&cache, &probe, &state, sink);
         crate::diag::log(&format!(
             "[seed] 缓存 {} 个字面 → 种子 {} 个，耗时 {:?}，台账 {} 条",
             cache.face_count(),
@@ -597,6 +642,14 @@ mod seed_tests {
         items.into_iter().collect()
     }
 
+    /// 单测专用 sink：这些用例只关心「挑出了哪些字面」，不关心进度回调。
+    /// 刻意**不**实现 `seed_progress` —— 顺带钉住「它有默认空实现」这条契约。
+    struct NoSink;
+    impl ScanSink for NoSink {
+        fn progress(&self, _done: usize, _total: usize) {}
+        fn batch(&self, _faces: &[FontFace]) {}
+    }
+
     /// 临时文件：`build_seed` 会做 `is_file` 预检，假路径必须真的存在
     fn touch(tag: &str) -> String {
         let dir = std::env::temp_dir().join(format!("zfm-seed-{}", std::process::id()));
@@ -740,7 +793,7 @@ mod seed_tests {
         });
 
         let probe = activation::probe();
-        let seed = build_seed(&cache, &probe, &state);
+        let seed = build_seed(&cache, &probe, &state, &NoSink);
         let ids: Vec<&str> = seed.iter().map(|f| f.id.as_str()).collect();
         assert_eq!(
             ids.len(),
@@ -927,7 +980,7 @@ mod seed_tests {
             }],
         });
 
-        let seed = build_seed(&cache, &activation::probe(), &state);
+        let seed = build_seed(&cache, &activation::probe(), &state, &NoSink);
         assert_eq!(seed.len(), 1, "四路同时命中只该出一份：{seed:?}");
         assert_eq!(seed[0].path, p);
     }
@@ -938,7 +991,7 @@ mod seed_tests {
         let cache = crate::fontcache::FontCache::empty();
         let mut state = store::AppState::default();
         state.activated.insert(r"E:\Fonts\Whatever.ttf".to_string());
-        assert!(build_seed(&cache, &activation::probe(), &state).is_empty());
+        assert!(build_seed(&cache, &activation::probe(), &state, &NoSink).is_empty());
     }
 
     /// `ScanSink::seed` 必须有**默认空实现**：`api.rs` 的 `NullSink` 一行都没改就靠它。
@@ -988,7 +1041,69 @@ mod seed_tests {
         cache.put(&gone, 1, 1, FontSource::User, &[face(&gone, "Gone", None)]);
         let mut state = store::AppState::default();
         state.activated.insert(gone.clone());
-        let seed = build_seed(&cache, &activation::probe(), &state);
+        let seed = build_seed(&cache, &activation::probe(), &state, &NoSink);
         assert!(seed.is_empty(), "已删除的文件不该进首帧");
+    }
+
+    /// 启动页的进度口径（规格书 §5.3），三条一起钉住：
+    ///
+    /// 1. **分母是字族数**，不是字面数 —— 一个族两个字重，分母只能是 1，
+    ///    否则进度条会按字重跳，用户看到的「还剩几个」全是假的；
+    /// 2. 第一拍必须是 `(0, total)`：启动页拿到 total 才会从不确定态切确定态；
+    /// 3. 末尾必须无条件补 `(total, total)`：文件被删掉的那些族永远不会出现在
+    ///    `done` 里，少了这一句进度条永远停在 9x%，看起来就是「卡住了」。
+    #[test]
+    fn seed_progress_counts_families_and_closes_at_total() {
+        struct RecSink(std::sync::Mutex<Vec<(usize, usize)>>);
+        impl ScanSink for RecSink {
+            fn progress(&self, _done: usize, _total: usize) {}
+            fn batch(&self, _faces: &[FontFace]) {}
+            fn seed_progress(&self, done: usize, total: usize) {
+                if let Ok(mut v) = self.0.lock() {
+                    v.push((done, total));
+                }
+            }
+        }
+
+        // 两个正常族（其中一个两个字重）+ 一个「缓存里有、文件已被删」的族
+        let a1 = touch("prog-a1");
+        let a2 = touch("prog-a2");
+        let b1 = touch("prog-b1");
+        let gone = std::env::temp_dir()
+            .join(format!("zfm-seed-{}-prog-gone.ttf", std::process::id()))
+            .to_string_lossy()
+            .into_owned();
+        let _ = std::fs::remove_file(&gone);
+
+        let mut cache = crate::fontcache::FontCache::empty();
+        cache.put(&a1, 1, 1, FontSource::User, &[face(&a1, "ProgA", None)]);
+        cache.put(&a2, 1, 1, FontSource::User, &[face(&a2, "ProgA", None)]);
+        cache.put(&b1, 1, 1, FontSource::User, &[face(&b1, "ProgB", None)]);
+        cache.put(&gone, 1, 1, FontSource::User, &[face(&gone, "ProgGone", None)]);
+
+        let mut state = store::AppState::default();
+        for p in [&a1, &a2, &b1, &gone] {
+            state.activated.insert(p.clone());
+        }
+
+        let sink = RecSink(std::sync::Mutex::new(Vec::new()));
+        let seed = build_seed(&cache, &activation::probe(), &state, &sink);
+        assert_eq!(seed.len(), 3, "三个字面的文件都在");
+
+        let calls = sink.0.lock().map(|v| v.clone()).unwrap_or_default();
+        assert_eq!(
+            calls.first().copied(),
+            Some((0, 3)),
+            "第一拍必须先把分母（3 个族）推出去，且 done 从 0 开始：{calls:?}"
+        );
+        assert_eq!(
+            calls.last().copied(),
+            Some((3, 3)),
+            "末尾必须补到 (total, total)，否则进度条停在 9x%：{calls:?}"
+        );
+        assert!(
+            calls.iter().all(|(d, t)| *t == 3 && d <= t),
+            "分母必须恒为字族数 3，且 done 不能超过它：{calls:?}"
+        );
     }
 }

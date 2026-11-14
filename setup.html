@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FontManager</title>
+    <!--
+      安装器 / 卸载器的界面（路线 C，规格书 §4 与 §4A）。
+
+      【它为什么是一个独立入口】
+      不是 React 应用的一部分：这份界面只有 7 屏、没有状态库、没有虚拟列表，
+      引 React 只是为了一份 CMS 级的排版多背 140KB。用原生 TS + 一份 CSS，
+      构建产物 30KB 上下（gzip 后 ~8KB），这就是"0 体积 1:1 还原"的底气。
+      vite 里它是独立 input（见 vite.config.ts 的 setup 入口），**不许**并进主 bundle。
+
+      【窗口】
+      1000×620 逻辑像素、无系统标题栏、透明、圆角 16 由 CSS 画（和主界面同一套做法）。
+      拖动只能靠上面那条 44px 的 chrome 条（data-tauri-drag-region）。
+
+      【谁在跑它】
+      `fontmanager.exe --installer-ui` / `--uninstall-ui`（见 src-tauri/src/setup_ui.rs）。
+      它不会加载 store、不会起 watcher / 插件 / 本地 API、不会抢单实例互斥体：
+      安装时这台机器上可能根本没有"用户数据"可言。
+    -->
+    <script>
+      // 发布版没有控制台：脚本挂了就是一块白板，用户只能截个白屏来报障。
+      // 这里把第一个错误直接摊在页面上（只在出错时出现，正常路径零影响）。
+      (function () {
+        function show(msg) {
+          // 界面已就绪后的运行期错误不覆盖界面（只在控制台留痕）
+          if (document.body && document.body.classList.contains("ready")) {
+            console.warn("[setup]", msg);
+            return;
+          }
+          if (document.getElementById("boot-err")) return;
+          var d = document.createElement("pre");
+          d.id = "boot-err";
+          d.style.cssText =
+            "position:fixed;inset:0;z-index:99999;margin:0;padding:18px;overflow:auto;" +
+            "background:#fff;color:#b3261e;font:12px/1.55 ui-monospace,Consolas,monospace;" +
+            "white-space:pre-wrap";
+          d.textContent = "安装界面启动失败：\n\n" + msg;
+          (document.body || document.documentElement).appendChild(d);
+        }
+        window.addEventListener(
+          "error",
+          function (e) {
+            if (e.target && e.target !== window && e.target.tagName) {
+              show("资源加载失败：" + (e.target.src || e.target.href));
+              return;
+            }
+            show((e.message || "未知错误") + "\n" + (e.filename || "") + ":" + (e.lineno || 0));
+          },
+          true,
+        );
+        window.addEventListener("unhandledrejection", function (e) {
+          show("Promise 未处理：" + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+        });
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="app" class="win mode-install">
+      <!-- 顶部控件条：只有 minimize / close（安装器不需要最大化） -->
+      <div class="chrome" data-tauri-drag-region>
+        <span class="c-min" data-win="min" title="最小化"></span>
+        <span class="c-close" data-win="close" title="关闭"></span>
+      </div>
+
+      <div class="win-body">
+        <div class="left">
+          <div class="brand">
+            <div class="brand-logo"><img src="/icon.png" alt="" /></div>
+            <div class="brand-name">
+              <h1>FontManager</h1>
+              <span class="ver" id="ver">—</span>
+            </div>
+          </div>
+
+          <!-- ══════════ 安装 · 1 欢迎 ══════════ -->
+          <div class="state on" data-istep="0">
+            <div class="copy">© 2026 IIEOzo. 保留所有权利。</div>
+            <p class="lead">你的全部字体，一键启停，永不离开你的电脑。</p>
+            <p class="lead">
+              程序、字体库和全部数据都装在下面这个目录里 —— 想整体搬走，直接搬这个文件夹就行。（Python /
+              Node 运行时按需下载，不在安装包内。）
+            </p>
+
+            <div class="status"><span id="iStatus0">准备就绪 · 即将开始安装</span></div>
+            <div class="prog"><i id="iProg0" style="width: 0%"></i></div>
+            <div class="sub" id="iSub0">预计 5 秒 · 无需管理员权限</div>
+
+            <dl class="meta">
+              <dt>安装位置</dt>
+              <dd id="mInstallDir">—</dd>
+              <dt>需要空间</dt>
+              <dd id="mNeeded">—</dd>
+              <dt>包含内容</dt>
+              <dd>程序本体 · 卸载程序</dd>
+              <dt>数据目录</dt>
+              <dd id="mDataDir">—</dd>
+            </dl>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-act="close">取消</button>
+                <button class="btn btn-primary" data-act="to-location">继续</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ══════════ 安装 · 2 位置 ══════════ -->
+          <div class="state" data-istep="1">
+            <h2 class="h2">选择安装位置</h2>
+            <p class="lead">换一个盘，字体库、缓存和全部数据都跟着走。</p>
+
+            <div class="field">
+              <code id="pathBox">—</code>
+              <button class="btn btn-outline btn-sm" data-act="browse">浏览…</button>
+            </div>
+            <div class="sub" id="pathHint">—</div>
+
+            <dl class="meta">
+              <dt>需要空间</dt>
+              <dd id="mNeeded2">—</dd>
+              <dt>完成后</dt>
+              <dd>程序 + data 全部在此目录</dd>
+              <dt>卸载时</dt>
+              <dd>可选「同时删除数据」，默认只删程序</dd>
+            </dl>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-act="to-welcome">返回</button>
+                <button class="btn btn-primary" data-act="install">安装</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ══════════ 安装 · 3 安装中 ══════════ -->
+          <div class="state" data-istep="2">
+            <div class="status"><span id="iStatus">正在安装…</span></div>
+            <div class="prog"><i id="iProg" style="width: 0%"></i></div>
+            <div class="sub" id="iSub">—</div>
+
+            <div class="log" id="iLog"></div>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts" id="iActs3">
+                <button class="btn btn-ghost" data-act="cancel-install">取消安装</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ══════════ 安装 · 4 完成 ══════════ -->
+          <div class="state" data-istep="3">
+            <div class="done-badge">
+              <svg viewBox="0 0 14 14" fill="none">
+                <path
+                  d="M2 7.4 5.4 10.7 12 3.6"
+                  stroke="#fff"
+                  stroke-width="1.9"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <h2 class="h2" style="margin-top: 16px" id="iDoneTitle">安装完成</h2>
+            <p class="lead" id="iDoneBody">—</p>
+
+            <div class="checks" id="iDoneChecks">
+              <div class="check" data-chk="run">
+                <span class="box on"
+                  ><svg viewBox="0 0 9 9" fill="none">
+                    <path
+                      d="M1 4.6 3.4 7 8 1.6"
+                      stroke="#fff"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                ></span>
+                立即运行 FontManager
+              </div>
+              <div class="check" data-chk="desktop">
+                <span class="box on"
+                  ><svg viewBox="0 0 9 9" fill="none">
+                    <path
+                      d="M1 4.6 3.4 7 8 1.6"
+                      stroke="#fff"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                ></span>
+                在桌面创建快捷方式
+              </div>
+            </div>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-act="open-dir">打开安装目录</button>
+                <button class="btn btn-primary" data-act="finish">完成</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ══════════ 卸载 · 1 确认 ══════════ -->
+          <div class="state" data-ustep="0">
+            <div class="copy">© 2026 IIEOzo. 保留所有权利。</div>
+            <h2 class="h2">卸载 FontManager</h2>
+            <p class="lead">将从这台电脑移除 FontManager。程序文件、卸载程序和开始菜单项都会被删除。</p>
+            <p class="lead">你的字体库、分组、快照与设置默认保留 —— 重新安装会直接接上。</p>
+
+            <div class="sub" id="uWarn" style="display: none; margin-top: 12px; color: #b4322c">
+              这台电脑上找不到 FontManager 的卸载信息 —— 可能已经卸载过，或安装时没有写入注册表。
+            </div>
+
+            <dl class="meta">
+              <dt>安装位置</dt>
+              <dd id="uInstallDir">—</dd>
+              <dt>占用空间</dt>
+              <dd id="uUsed">—</dd>
+              <dt>数据目录</dt>
+              <dd id="uDataDir">—</dd>
+            </dl>
+
+            <div class="checks" style="margin-top: 22px">
+              <div class="check" id="uPurgeRow">
+                <span class="box" id="uPurgeBox"
+                  ><svg viewBox="0 0 9 9" fill="none">
+                    <path
+                      d="M1 4.6 3.4 7 8 1.6"
+                      stroke="#fff"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                ></span>
+                同时删除全部数据与字体库
+              </div>
+            </div>
+            <div class="sub" style="margin-top: 9px">
+              包含字体库、分组、快照与全部设置 —— 删除后无法恢复。
+            </div>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-act="close">取消</button>
+                <button class="btn btn-primary" data-act="uninstall">卸载</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ══════════ 卸载 · 2 卸载中 ══════════ -->
+          <div class="state" data-ustep="1">
+            <div class="status" style="margin-top: 26px"><span id="uStatus">正在移除…</span></div>
+            <div class="prog"><i id="uProg" style="width: 0%"></i></div>
+            <div class="sub" id="uSub">—</div>
+
+            <div class="log" id="uLog"></div>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts"></div>
+            </div>
+          </div>
+
+          <!-- ══════════ 卸载 · 3 完成 ══════════ -->
+          <div class="state" data-ustep="2">
+            <div class="done-badge">
+              <svg viewBox="0 0 14 14" fill="none">
+                <path
+                  d="M2 7.4 5.4 10.7 12 3.6"
+                  stroke="#fff"
+                  stroke-width="1.9"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <h2 class="h2" style="margin-top: 16px">卸载完成</h2>
+            <p class="lead" id="uDoneBody">—</p>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-primary" data-act="finish">关闭</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 品牌图：与安装器同一张（PRD Q6：卸载语境下"你的决定"同样成立） -->
+        <div class="art">
+          <div class="aa">Aa</div>
+          <div class="ghost"></div>
+          <img class="sheet" src="/icon-512.png" alt="FontManager" />
+          <div class="disc"></div>
+          <div class="tag">你的字体 · 你的电脑 · 你的决定</div>
+        </div>
+      </div>
+
+      <!-- ══════════ 遮罩：FontManager 还在运行（2.1.7） ══════════
+           为什么要停下来问：安装要替换 fontmanager.exe、卸载要删它，文件被占用时
+           NSIS 只会写不进去 / 挂到重启后清理，用户看到的是「装完了版本没变」或
+           「卸完了文件还在」—— 那两种现象比直接失败难查得多。
+           **绝不自动消失、绝不替用户杀进程**：关不关、什么时候关，是用户的事。
+           两个按钮：取消（回到上一屏）/ 关闭软件并继续（先杀进程再重来一次）。 -->
+      <div class="modal" id="runModal" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="runTitle">
+          <div class="modal-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none">
+              <path
+                d="M8 1.6 15 14H1L8 1.6Z"
+                stroke="currentColor"
+                stroke-width="1.3"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M8 6.1v3.6"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+              <circle cx="8" cy="11.7" r="0.85" fill="currentColor" />
+            </svg>
+          </div>
+          <h3 class="modal-title" id="runTitle">FontManager 正在运行</h3>
+          <p class="modal-body" id="runBody">—</p>
+          <p class="modal-note" id="runNote">关闭时，正在进行的操作会丢失。</p>
+          <div class="modal-acts">
+            <button class="btn btn-ghost" data-act="run-cancel">取消</button>
+            <button class="btn btn-primary" data-act="run-close">关闭软件并继续</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 「取消安装」的二次确认（规格书 §4.7）：屏 3 上那个按钮离「返回」只有一格距离，
+           没有确认就等于允许手滑废掉一次四十多秒的安装。默认焦点给「继续安装」，
+           Esc 也回「继续安装」—— 想真取消必须正面点一次。 -->
+      <div class="modal" id="cancelModal" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="cancelTitle">
+          <h3 class="modal-title" id="cancelTitle">要取消安装吗？</h3>
+          <p class="modal-body">
+            已经写进安装目录的文件会被删除；如果这个目录是本次安装才新建的，目录本身也会一并清掉。
+          </p>
+          <p class="modal-note">你的字体库和已有数据不受影响。</p>
+          <div class="modal-acts">
+            <button class="btn btn-ghost" data-act="cancel-yes">取消安装</button>
+            <button class="btn btn-primary" data-act="cancel-no">继续安装</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/setup/main.ts"></script>
+  </body>
+</html>

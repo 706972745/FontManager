@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.1.7-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,14 @@
 ---
 
 ## 🆕 最近更新
+
+**2.1.7 —— 启动页放大一倍，安装器不再跟用户抢文件**
+
+- **安装前先问一句**：如果装/卸的时候软件还开着，会弹一个对话框告诉你，由你选「关闭软件并继续」还是「取消」。不再出现"文件被占用"或者"卸完了程序还在"。
+- **启动页整体放大一倍**：1120 × 760，图标、标题、进度条、状态行全部按比例放大。而且**每次启动都至少停留 1.5 秒**，热启动字体毫秒级就绪也不会一闪而过。
+- **严格串行交接**：先关启动页，再显示主界面，不再两张脸叠在一起闪一下。
+- **安装器/卸载器和主程序同一套界面**：同样的字体、同样的明暗主题、同样的措辞；静默安装（`/S`）依然是真静默，不会弹窗卡住。
+- **卸载更干净**：残留的图标文件和空的 `plugins` / 字体库目录会清掉；"连数据一起删"仍是需要你主动勾选的独立选项。
 
 **2.1.5 —— 数据跟着安装目录走**
 

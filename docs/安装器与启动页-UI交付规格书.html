@@ -1,0 +1,444 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FontManager · 安装器与启动页 UI 交付规格书</title>
+<style>
+@page { size: A4; margin: 22mm 18mm; }
+* { box-sizing: border-box; }
+body { margin:0 auto; max-width: 940px; padding: 0 32px 80px;
+  font-family: "Noto Sans SC","Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  font-size: 14px; line-height: 1.85; color:#262625; background:#fff; }
+.cover { padding: 90px 0 60px; border-bottom: 3px solid #1B4FE0; margin-bottom: 40px; }
+.cover .kicker { font: 600 12px/1.6 "Geist Mono",Consolas,monospace; letter-spacing:.14em;
+  color:#1B4FE0; text-transform:uppercase; margin-bottom:26px; }
+.cover h1 { font-size: 40px; line-height:1.3; margin:0 0 22px; letter-spacing:-.02em; color:#141412; }
+.cover .sub { font-size:16px; color:#6B6B66; margin-bottom:38px; }
+.cover .meta { display:flex; flex-wrap:wrap; gap:10px 28px; font-size:12px; color:#6B6B66;
+  border-top:1px solid #E2E2DD; padding-top:18px; }
+.cover .meta b { color:#141412; font-weight:600; }
+.doc-toc { background:#FAFAF8; border:1px solid #E2E2DD; border-left:3px solid #1B4FE0;
+  padding:22px 28px; margin:0 0 48px; }
+.doc-toc h2 { font-size:15px; margin:0 0 12px; color:#1B4FE0; border:0; padding:0; }
+.doc-toc ul { list-style:none; margin:0; padding:0; columns:2; column-gap:36px; }
+.doc-toc li { font-size:12.5px; line-height:1.9; break-inside:avoid; }
+.doc-toc .toc-l3 { padding-left:16px; color:#6B6B66; }
+.doc-toc .toc-l4 { padding-left:32px; color:#9B9B95; }
+.doc-toc a { color:#262625; text-decoration:none; border-bottom:1px solid #E2E2DD; }
+h2 { font-size:24px; line-height:1.4; margin:56px 0 18px; padding-bottom:10px;
+  border-bottom:1px solid #E2E2DD; color:#141412; letter-spacing:-.01em; }
+h3 { font-size:17px; margin:34px 0 12px; color:#141412; }
+h4 { font-size:14px; margin:24px 0 8px; color:#1B4FE0; }
+p { margin:0 0 13px; }
+strong { font-weight:600; color:#141412; }
+em { font-style:italic; }
+code { font-family:"Geist Mono","Cascadia Mono",Consolas,monospace; font-size:.88em;
+  background:#F1F1ED; padding:2px 5px; border-radius:2px; color:#1B4FE0; }
+pre { background:#1B1B19; color:#F2F2EF; padding:18px 20px; overflow-x:auto;
+  border-radius:4px; font-size:12px; line-height:1.7; margin:16px 0 22px; }
+pre code { background:none; color:inherit; padding:0; font-size:inherit; }
+table { width:100%; border-collapse:collapse; margin:14px 0 24px; font-size:12.5px; }
+th { background:#F1F1ED; text-align:left; font-weight:600; color:#141412; }
+th, td { border:1px solid #E2E2DD; padding:8px 11px; vertical-align:top; line-height:1.65; }
+tr:nth-child(even) td { background:#FCFCFA; }
+ul, ol { margin:0 0 16px; padding-left:24px; }
+li { margin:4px 0; }
+blockquote { margin:16px 0; padding:12px 18px; border-left:3px solid #1B4FE0;
+  background:#FAFAF8; color:#6B6B66; font-size:13px; }
+figure { margin:22px 0 28px; text-align:center; break-inside:avoid; }
+figure img { max-width:100%; max-height:760px; height:auto; border:1px solid #E2E2DD; }
+figcaption { font-size:11.5px; color:#9B9B95; margin-top:8px; }
+hr { border:0; border-top:1px solid #E2E2DD; margin:36px 0; }
+a { color:#1B4FE0; }
+.footer { margin-top:60px; padding-top:16px; border-top:1px solid #E2E2DD;
+  font:11px/1.8 "Geist Mono",Consolas,monospace; color:#9B9B95; }
+</style></head><body>
+<section class="cover">
+  <div class="kicker">INSTALLER & SPLASH / DESIGN HANDOFF</div>
+  <h1>FontManager<br>安装器 & 启动页<br>UI 交付规格书</h1>
+  <div class="sub">白卡 + 左文字 / 右品牌图 · 深林绿 + 宝蓝 · 每个数值都能在原型里量到</div>
+  <div class="meta">
+    <span>适用版本 <b>2.1.6</b></span><span>覆盖 <b>安装器 4 屏 / 启动页 / NSIS 备选版</b></span><span>单位 <b>逻辑像素（100%）</b></span><span>原型 <b>docs/installer-splash-ui-demo.html</b></span>
+  </div>
+</section>
+
+<nav class="doc-toc"><h2>目录</h2><ul>
+<li class=""><a href="#0-交付物清单">0. 交付物清单</a></li>
+<li class=""><a href="#1-先说结论-两条路线-先选再动手">1. 先说结论：两条路线，先选再动手</a></li>
+<li class="toc-l3"><a href="#1-1-结论-优先做-b-a-只是降级方案-能不用就不用">1.1 结论：优先做 B；A 只是降级方案，能不用就不用</a></li>
+<li class=""><a href="#2-设计依据">2. 设计依据</a></li>
+<li class="toc-l3"><a href="#2-1-参考稿结构">2.1 参考稿结构</a></li>
+<li class="toc-l3"><a href="#2-2-品牌色从哪来">2.2 品牌色从哪来</a></li>
+<li class="toc-l3"><a href="#2-3-三条硬规则">2.3 三条硬规则</a></li>
+<li class=""><a href="#3-设计令牌">3. 设计令牌</a></li>
+<li class="toc-l3"><a href="#3-1-颜色">3.1 颜色</a></li>
+<li class="toc-l3"><a href="#3-2-字体与字号">3.2 字体与字号</a></li>
+<li class="toc-l3"><a href="#3-3-圆角-阴影-间距">3.3 圆角 / 阴影 / 间距</a></li>
+<li class="toc-l3"><a href="#3-4-动效">3.4 动效</a></li>
+<li class=""><a href="#4-安装器-完整版-1000-620">4. 安装器 · 完整版（1000 × 620）</a></li>
+<li class="toc-l3"><a href="#4-1-窗口">4.1 窗口</a></li>
+<li class="toc-l3"><a href="#4-2-栅格">4.2 栅格</a></li>
+<li class="toc-l3"><a href="#4-3-左栏逐元素">4.3 左栏逐元素</a></li>
+<li class="toc-l3"><a href="#4-4-右栏品牌图-图层">4.4 右栏品牌图（图层）</a></li>
+<li class="toc-l3"><a href="#4-5-四屏内容">4.5 四屏内容</a></li>
+<li class="toc-l4"><a href="#屏-1-欢迎-step-0">屏 1 · 欢迎（?step=0）</a></li>
+<li class="toc-l4"><a href="#屏-2-选择位置-step-1">屏 2 · 选择位置（?step=1）</a></li>
+<li class="toc-l4"><a href="#屏-3-安装中-step-2">屏 3 · 安装中（?step=2）</a></li>
+<li class="toc-l4"><a href="#屏-4-完成-step-3">屏 4 · 完成（?step=3）</a></li>
+<li class="toc-l3"><a href="#4-6-状态机与按钮规则">4.6 状态机与按钮规则</a></li>
+<li class="toc-l3"><a href="#4-7-必须实现的异常态">4.7 必须实现的异常态</a></li>
+<li class="toc-l3"><a href="#4-8-不要在安装器里做的事">4.8 不要在安装器里做的事</a></li>
+<li class="toc-l3"><a href="#4-9-程序还在运行-确认对话框-2-1-7-新增-用户要求">4.9 程序还在运行 · 确认对话框（2.1.7 新增，用户要求）</a></li>
+<li class=""><a href="#4a-卸载器-与安装器同一套版式">4A. 卸载器（与安装器同一套版式）</a></li>
+<li class="toc-l3"><a href="#4a-1-与安装器共用的部分-照抄-不许改数值">4A.1 与安装器共用的部分（照抄，不许改数值）</a></li>
+<li class="toc-l3"><a href="#4a-2-屏-1-确认">4A.2 屏 1 · 确认</a></li>
+<li class="toc-l3"><a href="#4a-3-屏-2-卸载中">4A.3 屏 2 · 卸载中</a></li>
+<li class="toc-l3"><a href="#4a-4-屏-3-完成-两种变体">4A.4 屏 3 · 完成（两种变体）</a></li>
+<li class="toc-l3"><a href="#4a-5-状态机与按钮规则">4A.5 状态机与按钮规则</a></li>
+<li class="toc-l3"><a href="#4a-6-必须实现的异常态">4A.6 必须实现的异常态</a></li>
+<li class="toc-l3"><a href="#4a-7-不要在卸载器里做的事">4A.7 不要在卸载器里做的事</a></li>
+<li class=""><a href="#5-启动页-1120-760">5. 启动页（1120 × 760）</a></li>
+<li class="toc-l3"><a href="#5-1-窗口">5.1 窗口</a></li>
+<li class="toc-l3"><a href="#5-2-元素">5.2 元素</a></li>
+<li class="toc-l3"><a href="#5-3-进度条的语义-这块最容易做错-务必按这里实现">5.3 ⚠️ 进度条的语义（这块最容易做错，务必按这里实现）</a></li>
+<li class="toc-l4"><a href="#分子-分母是什么">分子 / 分母是什么</a></li>
+<li class="toc-l4"><a href="#为什么可以这样">为什么可以这样</a></li>
+<li class="toc-l4"><a href="#因此这三条必须遵守">因此这三条必须遵守</a></li>
+<li class="toc-l4"><a href="#三个边界态">三个边界态</a></li>
+<li class="toc-l4"><a href="#时序">时序</a></li>
+<li class="toc-l3"><a href="#5-4-明暗两套配色-跟随软件主题">5.4 明暗两套配色（跟随软件主题）</a></li>
+<li class=""><a href="#6-文案表-中-英">6. 文案表（中 / 英）</a></li>
+<li class=""><a href="#7-资源与导出">7. 资源与导出</a></li>
+<li class=""><a href="#8-路线-a-nsis-紧凑版-备选方案-能不用就不用">8. 路线 A：NSIS 紧凑版（备选方案 · 能不用就不用）</a></li>
+<li class="toc-l3"><a href="#8-0-它和完整版的差距-写在前面-免得验收扯皮">8.0 它和完整版的差距（写在前面，免得验收扯皮）</a></li>
+<li class="toc-l3"><a href="#8-1-为什么是这个尺寸">8.1 为什么是这个尺寸</a></li>
+<li class="toc-l3"><a href="#8-2-紧凑版版面-内页坐标-原点-内页左上角">8.2 紧凑版版面（内页坐标，原点 = 内页左上角）</a></li>
+<li class="toc-l3"><a href="#8-3-控件怎么建">8.3 控件怎么建</a></li>
+<li class="toc-l3"><a href="#8-4-五个必须知道的坑">8.4 五个必须知道的坑</a></li>
+<li class="toc-l3"><a href="#8-5-代码骨架">8.5 代码骨架</a></li>
+<li class="toc-l3"><a href="#8-6-路线-a-明确不做的">8.6 路线 A 明确不做的</a></li>
+<li class=""><a href="#9-路线-b-tauri-独立安装器-1-1-还原">9. 路线 B：Tauri 独立安装器（1:1 还原）</a></li>
+<li class="toc-l3"><a href="#9-1-结构">9.1 结构</a></li>
+<li class="toc-l3"><a href="#9-2-窗口配置">9.2 窗口配置</a></li>
+<li class="toc-l3"><a href="#9-3-前端要实现的">9.3 前端要实现的</a></li>
+<li class="toc-l3"><a href="#9-4-rust-侧必须自己实现-这是路线-b-的真实成本">9.4 Rust 侧必须自己实现（这是路线 B 的真实成本）</a></li>
+<li class="toc-l3"><a href="#9-5-路线-c-复用主程序二进制-0-体积的-1-1-还原-2026-11-14-用户要求后新增">9.5 路线 C：复用主程序二进制（≈0 体积的 1:1 还原，2026-11-14 用户要求后新增）</a></li>
+<li class="toc-l3"><a href="#9-5-1-落地形态-v0-2026-11-14">9.5.1 落地形态（v0，2026-11-14）</a></li>
+<li class=""><a href="#10-验收清单">10. 验收清单</a></li>
+<li class="toc-l3"><a href="#安装器-完整版-路线-b">安装器（完整版 / 路线 B）</a></li>
+<li class="toc-l3"><a href="#卸载器-路线-b-2-1-7">卸载器（路线 B / 2.1.7）</a></li>
+<li class="toc-l3"><a href="#程序还在运行-4-9-2-1-7">程序还在运行（§4.9，2.1.7）</a></li>
+<li class="toc-l3"><a href="#启动页">启动页</a></li>
+<li class=""><a href="#11-附录">11. 附录</a></li>
+<li class="toc-l3"><a href="#a-原型怎么用">A. 原型怎么用</a></li>
+<li class="toc-l3"><a href="#b-数值来源">B. 数值来源</a></li>
+<li class="toc-l3"><a href="#c-变更记录">C. 变更记录</a></li>
+</ul></nav>
+
+<blockquote><strong>这份文档是给实现的人看的，不是提案。</strong> 每个尺寸、色值、字号、间距都能在原型 <code>docs/installer-splash-ui-demo.html</code> 里量到； 原型与本文冲突时，<strong>以原型为准</strong>，并把本文改对。<br>适用版本 <strong>2.1.6</strong>（基于 2.1.5） · 覆盖 <strong>安装器 4 屏</strong>（欢迎 / 位置 / 安装中 / 完成）与 <strong>启动页 1 屏</strong> 另附 <strong>NSIS 紧凑版</strong>，它是<strong>备选 / 降级方案，能不用就不用</strong>（见 §1.1、§8.0） 单位 <strong>逻辑像素（CSS px）</strong>，即 100% 缩放下的 1:1 尺寸；NSIS 专有单位 <code>u</code> 在 §8 换算 语言 <strong>中英双语</strong>；文案键沿用 <code>zfm-strings.nsh</code> 与 <code>src/locales/*.json</code> 的命名习惯</blockquote>
+<hr>
+<h2 id="0-交付物清单">0. 交付物清单</h2>
+<table><thead><tr><th>文件</th><th>是什么</th><th>怎么用</th></tr></thead><tbody><tr><td><code>docs/安装器与启动页-UI交付规格书.md</code></td><td>本文，唯一事实来源</td><td>改设计先改这里</td></tr><tr><td><code>docs/安装器与启动页-UI交付规格书.html</code></td><td>由 <code>make-spec-html.py installer</code> 生成的渲染版</td><td>直接发给同事 / 打印成 PDF</td></tr><tr><td><code>docs/installer-splash-ui-demo.html</code></td><td><strong>可点原型</strong>（安装器 4 屏 + 启动页；另含备选的紧凑版）</td><td>浏览器打开，底部工具条切屏</td></tr><tr><td><code>docs/shots-installer/01..04.png</code></td><td>安装器四屏 1:1 截图（1080×700 = 1000×620 + 40 边距）</td><td>贴进 PR、对照验收</td></tr><tr><td><code>docs/shots-installer/10..13.png</code></td><td><strong>卸载器</strong>三屏 + 1 张"数据已删除"变体（同尺寸）</td><td>对照 §4A 验收</td></tr><tr><td><code>docs/shots-installer/05..07.png</code></td><td>启动页 + NSIS 紧凑版 + 栅格标注图</td><td>备查</td></tr><tr><td><code>docs/shots-installer/08..09.png</code></td><td><strong>实现产物</strong>：启动页深色 / 浅色各一张，<strong>已是 1120×760 原始窗口尺寸</strong>（2.1.7 重拍）</td><td>对照 §5.4 验收</td></tr><tr><td><code>docs/shots-installer/14-blocked-modal.png</code></td><td><strong>2.1.7</strong>：「FontManager 正在运行」遮罩对话框（原型 <code>?view=installer&step=1&blocked=1&clean=1</code>）</td><td>对照 §4.9</td></tr><tr><td><code>docs/shots-installer/15-splash-1120.png</code></td><td><strong>2.1.7</strong>：放大一倍后的启动页（1120×760 实现产物，深色）</td><td>对照 §5.1</td></tr><tr><td><code>docs/shots-installer/16-cancel-confirm.png</code></td><td><strong>2.1.7</strong>：屏 3「取消安装」的二次确认卡（真实运行截图，1250×775 = 1000×620 @125%）</td><td>对照 §4.7</td></tr></tbody></table>
+<p>原型的三个视图与 URL 参数（方便截图与评审，不用手点）：</p>
+<table><thead><tr><th>想看什么</th><th>地址后缀</th></tr></thead><tbody><tr><td>安装器第 1 屏（欢迎）</td><td><code>?step=0</code></td></tr><tr><td>安装器第 2 屏（位置）</td><td><code>?step=1</code></td></tr><tr><td>安装器第 3 屏（安装中）</td><td><code>?step=2</code></td></tr><tr><td>安装器第 4 屏（完成）</td><td><code>?step=3</code></td></tr><tr><td>紧凑版（备选，能不用就不用）</td><td><code>?view=compact</code></td></tr><tr><td>卸载器第 1 屏（确认）</td><td><code>?view=uninstaller&step=0</code></td></tr><tr><td>卸载器第 2 屏（卸载中）</td><td><code>?view=uninstaller&step=1</code></td></tr><tr><td>卸载器第 3 屏（完成 · 数据保留）</td><td><code>?view=uninstaller&step=2</code></td></tr><tr><td>卸载器第 3 屏（完成 · 数据已删）</td><td>再加 <code>&purged=1</code></td></tr><tr><td>启动页</td><td><code>?view=splash</code></td></tr><tr><td>出干净截图（去工具条、按 1:1）</td><td>再加 <code>&clean=1</code></td></tr></tbody></table>
+<hr>
+<h2 id="1-先说结论-两条路线-先选再动手">1. 先说结论：两条路线，先选再动手</h2>
+<p>这个设计（1000×620 的白卡 + 右侧整块品牌图 + 圆角）<strong>不是 NSIS 能长出来的形状</strong>。NSIS 的自绘页只有一块固定 662×416 的客户区，控件全是矩形，位图不带 alpha。所以要么缩，要么换壳：</p>
+<table><thead><tr><th></th><th>路线 A：NSIS 紧凑版（<strong>降级方案，能不用就不用</strong>）</th><th>路线 B：Tauri 独立安装器</th></tr></thead><tbody><tr><td>保真度</td><td><strong>约 75%</strong>：布局对，尺寸缩到 662×416，按钮是系统灰，窗口没有圆角</td><td><strong>100%</strong>：与原型 1:1</td></tr><tr><td>工期</td><td><strong>1.5–2 天</strong></td><td><strong>5–7 天</strong></td></tr><tr><td>安装逻辑</td><td><strong>完全复用</strong>现有 <code>installer.nsi</code>（数据迁移、文件关联、清理白名单、静默 <code>/S</code> <code>/P</code> 全在）</td><td>要在 Rust 里<strong>重写</strong>：解包、注册表、快捷方式、卸载项、数据迁移、提权</td></tr><tr><td>风险</td><td>低（只动页面，不动内核）</td><td>中高（卸载清理白名单最容易做漏，做漏就是"删了用户的字体"）</td></tr><tr><td>维护</td><td>两套外观（完整版设计只能活在稿子里）</td><td>一套外观，以后改 UI 只改 HTML</td></tr></tbody></table>
+<h3 id="1-1-结论-优先做-b-a-只是降级方案-能不用就不用">1.1 结论：优先做 B；A 只是降级方案，<strong>能不用就不用</strong></h3>
+<p><strong>为什么 A 能不用就不用</strong>（不是因为它难，而是因为它是一笔一次性的债）：</p>
+<ol><li><strong>它做不出这个设计。</strong> 窗口被 NSIS 锁死在 662×416，可画的只有 662×264：右图缩到 234×216、按钮变系统灰、圆角全丢。做出来是"像"，不是"是"，用户拿原型一比就会发现没做完。</li><li><strong>它注定变成第二套外观。</strong> 同一份设计要维护两套数值表，改一处忘一处，两个版本之后必然漂移 —— 这正是 2.1.5 把欢迎页从 MUI 改成自绘时想避免的事。</li><li><strong>我们没有必须用 A 的理由。</strong> 项目已经在 Tauri 2 上，原型就是 HTML/CSS，路线 B 的 UI 部分几乎是把原型接上 IPC。A 省下的 4 天，会在"以后每次改 UI 都要改两遍"上加倍还回去。</li></ol>
+<p><strong>什么情况下才允许用 A</strong>：这一版必须按日发版 <strong>且</strong> 没人有 5 天写安装内核。此时按 §8 落地，验收标准相应降到"布局正确、文案正确、能用"，不要求像素级还原。</p>
+<p><strong>建议排期</strong>：主界面与启动页照常走；安装器排 <strong>B</strong>。若 B 赶不上发版窗口，2.1.6 <strong>先不改安装器外观</strong>（保持现状），把 B 完整放到 2.1.7 —— 好过先上 A 再推倒重来。</p>
+<p>启动页<strong>与安装器无关</strong>，它是主程序自己的窗口，直接按 §5 做，两条路线都适用。</p>
+<blockquote>需要产品拍板的三件事：①走 A 还是 B；②右图用"真图标白板"还是"字形满版海报"；③文案是否加一句"无账号 · 无遥测"。</blockquote>
+<hr>
+<h2 id="2-设计依据">2. 设计依据</h2>
+<h3 id="2-1-参考稿结构">2.1 参考稿结构</h3>
+<p>参考稿（Adobe 安装-初始化窗口）的价值不在"Adobe 的样子"，在三件事：</p>
+<ol><li><strong>左右分栏</strong>：左边信息密度高（版权 / 说明 / 状态 / 密集小字），右边一整块高饱和图像做情绪出口；</li><li><strong>左边只有一个主角</strong>：状态行（"正在初始化工具…"）加粗、其余全部降到次级灰，视线只会落在"现在在干什么"；</li><li><strong>留白靠边距，分隔靠 1px 线</strong>：没有卡片堆叠、没有描边框，全靠一条发丝线和一个大标题分层。</li></ol>
+<p>这三点被完整继承，只是把 Adobe 的蓝+荧光换成 FontManager 自己的<strong>深林绿 + 宝蓝</strong>。</p>
+<h3 id="2-2-品牌色从哪来">2.2 品牌色从哪来</h3>
+<p>不是配色网站选的，是从 <code>src-tauri/icons/icon.png</code> 逐像素采样出来的：</p>
+<table><thead><tr><th>采样对象</th><th>色值</th><th>用在哪</th></tr></thead><tbody><tr><td>TYPE 字标的绿（"Y" 的填充）</td><td><code>#0b3a22</code> ~ <code>#0d4429</code></td><td>右图底色、完成徽标、进度条起点</td></tr><tr><td>FontManager 手写体的蓝</td><td><code>#1230c8</code>（亮部 <code>#3455f2</code>）</td><td>圆点、进度条终点 —— 全局第二强调</td></tr><tr><td>字标的墨黑</td><td><code>#16161a</code></td><td>主文字、主按钮底色</td></tr><tr><td>纸白</td><td><code>#fbfaf5</code></td><td>图标板底、启动页图标块</td></tr></tbody></table>
+<h3 id="2-3-三条硬规则">2.3 三条硬规则</h3>
+<ol><li><strong>一屏只有一个强调色</strong>（宝蓝），且只出现在"进度"和"圆点"上；其余全是灰阶。</li><li><strong>中文不描边、不加投影</strong>：白底上只靠字号与字重分层。</li><li><strong>右图不承载信息</strong>：它只是情绪与品牌，删掉它功能不受影响 —— 所以它可以被替换成任何海报。</li></ol>
+<hr>
+<h2 id="3-设计令牌">3. 设计令牌</h2>
+<h3 id="3-1-颜色">3.1 颜色</h3>
+<table><thead><tr><th>令牌</th><th>值</th><th>用途</th></tr></thead><tbody><tr><td><code>--ink</code></td><td><code>#16161a</code></td><td>主文字 · 主按钮底 · 复选框选中</td></tr><tr><td><code>--ink-2</code></td><td><code>#4e4e58</code></td><td>正文</td></tr><tr><td><code>--ink-3</code></td><td><code>#8a8a93</code></td><td>版权行、次要说明</td></tr><tr><td><code>--ink-4</code></td><td><code>#a8a8b0</code></td><td>页脚小字、"预计 5 秒"</td></tr><tr><td><code>--line</code></td><td><code>#ececef</code></td><td>发丝线（分段、输入框）</td></tr><tr><td><code>--green</code></td><td><code>#0b3a22</code></td><td>品牌绿（右图、徽标、进度条起点）</td></tr><tr><td><code>--blue</code></td><td><code>#1230c8</code></td><td>品牌蓝（圆点、进度条终点）</td></tr><tr><td><code>--paper</code></td><td><code>#fbfaf5</code></td><td>图标板底</td></tr><tr><td>进度条填充</td><td><code>linear-gradient(90deg,#0b3a22 0%,#16408f 62%,#1230c8 100%)</code></td><td>唯一渐变，别扩散到别处</td></tr></tbody></table>
+<p>右图是深色场景，用半透明白分层：<code>12%</code>（描边）/ <code>8.5%</code>（水印字）/ <code>5.5%</code>（网格线）/ <code>38%</code>（右下角小字）/ <code>17%</code>（虚描边）。</p>
+<p>启动页<strong>两套都有</strong>（§5.4）：深色那套沿用同一套半透明白；浅色那套换成 §3.1 的墨色梯度（<code>--ink</code> / <code>--ink-3</code> / <code>--ink-4</code>），因为纸白底上不能再靠白色分层。</p>
+<h3 id="3-2-字体与字号">3.2 字体与字号</h3>
+<table><thead><tr><th>层级</th><th>完整版</th><th>紧凑版（NSIS）</th><th>字重</th><th>用在哪</th></tr></thead><tbody><tr><td>品牌名</td><td>20px</td><td>14px</td><td>700</td><td><code>FontManager</code></td></tr><tr><td>二级标题</td><td>17px</td><td>—</td><td>650</td><td>"选择安装位置""安装完成"</td></tr><tr><td>状态行</td><td>13.5px</td><td>12px</td><td>550 / 600</td><td>"正在安装 · 12.4 MB / 23.7 MB"</td></tr><tr><td>正文</td><td>13px</td><td>11.5px</td><td>400</td><td>说明段落，行高 <strong>1.72 / 1.6</strong></td></tr><tr><td>版权</td><td>12px</td><td>10.5px</td><td>400</td><td>"© 2026 IIEOzo…"</td></tr><tr><td>按钮</td><td>12.5px</td><td>11.5px</td><td>550</td><td>—</td></tr><tr><td>元信息</td><td>10.5px <strong>等宽</strong></td><td>9.5px</td><td>400</td><td>安装路径、空间、数据目录</td></tr><tr><td>微字</td><td>11px / 9.5px</td><td>9.5px</td><td>400</td><td>页脚、右图小字</td></tr></tbody></table>
+<ul><li><strong>完整版 UI 字体</strong>：<code>Inter Variable</code>（仓库已有 <code>@fontsource-variable/inter</code>）→ 中文回落 <code>Microsoft YaHei</code> / <code>PingFang SC</code>。</li><li><strong>紧凑版不要试图装 Inter</strong>：NSIS 只能用系统 UI 字体 <code>$(^Font)</code>，硬写字体族会让英文系统 fallback 成别的字形。紧凑版的"像"靠<strong>字重 + 间距 + 颜色</strong>，不靠字体。</li><li><strong>等宽</strong>：<code>JetBrains Mono</code> / <code>Consolas</code>。所有数字（文件数、尺寸、路径）都用它，并且 <code>font-variant-numeric: tabular-nums</code> —— 否则 9→10 时右侧会横向抖一下。</li></ul>
+<h3 id="3-3-圆角-阴影-间距">3.3 圆角 / 阴影 / 间距</h3>
+<table><thead><tr><th>令牌</th><th>值</th></tr></thead><tbody><tr><td>窗口圆角</td><td>16（紧凑版无，NSIS 窗口是方的）</td></tr><tr><td>右图圆角</td><td>14（紧凑版 10）</td></tr><tr><td>图标板</td><td>12（48×48）/ 19（主界面 78）/ 38（启动页 156，2.1.7 放大一倍后）</td></tr><tr><td>按钮 / 输入框</td><td>9</td></tr><tr><td>胶囊 / 进度条</td><td>99</td></tr><tr><td>复选框</td><td>4</td></tr></tbody></table>
+<table><thead><tr><th>元素</th><th>阴影</th></tr></thead><tbody><tr><td>安装器窗口</td><td><code>0 1px 2px rgba(20,20,32,.06), 0 26px 64px -12px rgba(20,20,32,.24), 0 8px 20px -6px rgba(20,20,32,.10)</code></td></tr><tr><td>右侧白板（sheet）</td><td><code>0 28px 52px -14px rgba(0,0,0,.55), 0 4px 10px rgba(0,0,0,.18)</code></td></tr><tr><td>宝蓝圆点</td><td><code>0 14px 30px rgba(0,0,0,.42)</code></td></tr><tr><td>启动页窗口</td><td><code>inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.4), 0 28px 60px -14px rgba(15,18,24,.5)</code></td></tr><tr><td>主按钮</td><td><code>0 1px 2px rgba(20,20,32,.22)</code></td></tr></tbody></table>
+<p><strong>间距节奏</strong>：4 的倍数。左栏纵向只用 <code>6 / 9 / 11 / 12 / 20 / 26 / 28 / 30</code> 这几个值，不要临时加 17、23 这种数。</p>
+<h3 id="3-4-动效">3.4 动效</h3>
+<table><thead><tr><th>场景</th><th>时长 / 曲线</th></tr></thead><tbody><tr><td>切屏（左栏内容）</td><td>340ms <code>cubic-bezier(.2,.8,.2,1)</code>，<code>opacity 0→1</code> + <code>translateY 6→0</code></td></tr><tr><td>进度条增长</td><td>900ms <code>cubic-bezier(.2,.8,.2,1)</code></td></tr><tr><td>按钮 hover</td><td>150ms</td></tr><tr><td>启动页进度</td><td>见 §5.3（由真实进度驱动，不是定时器）</td></tr><tr><td><strong>减弱动效</strong></td><td>用户在设置里开启「减弱动效」时：裁掉位移，只保留 opacity，时长 ×0.6</td></tr></tbody></table>
+<hr>
+<h2 id="4-安装器-完整版-1000-620">4. 安装器 · 完整版（1000 × 620）</h2>
+<figure><img src="shots-installer/01-welcome.png" alt="安装器第 1 屏：欢迎"><figcaption>安装器第 1 屏：欢迎</figcaption></figure>
+<h3 id="4-1-窗口">4.1 窗口</h3>
+<table><thead><tr><th>项</th><th>值</th></tr></thead><tbody><tr><td>客户区</td><td><strong>1000 × 620</strong></td></tr><tr><td>圆角</td><td>16（窗口本身圆角；Windows 下需 <code>DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE)</code> 或干脆用无边框窗口自绘）</td></tr><tr><td>边框</td><td>1px <code>rgba(20,20,32,.07)</code></td></tr><tr><td>标题栏</td><td><strong>没有</strong>。只有 44px 高的透明条，右上角三个细线控件</td></tr><tr><td>控件</td><td>11×11，间距 20，右内边距 24，默认不透明度 42%，hover 85%</td></tr><tr><td>背景</td><td><code>#ffffff</code>（整窗纯白，不允许铺灰）</td></tr></tbody></table>
+<blockquote>为什么不要标题栏：参考稿的观感一大半来自"没有重标题栏"。窗口标题由任务栏与 Alt+Tab 提供，安装器不需要再写一遍。</blockquote>
+<h3 id="4-2-栅格">4.2 栅格</h3>
+<figure><img src="shots-installer/07-grid.png" alt="安装器栅格与左栏纵向节奏（左：横向栅格 / 右：纵向节奏，蓝色数字是间距）"><figcaption>安装器栅格与左栏纵向节奏（左：横向栅格 / 右：纵向节奏，蓝色数字是间距）</figcaption></figure>
+<table><thead><tr><th>项</th><th>值</th></tr></thead><tbody><tr><td>内容区 padding</td><td>上 <strong>2</strong> / 右 <strong>40</strong> / 下 <strong>26</strong> / 左 <strong>44</strong></td></tr><tr><td>列</td><td><code>1fr 396px</code>，gap <strong>34</strong></td></tr><tr><td>左栏实宽</td><td><strong>486</strong>（= 1000 − 44 − 40 − 396 − 34）</td></tr><tr><td>文字最大宽度</td><td><strong>400</strong>（不要撑满 486，长行更难读）</td></tr><tr><td>左栏纵向节奏</td><td>48 · <strong>28</strong> · 15 · <strong>12</strong> · 22 · <strong>6</strong> · 44 · <strong>30</strong> · 19 · <strong>11</strong> · 3 · <strong>9</strong> · 15 · <strong>26</strong> · 82 · auto · 34（粗体是间距，其余是元素高）</td></tr></tbody></table>
+<h3 id="4-3-左栏逐元素">4.3 左栏逐元素</h3>
+<p>自上而下，<code>mt</code> = 与上一个元素的上边距。</p>
+<table><thead><tr><th>#</th><th>元素</th><th>内容</th><th>字号/字重</th><th>颜色</th><th>mt</th><th>其他</th></tr></thead><tbody><tr><td>1</td><td>品牌行</td><td>图标板 48×48 + <code>FontManager</code> + 版本胶囊</td><td>20/700</td><td><code>--ink</code></td><td>—</td><td>图标板 <code>48</code> 圆角 <code>12</code> 内边距 <code>5</code> 底 <code>--paper</code> 边框 <code>1px #e9e6df</code>；版本胶囊等宽 10px <code>#6b6b74</code> 底 <code>#f3f3f5</code> 圆角 5 内边距 <code>3 6</code></td></tr><tr><td>2</td><td>版权</td><td><code>© 2026 IIEOzo. 保留所有权利。</code></td><td>12/400</td><td><code>--ink-3</code></td><td>28</td><td>—</td></tr><tr><td>3</td><td>主句</td><td><code>你的全部字体，一键启停，永不离开你的电脑。</code></td><td>13/400</td><td><code>--ink-2</code></td><td>12</td><td>行高 1.72</td></tr><tr><td>4</td><td>说明</td><td><code>程序、字体库和全部数据都装在下面这个目录里 —— 想整体搬走，直接搬这个文件夹就行。</code>（末尾追加披露：<code>（Python / Node 运行时按需下载，不在安装包内。）</code>）</td><td>13/400</td><td><code>--ink-2</code></td><td>6</td><td>与主句同段组，间距小于组间</td></tr><tr><td>5</td><td>状态行</td><td><code>准备就绪 · 即将开始安装</code></td><td>13.5/550</td><td><code>--ink</code></td><td>30</td><td><strong>整屏唯一的黑粗行</strong>，视线锚点。不再显示文件数（包内只有 2 个文件，"将写入 2 个文件"会让用户以为漏装了）</td></tr><tr><td>6</td><td>进度条</td><td>3px 高，圆角 99，轨道 <code>#ededf0</code>，填充见 §3.1</td><td>—</td><td>—</td><td>11</td><td>宽度 400</td></tr><tr><td>7</td><td>副状态</td><td><code>预计 5 秒 · 无需管理员权限</code></td><td>11/400</td><td><code>--ink-4</code></td><td>9</td><td>—</td></tr><tr><td>8</td><td>元信息</td><td>4 行键值：安装位置 / 需要空间 / 包含内容 / 数据目录</td><td>等宽 10.5/400 行高 1.95</td><td>键 <code>#b3b3ba</code> 值 <code>#77777f</code></td><td>26</td><td>两列 grid，列间距 20，最大宽 420</td></tr><tr><td>9</td><td>页脚</td><td>左 <code>IIEOzo · GPL-3.0</code>，右按钮组</td><td>11/400</td><td><code>--ink-4</code></td><td>auto</td><td><code>margin-top:auto</code> + <code>padding-top:20</code>，永远贴底</td></tr></tbody></table>
+<h3 id="4-4-右栏品牌图-图层">4.4 右栏品牌图（图层）</h3>
+<p>从下到上：</p>
+<table><thead><tr><th>z</th><th>图层</th><th>参数</th></tr></thead><tbody><tr><td>0</td><td>底</td><td><code>linear-gradient(158deg,#0d4429 0%,#093219 46%,#04170d 100%)</code> + 左上角 <code>radial(90% 70% at 78% 8%, rgba(24,74,46,.55), transparent 60%)</code></td></tr><tr><td>1</td><td>网格</td><td><code>repeating-linear-gradient</code> 每 <strong>56px</strong> 一条 <code>rgba(255,255,255,.055)</code> 1px 线；上下各 18% 用 mask 渐隐</td></tr><tr><td>1</td><td><code>Aa</code> 水印</td><td>46/700，<code>letter-spacing:-.04em</code>，<code>rgba(255,255,255,.085)</code>，位置 <code>left:22 top:12</code></td></tr><tr><td>2</td><td>噪点</td><td>SVG feTurbulence，<code>opacity .13</code>，<code>mix-blend-mode: overlay</code></td></tr><tr><td>2</td><td>虚描边卡</td><td>宽 70%，正方形，<code>rotate(5deg)</code>，<code>translate(-44%,-55%)</code>，<code>1px rgba(255,255,255,.17)</code>，圆角 12</td></tr><tr><td>3</td><td>白板（真图标）</td><td>宽 70%，<code>top:46%</code>，<code>translate(-50%,-50%) rotate(-3deg)</code>，圆角 11，阴影见 §3.3</td></tr><tr><td>4</td><td>宝蓝圆点</td><td>88×88，<code>right:26</code>，<code>bottom:128</code>，<code>radial-gradient(circle at 34% 26%,#3455f2 0%,#1429bb 62%,#0d1c85 100%)</code></td></tr><tr><td>5</td><td>角标</td><td><code>你的字体 · 你的电脑 · 你的决定</code>，9.5px，<code>rgba(255,255,255,.38)</code>，<code>left:20 bottom:18</code></td></tr></tbody></table>
+<p><strong>要点</strong>：白板是"贴在绿色墙上的纸"，所以必须有<strong>旋转 + 投影</strong>；虚描边卡是"另一张没对齐的纸"，作用是让白板不孤立。圆点<strong>压在纸角上</strong>（不是飘在角落），它把两块白连成一个整体。</p>
+<h3 id="4-5-四屏内容">4.5 四屏内容</h3>
+<h4 id="屏-1-欢迎-step-0">屏 1 · 欢迎（<code>?step=0</code>）</h4>
+<ul><li>左栏：§4.3 全部 9 项</li><li>元信息四行：<code>安装位置 %LOCALAPPDATA%\FontManager</code> · <code>需要空间 约 24 MB</code> · <code>包含内容 程序本体 · 卸载程序</code> · <code>数据目录 <安装目录>\data</code></li></ul>
+<blockquote>2026-11-14 按实测定稿：包内只有 <strong>2 个文件</strong>（程序本体 + 卸载程序，23,706,438 B），字体库目录安装器不建、Python/Node 运行时按需下载不在包内。原稿的「148 个文件 / 约 420 MB / 含运行时」是设计占位值，<strong>已废弃，任何地方都不许再硬编码</strong>。容量写"约 24 MB"而非"23.7 MB"：元信息给的是容量预期，一位小数会被误读成精确值。</blockquote>
+<ul><li>按钮：<code>取消</code>（幽灵）/ <code>继续</code>（主）</li><li>进度条：<strong>0%</strong>（空轨道也要画出来，它是"即将开始"的承诺）</li></ul>
+<h4 id="屏-2-选择位置-step-1">屏 2 · 选择位置（<code>?step=1</code>）</h4>
+<figure><img src="shots-installer/02-location.png" alt="安装器第 2 屏：选择位置"><figcaption>安装器第 2 屏：选择位置</figcaption></figure>
+<ul><li>二级标题 <code>选择安装位置</code>（17/650，mt 30）</li><li>说明 <code>换一个盘，字体库、缓存和全部数据都跟着走。</code></li><li>路径框：宽 400，高 <strong>38</strong>，圆角 9，边框 <code>#e4e4e8</code>，底 <code>#fcfcfd</code>，内边距 <code>0 6 0 12</code>；等宽 10.5 显示路径，右侧内嵌 <code>浏览…</code> 小按钮（高 28 / 内边距 11 / 圆角 7 / 11.5px）</li><li>副状态 <code>这个位置当前用户可写 · 剩余 128 GB</code>（11px <code>--ink-4</code>）</li><li>元信息三行：<code>需要空间</code> / <code>完成后</code> / <code>卸载时</code></li><li>按钮：<code>返回</code>（幽灵）/ <code>安装</code>（主）</li></ul>
+<blockquote>路径框是<strong>只读展示</strong>，点击/回车才弹目录选择器；不要在框里允许手打（用户手打相对路径会炸）。</blockquote>
+<h4 id="屏-3-安装中-step-2">屏 3 · 安装中（<code>?step=2</code>）</h4>
+<figure><img src="shots-installer/03-installing.png" alt="安装器第 3 屏：安装中"><figcaption>安装器第 3 屏：安装中</figcaption></figure>
+<ul><li>状态行 <code>正在安装 · 12.4 MB / 23.7 MB</code>（数字用 <code>tabular-nums</code>，不要抖动）</li><li>进度条：<strong>按已写入字节推进</strong>，不按文件数。包内只有 2 个文件，按文件计数只有 <code>0%→50%→100%</code> 两跳，中间十几秒不动，用户会判定卡死。分母用归档内各 entry 的<strong>解压后字节数之和</strong>（用压缩包大小会让进度在后段突然加速）。</li><li>事件粒度 ≤256 KB 一次；任意 300ms 窗口内<strong>单调不减</strong>、相邻跳变 ≤20%、<strong>无 ≥1.5s 停滞</strong>（验收条款见 PRD §9.5 T2-AC1～AC7）</li><li>取消/失败时进度条<strong>停在当前值</strong>，不回退到 0（回退会被理解成"把已装的删了"）</li><li>副状态 <code>已用 6 秒 · 预计还要 14 秒</code>（超过 60 秒后只显示"已用 X 秒"，因为估时不准反而添乱）</li><li>日志区：等宽 10.5，行高 2，最多 <strong>5 行</strong>，新行从上方插入、最老的一行淡出；首行颜色加深（<code>#6f6f78</code>），其余 <code>#a2a2ab</code></li><li>按钮：只有 <code>取消安装</code>（幽灵），主按钮<strong>不出现</strong>（不能给"下一步"的错觉）</li></ul>
+<blockquote>日志文案要"人话"，写 <code>正在解压 python-runtime\python313.dll</code>，不要写 <code>extracting file 137</code>。</blockquote>
+<h4 id="屏-4-完成-step-3">屏 4 · 完成（<code>?step=3</code>）</h4>
+<figure><img src="shots-installer/04-finish.png" alt="安装器第 4 屏：完成"><figcaption>安装器第 4 屏：完成</figcaption></figure>
+<ul><li>完成徽标：30×30 圆，底 <code>--green</code>，白色对勾 14×14，描边 1.9</li><li>标题 <code>安装完成</code>（17/650，mt 16）</li><li>正文 <code>FontManager 2.1.5 已安装。数据在安装目录的 data 文件夹，卸载时你可以决定是否保留。</code></li><li>复选框 ×2（默认<strong>都勾上</strong>）：</li><li><code>立即运行 FontManager</code></li><li><code>在桌面创建快捷方式</code></li><li>复选框：15×15，圆角 4，未选边框 <code>1.4px #cfcfd6</code>，选中底 <code>--ink</code> + 白勾；标签 12.5px <code>--ink-2</code>，与框间距 9，两项间距 11</li><li>按钮：<code>打开安装目录</code>（幽灵）/ <code>完成</code>（主）</li></ul>
+<h3 id="4-6-状态机与按钮规则">4.6 状态机与按钮规则</h3>
+<pre><code>屏1 欢迎 ──继续──▶ 屏2 位置 ──安装──▶ 屏3 安装中 ──完成──▶ 屏4 完成
+  │ 取消              │ 返回                │ 取消安装（需确认）  │ 完成
+  ▼                   ▼                     ▼                   ▼
+退出                回屏1            回滚已写入 → 回屏1        关窗 + 启动</code></pre>
+<ul><li><strong>主按钮全窗口只有一个</strong>，且永远在按钮组最右。</li><li>屏 3 期间主按钮隐藏；<code>取消安装</code> 需要二次确认（卡片文案：<code>要取消安装吗？</code> / <code>已经写进安装目录的文件会被删除；如果这个目录是本次安装才新建的，目录本身也会一并清掉。</code> / 附注 <code>你的字体库和已有数据不受影响。</code>）。按钮组 <code>取消安装</code>（幽灵）在左、<code>继续安装</code>（主）在右 —— <strong>安全默认高亮的是"继续"</strong>；<kbd>Enter</kbd> 与 <kbd>Esc</kbd> 在确认卡上都等于「继续安装」，想真取消必须正面点一次。<strong>2.1.7 之前这里没有确认</strong>，手滑一次就废掉四十多秒的安装。</li><li><strong>取消后回到屏 1，不是直接退出窗口</strong>（2.1.7 改）：回滚完把界面退到欢迎屏，用户可以换个目录立刻重试；要离开再点一次「取消」。早先状态机图写的是"回滚 → 退出"，实现与规格都按"回屏 1"统一了 —— 取消就闪退容易被当成崩溃。</li><li>屏 4 的 <code>完成</code> 是唯一会启动主程序的按钮；勾选框只影响启动参数，不影响安装结果。</li><li>全流程支持 <kbd>Enter</kbd> 触发主按钮、<kbd>Esc</kbd> 触发取消（屏 3 除外：Esc 打开的是那张确认卡，不直接取消）。</li></ul>
+<figure><img src="shots-installer/16-cancel-confirm.png" alt="屏 3 的「取消安装」二次确认卡"><figcaption>屏 3 的「取消安装」二次确认卡</figcaption></figure>
+<h3 id="4-7-必须实现的异常态">4.7 必须实现的异常态</h3>
+<p>设计稿只画了顺利路径。以下 6 种必须实现，<strong>样式复用同级元素，不新造组件</strong>：</p>
+<table><thead><tr><th>场景</th><th>显示位置</th><th>文案</th><th>交互</th></tr></thead><tbody><tr><td>无写入权限</td><td>屏 2 路径框下方</td><td><code>这个位置当前用户没有写入权限。请换一个位置，或以管理员身份重新运行。</code></td><td>主按钮禁用，改红字（<code>#e5484d</code>，全局唯一的红）</td></tr><tr><td>空间不足</td><td>屏 2 副状态位</td><td><code>需要 24 MB，这个位置只剩 8 MB</code></td><td>主按钮禁用</td></tr><tr><td>安装失败</td><td>屏 3 状态行</td><td><code>fontmanager.exe 写入失败：拒绝访问</code></td><td>主按钮变 <code>重试</code>，日志保留</td></tr><tr><td>已安装（升级）</td><td>屏 1 状态行上方</td><td><code>检测到已安装 2.1.4，将直接覆盖安装（推荐），数据与字体库保留。</code></td><td>多一个 <code>先卸载再装</code> 的链接</td></tr><tr><td><strong>FontManager 正在运行</strong></td><td><strong>全窗遮罩对话框</strong>（§4.9）</td><td>见 §4.9</td><td><code>取消</code> / <code>关闭软件并继续</code></td></tr><tr><td>静默/被动模式</td><td>—</td><td>不画任何界面</td><td><code>/S</code> 全静默；<code>/P</code> 保留进度条但跳过自绘欢迎页</td></tr></tbody></table>
+<h3 id="4-8-不要在安装器里做的事">4.8 不要在安装器里做的事</h3>
+<ul><li>❌ 不要加"安装向导第 1/4 步"的步骤条 —— 4 屏本来就能一眼走完，加步骤条只会让它像 2008 年的安装包。</li><li>❌ 不要放"许可协议"整页滚动框（GPL 全文没人读）。协议放在 <code>关于</code> 与安装目录 <code>LICENSE</code> 里，屏 2 底部一句 <code>安装即表示同意 GPL-3.0</code> 足够。</li><li>❌ 不要在右图放交互按钮或链接。</li></ul>
+<h3 id="4-9-程序还在运行-确认对话框-2-1-7-新增-用户要求">4.9 程序还在运行 · 确认对话框（2.1.7 新增，用户要求）</h3>
+<p>安装要<strong>替换</strong> <code>fontmanager.exe</code>、卸载要<strong>删除</strong>它。文件被占用时 NSIS 的 <code>File</code> 写不进去 / 只能挂到重启后清理，用户看到的是「装完了版本没变」「卸完了文件还在」—— 这两种现象比直接失败难查得多。所以动手之前必须先查一次，查到就<strong>停下来问用户</strong>。</p>
+<table><thead><tr><th>项</th><th>规格</th></tr></thead><tbody><tr><td>触发时机</td><td>① 首屏渲染后查一次（只在状态行提示，不弹窗）；② 点 <code>安装</code> / <code>卸载</code> 时查一次，有就弹；③ Rust 侧 <code>setup_install</code> 启动前<strong>再查一次</strong>（竞态兜底，回 <code>setup:blocked</code> 事件）</td></tr><tr><td>判定</td><td>进程名等于 <code>fontmanager.exe</code>（不区分大小写），<strong>排除当前进程</strong>（安装/卸载界面自己也叫这个名字）</td></tr><tr><td>遮罩</td><td><code>inset:0</code>，<code>rgba(16,16,22,.3)</code>，盖住整个窗口（含标题条），模态期间不许再点到底下的按钮</td></tr><tr><td>卡片</td><td>396 宽，<code>padding 22/24/18</code>，圆角 <strong>12</strong>，白底，<code>1px rgba(20,20,32,.09)</code>，阴影 <code>0 24px 60px -24px rgba(20,20,32,.42)</code>，入场 <code>opacity+translateY(6px) 160ms</code>（<code>prefers-reduced-motion</code> 下只留透明度）</td></tr><tr><td>标题</td><td><code>FontManager 正在运行</code>，15/650，<code>--ink</code></td></tr><tr><td>正文</td><td>12.5px / 1.72，<code>--ink-2</code>。安装：<code>检测到 N 个 FontManager 进程正在运行。安装需要替换程序文件，得先把它们关掉 —— 否则文件被占用，会出现「装完了版本还是旧的」。</code> 卸载：<code>…卸载需要删除程序文件，得先把它们关掉 —— 否则文件删不掉，只能留到下次开机再清理。</code></td></tr><tr><td>附注</td><td>11.5px，<code>--ink-3</code>。安装 <code>关闭时，正在进行的操作会丢失。</code> / 卸载 <code>关闭软件不会动你的字体库与设置。</code></td></tr><tr><td>图标</td><td>22×22 警告三角（描边 1.3，<code>#b4322c</code>），在标题上方，间距 12</td></tr><tr><td>按钮</td><td>右下角，间距 10：<code>取消</code>（ghost）/ <code>关闭软件并继续</code>（墨黑主按钮，默认焦点）</td></tr><tr><td>键盘</td><td><code>Enter</code> = 关闭并继续，<code>Esc</code> = 取消；<strong>遮罩开着时 Enter/Esc 不许穿透到底层屏</strong></td></tr><tr><td>关不掉时</td><td>不关对话框，正文换成 <code>还有 N 个 FontManager 进程没能关闭（可能以管理员身份运行）。请手动退出 FontManager 后再试。</code></td></tr><tr><td>取消后</td><td>回到能再按一次的那一屏（安装 → 位置屏；卸载 → 确认屏），不算失败、日志不记为 error</td></tr><tr><td>绝不做</td><td>❌ 不自动关闭对话框；❌ 不自动杀进程；❌ 不用红字报错（这不是错误，是需要用户做个决定）</td></tr></tbody></table>
+<blockquote>落点：<code>setup.html#runModal</code> + <code>src/setup/main.ts::blockedByRunning / openRunModal</code> + <code>src-tauri/src/setup_ui.rs::running_instances / setup_running / setup_close_running</code>。</blockquote>
+<hr>
+<h2 id="4a-卸载器-与安装器同一套版式">4A. 卸载器（与安装器同一套版式）</h2>
+<figure><img src="shots-installer/10-uninstaller-confirm.png" alt="卸载器第 1 屏：确认"><figcaption>卸载器第 1 屏：确认</figcaption></figure>
+<blockquote><strong>产品口径（PRD §3.4 / G1）</strong>：卸载器<strong>不新做视觉体系</strong>，就是安装器换掉左栏内容： 同 1000×620 窗口、同无标题栏、同圆角 16、同左栏栅格、同右图。<strong>并排截图不许看出是两个产品。</strong> 右图按 PRD Q6 默认<strong>复用同一张</strong>（"你的字体 · 你的电脑 · 你的决定"在卸载语境下同样成立： 删不删数据是你的决定）。真要换主题图，需另出一版资产，不在本版范围。</blockquote>
+<h3 id="4a-1-与安装器共用的部分-照抄-不许改数值">4A.1 与安装器共用的部分（照抄，不许改数值）</h3>
+<table><thead><tr><th>项</th><th>值</th><th>出处</th></tr></thead><tbody><tr><td>窗口 / 圆角 / 边框 / 阴影 / 控件条</td><td>1000×620 · 16 · <code>1px rgba(20,20,32,.07)</code> · §3.3</td><td>§4.1</td></tr><tr><td>内容区 padding</td><td>上 2 / 右 40 / 下 26 / 左 44</td><td>§4.2</td></tr><tr><td>列</td><td><code>1fr 396px</code>，gap 34；左栏实宽 486；文字最大宽 400</td><td>§4.2</td></tr><tr><td>品牌行</td><td>图标板 48 + <code>FontManager</code>(20/700) + 版本胶囊</td><td>§4.3 #1</td></tr><tr><td>页脚</td><td>左 <code>IIEOzo · GPL-3.0</code>，右按钮组，<code>margin-top:auto</code> + <code>padding-top:20</code></td><td>§4.3 #9</td></tr><tr><td>右图</td><td>整套图层（底/网格/Aa/噪点/虚描边/白板/圆点/角标）</td><td>§4.4</td></tr><tr><td>切屏动效</td><td>340ms <code>cubic-bezier(.2,.8,.2,1)</code>，<code>opacity 0→1</code> + <code>translateY 6→0</code></td><td>§3.4</td></tr><tr><td>减弱动效</td><td>裁位移、只留 opacity、时长 ×0.6</td><td>§3.4</td></tr></tbody></table>
+<h3 id="4a-2-屏-1-确认">4A.2 屏 1 · 确认</h3>
+<figure><img src="shots-installer/11-uninstaller-progress.png" alt="卸载器第 2 屏：卸载中"><figcaption>卸载器第 2 屏：卸载中</figcaption></figure>
+<blockquote>上图是屏 2。屏 1 见本节开头那张。两屏左栏内容不同、版式同。</blockquote>
+<table><thead><tr><th>#</th><th>元素</th><th>内容</th><th>字号/字重</th><th>颜色</th><th>mt</th><th>其他</th></tr></thead><tbody><tr><td>1</td><td>品牌行</td><td>同 §4.3 #1</td><td>20/700</td><td><code>--ink</code></td><td>—</td><td>版本胶囊显示<strong>本机已安装版本</strong>，不是包版本</td></tr><tr><td>2</td><td>版权</td><td><code>© 2026 IIEOzo. 保留所有权利。</code></td><td>12/400</td><td><code>--ink-3</code></td><td>28</td><td>与安装器屏 1 同位置，<strong>必须有</strong>（缺了它左栏会显得头重脚轻）</td></tr><tr><td>3</td><td>标题</td><td><code>卸载 FontManager</code></td><td>17/650</td><td><code>--ink</code></td><td>30</td><td>用 <code>.h2</code>，不是品牌行的大字</td></tr><tr><td>4</td><td>正文一</td><td><code>将从这台电脑移除 FontManager。程序文件、卸载程序和开始菜单项都会被删除。</code></td><td>13/400 行高 1.72</td><td><code>--ink-2</code></td><td>12</td><td>把"删什么"说全：程序 / 卸载程序 / 快捷方式</td></tr><tr><td>5</td><td>正文二</td><td><code>你的字体库、分组、快照与设置默认保留 —— 重新安装会直接接上。</code></td><td>13/400</td><td><code>--ink-2</code></td><td>6</td><td>与正文一同段组；"默认保留"是这一句存在的唯一理由，别删</td></tr><tr><td>6</td><td>元信息</td><td><code>安装位置</code> / <code>占用空间</code> / <code>数据目录</code> 三行</td><td>等宽 10.5/400 行高 1.95</td><td>键 <code>#b3b3ba</code> 值 <code>#77777f</code></td><td>26</td><td>两列 grid 列间距 20，最大宽 420；<code>占用空间</code> 只算程序本体（不含 data）</td></tr><tr><td>7</td><td>复选框</td><td><code>同时删除全部数据与字体库</code></td><td>12.5/400</td><td><code>--ink-2</code></td><td>26</td><td>15×15 圆角 4，<strong>默认不勾</strong>（PRD G2）；文案沿用既有 <code>$(deleteAppData)</code> 措辞</td></tr><tr><td>8</td><td>危险说明</td><td><code>包含字体库、分组、快照与全部设置 —— 删除后无法恢复。</code></td><td>11/400</td><td><code>--ink-4</code></td><td>9</td><td>挂在复选框下方、左对齐；<strong>不换红字</strong>（红是全局错误色，§4.7）</td></tr><tr><td>9</td><td>页脚</td><td>左 <code>IIEOzo · GPL-3.0</code>，右 <code>取消</code>（幽灵）/ <code>卸载</code>（主）</td><td>11 / 12.5-550</td><td>—</td><td>auto</td><td>主按钮<strong>用墨黑，不用红</strong>；红只给"出错"</td></tr></tbody></table>
+<h3 id="4a-3-屏-2-卸载中">4A.3 屏 2 · 卸载中</h3>
+<ul><li>状态行 <code>正在移除 · 4 / 9 项</code>（13.5/550，<code>--ink</code>，<strong>mt 26</strong> —— 比安装屏 3 的 30 少 4，因为上面没有品牌行以外的留白可借）</li><li>进度条：同 §4.3 #6（3px / 圆角 99 / 同一渐变），宽度 400</li><li>副状态 <code>已用 2 秒</code>（11/400 <code>--ink-4</code>，mt 9）；<strong>不显示"预计还要"</strong> —— 卸载是删文件，估时误差比安装更大，给了反而让人怀疑卡住</li><li>日志区：与安装屏 3 <strong>同一个组件</strong>（等宽 10.5 / 行高 2 / 最多 5 行 / 最新在上 / 首行加深 <code>#6f6f78</code> 其余 <code>#a2a2ab</code>）</li><li>页脚：<strong>只有左侧落款，右侧留空</strong>。卸载<strong>不提供取消</strong>（PRD §3.4：白名单删除不可逆，给"取消"等于给"东西已经少了一半"的按钮）</li><li>文案要写人话：<code>已移除 fontmanager.exe</code>、<code>已移除 文件关联 .S-FontManager</code>，不要写 <code>DeleteRegKey HKCR\...</code></li></ul>
+<h3 id="4a-4-屏-3-完成-两种变体">4A.4 屏 3 · 完成（两种变体）</h3>
+<figure><img src="shots-installer/12-uninstaller-finish.png" alt="卸载器第 3 屏：完成（数据保留）"><figcaption>卸载器第 3 屏：完成（数据保留）</figcaption></figure>
+<figure><img src="shots-installer/13-uninstaller-finish-purged.png" alt="卸载器第 3 屏：完成（数据已删除）"><figcaption>卸载器第 3 屏：完成（数据已删除）</figcaption></figure>
+<table><thead><tr><th>变体</th><th>正文</th><th>何时出现</th></tr></thead><tbody><tr><td>保留（默认）</td><td><code>FontManager 已从这台电脑移除。你的数据保留在 %LOCALAPPDATA%\FontManager\data，重新安装会直接接上。</code></td><td>复选框<strong>未勾</strong>（默认）</td></tr><tr><td>清空</td><td><code>FontManager 已从这台电脑移除，你的数据与字体库也已全部删除。</code></td><td>复选框<strong>已勾</strong></td></tr></tbody></table>
+<ul><li>完成徽标同 §4.5 屏 4（30×30 圆 + 白勾 14×14 / 描边 1.9，mt 26）；标题 <code>卸载完成</code>（17/650，mt 16）</li><li>页脚：右 <code>关闭</code>（主），左落款。<strong>不提供"打开安装目录"</strong> —— 那个目录此刻已经没了</li><li>保留变体里的路径<strong>必须是真实路径</strong>（读注册表 <code>InstallLocation</code>，不是常量拼接）</li></ul>
+<h3 id="4a-5-状态机与按钮规则">4A.5 状态机与按钮规则</h3>
+<pre><code>屏1 确认 ──卸载──▶ 屏2 卸载中 ──完成──▶ 屏3 完成 ──关闭──▶ 退出（0）
+  │ 取消                                        │
+  ▼                                             ▼
+退出（0）                                  关窗 + 退出（0）</code></pre>
+<ul><li>屏 2 <strong>不可返回、不可取消</strong>（理由见 4A.3）。</li><li>只有"卸载流程正常走完"才返回 0：用户取消返回 0（什么都没做，不算失败）；中途失败返回非 0（PRD §3.3 退出码口径）。</li><li>键盘：屏 1 <kbd>Enter</kbd> = <code>卸载</code>、<kbd>Esc</kbd> = <code>取消</code>；屏 3 <kbd>Enter</kbd>/<kbd>Esc</kbd> = <code>关闭</code>。</li><li><code>/S</code> 静默<strong>完全不建窗口</strong>；<code>/P</code> 跳过屏 1 直接屏 2；<code>/UPDATE</code> 不进卸载器（安装器内部调用，直接走静默清理）。</li></ul>
+<h3 id="4a-6-必须实现的异常态">4A.6 必须实现的异常态</h3>
+<table><thead><tr><th>场景</th><th>显示位置</th><th>文案</th><th>交互</th></tr></thead><tbody><tr><td><strong>WebView2 不可用</strong></td><td>不画 UI</td><td>原生确认框：<code>无法加载卸载界面。是否继续卸载 FontManager？</code></td><td>确定 → 原生静默清理；取消 → 退出。<strong>宁可难看，不许卸不掉</strong>（PRD G6）</td></tr><tr><td><strong>FontManager 正在运行</strong></td><td><strong>全窗遮罩对话框</strong>（§4.9）</td><td>见 §4.9</td><td><code>取消</code> / <code>关闭软件并继续</code></td></tr><tr><td>无权限（<code>%APPDATA%</code> 被改权限）</td><td>屏 2 状态行</td><td><code><路径> 无法删除：拒绝访问</code></td><td><code>重试</code> / <code>以管理员身份重新运行</code></td></tr><tr><td>删除部分成功</td><td>屏 3</td><td><code>已完成卸载，有 3 个文件未能删除（可能被占用）。</code></td><td><code>关闭</code>，并写日志到 <code>%TEMP%\FontManager-uninstall.log</code></td></tr></tbody></table>
+<h3 id="4a-7-不要在卸载器里做的事">4A.7 不要在卸载器里做的事</h3>
+<ul><li>❌ 不要写"确定要离开我们吗""很遗憾"这类情绪文案 —— 卸载不需要挽留，也不需要道歉。</li><li>❌ 不要在屏 1 默认勾选删数据（误删字体库是不可逆事故）。</li><li>❌ 不要显示"将删除 N 个字体"之类的数字 —— 数字会让你以为它真去数过，实际是按白名单整目录处理。</li><li>❌ 不要给屏 2 加取消，也不要让进度条回退。</li></ul>
+<hr>
+<h2 id="5-启动页-1120-760">5. 启动页（1120 × 760）</h2>
+<figure><img src="shots-installer/15-splash-1120.png" alt="启动页"><figcaption>启动页</figcaption></figure>
+<blockquote>上面这张是 2.1.7 的实现产物（1120×760 原始像素）。<code>05-splash.png</code> 是 2.1.5 时代 560×380 的旧渲染图，只作历史对照，<strong>不要拿它量尺寸</strong>。</blockquote>
+<h3 id="5-1-窗口">5.1 窗口</h3>
+<p><strong>2.1.7 变更（用户要求「启动页扩大一倍」）</strong>：整张卡从 560×380 <strong>等比放大一倍</strong>到 1120×760，下表所有长度/字号/间距都已按 ×2 写死。唯一不按比例走的是<strong>圆角 16 → 24</strong>： 窗口圆角属于"窗口外壳"而不是画面内容，等比成 32 会让四角圆得不像 Windows 窗口 （主窗口 1280×820 用的也是小圆角）。图标位图是 <code>public/splash-icon.png</code>（256×256）， 放大后可视区 120px，仍然清晰。</p>
+<table><thead><tr><th>项</th><th>值</th></tr></thead><tbody><tr><td>大小</td><td><strong>1120 × 760</strong></td></tr><tr><td>圆角</td><td><strong>24</strong>（不按 ×2 走，见上），<strong>无标题栏</strong>（<code>decorations:false</code>）</td></tr><tr><td>背景</td><td>深色 <code>radial-gradient(120% 100% at 50% -18%, #191c21 0%, #0e0f12 52%, #08080a 100%)</code>；浅色见 §5.4</td></tr><tr><td>描边</td><td>深色 <code>1px rgba(255,255,255,.07)</code>；浅色 <code>1px rgba(20,20,32,.08)</code></td></tr><tr><td>光晕</td><td>640×640 圆，<code>radial(circle, rgba(18,92,52,.5), transparent 68%)</code>，<code>filter:blur(12px)</code>，在图标块背后（浅色用 <code>.16</code>）</td></tr></tbody></table>
+<h3 id="5-2-元素">5.2 元素</h3>
+<table><thead><tr><th>元素</th><th>参数</th></tr></thead><tbody><tr><td>图标块</td><td>156×156，圆角 38，底 <code>--paper</code>，内边距 18，阴影 <code>0 28px 60px -16px rgba(0,0,0,.62)</code> + <code>0 0 0 2px rgba(255,255,255,.14)</code></td></tr><tr><td>名称</td><td><code>FontManager</code>，30/600，<code>rgba(255,255,255,.93)</code>，距图标 44</td></tr><tr><td>进度条</td><td><strong>336 × 4</strong>，圆角 99，轨道 <code>rgba(255,255,255,.1)</code>，填充 <code>linear-gradient(90deg,#17784a,#2f56ef)</code>，距名称 48</td></tr><tr><td>状态行</td><td>21px，<code>rgba(255,255,255,.42)</code>，距进度条 26，<code>tabular-nums</code></td></tr><tr><td>副状态</td><td>18px，<code>rgba(255,255,255,.26)</code>，距状态行 14</td></tr><tr><td>页脚</td><td>左 <code>v 2.1.5</code>，右 <code>IIEOZO</code>，等宽 18px，<code>rgba(255,255,255,.26)</code>，<code>bottom:30</code>，左右 44</td></tr></tbody></table>
+<blockquote>上表是<strong>深色</strong>那一套。启动页要跟随主界面的主题（用户 2026-11-13 要求），浅色那一套见 §5.4。</blockquote>
+<hr>
+<h3 id="5-3-进度条的语义-这块最容易做错-务必按这里实现">5.3 ⚠️ 进度条的语义（<strong>这块最容易做错，务必按这里实现</strong>）</h3>
+<p><strong>这条进度条只反映「种子集合」的装载进度，不代表全库字体。</strong></p>
+<h4 id="分子-分母是什么">分子 / 分母是什么</h4>
+<table><thead><tr><th></th><th>含义</th></tr></thead><tbody><tr><td><strong>分母</strong></td><td>种子集合的<strong>字族数</strong>（不是文件数，不是全库 4214）</td></tr><tr><td><strong>种子集合</strong></td><td>上次已启用 ∪ 全部系统字体 ∪ 所有分组内 ∪ 所有快照内，<strong>按路径去重</strong>（PRD 2.1.4 §3.1）</td></tr><tr><td><strong>分子</strong></td><td>已完成元数据装载 + 已确认激活状态的种子字族数</td></tr></tbody></table>
+<p>参考量级（4214 族库 / 已启用 169 / 系统 166）：<strong>种子约 400 个，全库 4214 个</strong>。也就是说进度条跑完时，<strong>全库还剩 90% 没读</strong> —— 这是设计意图，不是 bug。</p>
+<h4 id="为什么可以这样">为什么可以这样</h4>
+<p>种子集合覆盖了"用户此刻真正要用"的全部字体：上次启用的、系统自带的、分组里的、快照里的。这批就绪后，<strong>预览、启停、快照应用、套用到设计软件、分组筛选全部可用</strong>，用户可以立刻干活。剩下 3800 多个未启用字体只是"待浏览的库存"，晚几百毫秒读到不影响任何操作。</p>
+<h4 id="因此这三条必须遵守">因此这三条必须遵守</h4>
+<ol><li><strong>种子就绪 = 立刻开主界面</strong>。进度条到 100% 后，<code>show 主窗口</code> → 关闭启动页。<strong>绝不等全量读取</strong>。</li><li><strong>全量读取不许把进度回传到启动页</strong>。一旦进了主界面，启动页就永久销毁；剩余进度改由主界面底部的细进度条承载（PRD 2.1.4 R-06），两者是<strong>两段互不重叠的进度</strong>，不要合并成一条。</li><li><strong>分母不许用全库总数</strong>。用全库做分母会让进度条爬到 9% 就长时间不动，用户会以为卡死 —— 这是最典型的"假进度"事故。</li></ol>
+<h4 id="三个边界态">三个边界态</h4>
+<table><thead><tr><th>情况</th><th>表现</th></tr></thead><tbody><tr><td><strong>分母未知</strong>（台账还没读完）</td><td>不显示百分比：状态行写 <code>正在读取上次启用的字体…</code>，进度条切<strong>不确定态</strong>（一段 30% 宽的亮块左右滑动，2.4s 循环）。拿到总数后立刻切确定态，不倒退</td></tr><tr><td><strong>超过 3 秒没跑完</strong></td><td>强制 <code>show 主窗口</code> 并关闭启动页。种子没读完的部分退化成"主界面后台继续"，用户至少能看见界面</td></tr><tr><td><strong>种子装载失败</strong></td><td>不弹错、不在启动页写红字。直接进主界面，由主界面按 R-10/R-15 回退到骨架屏 + 可重试提示</td></tr></tbody></table>
+<h4 id="时序">时序</h4>
+<pre><code>进程启动
+  └─ 建 splash 窗口（256ms 内可见，先 show 再 load 前端，避免白屏）
+       ├─ 并行：读台账 / 注册表探测 / font-cache.json 命中
+       ├─ 逐步：种子元数据装载 → 状态行滚动数字
+       └─ 种子就绪（或 3s 超时 / 失败）
+            ├─ show 主窗口（此时主界面首帧已渲染，不要再闪一次骨架屏）
+            └─ splash 关闭（淡出 120ms）
+                  └─ 主界面后台继续全量 → 底部细进度 → 完成后一次性刷新列表</code></pre>
+<p><strong>最短显示时长</strong>：<strong>1500ms</strong>，且<strong>每次打开软件都要显示</strong>（用户 2026-11-14 要求）。</p>
+<blockquote>时间线：420ms → 600ms（2026-11-13）→ <strong>1500ms（2026-11-14）</strong>。 600ms 在热缓存下仍然像"闪一下"，用户明确要求「字体少也不许一闪就没」。</blockquote>
+<p><strong>实现口径（2.1.7 改过，别按老文档写）</strong>：最短显示<strong>只在原生侧判</strong>，起点是 <strong>启动页真正 show 出来的那一刻</strong>（<code>lib.rs::SplashState::shown_at</code>），不是进程启动、 也不是前端 <code>performance.now()</code>。理由：</p>
+<ul><li>splash 窗口比主窗口的 JS 晚建 200~400ms，按前端原点补 1.5 秒实际只亮 1.1 秒；</li><li>热缓存下种子只要 3ms 就绪，前端的 <code>splash_done</code> 甚至可能比 splash 窗口还早到。</li></ul>
+<p>所以 <code>splash_done</code> 里会<strong>先等启动页出现（最多 2 秒）</strong>，拿到 <code>shown_at</code> 才补足 剩余时长，然后置 <code>finished</code> → 前端淡出 120ms → 关启动页 → 再 show 主界面。</p>
+<p>前端 <code>App.tsx</code> 里已经<strong>没有</strong> <code>SPLASH_MIN_MS</code> 了（改成 0 会把这段逻辑分裂成两份， 两个原点必然对不上）。要调时长只改 <code>lib.rs</code> 的 <code>SPLASH_MIN_SHOW</code>。</p>
+<p><strong>哪些情况不显示启动页</strong>（都是"用户看不见窗口"的场景，不是偷懒）：</p>
+<ul><li>「启动时最小化到托盘」/ 开机自启：那一秒里不该有任何窗口闪一下；</li><li>托盘里点「显示」把主界面叫出来：这是已有进程的窗口还原，不是启动；</li><li>已经开着再点一次桌面图标：走 <code>app://activate</code>，还原那个窗口。</li></ul>
+<p><strong>不要做的事</strong>：不要给启动页加"跳过"按钮、不要加版本更新检查、不要在启动页显示全库字体总数。</p>
+<h3 id="5-4-明暗两套配色-跟随软件主题">5.4 明暗两套配色（跟随软件主题）</h3>
+<figure><img src="shots-installer/08-impl-splash-dark.png" alt="实现产物 · 深色"><figcaption>实现产物 · 深色</figcaption></figure>
+<figure><img src="shots-installer/09-impl-splash-light.png" alt="实现产物 · 浅色"><figcaption>实现产物 · 浅色</figcaption></figure>
+<p>启动页不是"永远是深色"：它跟随主界面的主题设置（<code>prefs.themePref</code> = <code>system</code> / <code>light</code> / <code>dark</code>），<code>system</code> 时用 <code>prefers-color-scheme</code> 判，判据与 <code>src/lib/theme.ts</code> 完全一致（用户 2026-11-13 要求）。</p>
+<p>几何尺寸、字号、间距<strong>两套完全一致</strong>，只有颜色令牌不同：</p>
+<table><thead><tr><th>令牌</th><th>深色（默认）</th><th>浅色</th></tr></thead><tbody><tr><td>背景</td><td><code>radial(120% 100% at 50% -18%, #191c21, #0e0f12 52%, #08080a)</code></td><td><code>radial(120% 100% at 50% -18%, #ffffff, #fdfdff 55%, #f3f5f9)</code></td></tr><tr><td>描边</td><td><code>rgba(255,255,255,.07)</code></td><td><code>rgba(20,20,32,.07)</code></td></tr><tr><td>光晕</td><td><code>rgba(18,92,52,.5)</code> → transparent 68%</td><td><code>rgba(23,120,74,.10)</code> → transparent 60%（只护住图标，不铺到状态行）</td></tr><tr><td>图标块底</td><td><code>--paper #fbfaf5</code></td><td><code>#ffffff</code></td></tr><tr><td>图标块外环 + 投影</td><td><code>0 0 0 1px rgba(255,255,255,.14)</code> + 投影 <code>.62</code></td><td><code>0 0 0 1px #e7eaf0</code> + 投影 <code>rgba(20,20,32,.13)</code>（底变白后投影必须减淡，重了发脏）</td></tr><tr><td>名称</td><td><code>rgba(255,255,255,.93)</code></td><td><code>--ink #16161a</code></td></tr><tr><td>进度条轨道</td><td><code>rgba(255,255,255,.1)</code></td><td><code>#cdcfd8</code></td></tr><tr><td>状态行</td><td><code>rgba(255,255,255,.42)</code></td><td><code>#6f6f7a</code></td></tr><tr><td>副状态</td><td><code>rgba(255,255,255,.26)</code></td><td><code>#97979f</code></td></tr><tr><td>页脚</td><td><code>rgba(255,255,255,.26)</code></td><td><code>#9a9aa4</code></td></tr><tr><td>进度条填充</td><td><code>linear-gradient(90deg,#17784a,#2f56ef)</code></td><td><strong>同左</strong>（品牌色，两套共用）</td></tr></tbody></table>
+<p><strong>实现约束（踩过的坑，别绕开）</strong>：</p>
+<ol><li>颜色全部走 CSS 变量，级联顺序必须是 <code>:root</code>（深色默认）→ <code>@media (prefers-color-scheme: light)</code>（浅色）→ <code>:root[data-theme="dark"]</code> → <code>:root[data-theme="light"]</code>。属性选择器排在媒体查询<strong>之后</strong>，用户强制才会压过系统。</li><li><strong>不要用内联 <code><script></code> 提前写 <code>data-theme</code></strong>：CSP 是 <code>default-src 'self'</code>，内联脚本会被拦，页面直接白屏。首帧靠媒体查询（同步、与 Windows 应用模式一致），<code>get_prefs</code> 回来若发现用户强制了主题再设 <code>data-theme</code> 覆盖。</li><li>语言与主题复用<strong>同一次</strong> <code>get_prefs</code>，不要为它多打一次 IPC（启动这一瞬间扫描线程正拿着 store 锁）。</li><li><code>prefers-reduced-motion: reduce</code> 时，不确定态的滑动块改成一条半透明满幅静止条，不要继续闪。</li><li><strong>浅色不要用暖纸白</strong>：<code>#fbfaf5 / #f0efe9</code> 是给"纸面"设计的暖调，叠上绿色光晕后整块卡面会发灰绿（用户 2026-11-14 原话"太暗太脏"）。浅色底固定用中性偏冷的 <code>#ffffff → #fdfdff 55% → #f3f5f9</code>，光晕同时压到 <code>.10</code> / <code>60%</code>。</li><li><strong>浅色轨道不能照搬 <code>--line #ececef</code></strong>：那套发丝线是为分割线设计的，2px 轨道压在浅底上只有 1.13:1，肉眼等于没有轨道，进度条看着像一根孤立的短线。现值 <code>#cdcfd8</code>（对底两端 1.53:1 / <strong>1.42:1</strong>，1.42 是验收下限，别再往上调淡）。页脚 <code>#9a9aa4</code>（2.74:1 / <strong>2.55:1</strong>）。</li><li><strong>浅色令牌在 <code>splash.html</code> 里写了两遍</strong>（<code>@media (prefers-color-scheme: light)</code> 与 <code>:root[data-theme="light"]</code>），必须同改。而且这两个选择器的字面串也出现在文件顶部注释里 —— 任何用 <code>indexOf</code> 找选择器做"两处是否一致"自动校验的脚本，会先命中注释、把深色块当浅色块比对，<strong>给出假绿灯</strong>。校验前先剥注释。</li></ol>
+<hr>
+<h2 id="6-文案表-中-英">6. 文案表（中 / 英）</h2>
+<p>安装器文案放 <code>src-tauri/windows/zfm-strings.nsh</code>（<code>LangString ZM_*</code>），启动页文案放 <code>src/locales/*.json</code>（键名沿用现有 9 语言结构）。新增键建议这样命名：</p>
+<blockquote><strong>实现口径（2026-11-13 落地时确定）</strong>：启动页文案<strong>没有</strong>进 <code>src/locales/*.json</code>，而是作为 <code>src/splash.ts</code> 里的 <code>COPY_ZH</code> / <code>COPY_EN</code> 两份常量。理由：启动页是独立入口，为了两句话去拉整个 i18n 模块（9 语言 JSON）与它的首帧开销不成比例；中文以外的 7 种语言回退英文，与 §6 的"中英双语"口径一致。主界面动效/首字延迟以后再考虑接 i18n。</blockquote>
+<table><thead><tr><th>键</th><th>中文</th><th>英文</th></tr></thead><tbody><tr><td><code>ZM_W_BRAND_TAG</code></td><td>你的全部字体，一键启停，永不离开你的电脑。</td><td>All your fonts, one switch each, never leaving your computer.</td></tr><tr><td><code>ZM_W_BODY</code></td><td>程序、字体库和全部数据都装在下面这个目录里 —— 想整体搬走，直接搬这个文件夹就行。</td><td>The app, your font library and all data live in this folder — to move FontManager, just move the folder.</td></tr><tr><td><code>ZM_W_READY</code></td><td>准备就绪 · 即将开始安装</td><td>Ready · starting the installation</td></tr><tr><td><code>ZM_W_ETA</code></td><td>预计 {s} 秒 · 无需管理员权限</td><td>About {s} seconds · no admin rights needed</td></tr><tr><td><code>ZM_M_LOCATION</code></td><td>安装位置</td><td>Install location</td></tr><tr><td><code>ZM_M_SPACE</code></td><td>需要空间</td><td>Space needed</td></tr><tr><td><code>ZM_M_INCLUDES</code></td><td>包含内容</td><td>Includes</td></tr><tr><td><code>ZM_M_DATA</code></td><td>数据目录</td><td>Data folder</td></tr><tr><td><code>ZM_DIR_TITLE</code></td><td>选择安装位置</td><td>Choose where to install</td></tr><tr><td><code>ZM_DIR_LEAD</code></td><td>换一个盘，字体库、缓存和全部数据都跟着走。</td><td>Pick another drive and the library, caches and all data move with it.</td></tr><tr><td><code>ZM_DIR_BROWSE</code></td><td>浏览…</td><td>Browse…</td></tr><tr><td><code>ZM_DIR_OK</code></td><td>这个位置当前用户可写 · 剩余 {g}</td><td>This folder is writable · {g} free</td></tr><tr><td><code>ZM_INST_WRITING</code></td><td>正在安装 · {d} / {t}</td><td>Installing · {d} / {t}</td></tr><tr><td><code>ZM_INST_ELAPSED</code></td><td>已用 {s} 秒 · 预计还要 {r} 秒</td><td>{s}s elapsed · about {r}s left</td></tr><tr><td><code>ZM_INST_CANCEL</code></td><td>取消安装</td><td>Cancel installation</td></tr><tr><td><code>ZM_DONE_TITLE</code></td><td>安装完成</td><td>Installation complete</td></tr><tr><td><code>ZM_DONE_BODY</code></td><td>FontManager {v} 已安装。数据在安装目录的 data 文件夹，卸载时你可以决定是否保留。</td><td>FontManager {v} is installed. Your data lives in the data folder next to the app; you decide on uninstall whether to keep it.</td></tr><tr><td><code>ZM_DONE_RUN</code></td><td>立即运行 FontManager</td><td>Launch FontManager now</td></tr><tr><td><code>ZM_DONE_DESKTOP</code></td><td>在桌面创建快捷方式</td><td>Create a desktop shortcut</td></tr><tr><td><code>ZM_DONE_OPEN</code></td><td>打开安装目录</td><td>Open install folder</td></tr><tr><td><code>ZM_BTN_NEXT</code></td><td>继续</td><td>Continue</td></tr><tr><td><code>ZM_BTN_BACK</code></td><td>返回</td><td>Back</td></tr><tr><td><code>ZM_BTN_INSTALL</code></td><td>安装</td><td>Install</td></tr><tr><td><code>ZM_BTN_FINISH</code></td><td>完成</td><td>Finish</td></tr><tr><td><code>ZM_FOOT</code></td><td>IIEOzo · GPL-3.0</td><td>IIEOzo · GPL-3.0</td></tr><tr><td><code>ZM_ART_TAG</code></td><td>你的字体 · 你的电脑 · 你的决定</td><td>Your fonts. Your machine. Your call.</td></tr><tr><td><code>SPLASH_LOADING</code></td><td>正在装载字体 · {i} / {n}</td><td>Loading fonts · {i} / {n}</td></tr><tr><td><code>SPLASH_LOADING_INDET</code></td><td>正在读取上次启用的字体…</td><td>Reading your last active fonts…</td></tr><tr><td><code>SPLASH_REST</code></td><td>其余 {n} 个字族在主界面后台继续读取</td><td>The other {n} families keep loading in the background</td></tr><tr><td><code>SPLASH_OPENING</code></td><td>正在打开主界面…</td><td>Opening FontManager…</td></tr></tbody></table>
+<p>卸载器（<code>ZM_U_*</code>，同样放 <code>zfm-strings.nsh</code>；屏 2/3 的进度与路径由运行时替换）：</p>
+<table><thead><tr><th>键</th><th>中文</th><th>英文</th></tr></thead><tbody><tr><td><code>ZM_U_TITLE</code></td><td>卸载 FontManager</td><td>Uninstall FontManager</td></tr><tr><td><code>ZM_U_LEAD1</code></td><td>将从这台电脑移除 FontManager。程序文件、卸载程序和开始菜单项都会被删除。</td><td>This will remove FontManager from this computer. The app, its uninstaller and the Start menu entries will be deleted.</td></tr><tr><td><code>ZM_U_LEAD2</code></td><td>你的字体库、分组、快照与设置默认保留 —— 重新安装会直接接上。</td><td>Your library, groups, snapshots and settings are kept by default — reinstalling picks them up right away.</td></tr><tr><td><code>ZM_U_SPACE</code></td><td>占用空间</td><td>Space used</td></tr><tr><td><code>ZM_U_DELDATA</code></td><td>同时删除全部数据与字体库</td><td>Also delete all data and the font library</td></tr><tr><td><code>ZM_U_DELDATA_NOTE</code></td><td>包含字体库、分组、快照与全部设置 —— 删除后无法恢复。</td><td>Includes your library, groups, snapshots and all settings — this cannot be undone.</td></tr><tr><td><code>ZM_U_REMOVING</code></td><td>正在移除 · {i} / {n} 项</td><td>Removing · {i} / {n}</td></tr><tr><td><code>ZM_U_ELAPSED</code></td><td>已用 {s} 秒</td><td>{s}s elapsed</td></tr><tr><td><code>ZM_U_DONE</code></td><td>卸载完成</td><td>Uninstallation complete</td></tr><tr><td><code>ZM_U_DONE_KEEP</code></td><td>FontManager 已从这台电脑移除。你的数据保留在 {p}，重新安装会直接接上。</td><td>FontManager has been removed. Your data stays at {p}; reinstalling picks it up right away.</td></tr><tr><td><code>ZM_U_DONE_PURGED</code></td><td>FontManager 已从这台电脑移除，你的数据与字体库也已全部删除。</td><td>FontManager has been removed, along with all your data and the font library.</td></tr><tr><td><code>ZM_U_FAIL_FILES</code></td><td>已完成卸载，有 {n} 个文件未能删除（可能被占用）。</td><td>Uninstalled, but {n} files could not be deleted (they may be in use).</td></tr><tr><td><code>ZM_U_NOWEBVIEW</code></td><td>无法加载卸载界面。是否继续卸载 FontManager？</td><td>The uninstall screen could not be loaded. Continue uninstalling FontManager?</td></tr><tr><td><code>ZM_U_BTN_UNINSTALL</code></td><td>卸载</td><td>Uninstall</td></tr><tr><td><code>ZM_U_BTN_CLOSE</code></td><td>关闭</td><td>Close</td></tr></tbody></table>
+<blockquote>英文版注意：<code>{n}</code> 千分位用逗号（<code>1,028</code>），中文版用空格（<code>1 028</code>）—— 这是 <code>tabular-nums</code> 之外唯一需要本地化的数字格式。<br>2026-11-14 文案口径变更（与 PRD §9.5 同步）：<code>ZM_W_READY</code> <strong>不再带 <code>{n}</code></strong>（包内只有 2 个文件，数字会让用户以为漏装）；<code>ZM_INST_WRITING</code> 的 <code>{i}/{n}</code> 改为 <strong><code>{d}/{t}</code> = 已写 MB / 总 MB</strong>（一位小数，如 <code>12.4 / 23.7</code>），原因是按文件计数进度条只有两次跳变、中段看似卡死；<code>ZM_W_ETA</code> 的 <code>{s}</code> 屏 1 实填 <strong>5</strong>（原设计稿写 20，是全库时代的估时）。</blockquote>
+<hr>
+<h2 id="7-资源与导出">7. 资源与导出</h2>
+<table><thead><tr><th>资源</th><th>来源</th><th>规格</th></tr></thead><tbody><tr><td>应用图标</td><td><code>src-tauri/icons/icon.png</code></td><td>512×512 RGBA，<strong>白板 + 圆角是图的一部分</strong>，别自己在 UI 里再套一层圆角</td></tr><tr><td>右图（完整版）</td><td>由图标 + CSS 分层在运行时合成</td><td>不需要导出</td></tr><tr><td>右图（紧凑版）</td><td><strong>必须预渲染</strong></td><td>见 §8.4</td></tr><tr><td>Inter 字体</td><td><code>@fontsource-variable/inter</code></td><td>已在依赖里，<code>@font-face</code> 指向 <code>node_modules</code> 的 woff2</td></tr><tr><td>对勾 / 关闭等图标</td><td>内联 SVG</td><td>不引图标库，安装器不该为 3 个图标背一个包</td></tr></tbody></table>
+<hr>
+<h2 id="8-路线-a-nsis-紧凑版-备选方案-能不用就不用">8. 路线 A：NSIS 紧凑版（备选方案 · <strong>能不用就不用</strong>）</h2>
+<figure><img src="shots-installer/06-compact-nsis.png" alt="NSIS 紧凑版（真实窗口尺寸）"><figcaption>NSIS 紧凑版（真实窗口尺寸）</figcaption></figure>
+<blockquote><strong>⚠️ 先读这段，再决定要不要往下做。</strong> 本节存在的前提是"万一必须用 NSIS"。<strong>默认不要选它</strong>：它只能做到本设计的 <strong>75%</strong>（窗口方角、按钮系统灰、右图缩到 234×216、左栏文字压到 9.5–12px）；而且它是一次性投入 —— 做完这一版，安装界面就有了两套数值表，往后每次改设计都要改两遍。<br>只有在这两个条件同时成立时才按本节做：<strong>① 这一版必须按日发版；② 没人有 5 天写安装内核。</strong> 否则<strong>宁可这一版不改安装器外观</strong>，也不要先上紧凑版再推倒重来。真正的目标是 §9。</blockquote>
+<h3 id="8-0-它和完整版的差距-写在前面-免得验收扯皮">8.0 它和完整版的差距（写在前面，免得验收扯皮）</h3>
+<table><thead><tr><th>项</th><th>完整版</th><th>紧凑版</th><th>差距能不能补</th></tr></thead><tbody><tr><td>窗口尺寸</td><td>1000×620</td><td>662×416（客户区，另加 30 系统标题栏）</td><td>❌ NSIS 锁死</td></tr><tr><td>窗口圆角</td><td>16</td><td>0</td><td>❌ 要自写窗口过程</td></tr><tr><td>右图</td><td>396×550，CSS 合成</td><td>234×216，预渲染 BMP</td><td>⚠️ 只能静态、不能含噪点/网格渐隐</td></tr><tr><td>主按钮</td><td>墨黑 <code>#16161a</code></td><td>系统灰</td><td>❌ 按钮不可改色</td></tr><tr><td>字号</td><td>13 / 10.5 / 20</td><td>11.5 / 9.5 / 14</td><td>⚠️ 已是可读下限</td></tr><tr><td>元信息行数</td><td>4 行</td><td>3 行（砍掉「包含内容」）</td><td>✅</td></tr><tr><td>切屏动效</td><td>340ms 淡入</td><td>无</td><td>❌ nsDialogs 不支持</td></tr></tbody></table>
+<p><strong>验收口径</strong>：紧凑版只验"布局正确、文案正确、能用"，<strong>不要求</strong>与原型像素级一致。</p>
+<h3 id="8-1-为什么是这个尺寸">8.1 为什么是这个尺寸</h3>
+<p>NSIS 的 MUI 客户区固定 <strong>662 × 416</strong>，其中：</p>
+<table><thead><tr><th>区域</th><th>像素（100% DPI）</th><th>说明</th></tr></thead><tbody><tr><td>客户区</td><td>662 × 416</td><td>不含系统标题栏（高 30）</td></tr><tr><td>头部条</td><td>0 … 84</td><td>MUI 的 header 区，自绘页改不动它</td></tr><tr><td><strong>内页（可自绘）</strong></td><td><strong>84 … 348</strong>，高 <strong>264</strong></td><td><code>nsDialogs::Create 1018</code> 拿到的就是这块</td></tr><tr><td>按钮条</td><td>348 … 416，高 68</td><td>MUI 画的系统按钮，<strong>颜色不可改</strong></td></tr></tbody></table>
+<p>也就是说：<strong>能画的只有 662 × 264</strong>。1000×620 的设计必须缩成这个框 —— 这就是"紧凑版"存在的原因，不是偷懒。</p>
+<p><code>u</code> 与像素：<strong>1u ≈ 1.88px</strong>（100% DPI，实测）。所有坐标用 <code>u</code>，不要写 px，否则 125%/150% 下全错位。</p>
+<h3 id="8-2-紧凑版版面-内页坐标-原点-内页左上角">8.2 紧凑版版面（内页坐标，原点 = 内页左上角）</h3>
+<table><thead><tr><th>元素</th><th>x</th><th>y</th><th>w</th><th>h</th><th>字号</th><th>备注</th></tr></thead><tbody><tr><td>左内边距</td><td>18px（10u）</td><td>—</td><td>—</td><td>—</td><td>—</td><td>与头部条的品牌行对齐</td></tr><tr><td>右图</td><td>404</td><td>16</td><td>234</td><td>216</td><td>—</td><td>圆角 10 <strong>烘焙在位图里</strong></td></tr><tr><td>版权行</td><td>18</td><td>15</td><td>356</td><td>15</td><td>10.5px</td><td><code>#8a8a93</code></td></tr><tr><td>说明段</td><td>18</td><td>36</td><td>356</td><td>37</td><td>11.5 / 1.6</td><td>两行，超两行就删字，别缩字号</td></tr><tr><td>状态行</td><td>18</td><td>86</td><td>356</td><td>17</td><td>12/600</td><td><code>#16161a</code></td></tr><tr><td>进度条</td><td>18</td><td>108</td><td>356</td><td>3</td><td>—</td><td><code>msctls_progress32</code></td></tr><tr><td>副状态</td><td>18</td><td>118</td><td>356</td><td>13</td><td>9.5px</td><td><code>#a8a8b0</code></td></tr><tr><td>元信息 3 行</td><td>18</td><td>145</td><td>356</td><td>55</td><td>9.5 等宽 / 1.95</td><td>键列宽约 52，值列起于 78</td></tr></tbody></table>
+<p>按钮条（MUI 自绘，375…）：<code>取消</code> + <code>安装</code>（默认）。</p>
+<h3 id="8-3-控件怎么建">8.3 控件怎么建</h3>
+<table><thead><tr><th>元素</th><th>NSIS 写法</th></tr></thead><tbody><tr><td>文字</td><td><code>${NSD_CreateLabel} x y w h "文案"</code> + <code>CreateFont $h "$(^Font)" "<pt>" "<weight>"</code></td></tr><tr><td>位图</td><td><code>${NSD_CreateBitmap}</code> 或 <code>nsDialogs::CreateControl STATIC ${WS_VISIBLE}\|${SS_BITMAP} …</code>，再用 <code>SendMessage ${STM_SETIMAGE}</code></td></tr><tr><td>进度条</td><td><code>${NSD_CreateProgressBar}</code>（类 <code>msctls_progress32</code>），<code>PBM_SETRANGE32</code> 设 <code>0..100</code></td></tr><tr><td>页面背景</td><td><code>SetCtlColors $pageDlg "0x241C1C" "0xFFFFFF"</code></td></tr></tbody></table>
+<p><strong>磅值换算</strong>：<code>pt = px × 0.75</code>。10.5px → 8pt，11.5px → 8.6pt（<code>CreateFont</code> 收整数，写 9），12px → 9pt，14px → 10.5pt。</p>
+<h3 id="8-4-五个必须知道的坑">8.4 五个必须知道的坑</h3>
+<ol><li><strong>颜色是 BGR 不是 RGB</strong>。<code>#1c1c24</code> → <code>"241C1C"</code>。写反了是"看着像黑但偏红"，极难发现。</li><li><strong>进度条上色要先关主题</strong>。有视觉样式时 <code>PBM_SETBARCOLOR</code> 无效，必须 <code>SetWindowTheme(hProgress, "", "")</code> 关掉主题，才能拿到 <code>#0b3a22</code>。代价：进度条变成 90 年代平面条 —— 这是取舍，验收时要跟设计对齐（备选：保持系统绿/蓝渐变，不改色）。</li><li><strong>位图没有 alpha</strong>。右图的圆角与投影必须<strong>烘焙在 <code>#FFFFFF</code> 底色上</strong>，否则会露出黑角。生成脚本照 <code>windows/gen-nsis-images.py</code> 的路子（纯标准库写 BMP，24bit）。</li><li><strong>高 DPI 要两套图</strong>。同一张图在 150% 下会被拉伸变糊：出 1×（234×216）与 2×（468×432），启动时按 DPI 选（<code>GetDeviceCaps(LOGPIXELSX)</code>）。</li><li><strong>按钮不可改色</strong>。MUI 的按钮是系统的，<code>取消/安装</code> 永远是系统灰。<strong>不要</strong>为了让主按钮变黑去 owner-draw —— 那是 800 行 <code>nsDialogs</code>，与"只改 UI、可维护性优先"直接冲突（这条结论 2.1.5 已经踩过，见 <code>installer.nsi</code> 第 177–190 行注释）。</li></ol>
+<h3 id="8-5-代码骨架">8.5 代码骨架</h3>
+<pre><code>; 只列改动点，其余沿用现有 installer.nsi
+Page custom ZfmWelcome          ; 屏 1（保留既有入口，不新建页面）
+
+Function ZfmWelcome
+  ${If} $PassiveMode = 1
+    Abort                        ; /P 必须跳过自绘页
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT &quot;&quot; &quot;&quot;   ; 标题由内页自己画，避免出现两遍
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  SetCtlColors $0 &quot;0x241C1C&quot; &quot;0xFFFFFF&quot;
+
+  ; 右图（先建，压在最底层）
+  ${NSD_CreateBitmap} 404u 16u 234u 216u &quot;&quot;
+  Pop $1
+  ${If} ${FileExists} &quot;$PLUGINSDIR\hero.bmp&quot;
+    SendMessage $1 ${STM_SETIMAGE} ${IMAGE_BITMAP} $hHeroBmp
+  ${EndIf}
+
+  ; 版权 / 说明 / 状态
+  ${NSD_CreateLabel} 18u 15u 356u 15u &quot;$(ZM_COPYRIGHT)&quot;
+  ; … 依 §8.2 表格逐条
+  nsDialogs::Show
+FunctionEnd</code></pre>
+<blockquote>分隔线仍用"实心背景的 STATIC"模拟（NSIS 没有 Line 控件），1u 高，<code>SetCtlColors $h "0xEFEFEF" "0xEFEFEF"</code>。</blockquote>
+<h3 id="8-6-路线-a-明确不做的">8.6 路线 A 明确不做的</h3>
+<ul><li>不做窗口圆角（要改窗口区域，等于自己写窗口过程）。</li><li>不做暗色主题（系统控件是亮色，暗底会贴出一排惨白按钮）。</li><li>不做右侧图里的动画/噪点（静态 BMP，一次画死）。</li></ul>
+<hr>
+<h2 id="9-路线-b-tauri-独立安装器-1-1-还原">9. 路线 B：Tauri 独立安装器（1:1 还原）</h2>
+<h3 id="9-1-结构">9.1 结构</h3>
+<pre><code>installer/                      新增独立 crate（不并进主程序）
+├─ Cargo.toml
+├─ tauri.conf.json              productName &quot;FontManager Setup&quot;
+├─ src/main.rs                  安装内核：解包 / 注册表 / 快捷方式 / 卸载项
+└─ ui/
+   ├─ index.html                直接复用原型：installer-splash-ui-demo.html 的安装器部分
+   └─ assets/                   Inter、icon.png、hero 合成图</code></pre>
+<h3 id="9-2-窗口配置">9.2 窗口配置</h3>
+<pre><code>{
+  &quot;label&quot;: &quot;installer&quot;,
+  &quot;width&quot;: 1000, &quot;height&quot;: 620,
+  &quot;resizable&quot;: false, &quot;maximizable&quot;: false,
+  &quot;decorations&quot;: false, &quot;transparent&quot;: true, &quot;shadow&quot;: false,
+  &quot;center&quot;: true, &quot;visible&quot;: false
+}</code></pre>
+<p><code>transparent: true</code> 是圆角的前提；配合 <code>DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE, 2)</code> 在 Win11 上更稳，Win10 走 CSS 圆角 + 透明。</p>
+<h3 id="9-3-前端要实现的">9.3 前端要实现的</h3>
+<ul><li>4 个 <code>.state</code> 的显隐（原型里已经是这个结构，<code>data-step</code> 驱动）；</li><li>进度事件：<code>install://progress {written, total, currentFile}</code>；</li><li>取消：<code>invoke('cancel_install')</code> + 二次确认；</li><li>完成：<code>invoke('finish', {run, desktopShortcut})</code>。</li></ul>
+<h3 id="9-4-rust-侧必须自己实现-这是路线-b-的真实成本">9.4 Rust 侧必须自己实现（<strong>这是路线 B 的真实成本</strong>）</h3>
+<table><thead><tr><th>模块</th><th>要做什么</th><th>风险</th></tr></thead><tbody><tr><td>解包</td><td>把 payload（zip/内嵌资源）写到目标目录，逐文件回调进度</td><td>低</td></tr><tr><td>注册表</td><td>文件关联 <code>.S/.P/.L-FontManager</code>、卸载项 <code>Uninstall\FontManager</code>、Win10+ 的 <code>AppModel</code> 无需</td><td>中</td></tr><tr><td>快捷方式</td><td>开始菜单 + 桌面（<code>.lnk</code>，用 <code>windows</code> crate 的 IShellLink）</td><td>中</td></tr><tr><td>提权</td><td><code>requireAdministrator</code> manifest；<strong>但当前是按用户安装，不需要提权</strong> —— 别为了"看起来专业"加 UAC</td><td>中</td></tr><tr><td>卸载</td><td>白名单清理（<code>data</code> / <code>字体库</code> / <code>plugins</code> / <code>python-runtime</code> / <code>node-runtime</code> / 三处注册表）</td><td><strong>高</strong>：漏一项 = 残留，多一项 = 删用户字体</td></tr><tr><td>数据迁移</td><td>2.1.4 → 2.1.5 的 <code>data_root</code> 搬迁逻辑</td><td><strong>高</strong>：写错会丢台账</td></tr><tr><td>静默安装</td><td><code>/S</code> 与 <code>/P</code> 的行为对齐</td><td>中</td></tr></tbody></table>
+<blockquote>结论：<strong>路线 B 的钱不在 UI，在"把 NSIS 已经调通的 7 件事重写一遍还不能出错"</strong>。如果 2.1.6 就要发版，走 A。</blockquote>
+<h3 id="9-5-路线-c-复用主程序二进制-0-体积的-1-1-还原-2026-11-14-用户要求后新增">9.5 路线 C：复用主程序二进制（<strong>≈0 体积的 1:1 还原</strong>，2026-11-14 用户要求后新增）</h3>
+<p>用户原话：<strong>「尽量 0 体积占用的 1:1 还原」</strong>。</p>
+<p>先把三条路的体积账摆平 —— 这张表就是结论：</p>
+<table><thead><tr><th>方案</th><th>UI 保真</th><th>安装包体积增量</th><th>为什么</th></tr></thead><tbody><tr><td>A · NSIS 紧凑版</td><td><strong>75%</strong></td><td>+0.3 ~ 0.5 MB</td><td>得烘一张 792×1100 的 hero PNG（位图无 alpha，圆角与阴影只能压进白底）</td></tr><tr><td>B · 独立 Tauri 安装器</td><td>100%</td><td><strong>+5 MB 左右</strong></td><td>门面自己带一套 ~4.5 MB 的 WebView 资源（图标/字体/HTML），再加内核</td></tr><tr><td><strong>C · 复用主程序 exe</strong></td><td><strong>100%</strong></td><td><strong>+620 B（实测）</strong></td><td>UI 代码进主程序，<strong>不新增任何二进制</strong>；品牌图运行时 CSS 合成，<strong>不存位图</strong></td></tr></tbody></table>
+<blockquote>口径说明（2026-11-14 实测修订）：<strong>路线 C 的净增量 = 安装包 +620 B</strong> —— 关开关 6,594,594 B，开开关 6,595,214 B，同一份源码、同一台机器。 原先估的 +0.4~0.7 MB 高估了：前端只有 <strong>7.7 KB</strong>（不是 33 KB，那是含 HTML+CSS 的总量），Rust 侧新增的机器码本来就要编进主程序， 而主程序无论走哪条路都在包里 —— 所以对<strong>安装包</strong>而言，路线 C 几乎不花钱。<br>两个别拿来对比的数字：① 记忆里的 23,706,438 B 是<strong>含 python/node runtime 的老包</strong>，2.1.6 之后 runtime 改成按需下载 （<code>bundle.resources</code> 为空），本地构建现在是 6.29 MiB，口径不同；② 主程序 <code>fontmanager.exe</code> 现在 24,064,000 B， 比 2.1.6 发布版的 23,810,560 B 多 247 KB —— 这是整个 2.1.7 开发周期的增量（含 capability、日志、修复），<strong>不是路线 C 单项的</strong>。</blockquote>
+<p><strong>怎么做</strong>（NSIS 不再消失，只是从"画界面的人"变成"把人扶上马的人"）：</p>
+<ol><li><strong>安装器</strong>：<code>Section Install</code> 先把 <code>fontmanager.exe</code> 落到 <code>$INSTDIR</code>，然后</li></ol>
+<p><code>ExecWait '"$INSTDIRontmanager.exe" --installer-ui'</code> → 四屏由主程序画，装完把退出码回给 NSIS。 NSIS 仍负责<strong>它只能负责的部分</strong>：WebView2 检测（§4.7 E7）、提权判定、取消矩阵（PRD §3.3）。 2. <strong>卸载器</strong>：<code>uninstall.exe</code> 仍是 <code>WriteUninstaller</code> 生成的那份（<strong>≈100 KB，体积零增量</strong>）， <code>un.onInit</code> 里 <code>ExecWait '"$INSTDIRontmanager.exe" --uninstall-ui'</code> → 三屏与白名单清理都在主程序里， 界面收尾后 <code>uninstall.exe</code> 删自己。 3. <strong>回退</strong>：WebView2 缺失 / 主程序起不来 / 被安全软件拦 → 走现有 MUI 原生页。 <strong>现有页面一行都不删</strong>，它就是 PRD E7 与 G6 要求的那条降级路径。</p>
+<p><strong>三条"不许花体积"的硬约束</strong>（做不到就不是 C 方案，是伪装的 B）：</p>
+<table><thead><tr><th>#</th><th>约束</th><th>怎么判</th></tr></thead><tbody><tr><td>C1</td><td>安装器/卸载器前端做成<strong>独立入口</strong>（vite 多入口），不并进主界面 bundle</td><td>构建后安装器 entry <strong>≤ 80 KB 未压缩</strong>；主入口的 chunk 列表里不出现它。参照：本文原型把 7 屏 UI + 全部样式脚本装在一个文件里是 <strong>43 KB（gzip 10.2 KB）</strong></td></tr><tr><td>C2</td><td><strong>不新增图片资产</strong>：右图靠 §4.4 那套 CSS 分层合成，不烘 PNG/BMP</td><td>包内不存在 <code>hero*.png/bmp</code>；右图在 125%/150% 下仍清晰（矢量 + 文字）</td></tr><tr><td>C3</td><td><strong>不新增字体</strong>：Inter 用包里已有的 <code>@fontsource-variable/inter</code></td><td>包里 <code>.ttf/.woff2</code> 数量与 2.1.6 一致</td></tr></tbody></table>
+<p><strong>与路线 B 的差异只有"谁承载 WebView"</strong>：B 新开一个 crate 与窗口，C 复用主程序。 所以 B 的 §9.4 那张"必须自己实现"的表（解包/注册表/快捷方式/卸载白名单/迁移/静默）<strong>一条都不少</strong>， 省下的只是重复的门面与第二套窗口栈 —— 这也是为什么 C 能把 +5 MB 压到 +0.7 MB。</p>
+<p><strong>代价（写清楚，别只报喜）</strong>：</p>
+<ul><li>主程序多一个入口（<code>--installer-ui</code> / <code>--uninstall-ui</code>），启动路径要能在<strong>未安装状态</strong>下跑（临时目录、独立 WebView2 数据目录、不抢单实例互斥体）。</li><li>卸载时要先让正在运行的主程序退出，再拉 UI（与 <code>CheckIfAppIsRunning</code> 同源）。</li><li>安装中途取消 → 已落盘的 <code>fontmanager.exe</code> 要按 PRD §3.3 的取消矩阵倒序删除，不能留半装目录。</li></ul>
+<p><strong>验收</strong>：§10 全部条目不变（含 G 组三屏与 W1–W12 白名单门槛），另加三条：</p>
+<ul><li>[x] 安装包体积增量 <strong>≤ 1 MB</strong> —— 实测 <strong>+620 B</strong>（2026-11-14）</li><li>[x] 包内无新增位图/字体（C2/C3）—— 右图纯 CSS 合成，字体用包里已有的 Inter</li><li>[ ] 拆掉 WebView2 后，安装与卸载都能走原生回退且完成（C 的回退面比 B 大，必须逐条验）</li></ul>
+<h3 id="9-5-1-落地形态-v0-2026-11-14">9.5.1 落地形态（v0，2026-11-14）</h3>
+<p>已按本节实现，代码位置与分工如下 —— <strong>改之前先认这张表</strong>：</p>
+<table><thead><tr><th>件</th><th>位置</th><th>说明</th></tr></thead><tbody><tr><td>入口</td><td><code>src-tauri/src/setup_ui.rs::dispatch()</code></td><td>识别 <code>--installer-ui</code> / <code>--uninstall-ui</code>（也认 <code>--setup-ui=install\|uninstall</code>）。<strong>没有这两个参数时只扫一遍 argv 就返回</strong>，主程序启动路径零改动</td></tr><tr><td>窗口</td><td><code>setup_ui::run_window()</code></td><td>1000×620、无标题栏、透明、圆角 16 由 CSS 画；WebView2 数据目录固定在 <code>%TEMP%\FontManager-setup-webview</code>（用完即弃，卸载结束时 <code>RMDir /r</code>）</td></tr><tr><td>界面</td><td><code>setup.html</code> + <code>src/setup/{main.ts,setup.css}</code></td><td><strong>vanilla TS，不引 React</strong>。vite 独立入口 <code>setup</code>，产物 <strong>33 KB</strong>（html 11.9 + css 14.6 + js 6.9，gzip 后约 12 KB）。主入口 bundle 里搜不到任何一句安装器文案，也不引用 <code>setup-*.js</code>（C1 达标，门槛 80 KB）</td></tr><tr><td>引擎</td><td>还是 NSIS</td><td>UI <strong>不重写</strong>解包/注册表/快捷方式/白名单：点"安装"时它拉起 <code>setup.exe /S /D=<目录></code>，点"卸载"时拉起 <code>uninstall.exe /S [/PURGE=1]</code>，然后<strong>核对结果</strong>（<code>fontmanager.exe</code>、<code>uninstall.exe</code>、注册表 <code>DisplayVersion</code> 三样都在才算成功）</td></tr><tr><td>引导</td><td><code>installer.nsi</code> 的 <code>.onInit</code> / <code>un.onInit</code></td><td>GUI 路径下只做三件事：把主程序解到 <code>$PLUGINSDIR</code>（卸载是先拷到 <code>%TEMP%\FontManager-setup-ui</code>）、<code>ExecWait</code> 界面、按退出码收尾（0 = 装好，10 = 用户取消，其他 = 退回原生 MUI 页）</td></tr></tbody></table>
+<p><strong>开关是 <code>installer.nsi</code> 里的一行宏定义</strong>。<strong>2.1.7 起的发版状态是「开启」</strong>：CI 用 <code>--assert-on</code> 钉住它，关掉就红。只有想量「路线 C 让包大了多少」时才临时 <code>off</code> 一次：</p>
+<pre><code>node tools/route-c.mjs status         # on / off
+node tools/route-c.mjs off            # 只用于 A/B 对比老路径的体积，量完记得 on 回来
+node tools/route-c.mjs on             # 发版状态（仓库里就该是这一行）
+node tools/route-c.mjs --assert-on    # CI 用：谁把开关关掉提交，当场失败</code></pre>
+<blockquote>2.1.7 之前约定相反（默认注释掉 + <code>--assert-off</code>），因为那会儿路线 C 还在跟原生页面并排比。 现在安装时的「正在运行」检测只存在于路线 C 里 —— 保持关闭等于这个能力发不出去，所以翻了默认值。</blockquote>
+<blockquote>⚠️ <strong>别再改回「标记文件 + <code>!if /FileExists</code>」</strong>。tauri 打包前会把本模板<strong>渲染到 <code>rust-target/release/nsis/x64/installer.nsi</code></strong> 再交给 makensis，那时 <code>${__FILEDIR__}</code> 指向的是 那个临时目录 —— 标记文件永远探测不到，开关恒为假。2026-11-14 实测：开与关打出来的包<strong>字节完全相同</strong> （6,583,851 B），一度以为"路线 C 没用"。宏定义是纯文本，渲染后原样保留，放哪编译都有效。</blockquote>
+<p><strong>"演练模式"</strong>：<code>fontmanager.exe --installer-ui</code> 直接跑、没带 <code>--setup-exe=</code> 时，界面照常走完四屏，但<strong>一个字节都不写</strong>（不建目录、不写注册表），状态行会明写"演练模式"。这是给人看设计用的，也是打包前自检 UI 的最快方式。</p>
+<blockquote>卸载侧的"演练"判据不同：卸载的引擎是安装目录里的 <code>uninstall.exe</code>，不是 <code>--setup-exe</code>。所以 <code>Env.demo</code> 在卸载模式看的是<strong>注册表安装项 + <code>uninstall.exe</code> 是否存在</strong>。（2026-11-14 之前这里 一律看 <code>setup_exe</code>，导致每次正常卸载都打 <code>demo=true</code>，日志一直在骗人。）</blockquote>
+<p><strong>对主程序的影响（逐条核过）</strong>：</p>
+<table><thead><tr><th>关注点</th><th>结论</th></tr></thead><tbody><tr><td>启动耗时</td><td>没有 flag 时只多一次 <code>argv</code> 扫描（微秒级）。<code>store::load</code>、<code>activation::reconcile</code>、watcher、插件、本地 API、单实例互斥体<strong>全都没进 setup 路径</strong></td></tr><tr><td>内存/线程</td><td>setup 模式下不起任何后台线程（除了安装/卸载那一根 worker）</td></tr><tr><td>二进制体积</td><td><strong>实测（2026-11-14，同一份源码只切开关）</strong>：安装包 关闭 <strong>6,594,594 B</strong> → 路线 C <strong>6,595,214 B</strong>，<strong>净增 620 B</strong>。UI 代码本来就在主程序里，<strong>没有第二个 exe、没有第二套 WebView 资源、没有新增字体和位图</strong>；setup 前端 chunk 仅 <strong>7.7 KB</strong></td></tr><tr><td>用户数据</td><td>setup 模式不读也不写 <code>state.json</code>；WebView2 数据目录在 <code>%TEMP%</code>，与 <code>%LOCALAPPDATA%\com.iieozo.fontmanager</code> 完全隔离</td></tr><tr><td>正常运行功能</td><td>安装完成后主程序行为不变 —— NSIS 仍然是那个 NSIS，注册表 13 个值、快捷方式、文件关联一个都没换实现</td></tr></tbody></table>
+<p><strong>已知未做（2.1.7 后续）</strong>：</p>
+<ul><li>界面里的"取消安装"只做<strong>尽力而为</strong>（kill 引擎 + 回滚新建目录）；引擎已经写了一半注册表时不做逐项回滚，靠重装覆盖。</li><li>桌面快捷方式没勾选时走 <code>/NS</code>（引擎不建）；"勾了却没建出来"目前只记日志，不在界面上报错。</li><li>卸载后"还有 N 个文件未能删除"只显示在状态行，没有做重试按钮（§4A.6 表里那条）。</li><li>安装包体积增量需要真打一次包量（本版未打）。</li></ul>
+<hr>
+<h2 id="10-验收清单">10. 验收清单</h2>
+<h3 id="安装器-完整版-路线-b">安装器（完整版 / 路线 B）</h3>
+<ul><li>[ ] 窗口 1000×620（或紧凑版 662×416），四个角都是圆的，没有系统标题栏</li><li>[ ] 右图在 100%/125%/150%/200% 缩放下都不糊、不变形、不露出黑角</li><li>[ ] 左栏文字在 150% 缩放下不重叠、不溢出（重点看屏 1 的元信息四行）</li><li>[ ] 屏 1→2→3→4 每屏切换有 340ms 淡入，不闪白</li><li>[ ] 进度条数字变化时右侧不横向抖动（<code>tabular-nums</code>）</li><li>[x] 屏 3 期间主按钮消失；<code>取消安装</code> 有二次确认（2026-11-14 补齐，截图 <code>16-cancel-confirm.png</code>；确认后目录真的被删掉、退出码 10）</li><li>[ ] 屏 4 两个复选框默认勾选，取消勾选后行为正确（不启动 / 不建快捷方式）</li><li>[ ] 键盘：<kbd>Tab</kbd> 焦点顺序 = 阅读顺序；<kbd>Enter</kbd> 触发主按钮</li><li>[ ] 六种异常态（§4.7）逐条能复现，且都没有新造组件</li><li>[ ] <code>/S</code> 静默安装不弹任何界面；<code>/P</code> 不卡在自绘页</li></ul>
+<blockquote>若最终走的是<strong>紧凑版</strong>（备选），上面前四条按 §8.0 的降级口径验：方角、系统灰按钮、无切屏动效都算通过，但"字不重叠、文案无误、四个状态都能走完"必须成立。</blockquote>
+<h3 id="卸载器-路线-b-2-1-7">卸载器（路线 B / 2.1.7）</h3>
+<ul><li>[ ] 与安装器<strong>并排截图看不出是两个产品</strong>：同 1000×620、同圆角、同左栏栅格、同右图、同页脚位置</li><li>[ ] 屏 1 的「同时删除全部数据与字体库」<strong>默认不勾</strong>；勾与不勾分别跑到屏 3，两种完成文案都对</li><li>[ ] 屏 1 显示的本机版本号 = 注册表 <code>DisplayVersion</code>，不是包版本</li><li>[ ] 屏 2 <strong>没有取消按钮</strong>，也没有返回路径；进度条不回退</li><li>[ ] 屏 2 日志最新一行在最上、最多 5 行、首行颜色更深</li><li>[ ] 屏 3 保留变体里的路径是<strong>真实安装路径</strong>（从注册表读），不是常量</li><li>[ ] 四个入口（控制面板 / 设置→应用 / 开始菜单 / 直接跑 <code>UninstallString</code>）<strong>全部</strong>进新界面</li><li>[ ] 卸载 WebView2 后再跑，仍能完成卸载（原生确认框 + 静默清理），完成后无残留</li><li>[ ] <code>/S</code> 无窗口且退出码正确；<code>/P</code> 跳过确认屏；<code>/UPDATE</code> 一个文件都不删</li><li>[ ] 键盘：屏 1 <kbd>Enter</kbd>=卸载 <kbd>Esc</kbd>=取消；焦点顺序 = 阅读顺序</li></ul>
+<h3 id="程序还在运行-4-9-2-1-7">程序还在运行（§4.9，2.1.7）</h3>
+<ul><li>[x] 主程序开着时点 <code>安装</code> → 弹出遮罩对话框，两个按钮可点（2026-11-14 真机）</li><li>[x] 选「关闭软件并继续」→ 进程被结束、安装继续完成（日志：<code>结束运行中的实例 pid=… 关闭结果：请求 1 个，仍剩 0 个</code>）</li><li>[x] 卸载路径同样会问（日志：<code>setup_uninstall … force=true</code>）</li><li>[x] 首屏状态行提前提示「FontManager 正在运行 · 安装前会请你先关闭」</li><li>[ ] 进程以管理员身份运行时关不掉 → 卡片正文换成"请手动退出"（未构造该场景）</li></ul>
+<h3 id="启动页">启动页</h3>
+<ul><li>[x] 窗口 1120×760，无标题栏，圆角 24，居中（2026-11-14 出图 15-splash-1120.png）</li><li>[ ] <strong>进度条分母 = 种子集合字族数</strong>，不是全库（断点验证：分母 ≈ 400 而非 4214）</li><li>[x] 进度到 100% 后 <strong>≤200ms</strong> 内主界面可见、启动页消失（2.1.7 改为严格串行：淡出 190ms → 关启动页 → 立刻 show 主界面；日志 <code>[splash] 启动页已关闭，主界面随后显示</code>)</li><li>[ ] 主界面出现时，种子涵盖的字体已经可预览、可启停、可应用到 PS/AI</li><li>[ ] 进入主界面后，<strong>启动页不再出现</strong>；剩余字体进度只在主界面底部细进度里</li><li>[ ] 分母未知时是不确定态（滑动块），拿到总数后切确定态且<strong>不倒退</strong></li><li>[x] 种子 80ms 就绪时，启动页仍显示 ≥1500ms（不闪；2026-11-14 真机两次启动日志都是 <code>最短显示已满（1500ms）</code>）</li><li>[ ] 3s 超时能强开主界面</li><li>[ ] 种子装载失败：不弹错、进主界面、有可重试提示</li><li>[ ] 状态数字用空格千分位（<code>1 028</code>），英文用逗号</li><li>[ ] 主题：<code>themePref=light</code> 出浅色那套（§5.4），<code>dark</code> 出深色，<code>system</code> 跟随系统；两套下文字都清晰可读、图标块不与背景糊在一起</li><li>[ ] <strong>浅色下轨道看得见</strong>：进度停在 50% 左右时，右侧未填充的那半条轨道仍能看出长度（对底两端 ≥1.4:1，实测 1.42），不是一根孤立的短线</li><li>[ ] 浅色卡面干净：不能出现灰绿/米黄的"脏"调（底不用暖纸白、光晕只护住图标）</li><li>[ ] <code>prefers-reduced-motion: reduce</code> 时不确定态不再左右滑动</li></ul>
+<hr>
+<h2 id="11-附录">11. 附录</h2>
+<h3 id="a-原型怎么用">A. 原型怎么用</h3>
+<ol><li>浏览器打开 <code>docs/installer-splash-ui-demo.html</code>；</li><li>底部工具条：<code>安装器</code> / <code>紧凑版</code> / <code>启动页</code> 三个视图，<code>1 欢迎 … 4 完成</code> 切步骤；</li><li><kbd>←</kbd> <kbd>→</kbd> 翻步骤，<code>重播</code> 重置动画；</li><li>出干净截图：地址后加 <code>?clean=1&step=2</code>（去工具条、按 1:1 渲染）。</li></ol>
+<h3 id="b-数值来源">B. 数值来源</h3>
+<p>本文所有数值来自原型 CSS 的实际声明；<code>u</code> 换算来自 <code>installer.nsi</code> 第 277–290 行的实测记录（内页高约 141u、1u ≈ 1.88px）。<strong>换 MUI 版本或换 DPI 后要重新量一次</strong>，别信记忆。</p>
+<h3 id="c-变更记录">C. 变更记录</h3>
+<table><thead><tr><th>日期</th><th>变更</th></tr></thead><tbody><tr><td>2026-11-13</td><td>初版：安装器 4 屏 + 启动页 + NSIS 紧凑版；明确启动页进度条语义为「种子集合装载」，种子就绪即进主界面（用户 2026-11-13 明确要求）</td></tr><tr><td>2026-11-13</td><td>启动页最短显示 420ms → <strong>600ms</strong>；新增 §5.4 明暗两套配色（跟随 <code>themePref</code>，<code>system</code> 走 <code>prefers-color-scheme</code>）；§10 验收清单同步（用户 2026-11-13 追加要求：太快看不到、要白色背景的启动页）</td></tr><tr><td>2026-11-14</td><td>启动页<strong>整体放大一倍</strong>（560×380 → 1120×760，§5 全部数值 ×2，圆角刻意只到 24）；新增 <strong>§4.9 程序还在运行确认对话框</strong>（安装/卸载前检测 <code>fontmanager.exe</code>，让用户选关闭继续或取消）；§4.7 / §4A.6 的「文件被占用」从「失败后重试」改为「事前询问」</td></tr><tr><td>2026-11-14</td><td>启动页最短显示 600ms → <strong>1500ms</strong>，且判据移到原生侧（从启动页 show 那一刻算，先等窗口出现再补足）；明确「每次打开软件都先显示启动页」，含安装器点「完成」后启动的那一次（§5.3）</td></tr><tr><td>2026-11-13</td><td>复验修补：浅色轨道 <code>#ececef</code>→<strong><code>#d0d0d8</code></strong>（1.13:1 → 1.47:1，原值等于看不见轨道）、浅色页脚 <code>#b3b3ba</code>→<strong><code>#a8a8b0</code></strong>（1.99:1 → 2.26:1）；§5.4 表与实现约束第 5 条、§10 清单同步；<code>08/09</code> 实现截图按新值重出</td></tr><tr><td>2026-11-14</td><td><strong>浅色整体提亮</strong>（用户："白色太暗太脏了，调亮点可以改点颜色"）：底 <code>#fbfaf5/#f0efe9</code>（暖纸白）→ <code>#fdfdff/#f3f5f9</code>（中性冷白）；光晕 <code>.16/68%</code> → <code>.10/60%</code>；图标块投影 <code>.22</code>→<code>.13</code>、外环 <code>#e9e6df</code>→<code>#e7eaf0</code>；轨道 <code>#d0d0d8</code>→<code>#cdcfd8</code>（1.42:1，保住可见度下限）；小字反向下压求清晰：状态行 <code>#6f6f7a</code>(4.55:1)、副状态 <code>#97979f</code>、页脚 <code>#9a9aa4</code>(2.55:1)。§5.4 表、实现约束 5–7、§10 清单、<code>08/09</code> 截图同步</td></tr><tr><td>2026-11-14</td><td><strong>路线 C 真包装真装卸实测（§9.5.1）</strong>：体积 <strong>+620 B</strong>；安装 46~53 s / 卸载 1.0 s，两者退出码均 0，注册表与程序文件全清、<code>data</code> 按设计保留；升级（覆盖安装）同验。过程中修掉 6 个只在真机才暴露的 bug：<code>SetSilent</code> 抑制页面导致"没人点却自动装完"、<code>listen</code> 失败阻断启动导致白屏、setup 窗口缺 capability 导致拖拽/事件被 ACL 拒、Enter 双触发导致卸载被调两次、NSIS 卸载器父进程秒退导致误报残留、卸载日志 <code>demo</code> 恒真。开关从"标记文件"改成"一行宏定义 + <code>tools/route-c.mjs</code>"（<code>${__FILEDIR__}</code> 在 tauri 渲染后失效）。未做项记 <code>待办清单.md</code> §18.2</td></tr><tr><td>2026-11-14</td><td><strong>路线 C 落地 v0（§9.5.1）</strong>：<code>--installer-ui</code> / <code>--uninstall-ui</code> 入口 + 独立 setup 前端入口（33 KB）+ NSIS 标记文件开关；引擎仍是 NSIS（UI 驱动并核对），主程序启动路径零改动</td></tr><tr><td>2026-11-14</td><td><strong>新增 §9.5 路线 C（复用主程序二进制）</strong>：按用户「尽量 0 体积占用的 1:1 还原」要求，把 1:1 的实现从"独立 Tauri 安装器"改到"主程序多两个入口"，体积增量 +5 MB → <strong>+0.4~0.7 MB</strong>，UI 保真不变；补 C1–C3 三条不花体积的硬约束与体积验收</td></tr><tr><td>2026-11-14</td><td><strong>新增卸载器（§4A）</strong>：三屏确认/进度/完成 + 「数据已删除」变体，版式与安装器同一套（PRD §3.4 / G1）；补 <code>ZM_U_*</code> 文案键、§10 卸载器验收清单；原型工具条加「卸载器」视图（<code>?view=uninstaller&step=0..2</code>，<code>&purged=1</code> 出清空变体）；<code>01..04</code> 按定稿文案重出，新增 <code>10..13</code>（用户 2026-11-14 要求"卸载界面也需要和安装界面一样的界面设计"）</td></tr><tr><td>2026-11-14</td><td><strong>安装器文案按实测定稿</strong>（与 PRD §9.5 同步）：包内只有 2 个文件 23,706,438 B，「148 个文件 / 420 MB / 含运行时」全部废弃；屏 1 状态行去数字、副状态 20 秒→5 秒、元信息改「约 24 MB / 程序本体 · 卸载程序」并追加运行时按需下载披露；屏 3 进度由「按文件」改<strong>按字节</strong>（<code>{d}/{t}</code> MB），补单调不减/无 1.5s 停滞的验收口径</td></tr></tbody></table>
+
+<div class="footer">
+本页由 docs/make-spec-html.py 从 docs/安装器与启动页-UI交付规格书.md 生成，请勿手工修改 HTML。<br>
+数值以原型为准；若两者不一致，以原型为准并补齐 Markdown。
+</div>
+</body></html>

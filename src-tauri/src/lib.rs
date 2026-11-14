@@ -5,6 +5,8 @@ mod aim;
 // 1.3.0：本地 HTTP API（只绑 127.0.0.1）与进程外插件
 mod api;
 mod plugins;
+// 路线 C（2.1.7）：`--installer-ui` / `--uninstall-ui`，安装器/卸载器的界面画在主程序里
+mod setup_ui;
 #[cfg(target_os = "windows")]
 mod comhost;
 mod copyright;
@@ -50,6 +52,204 @@ use std::collections::HashMap;
 use store::Store;
 use tauri::{Emitter, Manager, State};
 
+// ───────────────────────── 启动页（2.1.6，规格书 §5.3）─────────────────────────
+//
+// 一条铁律：启动页画的是**种子集合**的装载进度（分母几百个族），不是全库 4214 族。
+// 种子 = 上次已启用 ∪ 系统字体 ∪ 分组内 ∪ 快照内，它覆盖了用户此刻真正要用的全部字体；
+// 这批就绪就开主界面，剩下几千个未启用字体只是「待浏览的库存」。
+// 拿全库当分母会让进度条爬到 9% 就长时间不动 —— 那是典型的「假进度」事故。
+
+/// 启动页的进度快照。字段全是计数，没有需要维护的不变量，所以可以直接当
+/// `static Mutex` 的初值（`Mutex::new` 是 const fn，usize / bool 都能 const 构造）。
+struct SplashState {
+    /// 已完成装载的种子**字族**数
+    done: usize,
+    /// 种子总**字族**数；0 = 分母还没算出来（启动页走不确定态）
+    total: usize,
+    /// 种子之外还要读多少族（副状态那行的数字）
+    rest: usize,
+    /// 主界面已经接手（`splash_done` 幂等判据）
+    finished: bool,
+    /// 启动页**真正 show 出来**的时刻。
+    ///
+    /// 最短显示时长（1.5s）必须从这里算，不能从进程启动或前端 `performance.now()`
+    /// 算：splash 窗口比主窗口的 JS 晚建 200~400ms，按那个原点补足会实际只显示 1.1s
+    /// （用户 2026-11-14 明确要求「每次打开都先看到启动页，最少 1.5 秒」）。
+    shown_at: Option<std::time::Instant>,
+}
+
+static SPLASH: std::sync::Mutex<SplashState> = std::sync::Mutex::new(SplashState {
+    done: 0,
+    total: 0,
+    rest: 0,
+    finished: false,
+    shown_at: None,
+});
+
+/// 取锁，**中毒也照用**。
+///
+/// 这些数字没有需要维护的不变量，一次 panic 留下来的半截快照只是「进度不准」，
+/// 而 `unwrap()` 会让启动页和主界面一起卡在初始化里 —— 那是把一个显示问题
+/// 升级成「软件打不开」。
+fn splash_lock() -> std::sync::MutexGuard<'static, SplashState> {
+    SPLASH.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// 进程启动时刻。前端用 `performance.now()` 量 420ms 最短显示时长，
+/// 两条时间轴（WebView 加载 vs 原生 setup）对不上时，这里是唯一能核对的东西。
+static BOOT_AT: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+fn boot_at() -> std::time::Instant {
+    *BOOT_AT.get_or_init(std::time::Instant::now)
+}
+
+/// 启动页 show 之后打点（见 `SplashState::shown_at`）。
+fn splash_mark_shown() {
+    let mut st = splash_lock();
+    st.shown_at = Some(std::time::Instant::now());
+}
+
+/// 启动页最短显示时长（2026-11-14 用户要求「最少 1.5 秒」）。
+///
+/// 与前端 `App.tsx` 里那个同名常量不是一回事：那边已经把值降到 0，最短显示
+/// **只在原生侧生效**——只有一个事实来源，也不会因为两条时间轴对不上而缩水。
+const SPLASH_MIN_SHOW: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// 种子装载进度（由 `UiSink::seed_progress` 逐族推进）。
+/// 锁只在这个函数里待几微秒，扫描线程不会被启动页拖慢。
+fn splash_seed_progress(done: usize, total: usize) {
+    let mut st = splash_lock();
+    st.done = done;
+    st.total = total;
+}
+
+/// 「其余 N 个字族在主界面后台继续读取」里的 N（由 `scan_library` 算好递进来）。
+pub(crate) fn splash_rest(rest: usize) {
+    let mut st = splash_lock();
+    st.rest = rest;
+}
+
+/// `splash_state` 的返回体（与前端 `SplashProgress` 一一对应，serde 默认不改名）。
+///
+/// 启动页只认这一条原生命令加一条 `splash_done`：文案与版本号由前端自己取
+/// （`get_prefs` + `@tauri-apps/api/app` 的 `getVersion`），Rust 侧不掺和本地化。
+#[derive(serde::Serialize)]
+struct SplashProgress {
+    done: usize,
+    total: usize,
+    rest: usize,
+    finished: bool,
+}
+
+/// 启动页每 100ms 轮询一次这条（见 `src/splash.ts`）。
+#[tauri::command]
+fn splash_state() -> SplashProgress {
+    let st = splash_lock();
+    SplashProgress {
+        done: st.done,
+        total: st.total,
+        rest: st.rest,
+        finished: st.finished,
+    }
+}
+
+/// 种子就绪（或 3s 超时 / 失败）→ 打开主界面、关掉启动页。
+///
+/// 幂等：前端 StrictMode 双调用、种子到达与超时同时触发都会打进来。
+/// 重复执行会让主窗口 show 两次、启动页 close 两次（后者在 Windows 上会报错）。
+#[tauri::command]
+fn splash_done(app: tauri::AppHandle, store: State<Store>) {
+    {
+        let st = splash_lock();
+        // 已经交接完成就别再排一次（StrictMode 双调用 / 种子与超时同时到达）
+        if st.finished {
+            return;
+        }
+    }
+    // **不在这里置 finished**：最短显示时长还没到，前端靠轮询 `finished` 决定何时淡出。
+    // 提早置位会让启动页在 200ms 就消失，用户要的「每次都先看到启动页」就落空了。
+    // 以**此刻** store 里的值当权威，不用 setup 时的快照：用户可能在启动过程中
+    // 就在托盘菜单里改掉了「启动时最小化」（前端 set_prefs 直接写进 store）。
+    let start_minimized = store
+        .0
+        .lock()
+        .map(|st| {
+            st.prefs
+                .get("startMinimized")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    // 淡出补偿：前端收到 finished 后先降 opacity 120ms，这里再留余量。
+    // 必须在新线程里 sleep：同步命令跑在主线程上，睡在这儿会把事件循环一起停住。
+    std::thread::spawn(move || {
+        // ① 等启动页**真的出现**再开始计时。
+        //
+        // 热缓存下种子只要 3ms 就绪，前端的 `splash_done` 可能比 splash 窗口
+        // （在主线程里建 WebView2，几百毫秒）还早到 —— 那时 `shown_at` 是 None，
+        // 直接放行就等于"这一秒没有启动页"（2026-11-14 实测第二次启动就是这样：
+        // 日志 `启动后 1214ms` 就交接了，用户根本没看到启动页）。
+        // 所以这里最多等 2 秒；2 秒还没等到 = splash 确实建不出来（异常路径，
+        // 已有 diag 日志），那时不能再拖，直接放行让主界面出来。
+        let wait_deadline = std::time::Instant::now()
+            + if start_minimized {
+                // 启动时最小化到托盘：本来就不建启动页，没什么可等的
+                std::time::Duration::from_millis(0)
+            } else {
+                std::time::Duration::from_secs(2)
+            };
+        let shown = loop {
+            if let Some(t) = splash_lock().shown_at {
+                break Some(t);
+            }
+            if std::time::Instant::now() > wait_deadline {
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        };
+        if shown.is_none() {
+            diag::log("[splash] 启动页 2 秒内没有出现，跳过最短显示（主界面直接显示）");
+        }
+        // ② 补足最短显示（从启动页 show 那一刻算）
+        if let Some(t) = shown {
+            let elapsed = t.elapsed();
+            if elapsed < SPLASH_MIN_SHOW {
+                std::thread::sleep(SPLASH_MIN_SHOW - elapsed);
+            }
+        }
+        // ③ 交接（幂等：只有第一个进来的线程能置位）
+        {
+            let mut st = splash_lock();
+            if st.finished {
+                return;
+            }
+            st.finished = true;
+        }
+        diag::log(&format!(
+            "[splash] 最短显示已满（{}ms），开始交接；启动后 {}ms",
+            SPLASH_MIN_SHOW.as_millis(),
+            boot_at().elapsed().as_millis()
+        ));
+        // ④ 前端看到 finished 会淡出 120ms，这里等它放完
+        std::thread::sleep(std::time::Duration::from_millis(190));
+        // ⑤ 严格串行：先关启动页，再显示主界面（用户 2026-11-14 要求）
+        if let Some(splash) = app.get_webview_window("splash") {
+            let _ = splash.close();
+        }
+        if !start_minimized {
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.show();
+                let _ = main.set_focus();
+            }
+        }
+        diag::log(&format!(
+            "[splash] 启动页已关闭，主界面{}（启动后 {}ms）",
+            if start_minimized { "保持隐藏" } else { "随后显示" },
+            boot_at().elapsed().as_millis()
+        ));
+    });
+}
+
 /// 扫描字体库。业务逻辑在 `services::scan`，这里只做「后台线程 + 把进度发成前端事件」。
 #[tauri::command]
 async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
@@ -82,6 +282,13 @@ async fn scan_fonts(app: tauri::AppHandle) -> Result<Vec<FontFace>, String> {
                 return;
             }
             let _ = self.0.emit("scan:seed", faces);
+        }
+        /// 种子装载进度 → 启动页（§5.3）。
+        ///
+        /// **不加一次性守卫**：这里是「当前进度」而不是「一次性事实」，会话中的
+        /// rescan 会重新走一遍种子，启动页早已销毁，多写几次状态没有任何副作用。
+        fn seed_progress(&self, done: usize, total: usize) {
+            splash_seed_progress(done, total);
         }
     }
     let store = app.state::<Store>().inner().clone();
@@ -2217,6 +2424,13 @@ fn show_main(app: &tauri::AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+    // 托盘抢跑：种子还没就绪时用户就从托盘（或「启动时最小化」模式）把主界面叫出来，
+    // 启动页是 alwaysOnTop，会一直盖在屏幕中心的主界面上。关掉它 ——
+    // `splash_done` 那边的时序一行都不用动：它后面 `get_webview_window("splash")`
+    // 拿到 None 就直接跳过 close。
+    if let Some(splash) = app.get_webview_window("splash") {
+        let _ = splash.close();
+    }
 }
 
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -2745,6 +2959,23 @@ fn migrate_webview_data_dir() {}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 路线 C（2.1.7）：`--installer-ui` / `--uninstall-ui` 走一条**完全独立**的启动路径，
+    // 见 setup_ui.rs 的模块注释。没有这两个参数时 dispatch() 只扫一遍 argv 就返回 false，
+    // 下面主程序启动路径一个字都没变（不加载 store、不会多开线程）。
+    //
+    // Context 只生成一次再分给两条路径：`generate_context!()` 会把前端产物按文件
+    // `include_bytes!` 进二进制，调两次有把 dist 存两遍的风险——体积是我们这条线最在意的事。
+    let context = tauri::generate_context!();
+    if setup_ui::dispatch() {
+        setup_ui::run_window(context);
+        return;
+    }
+    run_main(context);
+}
+
+fn run_main(context: tauri::Context<tauri::Wry>) {
+    // 启动计时原点：启动页要报「种子就绪花了多久」，这是唯一可信的起点
+    let _ = boot_at();
     // 应用标识换了名字（1.9.8），WebView2 的数据目录跟着标识走，必须**在建窗口之前**搬过去
     migrate_webview_data_dir();
     // 资源管理器双击 `.S-/.P-/.L-FontManager` 时，Windows 会把文件路径当 argv[1] 传进来。
@@ -2868,13 +3099,130 @@ pub fn run() {
                 // 圆角不再用 DWM（DWMWCP_ROUND 自带一圈窗口阴影，用户要求完整界面
                 // 也不要阴影）：完整界面和速览的圆角统一由前端 CSS 画（--qb-radius）。
                 // set_window_rounded 命令保留，只用于把系统圆角关死。
-                // 立刻把窗口亮出来，再等前端把字库扫完。
-                // 原来是「前端 init 全部完成才 show」——几千个字体的扫描要好几秒，
-                // 这段时间用户对着空桌面，看不到任何反馈。现在窗口一出来就是骨架屏 +
-                // 底部百分比进度条（components/LoadProgress.tsx），扫完自动换成字体库。
-                if !start_minimized {
-                    let _ = window.show();
+                //
+                // 2.1.6 起主窗口**不在这里 show**：改由 `splash_done`（种子就绪 /
+                // 3s 超时）打开。原来是「立刻 show + 骨架屏」，但骨架屏终究是个空壳，
+                // 而种子只要几百毫秒 —— 先给一屏「正在装载真实的字体」再进界面，
+                // 用户不用先看一眼假卡片。fit_window 必须留着：缩放与居中要在
+                // 首次可见之前算好，否则窗口会先按 100% 闪一下再缩。
+            }
+            // 启动页（2.1.6）：不在 tauri.conf.json 里配，改在这里手动建。
+            //
+            // 【为什么挪出 config】2.1.6 安装版在部分机器上双击启动必 panic
+            // （0x8007139F = ERROR_INVALID_STATE，WebView2 把它描述成「没有注册类」）。
+            // 对照实验已排除机器环境：2.1.5（单窗口）同一台机器同一时刻正常启动。
+            // 根因是 config 的 windows 数组里两个窗口共享同一个 WebView2 user data
+            // folder，第二个 environment 的创建存在竞态/不一致，一失败整个应用跟着
+            // panic（Tauri issue #8196：多窗口在部分机器必挂）。官方 workaround 是给
+            // 多出来的窗口一个**独立的 data_directory**——而 config 窗口的
+            // dataDirectory 字段只接受相对路径（相对 $LOCALDATA\<label> 拼接），
+            // 不如直接在 Rust 侧建窗，路径、时机、失败策略全部自己握住。
+            //
+            // 【为什么绝不能 panic】启动页只是「增强体验」：建不出来（理论上不该
+            // 发生）最多损失一屏进度条，下面的 15 秒兜底闸门会把主界面强制亮出来。
+            // 2.1.6 的教训恰恰是 WebView 创建失败 panic 让整个应用打不开——
+            // 这里所有错误一律记 diag::log 后继续，禁止 expect/unwrap。
+            if !start_minimized {
+                // splash 的 WebView2 数据目录独立于 main（`<LOCALDATA>\<identifier>\
+                // splash-webview`）：不再与主窗口共享浏览器进程，environment 之间
+                // 彻底解耦，竞态无从谈起（tauri#8196 官方 workaround）。
+                // 建目录要提前做：WebView2 不会替我们建 user data folder。
+                let splash_data_dir = match app.path().app_local_data_dir() {
+                    Ok(dir) => {
+                        let dir = dir.join("splash-webview");
+                        // 目录建不出来（磁盘满 / 权限被杀软拦）时不给 splash 配独立
+                        // 目录、退回默认行为：宁可冒一次与 main 共享的风险，也不能
+                        // 因为建目录失败就把启动页整个放弃或让应用崩掉。
+                        if std::fs::create_dir_all(&dir).is_ok() {
+                            Some(dir)
+                        } else {
+                            diag::log("[splash] 独立 WebView 数据目录创建失败，退回默认数据目录");
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        diag::log(&format!("[splash] 取 app_local_data_dir 失败（退回默认数据目录）：{e}"));
+                        None
+                    }
+                };
+                let mut builder = tauri::WebviewWindowBuilder::new(
+                    app,
+                    "splash",
+                    tauri::WebviewUrl::App("splash.html".into()),
+                )
+                .title("FontManager")
+                // 与 main 窗口的 additionalBrowserArgs **一个字符都不能差**：
+                // WebView2 对共享 user data folder 的 WebView 要求 environment
+                // options 完全一致；给 splash 独立目录后这里保持一致，纯粹是为了
+                // 渲染行为（无 UI 弹层、无 SmartScreen、无障碍树）与主界面对齐。
+                .additional_browser_args(
+                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force-renderer-accessibility",
+                )
+                // 以下属性逐项复刻原 config 里 splash 的字段。尺寸是**逻辑像素**：
+                // 2.1.7 起从 560×380 整体放大一倍到 1120×760（用户要求「启动页扩大
+                // 一倍」），splash.html 里的图标/字号/进度条同步 ×2，两处必须一起改。
+                .inner_size(1120.0, 760.0)
+                .resizable(false)
+                .maximizable(false)
+                .minimizable(false)
+                .decorations(false)
+                .transparent(true)
+                .shadow(false)
+                .center()
+                .always_on_top(true)
+                .skip_taskbar(true)
+                // 原 config 的 dragDropEnabled: false = 关掉 Tauri 自己的拖放拦截，
+                // 交给 HTML5 原生拖放（启动页没有拖放交互，与原语义一致）
+                .disable_drag_drop_handler()
+                .visible(false);
+                // 独立数据目录是本修复的核心，目录拿不到时才不设（见上面的兜底说明）
+                if let Some(dir) = splash_data_dir {
+                    builder = builder.data_directory(dir);
                 }
+                match builder.build() {
+                    Ok(splash) => {
+                        let _ = splash.show();
+                        let _ = splash.set_focus();
+                        // 最短显示 1.5 秒的起点 = 这一行（见 `splash_mark_shown` 的注释）
+                        splash_mark_shown();
+                    }
+                    Err(e) => {
+                        // 启动页创建失败不 panic（理由见上面的块注释）：
+                        // 记日志，主界面由 15 秒兜底闸门强制显示
+                        diag::log(&format!("[splash] 启动页创建失败（主界面走 15 秒兜底）：{e}"));
+                    }
+                }
+            } else {
+                // 「启动时最小化到托盘」（开机自启场景）：那一秒里不该有任何窗口闪一下。
+                // 2.1.5 的做法是 config 窗口建好再立刻 close；现在窗口由我们手动建，
+                // 直接**不建**——省一次 WebView2 environment 的创建，语义不变
+                // （`splash_done` / 15 秒兜底里 `get_webview_window("splash")`
+                // 拿到 None 会自然跳过，无需任何配合改动）。
+            }
+            // 兜底闸门：前端 JS 挂了（语法错、WebView 崩溃、种子监听没注册上）时
+            // `splash_done` 永远不会来，用户会对着启动页一直等。15 秒后无论如何把
+            // 主界面亮出来 —— 一个能用的界面远好过一个永远转圈的启动页。
+            // 启动时最小化模式下不插手：那种模式下用户本来就不等窗口。
+            {
+                let handle = app.handle().clone();
+                let skip = start_minimized;
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(15));
+                    if skip {
+                        return;
+                    }
+                    let Some(main) = handle.get_webview_window("main") else {
+                        return;
+                    };
+                    if main.is_visible().unwrap_or(false) {
+                        return;
+                    }
+                    let _ = main.show();
+                    if let Some(splash) = handle.get_webview_window("splash") {
+                        let _ = splash.close();
+                    }
+                    diag::log("[splash] 15 秒内主界面没被打开（前端可能挂了），已强制显示");
+                });
             }
             let tray_ok = build_tray(app.handle()).is_ok();
             if let Some(window) = app.get_webview_window("main") {
@@ -2955,6 +3303,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             detect_file_kind,
             take_pending_open_file,
+            splash_state,
+            splash_done,
             set_autostart,
             get_autostart,
             resync_library_labels,
@@ -3066,7 +3416,7 @@ pub fn run() {
             window_dock::set_window_transitions,
             window_morph::morph_window
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {

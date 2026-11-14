@@ -1,0 +1,273 @@
+%% 2.1.6 安装器（路线 B）类型关系
+%% 文件：docs/class-diagram-2.1.6-installer.mermaid
+%% 对应设计：docs/架构设计-2.1.6-安装器路线B.md §2 / §3 / §5
+
+classDiagram
+    direction LR
+
+    class CmdArgs {
+        <<struct>>
+        +bool silent
+        +bool passive
+        +bool update_mode
+        +bool no_shortcut
+        +bool run_after
+        +Option~PathBuf~ instdir_override
+        +Option~String~ run_args
+        +parse(argv) CmdArgs
+        +exit_code() ExitCode
+    }
+
+    class ExitCode {
+        <<enum>>
+        Ok = 0
+        UserCancel = 1
+        BadArgs = 2
+        NotWritable = 3
+        AppRunning = 4
+        PayloadCorrupt = 5
+        RegistryOrShortcut = 6
+        WebView2Failed = 7
+        UpgradeInterrupted = 8
+        AnotherInstance = 9
+        WebviewBoot = 10
+    }
+
+    class Mode {
+        <<enum>>
+        Fresh
+        Upgrade
+        FreshAfterUninstall
+    }
+
+    class Plan {
+        <<struct>>
+        +PathBuf instdir
+        +Mode mode
+        +bool instdir_pinned
+        +u64 need_bytes
+        +u64 free_bytes
+        +bool writable
+        +detect(args, session) Plan
+        +preflight() Result
+        +validate_dir(p) Result
+    }
+
+    class Session {
+        <<struct>>
+        +bool uninstalled_in_session
+    }
+
+    class Payload {
+        <<struct>>
+        +ZipArchive~Cursor~ archive
+        +Vec~PayloadEntry~ entries
+        +u64 total_uncompressed
+        +open_embedded() Payload
+        +verify() Result
+        +iter() Iterator~PayloadEntry~
+    }
+
+    class PayloadEntry {
+        <<struct>>
+        +String path
+        +u64 size
+        +u64 compressed_size
+        +u32 crc32
+        +bool store_only
+    }
+
+    class Journal {
+        <<struct>>
+        +PathBuf file
+        +PathBuf instdir
+        +Vec~PathBuf~ written_files
+        +Vec~PathBuf~ created_dirs
+        +open_fresh(instdir) Journal
+        +record_write(rel) Result
+        +finish()
+        +rollback() RollbackReport
+    }
+
+    class Engine {
+        <<struct>>
+        +Plan plan
+        +Payload payload
+        +Option~Journal~ journal
+        +Box~dyn Reporter~ reporter
+        +CancelToken cancel
+        +run() Result~Outcome~
+        +step_check_running() Result
+        +step_write_payload() Result
+        +step_shortcuts() Result
+        +step_registry() Result
+        +step_data_marker() Result
+        +on_cancel() Result~Outcome~
+    }
+
+    class Reporter {
+        <<trait>>
+        +on_stage(stage)
+        +on_file(done, total, current)
+        +on_warn(msg)
+        +on_error(msg)
+        +on_done(ok)
+    }
+
+    class UiReporter {
+        +AppHandle app
+        +emit install://progress
+    }
+
+    class SilentReporter {
+        +InstallLog log
+    }
+
+    class Registrar {
+        <<struct>>
+        +write_all(instdir, version, installed_bytes) Result
+        -write_product_key(instdir)
+        -write_uninstall_key(instdir, version, installed_bytes)
+        -remove_stale_main_binary()
+    }
+
+    class ShortcutFactory {
+        <<struct>>
+        +create_start_menu(instdir) Result
+        +create_desktop(instdir) Result
+        -set_app_user_model_id(lnk, "com.iieozo.fontmanager")
+    }
+
+    class AppRunning {
+        <<struct>>
+        +probe(instdir) RunningSet
+        +terminate(force) Result
+        +wait_webview_children(timeout) Result
+    }
+
+    class DataMarker {
+        <<struct>>
+        +ensure(instdir, version) Result
+        -append_lines(path, lines)
+    }
+
+    class WebView2Guard {
+        <<struct>>
+        +ensure(quiet) Result~Guard~
+        -read_pv() Option~String~
+        -download_and_install(quiet) Result
+    }
+
+    class InstallLog {
+        <<struct>>
+        +PathBuf file
+        +line(msg)
+        +flush()
+    }
+
+    class InstallerBridge {
+        <<tauri commands>>
+        +installer_prepare() PreparedInfo
+        +installer_pick_dir() Option~PathBuf~
+        +installer_start(run, desktop) ()
+        +installer_cancel() ()
+        +installer_finish(run, desktop) ()
+        +installer_open_dir() ()
+    }
+
+    class PreparedInfo {
+        <<serde>>
+        +String version
+        +String instdir
+        +String mode
+        +u64 need_bytes
+        +u64 free_bytes
+        +bool writable
+        +u32 file_count
+        +String prev_version
+    }
+
+    class ProgressEvent {
+        <<serde>>
+        +String stage
+        +usize done
+        +usize total
+        +String current_file
+        +Option~String~ error
+    }
+
+    class Screen {
+        <<enum>>
+        Welcome
+        Location
+        Installing
+        Finish
+    }
+
+    class InstallContract {
+        <<build-time JSON→rs/nsh>>
+        +Vec~PayloadFile~ payload
+        +RegistryContract registry
+        +Vec~ShortcutSpec~ shortcuts
+        +EstimatedSizeRule estimated_size
+        +gen_rust() contract.rs
+        +gen_nsis() install-contract.nsh
+    }
+
+    class UninstallerApp {
+        <<bin: uninstaller>>
+        +UninstallInfo prepare() Result
+        +start(delete_data) Result
+        +open_log() ()
+    }
+
+    class CoreLauncher {
+        <<struct>>
+        +PathBuf core_exe
+        +PathBuf request_file
+        +write_request(delete_data) Result
+        +spawn_core() Result
+        +tail_progress(cb) Result
+    }
+
+    class NativeFallback {
+        <<struct · 安装器与卸载器共用>>
+        +confirm_yes_no(title, body) bool
+        +task_dialog_three(body) Choice
+        +progress_dialog() ProgressHandle
+    }
+
+    class ProgressHandle {
+        <<struct>>
+        +set_line(text)
+        +set_progress64(done, total)
+        +stop()
+    }
+
+    Plan --> Mode
+    Plan --> CmdArgs
+    Plan --> Session
+    Engine --> Plan
+    Engine --> Payload
+    Engine --> Journal
+    Engine --> Reporter
+    Engine --> AppRunning
+    Engine --> DataMarker
+    Engine --> Registrar
+    Engine --> ShortcutFactory
+    Payload --> PayloadEntry
+    UiReporter ..|> Reporter
+    SilentReporter ..|> Reporter
+    InstallerBridge --> Plan
+    InstallerBridge --> Engine
+    InstallerBridge --> ProgressEvent
+    InstallerBridge --> PreparedInfo
+    UninstallerApp --> CoreLauncher
+    UninstallerApp --> NativeFallback
+    CoreLauncher ..> ProgressEvent : tail → 事件
+    Registrar ..> InstallContract : 编译期生成
+    ShortcutFactory ..> InstallContract : 编译期生成
+    InstallContract ..> Payload : 条目清单
+    Engine ..> NativeFallback : L2 降级（§14.2）
+    Journal ..> ExitCode : 取消/中断
+    WebView2Guard ..> ExitCode : 失败

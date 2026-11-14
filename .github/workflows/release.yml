@@ -136,18 +136,118 @@ jobs:
             throw "打包三次都失败 —— 完整日志已推到 ci-release-log 分支"
           }
 
+      # ⚠️ 这一段**不能**用 `Get-ChildItem ... | Select-Object -First 1` 取安装包。
+      # 原因（2026-11-14 实测）：Get-ChildItem 按**文件名**枚举，`FontManager_2.1.1_...`
+      # 排在 `FontManager_2.1.6_...` 前面，`-First 1` 拿到的就是**最旧**那个；本机
+      # `bundle\nsis\` 里当时躺着 2.1.1–2.1.6 共 6 个包，直接能复现。CI 干净 runner 上
+      # 碰巧只有一个才没出事，一旦缓存了 target（或换自托管 runner）就会把旧包当成品发出去。
+      # 所以这里改成：**按版本号降序取最高 + 与 tauri.conf.json 的 version 严格对账 +
+      # 同版本恰好 1 份**，任何一条不满足就 throw（宁可 CI 红，也不要发错包）。
+      #
+      # 命名约定（PRD D6）：只有主推包以 `-setup.exe` 结尾；NSIS 回退件叫
+      # `...-x64-nsis-fallback.exe`，`update.rs::pick_setup()` 只认 `ends_with("-setup.exe")`，
+      # 所以回退件在结构上不可能被一键更新选中 —— 这里也必须把它排除在选择范围外。
       - name: 收集安装包
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release -Force | Out-Null
-          $exe = Get-ChildItem -Recurse -Path src-tauri/target -Filter "*-setup.exe" |
-                 Where-Object { $_.FullName -match 'bundle[\\/]nsis' } | Select-Object -First 1
-          $msi = Get-ChildItem -Recurse -Path src-tauri/target -Filter "*.msi" |
-                 Where-Object { $_.FullName -match 'bundle[\\/]msi' } | Select-Object -First 1
-          if (-not $exe) { throw "没找到 NSIS 安装包" }
-          if (-not $msi) { throw "没找到 MSI 安装包" }
-          Copy-Item $exe.FullName release/
-          Copy-Item $msi.FullName release/
+
+          # 期望版本以 tauri.conf.json 为准：它是 bundle 版本的真源（package.json 只管前端）。
+          $expected = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($expected -notmatch '^\d+\.\d+\.\d+$') {
+            throw "tauri.conf.json 的 version 不是 x.y.z 形式：'$expected'"
+          }
+          Write-Host "期望版本（tauri.conf.json）：$expected"
+
+          # 唯一判定入口：正则只接受 `FontManager_<x.y.z>_x64-setup.exe`。
+          # 这个正则本身就把 -nsis-fallback.exe 挡在外面了；下面再显式排一次，
+          # 是为了防止将来有人放宽正则、却忘了这条命名约定。
+          $pattern = '^FontManager_(\d+\.\d+\.\d+)_x64-setup\.exe$'
+          $candidates = @(
+            Get-ChildItem -Recurse -File -Path src-tauri/target -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'bundle[\\/]nsis' } |
+              Where-Object { $_.Name -notlike '*-nsis-fallback.exe' } |
+              ForEach-Object {
+                $m = [regex]::Match($_.Name, $pattern, 'IgnoreCase')
+                if ($m.Success) {
+                  [pscustomobject]@{ File = $_; Version = [version]$m.Groups[1].Value }
+                }
+              }
+          )
+
+          if ($candidates.Count -eq 0) {
+            throw "没找到 NSIS 安装包（期望 FontManager_${expected}_x64-setup.exe）"
+          }
+
+          # 按**版本号**降序取最高，不看文件名顺序。
+          $newest = $candidates | Sort-Object -Property Version -Descending | Select-Object -First 1
+          Write-Host ("候选 {0} 份，最高版本 {1}" -f $candidates.Count, $newest.Version)
+
+          # 对账①：最高版本必须等于 tauri.conf.json。偏低=目录里残留旧包；
+          # 偏高=工作区被别的版本污染（说明构建用的不是这份源码）。两种都拒发。
+          if ($newest.Version -ne [version]$expected) {
+            throw ("目录里最高的 NSIS 包是 {0}，但 tauri.conf.json 是 {1} —— 拒绝发布" -f $newest.Version, $expected)
+          }
+
+          # 对账②：同版本必须恰好 1 份。两份同版本 = 来源说不清，同样拒发。
+          $same = @($candidates | Where-Object { $_.Version -eq [version]$expected })
+          if ($same.Count -ne 1) {
+            $names = ($same | ForEach-Object { $_.File.FullName }) -join "`n    "
+            throw ("同版本 {0} 的 NSIS 安装包有 {1} 份，必须恰好 1 份：`n    {2}" -f $expected, $same.Count, $names)
+          }
+
+          # MSI 走**同一套**判定（2.1.7 收口 R-2）：`Select-Object -First 1` 与 exe 那边
+          # 是同一个缺陷 —— Get-ChildItem 按文件名枚举，`FontManager_2.1.1_...msi` 排在
+          # `2.1.6` 前面，多份并存时会挑到最旧的。MSI 不参与一键更新，只影响手动下载安装的人，
+          # 但"发出去的安装包是哪个版本"没有理由允许不确定。
+          # 语言后缀（_en-US）用 [A-Za-z-]+ 兜住，不写死，避免将来换 WiX 语言就全不匹配。
+          $msiPattern = '^FontManager_(\d+\.\d+\.\d+)_x64_[A-Za-z-]+\.msi$'
+          $msiCandidates = @(
+            Get-ChildItem -Recurse -File -Path src-tauri/target -Filter "*.msi" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'bundle[\\/]msi' } |
+              ForEach-Object {
+                $m = [regex]::Match($_.Name, $msiPattern, 'IgnoreCase')
+                if ($m.Success) {
+                  [pscustomobject]@{ File = $_; Version = [version]$m.Groups[1].Value }
+                }
+              }
+          )
+          if ($msiCandidates.Count -eq 0) {
+            throw "没找到 MSI 安装包（期望 FontManager_${expected}_x64_<lang>.msi）"
+          }
+
+          $newestMsi = $msiCandidates | Sort-Object -Property Version -Descending | Select-Object -First 1
+          if ($newestMsi.Version -ne [version]$expected) {
+            throw ("目录里最高的 MSI 是 {0}，但 tauri.conf.json 是 {1} —— 拒绝发布" -f $newestMsi.Version, $expected)
+          }
+          $msiSame = @($msiCandidates | Where-Object { $_.Version -eq [version]$expected })
+          if ($msiSame.Count -ne 1) {
+            $names = ($msiSame | ForEach-Object { $_.File.FullName }) -join "`n    "
+            throw ("同版本 {0} 的 MSI 有 {1} 份，必须恰好 1 份：`n    {2}" -f $expected, $msiSame.Count, $names)
+          }
+
+          Copy-Item $same[0].File.FullName release/
+          Copy-Item $msiSame[0].File.FullName release/
+
+          # 出厂闸：release/ 里以 -setup.exe 结尾的文件必须恰好 1 个（PRD F8）。
+          # 多一个就说明上面哪条判定漏了，这里兜底。
+          $published = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*-setup.exe' })
+          if ($published.Count -ne 1) {
+            throw ("release/ 里以 -setup.exe 结尾的文件有 {0} 个，必须恰好 1 个" -f $published.Count)
+          }
+          if ($published[0].Name -ne "FontManager_${expected}_x64-setup.exe") {
+            throw ("发布物文件名 '{0}' 与期望 FontManager_${expected}_x64-setup.exe 不一致" -f $published[0].Name)
+          }
+
+          # 同名闸（MSI）：与 exe 对称 —— release/ 里必须恰好 1 个 msi，且版本是期望值。
+          $publishedMsi = @(Get-ChildItem release -File -Filter '*.msi')
+          if ($publishedMsi.Count -ne 1) {
+            throw ("release/ 里的 msi 有 {0} 个，必须恰好 1 个" -f $publishedMsi.Count)
+          }
+          if ($publishedMsi[0].Name -notlike "FontManager_${expected}_x64_*.msi") {
+            throw ("发布物 MSI 文件名 '{0}' 与期望 FontManager_${expected}_x64_<lang>.msi 不一致" -f $publishedMsi[0].Name)
+          }
+
           Get-ChildItem release | Format-Table Name, Length
 
       # 运行时不在安装包里（1.4.11 起按需下载），但「设置 → 插件 → 运行时管理」

@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>FontManager · 安装器 & 启动页 UI 原型</title>
+<style>
+  @font-face {
+    font-family: "Inter Variable";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 100 900;
+    src: url("../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
+  }
+
+  :root {
+    --ink: #16161a;
+    --ink-2: #4e4e58;
+    --ink-3: #8a8a93;
+    --ink-4: #a8a8b0;
+    --line: #ececef;
+    --green: #0b3a22;
+    --blue: #1230c8;
+    --paper: #fbfaf5;
+    --font-ui: "Inter Variable", "Inter", "Segoe UI", system-ui, "Microsoft YaHei",
+      "PingFang SC", "Hiragino Sans GB", sans-serif;
+    --font-mono: "JetBrains Mono Variable", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #f7f7f9 0%, #e9eaee 55%, #e2e3e8 100%);
+    color: var(--ink);
+  }
+
+  /* ───────────────── 舞台 ───────────────── */
+  .stage-wrap {
+    position: fixed;
+    inset: 0 0 74px 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+
+  .stage {
+    transform-origin: center center;
+    will-change: transform;
+    user-select: none;
+  }
+
+  .mock { display: none; }
+  .mock.on { display: block; }
+  .splash.mock.on { display: flex; }
+  .mock:not(.on) { display: none !important; }
+
+  /* ───────────────── 安装器窗口 ───────────────── */
+  .win {
+    width: 1000px;
+    height: 620px;
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid rgba(20, 20, 32, 0.07);
+    box-shadow:
+      0 1px 2px rgba(20, 20, 32, 0.06),
+      0 26px 64px -12px rgba(20, 20, 32, 0.24),
+      0 8px 20px -6px rgba(20, 20, 32, 0.10);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .chrome {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 20px;
+    padding: 0 24px 0 0;
+  }
+
+  .chrome span {
+    display: block;
+    width: 11px;
+    height: 11px;
+    opacity: 0.42;
+    transition: opacity 0.15s;
+    position: relative;
+  }
+  .chrome span:hover { opacity: 0.85; }
+  .chrome .c-min::before {
+    content: "";
+    position: absolute; left: 0; right: 0; top: 5px;
+    height: 1.2px; background: var(--ink);
+  }
+  .chrome .c-max::before {
+    content: "";
+    position: absolute; inset: 1px;
+    border: 1.2px solid var(--ink); border-radius: 1px;
+  }
+  .chrome .c-close::before,
+  .chrome .c-close::after {
+    content: "";
+    position: absolute; left: -1px; right: -1px; top: 5px;
+    height: 1.2px; background: var(--ink);
+  }
+  .chrome .c-close::before { transform: rotate(45deg); }
+  .chrome .c-close::after { transform: rotate(-45deg); }
+
+  .win-body {
+    display: grid;
+    grid-template-columns: 1fr 396px;
+    gap: 34px;
+    padding: 2px 40px 26px 44px;
+    height: calc(100% - 44px);
+  }
+
+  /* ───────────────── 左栏 ───────────────── */
+  .left {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .brand-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: var(--paper);
+    border: 1px solid #e9e6df;
+    padding: 5px;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 1px 2px rgba(20, 20, 32, 0.05);
+  }
+  .brand-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+  .brand-name {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+  }
+  .brand-name h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .ver {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    color: #6b6b74;
+    background: #f3f3f5;
+    border-radius: 5px;
+    padding: 3px 6px;
+  }
+
+  .state { display: none; }
+  .state.on {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    animation: fadeUp 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .copy {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-top: 28px;
+  }
+
+  .lead {
+    font-size: 13px;
+    line-height: 1.72;
+    color: var(--ink-2);
+    margin-top: 12px;
+    max-width: 400px;
+  }
+  .lead + .lead { margin-top: 6px; }
+
+  .h2 {
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin-top: 30px;
+  }
+
+  .status {
+    margin-top: 30px;
+    font-size: 13.5px;
+    font-weight: 550;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: -0.005em;
+  }
+
+  .prog {
+    margin-top: 11px;
+    height: 3px;
+    width: 100%;
+    max-width: 400px;
+    border-radius: 99px;
+    background: #ededf0;
+    overflow: hidden;
+  }
+  .prog i {
+    display: block;
+    height: 100%;
+    width: 0%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #0b3a22 0%, #16408f 62%, #1230c8 100%);
+    transition: width 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .sub {
+    font-size: 11px;
+    color: var(--ink-4);
+    margin-top: 9px;
+    letter-spacing: 0.005em;
+  }
+
+  .meta {
+    margin-top: 26px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1px 20px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.95;
+    color: var(--ink-3);
+    max-width: 420px;
+  }
+  .meta dt { color: #b3b3ba; }
+  .meta dd { margin: 0; color: #77777f; }
+
+  .field {
+    margin-top: 22px;
+    max-width: 400px;
+    height: 38px;
+    border: 1px solid #e4e4e8;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 6px 0 12px;
+    background: #fcfcfd;
+  }
+  .field code {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: #3a3a44;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .btn {
+    height: 34px;
+    padding: 0 16px;
+    border-radius: 9px;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 550;
+    letter-spacing: 0.005em;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  .btn:active { transform: translateY(0.5px); }
+  .btn-sm { height: 28px; padding: 0 11px; font-size: 11.5px; border-radius: 7px; }
+  .btn-ghost { background: transparent; color: var(--ink-2); }
+  .btn-ghost:hover { background: #f4f4f6; }
+  .btn-outline { background: #fff; border-color: #e4e4e8; color: var(--ink); }
+  .btn-outline:hover { border-color: #d2d2d8; background: #fafafb; }
+  .btn-primary {
+    background: var(--ink);
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(20, 20, 32, 0.22);
+  }
+  .btn-primary:hover { background: #000; }
+  .btn-primary[data-busy="1"] { opacity: 0.42; pointer-events: none; }
+
+  .foot {
+    margin-top: auto;
+    padding-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .foot .sign {
+    font-size: 11px;
+    color: var(--ink-4);
+    letter-spacing: 0.01em;
+  }
+  .foot .acts { display: flex; gap: 8px; }
+
+  .log {
+    margin-top: 20px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 2;
+    color: #a2a2ab;
+    max-width: 420px;
+    min-height: 84px;
+  }
+  .log div {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    animation: logIn 0.3s ease both;
+  }
+  .log div:first-child { color: #6f6f78; }
+  .log div b { color: #0b3a22; font-weight: 600; }
+  @keyframes logIn {
+    from { opacity: 0; transform: translateY(-3px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .done-badge {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: #0b3a22;
+    display: grid; place-items: center;
+    margin-top: 26px;
+  }
+  .done-badge svg { width: 14px; height: 14px; }
+
+  .checks { margin-top: 22px; display: flex; flex-direction: column; gap: 11px; }
+  .check { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--ink-2); }
+  .box {
+    width: 15px; height: 15px;
+    border-radius: 4px;
+    border: 1.4px solid #cfcfd6;
+    display: grid; place-items: center;
+    background: #fff;
+    flex: none;
+  }
+  .box.on {
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+  .box svg { width: 9px; height: 9px; opacity: 0; }
+  .box.on svg { opacity: 1; }
+
+  /* ───────────────── 右栏：品牌图 ───────────────── */
+  .art {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    background:
+      radial-gradient(90% 70% at 78% 8%, rgba(24, 74, 46, 0.55) 0%, rgba(9, 40, 24, 0) 60%),
+      linear-gradient(158deg, #0d4429 0%, #093219 46%, #04170d 100%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+
+  .art::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.055) 0 1px,
+      transparent 1px 56px
+    );
+    mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+  }
+
+  .art::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.13;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .art .aa {
+    position: absolute;
+    left: 22px;
+    top: 12px;
+    font-size: 46px;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    color: rgba(255, 255, 255, 0.085);
+    z-index: 1;
+  }
+
+  .disc {
+    position: absolute;
+    right: 26px;
+    bottom: 128px;
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 34% 26%, #3455f2 0%, #1429bb 62%, #0d1c85 100%);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
+    z-index: 4;
+  }
+
+  .ghost {
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    width: 70%;
+    aspect-ratio: 1 / 1;
+    transform: translate(-44%, -55%) rotate(5deg);
+    border: 1px solid rgba(255, 255, 255, 0.17);
+    border-radius: 12px;
+    z-index: 2;
+  }
+
+  .sheet {
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    width: 70%;
+    transform: translate(-50%, -50%) rotate(-3deg);
+    border-radius: 11px;
+    z-index: 3;
+    box-shadow:
+      0 28px 52px -14px rgba(0, 0, 0, 0.55),
+      0 4px 10px rgba(0, 0, 0, 0.18);
+  }
+
+  .art .tag {
+    position: absolute;
+    left: 20px;
+    bottom: 18px;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.38);
+    z-index: 5;
+  }
+
+  /* ───────────────── 启动页 ───────────────── */
+  .splash {
+    width: 560px;
+    height: 380px;
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(120% 100% at 50% -18%, #191c21 0%, #0e0f12 52%, #08080a 100%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 28px 60px -14px rgba(15, 18, 24, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .splash::before {
+    content: "";
+    position: absolute;
+    width: 320px;
+    height: 320px;
+    left: 50%;
+    top: 40%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(18, 92, 52, 0.5) 0%, rgba(18, 92, 52, 0) 68%);
+    filter: blur(6px);
+  }
+
+  .sp-tile {
+    width: 78px;
+    height: 78px;
+    border-radius: 19px;
+    background: var(--paper);
+    padding: 9px;
+    display: grid;
+    place-items: center;
+    position: relative;
+    box-shadow:
+      0 14px 30px -8px rgba(0, 0, 0, 0.62),
+      0 0 0 1px rgba(255, 255, 255, 0.14);
+  }
+  .sp-tile img { width: 100%; display: block; }
+
+  .sp-name {
+    margin-top: 22px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: rgba(255, 255, 255, 0.93);
+    position: relative;
+  }
+
+  .sp-bar {
+    margin-top: 24px;
+    width: 168px;
+    height: 2px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    position: relative;
+  }
+  .sp-bar i {
+    display: block;
+    height: 100%;
+    width: 6%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #17784a, #2f56ef);
+    transition: width 1.6s cubic-bezier(0.3, 0.9, 0.3, 1);
+  }
+
+  .sp-status {
+    margin-top: 13px;
+    font-size: 10.5px;
+    letter-spacing: 0.01em;
+    color: rgba(255, 255, 255, 0.42);
+    position: relative;
+    font-variant-numeric: tabular-nums;
+  }
+  .sp-note {
+    margin-top: 7px;
+    font-size: 9px;
+    letter-spacing: 0.015em;
+    color: rgba(255, 255, 255, 0.26);
+    position: relative;
+    font-variant-numeric: tabular-nums;
+  }
+  .sp-status .dots::after {
+    content: "";
+    animation: dots 1.6s steps(4, end) infinite;
+  }
+  @keyframes dots {
+    0% { content: ""; }
+    25% { content: "."; }
+    50% { content: ".."; }
+    75% { content: "..."; }
+    100% { content: ""; }
+  }
+
+  .sp-foot {
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.26);
+  }
+
+  /* ───────────────── 紧凑版：NSIS 真实窗口 662×416 ───────────────── */
+  .cmp {
+    width: 662px;
+    height: 446px;
+    background: #fff;
+    border-radius: 7px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(20, 20, 32, 0.14);
+    box-shadow:
+      0 2px 4px rgba(20, 20, 32, 0.08),
+      0 22px 48px -14px rgba(20, 20, 32, 0.30);
+  }
+
+  .cmp-cap {
+    height: 30px;
+    flex: none;
+    background: #f3f3f5;
+    border-bottom: 1px solid #e3e3e8;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px;
+    font-size: 11px;
+    color: #4a4a52;
+  }
+  .cmp-cap img { width: 14px; height: 14px; object-fit: contain; }
+  .cmp-cap .capbtns {
+    margin-left: auto;
+    display: flex;
+    gap: 16px;
+    color: #7a7a84;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .cmp-head {
+    height: 84px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px;
+    border-bottom: 1px solid #efeff2;
+  }
+  .cmp-head img { width: 26px; height: 26px; object-fit: contain; }
+  .cmp-head .t { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+  .cmp-head .v {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: #8a8a93;
+    border: 1px solid #e6e6ea;
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+
+  .cmp-body {
+    height: 264px;
+    padding: 15px 18px 0;
+    display: grid;
+    grid-template-columns: 1fr 234px;
+    gap: 20px;
+  }
+
+  .cmp-copy { font-size: 10.5px; color: #8a8a93; }
+  .cmp-lead { font-size: 11.5px; line-height: 1.6; color: #4e4e58; margin-top: 6px; }
+  .cmp-status {
+    margin-top: 13px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #16161a;
+  }
+  .cmp-prog {
+    margin-top: 7px;
+    height: 3px;
+    border-radius: 99px;
+    background: #ededf0;
+    overflow: hidden;
+  }
+  .cmp-prog i {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #0b3a22 0%, #16408f 62%, #1230c8 100%);
+  }
+  .cmp-sub { margin-top: 6px; font-size: 9.5px; color: #a8a8b0; }
+
+  .cmp-meta {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0 12px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    line-height: 1.95;
+    color: #8a8a93;
+  }
+  .cmp-meta dt { color: #b3b3ba; }
+  .cmp-meta dd { margin: 0; color: #77777f; }
+
+  .cmp-art {
+    position: relative;
+    height: 216px;
+    border-radius: 10px;
+    overflow: hidden;
+    background:
+      radial-gradient(90% 70% at 78% 8%, rgba(24, 74, 46, 0.55) 0%, rgba(9, 40, 24, 0) 60%),
+      linear-gradient(158deg, #0d4429 0%, #093219 46%, #04170d 100%);
+  }
+  .cmp-art img.sheet2 {
+    position: absolute;
+    left: 50%;
+    top: 44%;
+    width: 66%;
+    transform: translate(-50%, -50%) rotate(-3deg);
+    border-radius: 6px;
+    box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.55);
+  }
+  .cmp-art .disc2 {
+    position: absolute;
+    right: 10px;
+    bottom: 34px;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 34% 26%, #3455f2 0%, #1429bb 62%, #0d1c85 100%);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+  }
+
+  .cmp-foot {
+    height: 68px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 16px;
+    background: #f7f7f9;
+    border-top: 1px solid #e9e9ee;
+  }
+  .sysbtn {
+    min-width: 74px;
+    height: 23px;
+    padding: 0 10px;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 11.5px;
+    color: #1c1c24;
+    background: linear-gradient(#fdfdfd, #f0f0f0);
+    border: 1px solid #adadad;
+    border-radius: 3px;
+    cursor: default;
+  }
+  .sysbtn.def { border-color: #7a7a7a; box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.25); }
+
+  /* 输出干净截图用：?clean=1 隐藏工具条与提示、按 1:1 渲染 */
+  body.clean .bar,
+  body.clean .hint { display: none !important; }
+  body.clean .stage-wrap { inset: 0; }
+  body.clean { background: #f4f5f7; }
+
+  /* 备选方案的说明（只出现在紧凑版下方） */
+  .mock-note {
+    margin: 18px 0 0;
+    max-width: 662px;
+    font-size: 11.5px;
+    line-height: 1.75;
+    color: #8a8a93;
+    text-align: center;
+  }
+  .mock-note b { color: #c2410c; font-weight: 600; }
+  body.clean .mock-note { display: none; }
+  /* 截图必须与时间无关：关掉切屏淡入与日志滚动 */
+  body.clean .state.on { animation: none; }
+  body.clean .prog i { transition: none; }
+
+  /* ───────────────── 原型工具条 ───────────────── */
+  .bar {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 9px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(14px) saturate(1.4);
+    border: 1px solid rgba(20, 20, 32, 0.08);
+    box-shadow: 0 10px 26px -8px rgba(20, 20, 32, 0.22);
+    font-size: 12px;
+    z-index: 60;
+    user-select: none;
+  }
+
+  .seg { display: flex; gap: 2px; background: #f2f2f5; border-radius: 8px; padding: 2px; }
+  .seg button,
+  .steps button,
+  .replay {
+    font-family: inherit;
+    border: 0;
+    cursor: pointer;
+    background: transparent;
+    color: #6a6a74;
+    font-size: 12px;
+    border-radius: 6px;
+    padding: 5px 11px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .seg button.on {
+    background: #fff;
+    color: var(--ink);
+    font-weight: 550;
+    box-shadow: 0 1px 2px rgba(20, 20, 32, 0.12);
+  }
+
+  .steps { display: flex; gap: 2px; }
+  .steps button { padding: 5px 9px; color: #8a8a93; }
+  .steps button.on { background: #eef0f5; color: var(--ink); font-weight: 550; }
+  .steps button:hover { color: var(--ink); }
+
+  .divider { width: 1px; height: 18px; background: rgba(20, 20, 32, 0.1); }
+
+  .replay { border: 1px solid #e4e4e8; background: #fff; color: #4e4e58; padding: 5px 11px; }
+  .replay:hover { background: #fafafb; border-color: #d6d6dc; }
+
+  .hint {
+    position: fixed;
+    left: 50%;
+    top: 16px;
+    transform: translateX(-50%);
+    font-size: 11.5px;
+    color: #9a9aa4;
+    letter-spacing: 0.01em;
+    z-index: 50;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .hint b { color: #6a6a74; font-weight: 550; }
+
+  /* ── 遮罩：程序还在运行（规格书 §4.9，2.1.7） ── */
+  .modal {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    background: rgba(16, 16, 22, 0.3);
+  }
+  .modal[hidden] { display: none; }
+  .modal-card {
+    width: 396px;
+    padding: 22px 24px 18px;
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid rgba(20, 20, 32, 0.09);
+    box-shadow:
+      0 24px 60px -24px rgba(20, 20, 32, 0.42),
+      0 2px 8px -2px rgba(20, 20, 32, 0.12);
+  }
+  .modal-icon { width: 22px; height: 22px; color: #b4322c; margin-bottom: 12px; }
+  .modal-icon svg { width: 100%; height: 100%; display: block; }
+  .modal-title { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; color: var(--ink); }
+  .modal-body { margin: 9px 0 0; font-size: 12.5px; line-height: 1.72; color: var(--ink-2); }
+  .modal-note { margin: 8px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--ink-3); }
+  .modal-acts { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<div class="hint">FontManager 安装器 / 启动页 · <b>UI 原型</b>（可点，非最终像素稿）</div>
+
+<div class="stage-wrap" id="wrap">
+  <div class="stage" id="stage">
+
+    <!-- ══════════════ 安装器 ══════════════ -->
+    <div class="mock win on" id="mock-installer">
+      <div class="chrome">
+        <span class="c-min"></span>
+        <span class="c-max"></span>
+        <span class="c-close"></span>
+      </div>
+
+      <div class="win-body">
+        <div class="left">
+          <div class="brand">
+            <div class="brand-logo"><img src="../src-tauri/icons/icon.png" alt="" /></div>
+            <div class="brand-name">
+              <h1>FontManager</h1>
+              <span class="ver">2.1.6</span>
+            </div>
+          </div>
+
+          <!-- ── 1 欢迎 ── -->
+          <div class="state on" data-step="0">
+            <div class="copy">© 2026 IIEOzo. 保留所有权利。</div>
+            <p class="lead">你的全部字体，一键启停，永不离开你的电脑。</p>
+            <p class="lead">程序、字体库和全部数据都装在下面这个目录里 —— 想整体搬走，直接搬这个文件夹就行。（Python / Node 运行时按需下载，不在安装包内。）</p>
+
+            <div class="status">准备就绪 · 即将开始安装</div>
+            <div class="prog"><i style="width:0%"></i></div>
+            <div class="sub">预计 5 秒 · 无需管理员权限</div>
+
+            <dl class="meta">
+              <dt>安装位置</dt><dd>%LOCALAPPDATA%\FontManager</dd>
+              <dt>需要空间</dt><dd>约 24 MB</dd>
+              <dt>包含内容</dt><dd>程序本体 · 卸载程序</dd>
+              <dt>数据目录</dt><dd>&lt;安装目录&gt;\data</dd>
+            </dl>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-act="close">取消</button>
+                <button class="btn btn-primary" data-act="next">继续</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── 2 安装位置 ── -->
+          <div class="state" data-step="1">
+            <h2 class="h2">选择安装位置</h2>
+            <p class="lead">换一个盘，字体库、缓存和全部数据都跟着走。</p>
+
+            <div class="field">
+              <code>D:\Apps\FontManager</code>
+              <button class="btn btn-outline btn-sm" data-act="browse">浏览…</button>
+            </div>
+            <div class="sub">这个位置当前用户可写 · 剩余 128 GB</div>
+
+            <dl class="meta">
+              <dt>需要空间</dt><dd>约 24 MB</dd>
+              <dt>完成后</dt><dd>程序 + data 全部在此目录</dd>
+              <dt>卸载时</dt><dd>可选「同时删除数据」，默认只删程序</dd>
+            </dl>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-act="back">返回</button>
+                <button class="btn btn-primary" data-act="next">安装</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── 3 安装中 ── -->
+          <div class="state" data-step="2">
+            <div class="status"><span id="instStatus">正在安装 · 12.4 MB / 23.7 MB</span></div>
+            <div class="prog"><i id="instProg" style="width:23%"></i></div>
+            <div class="sub">已用 6 秒 · 预计还要 4 秒</div>
+
+            <div class="log" id="instLog">
+              <div>正在解压 data 初始配置</div>
+              <div>正在写入手册文件 README.txt</div>
+              <div>正在写入 fontmanager.exe</div>
+              <div>正在写入 uninstall.exe</div>
+              <div>正在注册 .S-FontManager 文件关联</div>
+            </div>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-act="cancel">取消安装</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── 4 完成 ── -->
+          <div class="state" data-step="3">
+            <div class="done-badge">
+              <svg viewBox="0 0 14 14" fill="none"><path d="M2 7.4 5.4 10.7 12 3.6" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <h2 class="h2" style="margin-top:16px">安装完成</h2>
+            <p class="lead">FontManager 2.1.6 已安装。数据在安装目录的 data 文件夹，卸载时你可以决定是否保留。</p>
+
+            <div class="checks">
+              <div class="check">
+                <span class="box on"><svg viewBox="0 0 9 9" fill="none"><path d="M1 4.6 3.4 7 8 1.6" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                立即运行 FontManager
+              </div>
+              <div class="check">
+                <span class="box on"><svg viewBox="0 0 9 9" fill="none"><path d="M1 4.6 3.4 7 8 1.6" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                在桌面创建快捷方式
+              </div>
+            </div>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-act="open">打开安装目录</button>
+                <button class="btn btn-primary" data-act="finish">完成</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 品牌图 -->
+        <div class="art">
+          <div class="aa">Aa</div>
+          <div class="ghost"></div>
+          <img class="sheet" src="../src-tauri/icons/icon.png" alt="FontManager" />
+          <div class="disc"></div>
+          <div class="tag">你的字体 · 你的电脑 · 你的决定</div>
+        </div>
+      </div>
+        <!-- ── 遮罩：FontManager 还在运行（2.1.7，规格书 §4.9） ──
+           安装要替换 fontmanager.exe、卸载要删它，文件被占用时 NSIS 只会
+           写不进去 / 挂到重启后清理。所以动手前必须问一句。URL 加 ?blocked=1 看这一屏。 -->
+      <div class="modal" id="runModal" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true">
+          <div class="modal-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none">
+              <path d="M8 1.6 15 14H1L8 1.6Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              <path d="M8 6.1v3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              <circle cx="8" cy="11.7" r="0.85" fill="currentColor" />
+            </svg>
+          </div>
+          <h3 class="modal-title">FontManager 正在运行</h3>
+          <p class="modal-body">检测到 1 个 FontManager 进程正在运行。安装需要替换程序文件，得先把它们关掉 —— 否则文件被占用，会出现「装完了版本还是旧的」。</p>
+          <p class="modal-note">关闭时，正在进行的操作会丢失。</p>
+          <div class="modal-acts">
+            <button class="btn btn-ghost">取消</button>
+            <button class="btn btn-primary">关闭软件并继续</button>
+          </div>
+        </div>
+      </div>
+
+  </div>
+
+    <!-- ══════════════ 卸载器（与安装器同一套版式） ══════════════ -->
+    <div class="mock win" id="mock-uninstaller">
+      <div class="chrome">
+        <span class="c-min"></span>
+        <span class="c-max"></span>
+        <span class="c-close"></span>
+      </div>
+
+      <div class="win-body">
+        <div class="left">
+          <div class="brand">
+            <div class="brand-logo"><img src="../src-tauri/icons/icon.png" alt="" /></div>
+            <div class="brand-name">
+              <h1>FontManager</h1>
+              <span class="ver">2.1.6</span>
+            </div>
+          </div>
+
+          <!-- ── 1 确认 ── -->
+          <div class="state on" data-ustep="0">
+            <div class="copy">© 2026 IIEOzo. 保留所有权利。</div>
+            <h2 class="h2">卸载 FontManager</h2>
+            <p class="lead">将从这台电脑移除 FontManager。程序文件、卸载程序和开始菜单项都会被删除。</p>
+            <p class="lead">你的字体库、分组、快照与设置默认保留 —— 重新安装会直接接上。</p>
+
+            <dl class="meta">
+              <dt>安装位置</dt><dd>%LOCALAPPDATA%\FontManager</dd>
+              <dt>占用空间</dt><dd>24.1 MB</dd>
+              <dt>数据目录</dt><dd>%LOCALAPPDATA%\FontManager\data（1.8 GB）</dd>
+            </dl>
+
+            <div class="checks" style="margin-top:22px">
+              <div class="check">
+                <span class="box"><svg viewBox="0 0 9 9" fill="none"><path d="M1 4.6 3.4 7 8 1.6" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                同时删除全部数据与字体库
+              </div>
+            </div>
+            <div class="sub" style="margin-top:9px">包含字体库、分组、快照与全部设置 —— 删除后无法恢复。</div>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-ghost" data-uact="close">取消</button>
+                <button class="btn btn-primary" data-uact="uninstall">卸载</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── 2 卸载中 ── -->
+          <div class="state" data-ustep="1">
+            <div class="status" style="margin-top:26px"><span id="unStatus">正在移除 · 4 / 9 项</span></div>
+            <div class="prog"><i id="unProg" style="width:44%"></i></div>
+            <div class="sub">已用 2 秒</div>
+
+            <div class="log" id="unLog">
+              <div>已移除 文件关联 .S-FontManager</div>
+              <div>已清理 卸载信息注册表项</div>
+              <div>已移除 fontmanager.exe</div>
+              <div>已移除 uninstall.exe</div>
+              <div>已删除开始菜单快捷方式</div>
+            </div>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts"></div>
+            </div>
+          </div>
+
+          <!-- ── 3 完成 ── -->
+          <div class="state" data-ustep="2">
+            <div class="done-badge">
+              <svg viewBox="0 0 14 14" fill="none"><path d="M2 7.4 5.4 10.7 12 3.6" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <h2 class="h2" style="margin-top:16px">卸载完成</h2>
+            <p class="lead" id="unDoneBody">FontManager 已从这台电脑移除。你的数据保留在 %LOCALAPPDATA%\FontManager\data，重新安装会直接接上。</p>
+
+            <div class="foot">
+              <span class="sign">IIEOzo · GPL-3.0</span>
+              <div class="acts">
+                <button class="btn btn-primary" data-uact="finish">关闭</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 品牌图（与安装器同一张，Q6 默认复用） -->
+        <div class="art">
+          <div class="aa">Aa</div>
+          <div class="ghost"></div>
+          <img class="sheet" src="../src-tauri/icons/icon.png" alt="FontManager" />
+          <div class="disc"></div>
+          <div class="tag">你的字体 · 你的电脑 · 你的决定</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ 紧凑版：NSIS 662×416 ══════════════ -->
+    <div class="mock" id="mock-compact">
+      <div class="cmp">
+        <div class="cmp-cap">
+          <img src="../src-tauri/icons/icon.png" alt="" />
+          FontManager 安装程序
+          <span class="capbtns"><span>—</span><span>✕</span></span>
+        </div>
+
+        <div class="cmp-head">
+          <img src="../src-tauri/icons/icon.png" alt="" />
+          <span class="t">FontManager</span>
+          <span class="v">2.1.6</span>
+        </div>
+
+        <div class="cmp-body">
+          <div>
+            <div class="cmp-copy">© 2026 IIEOzo. 保留所有权利。</div>
+            <p class="cmp-lead">你的全部字体，一键启停，永不离开你的电脑。程序、字体库和全部数据都装在安装目录里。</p>
+
+            <div class="cmp-status">准备就绪 · 将写入 148 个文件</div>
+            <div class="cmp-prog"><i style="width:0%"></i></div>
+            <div class="cmp-sub">预计 20 秒 · 无需管理员权限</div>
+
+            <dl class="cmp-meta">
+              <dt>安装位置</dt><dd>%LOCALAPPDATA%\FontManager</dd>
+              <dt>需要空间</dt><dd>约 420 MB</dd>
+              <dt>数据目录</dt><dd>&lt;安装目录&gt;\data</dd>
+            </dl>
+          </div>
+
+          <div class="cmp-art">
+            <img class="sheet2" src="../src-tauri/icons/icon.png" alt="" />
+            <div class="disc2"></div>
+          </div>
+        </div>
+
+        <div class="cmp-foot">
+          <button class="sysbtn">取消</button>
+          <button class="sysbtn def">安装</button>
+        </div>
+      </div>
+
+      <p class="mock-note">
+        <b>备选方案 · 能不用就不用</b> · 这是 NSIS 窗口的真实上限：方角、系统灰按钮、右图只能 234×216。<br />
+        只在这一版必须按日发版、又没人写安装内核时才用它；正式方案是 1000×620 的完整版。
+      </p>
+    </div>
+
+    <!-- ══════════════ 启动页 ══════════════ -->
+    <div class="mock splash" id="mock-splash">
+      <div class="sp-tile"><img src="../src-tauri/icons/icon.png" alt="" /></div>
+      <div class="sp-name">FontManager</div>
+      <div class="sp-bar"><i id="spProg"></i></div>
+      <div class="sp-status" id="spStatus">正在装载字体 · 0 / 412</div>
+      <div class="sp-note">其余 3 802 个字族在主界面后台继续读取</div>
+      <div class="sp-foot"><span>v 2.1.6</span><span>IIEOZO</span></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 工具条 -->
+<div class="bar">
+  <div class="seg">
+    <button data-view="installer" class="on">安装器</button>
+    <button data-view="uninstaller">卸载器</button>
+    <button data-view="compact">紧凑版 · 备选</button>
+    <button data-view="splash">启动页</button>
+  </div>
+  <div class="divider" id="divSteps"></div>
+  <div class="steps" id="steps">
+    <button data-step="0" class="on">1 欢迎</button>
+    <button data-step="1">2 位置</button>
+    <button data-step="2">3 安装中</button>
+    <button data-step="3">4 完成</button>
+  </div>
+  <div class="steps" id="usteps" style="display:none">
+    <button data-ustep="0" class="on">1 确认</button>
+    <button data-ustep="1">2 卸载中</button>
+    <button data-ustep="2">3 完成</button>
+  </div>
+  <button class="replay" id="replay">重播</button>
+</div>
+
+<script>
+  const wrap = document.getElementById('wrap');
+  const stage = document.getElementById('stage');
+  const mockInstaller = document.getElementById('mock-installer');
+  const mockUninstaller = document.getElementById('mock-uninstaller');
+  const mockCompact = document.getElementById('mock-compact');
+  const mockSplash = document.getElementById('mock-splash');
+  const stepsBar = document.getElementById('steps');
+  const ustepsBar = document.getElementById('usteps');
+  const divSteps = document.getElementById('divSteps');
+
+  let view = 'installer';
+  let step = 0;
+  let ustep = 0;
+  let logTimer = null;
+  let unTimer = null;
+
+  /* ── 自适应缩放，任何预览窗都能整屏看到 ── */
+  function fit() {
+    if (document.body.classList.contains('clean')) {
+      stage.style.transform = 'none';
+      return;
+    }
+    const active = view === 'installer' ? mockInstaller
+      : view === 'uninstaller' ? mockUninstaller
+      : view === 'compact' ? mockCompact : mockSplash;
+    const w = active.offsetWidth;
+    const h = active.offsetHeight;
+    const availW = wrap.clientWidth - 64;
+    const availH = wrap.clientHeight - 44;
+    const s = Math.min(1, availW / w, availH / h);
+    stage.style.transform = 'scale(' + s + ')';
+  }
+
+  /* ── 安装器步骤 ── */
+  const logs = [
+    '正在写入 fontmanager.exe',
+    '正在写入 uninstall.exe',
+    '正在注册 .S-FontManager 文件关联',
+    '正在注册 .P-FontManager 文件关联',
+    '正在写入卸载信息',
+    '正在创建开始菜单快捷方式',
+    '正在写入 data\\prefs.json',
+    '正在校准文件权限',
+    '正在校验安装完整性'
+  ];
+
+  function setStep(n) {
+    step = n;
+    mockInstaller.querySelectorAll('.state').forEach(el => {
+      el.classList.toggle('on', Number(el.dataset.step) === n);
+    });
+    stepsBar.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('on', Number(b.dataset.step) === n);
+    });
+    clearInterval(logTimer);
+
+    if (n === 2) {
+      const log = document.getElementById('instLog');
+      const prog = document.getElementById('instProg');
+      const label = document.getElementById('instStatus');
+      prog.style.width = '52%';   // 12.4 / 23.7，按已写字节
+      if (document.body.classList.contains('clean')) return;
+      let i = 0;
+      let written = 12.4;
+      logTimer = setInterval(() => {
+        i++;
+        written = Math.min(23.7, Math.round((written + 1.1) * 10) / 10);
+        label.textContent = '正在安装 · ' + written.toFixed(1) + ' MB / 23.7 MB';
+        prog.style.width = Math.min(100, Math.round(written / 23.7 * 100)) + '%';
+        log.insertAdjacentHTML('afterbegin', '<div>' + logs[i % logs.length] + '</div>');
+        while (log.children.length > 5) log.lastElementChild.remove();
+      }, 1100);
+    }
+  }
+
+  /* ── 卸载器步骤 ── */
+  const unLogs = [
+    '已移除 文件关联 .S-FontManager',
+    '已移除 文件关联 .P-FontManager',
+    '已移除 文件关联 .L-FontManager',
+    '已清理 卸载信息注册表项',
+    '已移除 WebView2 数据目录',
+    '正在完成清理'
+  ];
+
+  function setUStep(n) {
+    ustep = n;
+    mockUninstaller.querySelectorAll('.state').forEach(el => {
+      el.classList.toggle('on', Number(el.dataset.ustep) === n);
+    });
+    ustepsBar.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('on', Number(b.dataset.ustep) === n);
+    });
+    clearInterval(unTimer);
+
+    if (n === 1) {
+      const log = document.getElementById('unLog');
+      const prog = document.getElementById('unProg');
+      const label = document.getElementById('unStatus');
+      prog.style.width = '44%';   // 4 / 9 项
+      if (document.body.classList.contains('clean')) return;
+      let i = 0;
+      let items = 4;
+      unTimer = setInterval(() => {
+        i++;
+        items = Math.min(9, items + 2);
+        label.textContent = '正在移除 · ' + items + ' / 9 项';
+        prog.style.width = Math.round(items / 9 * 100) + '%';
+        log.insertAdjacentHTML('afterbegin', '<div>' + unLogs[i % unLogs.length] + '</div>');
+        while (log.children.length > 5) log.lastElementChild.remove();
+      }, 1100);
+    }
+  }
+
+  /* ── 视图切换 ── */
+  function setView(v) {
+    view = v;
+    mockInstaller.classList.toggle('on', v === 'installer');
+    mockUninstaller.classList.toggle('on', v === 'uninstaller');
+    mockCompact.classList.toggle('on', v === 'compact');
+    mockSplash.classList.toggle('on', v === 'splash');
+    document.querySelectorAll('.seg button').forEach(b => {
+      b.classList.toggle('on', b.dataset.view === v);
+    });
+    const isInst = v === 'installer';
+    const isUninst = v === 'uninstaller';
+    stepsBar.style.display = isInst ? 'flex' : 'none';
+    ustepsBar.style.display = isUninst ? 'flex' : 'none';
+    divSteps.style.display = (isInst || isUninst) ? 'block' : 'none';
+    document.getElementById('replay').style.display =
+      (v === 'compact' || isUninst) ? 'none' : 'block';
+    clearInterval(logTimer);
+    clearInterval(unTimer);
+    if (v === 'splash') playSplash();
+    if (isUninst) setUStep(ustep);
+    fit();
+  }
+
+  /* ── 启动页：进度条只反映「种子集合」的装载（已启用 / 系统 / 分组 / 快照），
+     跑完立刻开主界面；其余未启用字体在主界面后台继续读，不进这条进度 ── */
+  const SEED_TOTAL = 412;   // 种子集合字族数（示例值，运行时由真实数据替换）
+  let splashRaf = 0;
+
+  function playSplash() {
+    const bar = document.getElementById('spProg');
+    const st = document.getElementById('spStatus');
+    cancelAnimationFrame(splashRaf);
+    bar.style.transition = 'none';
+    bar.style.width = '2%';
+    st.textContent = '正在装载字体 · 0 / ' + SEED_TOTAL;
+    const t0 = performance.now();
+    const DUR = 2400;
+
+    function step(now) {
+      const p = Math.min(1, (now - t0) / DUR);
+      const e = 1 - Math.pow(1 - p, 2.2);
+      bar.style.width = (2 + 96 * e) + '%';
+      st.textContent = '正在装载字体 · ' + Math.round(SEED_TOTAL * e) + ' / ' + SEED_TOTAL;
+      if (p < 1) {
+        splashRaf = requestAnimationFrame(step);
+      } else {
+        bar.style.width = '100%';
+        st.textContent = '正在打开主界面…';
+      }
+    }
+    splashRaf = requestAnimationFrame(step);
+  }
+
+  /* ── 交互 ── */
+  document.querySelectorAll('.seg button').forEach(b => {
+    b.onclick = () => setView(b.dataset.view);
+  });
+  stepsBar.querySelectorAll('button').forEach(b => {
+    b.onclick = () => { setView('installer'); setStep(Number(b.dataset.step)); };
+  });
+  ustepsBar.querySelectorAll('button').forEach(b => {
+    b.onclick = () => { setView('uninstaller'); setUStep(Number(b.dataset.ustep)); };
+  });
+  document.getElementById('replay').onclick = () => {
+    if (view === 'splash') playSplash();
+    else if (view === 'uninstaller') setUStep(0);
+    else { setStep(0); }
+  };
+  mockInstaller.querySelectorAll('[data-act]').forEach(b => {
+    b.onclick = () => {
+      const a = b.dataset.act;
+      if (a === 'next') setStep(Math.min(3, step + 1));
+      if (a === 'back') setStep(Math.max(0, step - 1));
+      if (a === 'finish') setStep(0);
+    };
+  });
+  mockUninstaller.querySelectorAll('[data-uact]').forEach(b => {
+    b.onclick = () => {
+      const a = b.dataset.uact;
+      if (a === 'uninstall') setUStep(1);
+      if (a === 'finish') setUStep(0);
+    };
+  });
+  document.addEventListener('keydown', e => {
+    if (view === 'uninstaller') {
+      if (e.key === 'ArrowRight') setUStep(Math.min(2, ustep + 1));
+      if (e.key === 'ArrowLeft') setUStep(Math.max(0, ustep - 1));
+      return;
+    }
+    if (e.key === 'ArrowRight') setStep(Math.min(3, step + 1));
+    if (e.key === 'ArrowLeft') setStep(Math.max(0, step - 1));
+  });
+
+  window.addEventListener('resize', fit);
+
+  /* ── 支持 ?view=splash / ?step=2 直接定位（方便截图与评审） ── */
+  const qs = new URLSearchParams(location.search);
+  const qView = qs.get('view');
+  const qStep = qs.get('step');
+  if (qs.get('clean')) document.body.classList.add('clean');
+  /* ?purged=1：勾选「同时删除数据」后的完成屏变体（截图评审用，不是第二套设计） */
+  if (qs.get('purged')) {
+    document.getElementById('unDoneBody').textContent =
+      'FontManager 已从这台电脑移除，你的数据与字体库也已全部删除。';
+  }
+  setStep(qStep !== null ? Math.max(0, Math.min(3, Number(qStep) || 0)) : 0);
+  setUStep(qStep !== null ? Math.max(0, Math.min(2, Number(qStep) || 0)) : 0);
+  if (['splash', 'compact', 'installer', 'uninstaller'].indexOf(qView) >= 0) setView(qView);
+  /* ?blocked=1：把"程序还在运行"的遮罩显示出来（截图/评审用） */
+  if (qs.get('blocked')) document.getElementById('runModal').hidden = false;
+
+  fit();
+</script>
+</body>
+</html>

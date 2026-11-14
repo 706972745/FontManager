@@ -88,21 +88,41 @@
     DeleteRegKey /ifempty HKCU "Software\TheHolyOneZ / IIEOzo"
   ${EndIf}
 
+  ; ── 1b. 程序运行时自己写到 $INSTDIR 的东西：无论勾不勾"删数据"都要清 ──
+  ; 这些不是用户资产，是程序释放的画面资源，留着就是四个孤儿 .ico（RC-10）。
+  ; 它们不在安装器的 File 清单里，模板最后的 `RMDir "$INSTDIR"` 因为目录非空也删不掉。
+  ${If} $UpdateMode <> 1
+    Delete "$INSTDIR\snapshot-icon.ico"
+    Delete "$INSTDIR\pack-icon.ico"
+    Delete "$INSTDIR\data-icon.ico"
+    Delete "$INSTDIR\library-folder.ico"
+
+    ; 只删**空**目录（没有 /r）：
+    ;   · 字体库里是用户的字体，plugins 里是用户装的插件，得勾"删数据"才动（见 2.1）；
+    ;   · 但目录壳本身是安装器建的，只卸程序时不该在安装目录里留一堆空壳。
+    ; RMDir 对非空目录会直接失败，正好当"还有用户的东西"的天然判据。
+    RMDir "$INSTDIR\字体库"
+    RMDir "$INSTDIR\plugins"
+    RMDir "$INSTDIR\data"
+    RMDir "$INSTDIR\python-runtime"
+    RMDir "$INSTDIR\node-runtime"
+    RMDir "$INSTDIR\resources\python-runtime"
+    RMDir "$INSTDIR\resources\node-runtime"
+  ${EndIf}
+
   ; ── 2. 只有勾选「删除全部数据」且不是覆盖更新时才清数据 ──
   ${If} $DeleteAppDataCheckboxState = 1
   ${AndIf} $UpdateMode <> 1
     DetailPrint "正在删除 FontManager 的全部数据…"
 
     ; 2.1 安装目录内本软件创建 / 下载的目录（不整目录删）
+    ;     图标文件与空目录壳已挪到上面 1b（勾不勾都要清），这里只留**真删内容**的部分。
     RMDir /r "$INSTDIR\字体库"
     RMDir /r "$INSTDIR\plugins"
     RMDir /r "$INSTDIR\python-runtime"
     RMDir /r "$INSTDIR\node-runtime"
     RMDir /r "$INSTDIR\resources\python-runtime"
     RMDir /r "$INSTDIR\resources\node-runtime"
-    Delete "$INSTDIR\snapshot-icon.ico"
-    Delete "$INSTDIR\pack-icon.ico"
-    Delete "$INSTDIR\data-icon.ico"
 
     ; 2.1b 2.1.5 的数据根（<安装目录>\data，账本 / 偏好 / 缓存 / 日志 / 在线目录都在里面）
     ;

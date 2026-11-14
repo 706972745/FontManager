@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FontManager</title>
+    <!--
+      启动页只有一个明确目标：**100ms 内出首帧**。
+      所以这里不引 React、不引 @fontsource、不引任何 CSS 框架 —— 一个 1120×760 的
+      静态外壳，加一个不到 3KB 的 ts 脚本就够了。样式全部内联在下面，
+      避免多一次阻塞式请求（这一页活得只有几百毫秒，任何额外往返都买不起）。
+      规格来源：docs/安装器与启动页-UI交付规格书.md §5。
+
+      尺寸（2.1.7）：整张卡从 560×380 **等比放大一倍到 1120×760**，正文里所有
+      长度、字号、间距都跟着 ×2（图标 78→156、进度条 168×2→336×4、状态行 10.5→21）。
+      唯一的例外是圆角 16→24：窗口圆角不是"图形尺寸"，等比放大成 32 会让四角
+      圆得不像 Windows 窗口（参考原生窗口 8px 圆角在 1120 宽上的观感）。
+      图标用的是 public/splash-icon.png（256×256），放大后可视区 120px，不糊。
+
+      主题（2.1.6 追加）：颜色全部走 CSS 变量，四段按「系统 → 用户强制」的顺序叠。
+      **刻意不在这个文件里放内联 <script> 提前写 data-theme**：CSP 是
+      `default-src 'self'`，内联脚本会被拦掉，页面直接白屏。首帧靠下面的
+      @media 自己生效，用户选过 light/dark 时再由 src/splash.ts 覆盖。
+
+      浅色底色**刻意不用暖纸白**（旧值是 #ffffff → #fbfaf5 → #f0efe9，偏黄）：
+      纸白本身带黄调，再叠一层绿色光晕（--sp-glow）之后整块卡面会发灰绿、观感「脏」。
+      现在改用中性偏冷的白（#ffffff → #fdfdff → #f3f5f9），光晕同时压到 0.10 / 60%，
+      暖调没了，提亮之后也不会再往灰绿里掉。改浅色时**必须两处同步**：
+      下面的 @media (prefers-color-scheme: light) 与 :root[data-theme="light"]。
+    -->
+    <style>
+      /* ── 深色（默认）：:root 上就是深色值，没读到任何偏好时也不会闪白 ── */
+      :root {
+        --sp-bg: radial-gradient(
+          120% 100% at 50% -18%,
+          #191c21 0%,
+          #0e0f12 52%,
+          #08080a 100%
+        );
+        --sp-border: rgba(255, 255, 255, 0.07);
+        --sp-glow: radial-gradient(
+          circle,
+          rgba(18, 92, 52, 0.5) 0%,
+          rgba(18, 92, 52, 0) 68%
+        );
+        --sp-tile-bg: #fbfaf5;
+        --sp-tile-shadow:
+          0 28px 60px -16px rgba(0, 0, 0, 0.62),
+          0 0 0 2px rgba(255, 255, 255, 0.14);
+        --sp-name: rgba(255, 255, 255, 0.93);
+        --sp-track: rgba(255, 255, 255, 0.1);
+        --sp-status: rgba(255, 255, 255, 0.42);
+        --sp-note: rgba(255, 255, 255, 0.26);
+        --sp-foot: rgba(255, 255, 255, 0.26);
+      }
+
+      /* ── 跟系统：与 src/lib/theme.ts 的 `system` 同一条判据（prefers-color-scheme） ── */
+      @media (prefers-color-scheme: light) {
+        :root {
+          --sp-bg: radial-gradient(
+            120% 100% at 50% -18%,
+            #ffffff 0%,
+            #fdfdff 55%,
+            #f3f5f9 100%
+          );
+          --sp-border: rgba(20, 20, 32, 0.07);
+          /* 比深色淡得多：压在纸上，重了会发脏。68% → 60% 再收一圈，
+             让绿光只护住图标，不铺到状态行上去 */
+          --sp-glow: radial-gradient(
+            circle,
+            rgba(23, 120, 74, 0.10) 0%,
+            rgba(23, 120, 74, 0) 60%
+          );
+          --sp-tile-bg: #ffffff;
+          --sp-tile-shadow:
+            0 28px 60px -20px rgba(20, 20, 32, 0.13),
+            0 0 0 2px #e7eaf0;
+          --sp-name: #16161a;
+          /* 轨道只许更深：值给到 #d3d5dd 时对 #f3f5f9 只有 1.34:1（看不见），
+             收到 #cdcfd8 才有 1.42:1 / 1.53:1 */
+          --sp-track: #cdcfd8;
+          --sp-status: #6f6f7a;
+          --sp-note: #97979f;
+          /* #9c9ca6 对 #f3f5f9 只有 2.49:1（差一点点），压到 #9a9aa4 → 2.55:1 */
+          --sp-foot: #9a9aa4;
+        }
+      }
+
+      /* ── 用户强制：属性选择器**必须**排在 @media 之后、且两者特异性不同，
+            所以「用户选的」永远压过「系统的」 ── */
+      :root[data-theme="dark"] {
+        --sp-bg: radial-gradient(
+          120% 100% at 50% -18%,
+          #191c21 0%,
+          #0e0f12 52%,
+          #08080a 100%
+        );
+        --sp-border: rgba(255, 255, 255, 0.07);
+        --sp-glow: radial-gradient(
+          circle,
+          rgba(18, 92, 52, 0.5) 0%,
+          rgba(18, 92, 52, 0) 68%
+        );
+        --sp-tile-bg: #fbfaf5;
+        --sp-tile-shadow:
+          0 28px 60px -16px rgba(0, 0, 0, 0.62),
+          0 0 0 2px rgba(255, 255, 255, 0.14);
+        --sp-name: rgba(255, 255, 255, 0.93);
+        --sp-track: rgba(255, 255, 255, 0.1);
+        --sp-status: rgba(255, 255, 255, 0.42);
+        --sp-note: rgba(255, 255, 255, 0.26);
+        --sp-foot: rgba(255, 255, 255, 0.26);
+      }
+
+      :root[data-theme="light"] {
+        --sp-bg: radial-gradient(
+          120% 100% at 50% -18%,
+          #ffffff 0%,
+          #fdfdff 55%,
+          #f3f5f9 100%
+        );
+        --sp-border: rgba(20, 20, 32, 0.07);
+        /* 与 @media (prefers-color-scheme: light) 内必须逐字一致 */
+        --sp-glow: radial-gradient(
+          circle,
+          rgba(23, 120, 74, 0.10) 0%,
+          rgba(23, 120, 74, 0) 60%
+        );
+        --sp-tile-bg: #ffffff;
+        --sp-tile-shadow:
+          0 28px 60px -20px rgba(20, 20, 32, 0.13),
+          0 0 0 2px #e7eaf0;
+        --sp-name: #16161a;
+        --sp-track: #cdcfd8;
+        --sp-status: #6f6f7a;
+        --sp-note: #97979f;
+        --sp-foot: #9a9aa4;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        /* 窗口本身是 transparent:true：背景必须留空，圆角才不会被黑底吃掉 */
+        background: transparent;
+        overflow: hidden;
+        cursor: default;
+        /* 透明窗口里的默认前景色是黑的，先把字色/字体定死，免得首帧闪一下黑字 */
+        color: var(--sp-name);
+        font-family: -apple-system, "Segoe UI Variable Display", "Segoe UI", system-ui,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      #splash {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        /* 圆角**不**跟着 ×2（见文件头注释）：1120 宽上用 24 才像一扇 Windows 窗口 */
+        border-radius: 24px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: var(--sp-bg);
+        border: 1px solid var(--sp-border);
+        opacity: 1;
+        /* finished 之后整页淡出 120ms（Rust 侧再等 220ms 才 close，
+           所以淡出一定放得完） */
+        transition: opacity 120ms linear;
+      }
+
+      #splash.out {
+        opacity: 0;
+      }
+
+      /* 图标背后的绿色光晕：640×640 圆 + blur(12px)，是这一屏唯一的彩色光源 */
+      #splash::before {
+        content: "";
+        position: absolute;
+        width: 640px;
+        height: 640px;
+        left: 50%;
+        top: 40%;
+        transform: translate(-50%, -50%);
+        background: var(--sp-glow);
+        filter: blur(12px);
+      }
+
+      .tile {
+        position: relative;
+        width: 156px;
+        height: 156px;
+        border-radius: 38px;
+        background: var(--sp-tile-bg);
+        padding: 18px;
+        display: grid;
+        place-items: center;
+        box-shadow: var(--sp-tile-shadow);
+      }
+
+      .tile img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: contain;
+        /* 位图本身已带圆角白板，这里不再套圆角，否则会出现双层边 */
+      }
+
+      .name {
+        position: relative;
+        margin-top: 44px;
+        font-size: 30px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        color: var(--sp-name);
+      }
+
+      .bar {
+        position: relative;
+        margin-top: 48px;
+        width: 336px;
+        height: 4px;
+        border-radius: 99px;
+        background: var(--sp-track);
+        overflow: hidden;
+      }
+
+      .bar i {
+        display: block;
+        height: 100%;
+        width: 0;
+        border-radius: 99px;
+        /* 填充是品牌色，两套主题共用：深色底和浅色纸上都有足够对比 */
+        background: linear-gradient(90deg, #17784a, #2f56ef);
+        /* 数值进度用 900ms 缓动补齐两拍之间的跳变：后端每 8 个族才推一次，
+           直接跳宽度会像心电图 */
+        transition: width 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      /* 分母未知（台账还没读完）：一段 30% 宽的亮块往返，绝不出百分比 */
+      .bar.indet i {
+        width: 30%;
+        transition: none;
+        animation: slide 2.4s linear infinite;
+      }
+
+      @keyframes slide {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(333%);
+        }
+      }
+
+      /* 系统开了「减少动效」：不再滑，用一条半透明满幅表示「在动但没刻度」。
+         width 必须 !important —— 进度条的宽度是 JS 直接写在元素内联样式上的
+         （`fill.style.width`），普通声明压不过内联样式，改了也白改。 */
+      @media (prefers-reduced-motion: reduce) {
+        .bar.indet i {
+          animation: none;
+          width: 100% !important;
+          opacity: 0.35;
+        }
+      }
+
+      .status {
+        position: relative;
+        margin-top: 26px;
+        font-size: 21px;
+        letter-spacing: 0.01em;
+        color: var(--sp-status);
+        font-variant-numeric: tabular-nums;
+        /* 状态行文案长短不一（中英切换、数字位数变化），留一行高度避免副状态上下跳 */
+        min-height: 1.6em;
+      }
+
+      .note {
+        position: relative;
+        margin-top: 14px;
+        font-size: 18px;
+        letter-spacing: 0.015em;
+        color: var(--sp-note);
+        font-variant-numeric: tabular-nums;
+        /* 这一行必须**常驻占位**：不确定态没有副状态文案，不给高度的话，
+           它一出现就会把上面整块顶上去 6px（参考稿里这行是一直留着的）。
+           与 .status 同一套写法。 */
+        min-height: 1.6em;
+      }
+
+      .foot {
+        position: absolute;
+        left: 44px;
+        right: 44px;
+        bottom: 30px;
+        display: flex;
+        justify-content: space-between;
+        font-family: Consolas, monospace;
+        font-size: 18px;
+        letter-spacing: 0.08em;
+        color: var(--sp-foot);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="splash">
+      <div class="tile"><img id="tile-icon" src="/splash-icon.png" alt="" /></div>
+      <div class="name">FontManager</div>
+      <div class="bar" id="bar"><i id="fill"></i></div>
+      <!-- 文案由 src/splash.ts 填。这里**留空**而不是预置中文：语言要等 prefs / 系统语言
+           才能定，预置中文会让英文用户看见一瞬中文；.status 有 min-height，
+           留空也不会让下面那行上下跳。 -->
+      <div class="status" id="status"></div>
+      <div class="note" id="note"></div>
+      <div class="foot">
+        <span id="version"></span>
+        <span>IIEOZO</span>
+      </div>
+    </div>
+    <script type="module" src="/src/splash.ts"></script>
+  </body>
+</html>
