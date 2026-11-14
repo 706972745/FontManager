@@ -14,6 +14,7 @@
 import "./setup.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { normalizeInstallDir } from "../lib/installDir";
 
 type Mode = "install" | "uninstall";
 
@@ -426,12 +427,15 @@ async function startUninstall(force = false) {
 async function pickDir() {
   const picked = await invoke<string | null>("setup_pick_dir", { current: targetDir });
   if (!picked) return;
-  targetDir = picked;
-  $("#pathBox").textContent = picked;
+  // 一律落到 `<所选目录>\FontManager`：用户点「桌面\新建文件夹」是想装到那儿，
+  // 不是把一堆文件摊在桌面根上。已经叫 FontManager 的目录不再套一层（见 lib/installDir.ts）。
+  const dir = normalizeInstallDir(picked);
+  targetDir = dir;
+  $("#pathBox").textContent = dir;
   window.setTimeout(() => {
     const hint = $("#pathHint");
     hint.textContent = "正在检查这个位置…";
-    invoke<{ ok: boolean; hint: string }>("setup_check_dir", { dir: picked })
+    invoke<{ ok: boolean; hint: string }>("setup_check_dir", { dir })
       .then((r) => (hint.textContent = r.hint))
       .catch(() => (hint.textContent = ""));
   }, 30);

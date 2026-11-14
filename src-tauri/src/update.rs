@@ -1575,7 +1575,11 @@ mod tests {
     fn recorded_install_dir_is_parseable_when_present() {
         if let Some(dir) = recorded_user_install_dir() {
             let s = dir.to_string_lossy().to_string();
-            assert!(s.contains("FontManager"), "读到的目录不像安装目录：{s}");
+            // Windows 路径不区分大小写：老安装记录里写成 `...\fontmanager` 是合法的
+            assert!(
+                s.to_lowercase().contains("fontmanager"),
+                "读到的目录不像安装目录：{s}"
+            );
             assert!(!s.starts_with('"'), "引号必须剥掉：{s}");
         }
     }

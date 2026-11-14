@@ -61,6 +61,13 @@ export interface FontFace {
   italic: boolean;
   monospaced: boolean;
   classification: Classification;
+  /**
+   * OS/2 `panose`（10 字节视觉描述向量）。全 0 / 全 1（Any / No Fit）时后端直接给 null，
+   * 表示「这个字体没填」。**只给自动标签当弱证据用，不参与一级分类。**
+   */
+  panose?: number[] | null;
+  /** OS/2 `sFamilyClass` 原始 16 位值（高位 classId、低位 subclassId），0 → null */
+  sFamilyClass?: number | null;
   scripts: string[];
   features: string[];
   glyphCount: number;

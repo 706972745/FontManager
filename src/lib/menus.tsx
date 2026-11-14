@@ -15,13 +15,15 @@ import {
   Power,
   Puzzle,
   Star,
+  Tag,
   Timer,
   Trash2,
 } from "lucide-react";
 import type { MenuItem } from "../design/primitives/ContextMenu";
 import { toast } from "../design/primitives/Toast";
 import { AppBadge } from "../components/AppBadge";
-import { allTags, familiesFor, useFontStore, type Family } from "../state/fontStore";
+import { familiesFor, familyTagCounts, useFontStore, type Family } from "../state/fontStore";
+import { tagLabel } from "./tagLabels";
 import { entryFromFace, faceKey } from "./snapshotKey";
 import { AVAILABLE_ADOBE_APPS, ipc, type FontFace } from "./ipc";
 import { exportSpecimen } from "./specimen";
@@ -274,19 +276,34 @@ function buildBulkMenu(names: string[]): MenuItem[] {
       ],
     },
     { kind: "separator" },
-    { kind: "heading", label: t("menu.tagAll") },
-    ...[...allTags(s.tags).keys()].map(
-      (tag): MenuItem => ({
-        kind: "check",
-        label: tag,
-        checked: names.every((f) => (s.tags[f] ?? []).includes(tag)),
-        action: () => void s.applyTagToFamilies(tag, names),
-      }),
-    ),
+    // 标签收进和「分组 / 快照」同级的二级菜单（用户 2026-11-14）：标签多了平铺会把
+    // 下面的导出 / 回收站挤到看不见，跟分组快照一个口径。
     {
-      label: t("menu.newTag"),
-      icon: <Plus size={14} strokeWidth={1.5} />,
-      action: () => s.setBulkTagFor(names),
+      kind: "submenu",
+      label: t("menu.tags"),
+      icon: <Tag size={14} strokeWidth={1.5} />,
+      items: [
+        // 标签清单按当前库里的族算（含自动标签）：删掉的字体留下的旧标签不该出现在
+        // 「全选打标签」里 —— 勾了也什么都打不上。
+        ...[...familyTagCounts(familyMap).counts.keys()].map(
+          (tag): MenuItem => ({
+            kind: "check",
+            // 显示本地化名字（宋体 / Serif），存进 `tags` 的仍是稳定 id `cn:song`。
+            // 存显示名会让同一个标签在统计里变成两个键，侧栏就会并排出现两行「宋体」。
+            label: tagLabel(tag, t),
+            checked: names.every((f) => (s.tags[f] ?? []).includes(tag)),
+            action: () => void s.applyTagToFamilies(tag, names),
+          }),
+        ),
+        ...(familyTagCounts(familyMap).counts.size > 0
+          ? ([{ kind: "separator" }] satisfies MenuItem[])
+          : []),
+        {
+          label: t("menu.newTag"),
+          icon: <Plus size={14} strokeWidth={1.5} />,
+          action: () => s.setBulkTagFor(names),
+        },
+      ],
     },
     { kind: "separator" },
     {
@@ -602,6 +619,39 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
                   label: t("menu.newSnapshot"),
                   icon: <Plus size={14} strokeWidth={1.5} />,
                   action: () => useFontStore.setState({ pendingSnapshotFor: family.name }),
+                });
+              }
+              return list;
+            })(),
+          },
+        ] satisfies MenuItem[])
+      : []),
+    // 标签二级菜单（用户 2026-11-14）：单族右键原来根本没有打标签的入口，
+    // 只能去详情面板手动输。勾选语义与分组/快照一致；速览不给「新建标签」。
+    ...(Object.keys(familyTagCounts(familiesFor(s.fonts, s.tags)).counts).length > 0 || !s.quickbar
+      ? ([
+          {
+            kind: "submenu",
+            label: t("menu.tags"),
+            icon: <Tag size={14} strokeWidth={1.5} />,
+            items: (() => {
+              const list: MenuItem[] = [
+                ...familyTagCounts(familiesFor(s.fonts, s.tags)).counts.keys(),
+              ].map(
+                (tag): MenuItem => ({
+                  kind: "check",
+                  label: tagLabel(tag, t),
+                  checked: (s.tags[family.name] ?? []).includes(tag),
+                  // applyTagToFamilies 对单个族就是 toggle：全勾 → 移除，否则加上
+                  action: () => void s.applyTagToFamilies(tag, [family.name]),
+                }),
+              );
+              if (!s.quickbar) {
+                if (list.length > 0) list.push({ kind: "separator" });
+                list.push({
+                  label: t("menu.newTag"),
+                  icon: <Plus size={14} strokeWidth={1.5} />,
+                  action: () => s.setBulkTagFor([family.name]),
                 });
               }
               return list;

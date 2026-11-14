@@ -1,7 +1,8 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo } from "react";
 import { Camera, FolderOpen, Puzzle, Tag, Type } from "lucide-react";
-import { allTags, familiesFor, useFontStore } from "../state/fontStore";
+import { familiesFor, familyTagCounts, useFontStore } from "../state/fontStore";
+import { tagLabel } from "../lib/tagLabels";
 import { isEnabledNow } from "../lib/familyState";
 import { activeLocale, useT } from "../lib/i18n";
 import { displayFamilyName, familyNameVariants } from "../lib/fontNames";
@@ -80,6 +81,10 @@ export function SearchSuggest({
   const locale = activeLocale();
   const fonts = useFontStore((s) => s.fonts);
   const tags = useFontStore((s) => s.tags);
+  // 自动标签开关 / 「不再建议」黑名单会改变 `familiesFor` 的结果（自动标签是现算的），
+  // 不订阅的话用户点了「不再建议」后建议列表里的标签建议与计数不会更新。
+  const autoTagDenied = useFontStore((s) => s.autoTagDenied);
+  const autoTagEnabled = useFontStore((s) => s.autoTagEnabled);
   const collections = useFontStore((s) => s.collections);
   const snapshots = useFontStore((s) => s.snapshots);
   const sessionActivated = useFontStore((s) => s.sessionActivated);
@@ -94,11 +99,16 @@ export function SearchSuggest({
   const q = query.trim().toLowerCase();
   /**
    * `tags` 在 store 里是 **字族名 → 标签数组**（`Record<family, string[]>`），
-   * 不是「标签 → 成员」。所以这里必须走 `allTags()` 转成「标签 → 有多少个族」，
+   * 不是「标签 → 成员」。所以这里必须走 `familyTagCounts()` 转成「标签 → 有多少个族」，
    * 直接 `Object.entries(tags)` 拿到的是族名，会把字体名当成标签列出来
    * （1.8.0 内测第一版就是这么错的，用户截图里标签一条都不出现）。
    */
-  const tagIndex = useMemo(() => allTags(tags), [tags]);
+  // 自动标签也要能搜到（用户看到卡片上写着「宋体」，就应该能搜出这一族）。
+  // 计数同样按当前库里的族算，不能直接数 store 里的 `tags`（已删除字体的旧标签也会算进去）。
+  const tagIndex = useMemo(
+    () => familyTagCounts(familiesFor(fonts, tags)).counts,
+    [fonts, tags, autoTagDenied, autoTagEnabled],
+  );
   /**
    * 字体类建议的索引（用户 2026-11-11：「这个字体在软件中的名称也要支持能搜索到
    * —— 中文、拉丁文还是其他语言都应该可以搜到」）。
@@ -148,7 +158,7 @@ export function SearchSuggest({
     for (const [tag, count] of tagIndex) {
       if (n >= LIMIT_PER_KIND.tag) break;
       if (!tag.toLowerCase().includes(q)) continue;
-      out.push({ kind: "tag", key: `tag:${tag}`, label: tag, meta: String(count) });
+      out.push({ kind: "tag", key: `tag:${tag}`, label: tagLabel(tag, t), meta: String(count) });
       n++;
     }
     n = 0;

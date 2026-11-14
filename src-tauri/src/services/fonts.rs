@@ -289,6 +289,8 @@ mod tests {
             italic: false,
             monospaced: false,
             classification: Classification::Sans,
+            panose: None,
+            s_family_class: None,
             scripts: vec![],
             features: vec![],
             glyph_count: 100,

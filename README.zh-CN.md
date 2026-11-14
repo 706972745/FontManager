@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1.6-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.1.7-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,14 @@
 ---
 
 ## 🆕 最近更新
+
+**2.1.7 —— 自动标签：导入就能按风格筛**
+
+- **不用手打标签也能筛**：中文字体自动分出宋/黑/楷/隶/魏碑/行草/圆体/仿宋/美术字，西文补 Vox 子类；再加装饰工艺（描边、阴影、像素、内嵌…）、形态（粗重、高对比、紧凑）、技术能力（可变字重轴、小型大写、等宽数字）。
+- **有证据、可解释**：每条自动标签都能看到理由（族名？PANOSE？OS/2 分类？），不是黑箱打分。
+- **绝不写进你的标签**：你打的标签永远优先；你删掉或否决过的自动标签会按字族记住，重启、换字体库、删除后重装都不再冒出来。
+- **删字体重装不丢标签**：标签跟着字族名走，从同事那里拿同一款再导入，还是你原来那份。
+- **开关在设置里**，默认开；关掉立刻只剩手工标签，不需要重扫。
 
 **2.1.6 —— 启动页放大一倍，安装器换成自己的界面**
 

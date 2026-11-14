@@ -82,6 +82,18 @@ pub struct FontFace {
     pub italic: bool,
     pub monospaced: bool,
     pub classification: Classification,
+    /// OS/2 表 `panose`（偏移 32..42）的十字节视觉描述向量。
+    ///
+    /// **只给派生标签用，不参与一级分类**（分类看 `classification`）。全 0 / 全 1
+    /// （Any / No Fit）的向量在解析时就被丢掉 → `None`，前端不需要再判一次。
+    /// 中文字体这两个字节基本是模板默认值（sFamilyClass 61.9% 填「拉丁文本」、
+    /// bProportion 41.7% 填 9），所以派生规则里对中文另有一套闸门。
+    #[serde(default)]
+    pub panose: Option<Vec<u8>>,
+    /// OS/2 表 `sFamilyClass`（偏移 30）的原始 16 位值：高位 = classId、低位 = subclassId。
+    /// 0（未分类）时为 `None`。同样只作派生标签的弱证据，不进分类主链。
+    #[serde(default)]
+    pub s_family_class: Option<u16>,
 
     pub scripts: Vec<String>,
     pub features: Vec<String>,

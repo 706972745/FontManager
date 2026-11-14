@@ -639,6 +639,27 @@ fn os2_class(face: &ttf_parser::Face) -> Option<Classification> {
     }
 }
 
+/// 派生标签用的原始 OS/2 证据：`(PANOSE 十字节, sFamilyClass)`。
+///
+/// 与 `os2_class` / `panose_class` 的区别：那两个是「翻译成分类」，这里是
+/// **原样把证据交给前端**，让派生标签规则自己决定信多少（前端有一套按字节降级的表）。
+/// 全 0 / 全 1 的 PANOSE（Any / No Fit）在这里就丢掉，等于「这个字体没填」；
+/// `sFamilyClass == 0` 同理。二者都没有就返回 `(None, None)`，缓存里也只存 null，
+/// 不增加多少体积（实测 5552 个字体约 +120 KB）。
+fn os2_evidence(face: &ttf_parser::Face) -> (Option<Vec<u8>>, Option<u16>) {
+    let os2 = match face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2")) {
+        Some(t) if t.len() >= 42 => t,
+        _ => return (None, None),
+    };
+    let panose = &os2[32..42];
+    let usable = panose.iter().any(|b| *b > 1);
+    let class = u16::from_be_bytes([os2[30], os2[31]]);
+    (
+        if usable { Some(panose.to_vec()) } else { None },
+        if class == 0 { None } else { Some(class) },
+    )
+}
+
 /// PANOSE → 分类（含 `bProportion = 9` 等宽判定）。
 fn panose_class(face: &ttf_parser::Face) -> Option<Classification> {
     let os2 = face.raw_face().table(ttf_parser::Tag::from_bytes(b"OS/2"))?;
@@ -770,7 +791,7 @@ const DISPLAY_KEYWORDS: &[&str] = &[
 /// 手写（书法 / 毛笔 / 连笔 / 西文手写体）关键词。
 const SCRIPT_KEYWORDS: &[&str] = &[
     "行书", "行書", "草", // 草书（叶根友疾风草书）
-    "隶", "隷", // 隶的繁体写法（文鼎CS大隸書 / 日本青柳隷書）
+    "隶", "隷", "隸", // 隶的两种繁体写法（文鼎CS大隸書 / 日本青柳隷書；「隸書」是正体）
     "篆", "硬笔", "硬筆", "毛笔", "毛筆", "钢笔", "鋼筆", "手写", "手寫", "流形", "连笔", "連筆",
     // 第二批（用户 2026-11-13 裁定）：行楷 / 魏碑这类「不是印刷楷体」的书写体
     "行楷", "魏碑", "北魏", "瘦金", "颜体", "顏體", "柳体", "柳體", "签名", "簽名", "手绘",
@@ -1201,6 +1222,7 @@ fn parse_face(
     let classification = classify(&face, &family, &localized_names);
     let scripts = script_coverage(&face);
     let features = layout_features(&face);
+    let (panose, s_family_class) = os2_evidence(&face);
     let path_str = path.to_string_lossy().into_owned();
     Some(FontFace {
         id: format!("{}#{}", path_str, index),
@@ -1224,6 +1246,8 @@ fn parse_face(
         italic: face.is_italic(),
         monospaced: face.is_monospaced(),
         classification,
+        panose,
+        s_family_class,
         scripts,
         features,
         glyph_count: face.number_of_glyphs(),
@@ -1280,6 +1304,8 @@ fn broken_face(
         italic: false,
         monospaced: false,
         classification,
+        panose: None,
+        s_family_class: None,
         scripts: Vec::new(),
         features: Vec::new(),
         glyph_count: 0,
@@ -1359,6 +1385,8 @@ pub fn parse_font_file(path: &Path, source: FontSource) -> Vec<FontFace> {
             italic: false,
             monospaced: false,
             classification,
+            panose: None,
+            s_family_class: None,
             scripts: Vec::new(),
             features: Vec::new(),
             glyph_count: 0,

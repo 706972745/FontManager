@@ -1,11 +1,13 @@
 import { motion } from "motion/react";
-import { Camera, ChevronDown, Clock, FileUp, FolderOpen, Globe, History, Info, Keyboard, Library, Monitor, Plus, Power, PowerOff, Star, Tag, Trash2 } from "lucide-react";
+import { Camera, ChevronDown, Clock, FileUp, FolderOpen, Globe, History, Info, Keyboard, Library, Monitor, Plus, Power, PowerOff, Star, Tag, Trash2, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { openContextMenu, type MenuItem } from "../design/primitives/ContextMenu";
 import { spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
-import { allTags, familiesFor, isSystemFamily, useFontStore, type Family, type Nav } from "../state/fontStore";
+import { familiesFor, familyTagCounts, isSystemFamily, useFontStore, type Family, type Nav } from "../state/fontStore";
+import { tagLabel } from "../lib/tagLabels";
+import { isAutoTagId } from "../lib/tagVocabulary";
 import { faceKey } from "../lib/snapshotKey";
 import { sortContainers } from "../lib/faceContainers";
 import { countKnown, navCountText } from "../lib/seedOverrides";
@@ -277,6 +279,15 @@ export function Sidebar() {
     return fams.size;
   };
   const tags = useFontStore((s) => s.tags);
+  // 自动标签配置（总开关 + 「不再建议」否决名单）不改 `tags`，却会改变 `familiesFor` 的
+  // 结果（自动标签是按这两个字段现算出来的）。侧栏的标签计数本来就是每次 render 直接算，
+  // 所以这里只需要**订阅**这两个字段、让 store 变更触发一次重渲染，不需要 useMemo。
+  //
+  // 下面两行**故意不取值**（不是漏写 `const x =`）：订阅的目的只是「store 一变就重渲染」，
+  // 取到的值没人读；而 `tsconfig` 开了 `noUnusedLocals`，写成局部变量不读会被 `tsc --noEmit`
+  // 判错（TS6133）。不取值调用既完成订阅，又不产生未使用变量 —— 后人别把它「修」成赋值。
+  useFontStore((s) => s.autoTagDenied);
+  useFontStore((s) => s.autoTagEnabled);
   const collections = useFontStore((s) => s.collections);
   const favorites = useFontStore((s) => s.favorites);
   const lastImported = useFontStore((s) => s.lastImported);
@@ -327,7 +338,10 @@ export function Sidebar() {
     : null;
   // 与「系统字体」列表用同一个口径（isSystemFamily），否则计数和点进去看到的数量对不上
   const systemCount = seedCountsKnown ? allFamilies.filter(isSystemFamily).length : null;
-  const tagCounts = allTags(tags);
+  // 标签计数按**当前库里真实存在的族**算，并且把自动标签一起算进来。
+  // 不能再用 `allTags(tags)`：那是 state.json 里的原始记录，删掉的字体、移走的字体库
+  // 留下的标签都还在里面，会数出「侧栏 20 个、点进去 0 个」。
+  const { counts: tagCounts } = familyTagCounts(allFamilies);
   const collapsed = useFontStore((s) => s.collapsedSections);
   const toggleSection = useFontStore((s) => s.toggleSection);
   // 排序必须与字重行胶囊的序号同源（`sortContainers`），否则「快照 2」会对不上第 2 行
@@ -709,10 +723,19 @@ export function Sidebar() {
               <NavRow
                 key={tag}
                 nav={{ kind: "tag", tag }}
-                icon={<Tag size={15} strokeWidth={1.5} />}
-                label={tag}
+                // 图标按**名字**判定（`isAutoTagId`），不按「这条标签是手工存的还是运行时推的」：
+                // 软件词表里的名字永远用魔棒，哪怕用户已经把它认可成手工标签、或删掉后又手打了一遍。
+                icon={
+                  isAutoTagId(tag) ? (
+                    <Sparkles size={15} strokeWidth={1.5} />
+                  ) : (
+                    <Tag size={15} strokeWidth={1.5} />
+                  )
+                }
+                label={tagLabel(tag, t)}
                 trailing={
-                  tagExpiry[tag] ? (
+                  // 自动标签不参与到期（用户 2026-11-14），小字只给手工标签
+                  !isAutoTagId(tag) && tagExpiry[tag] ? (
                     <span
                       className="tag-expiry-date"
                       title={`${translate("tag.expiryDate")}: ${tagExpiry[tag]}`}

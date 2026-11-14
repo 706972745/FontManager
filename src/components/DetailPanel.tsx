@@ -1,10 +1,15 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AlertTriangle, CalendarDays, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { AlertTriangle, CalendarDays, Check, Copy, Download, ExternalLink, FolderOpen, GripVertical, MoreHorizontal, Plus, RotateCcw, Scale, Search, Sparkles, Tag, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { easeTop, spring, springSnappy } from "../design/springs";
 import { useFontCss, formatBytes, pathBasename } from "../lib/fontLoader";
-import { familiesFor, conflictsFor, useFontStore, type Family } from "../state/fontStore";
+import { os2ClassOf } from "../lib/os2Class";
+import { fitPickPanel, PICK_LIST_WANT } from "../lib/pickerFit";
+import { tagLabel } from "../lib/tagLabels";
+import { isAutoTagId } from "../lib/tagVocabulary";
+import { familiesFor, familyTagCounts, conflictsFor, useFontStore, type Family } from "../state/fontStore";
 import { ipc, type CharsetStats, type FontFace, type VariationAxis } from "../lib/ipc";
 import { createBoundedMap } from "../lib/boundedMap";
 import { toast } from "../design/primitives/Toast";
@@ -14,7 +19,7 @@ import { openContextMenuAt } from "../design/primitives/ContextMenu";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { classifyLicense, copyrightExpired, familyCopyrightClass, normalizeCopyright } from "../lib/license";
 import { faceKey } from "../lib/snapshotKey";
-import { formatTagExpiry } from "../lib/tagExpiry";
+import { canSetExpiry, expiryNeedsConfirm, formatTagExpiry } from "../lib/tagExpiry";
 import { parentDir } from "../lib/onlineCoverage";
 import { playTag } from "../lib/sound";
 import { StarRating } from "./StarRating";
@@ -487,6 +492,9 @@ function CopyrightStatusSection({ family }: { family: string }) {
             onChange={(e) => setCopyrightExpiry(family, e.target.value || null)}
             aria-label={t("copyright.expiryDate")}
           />
+          {!expiry && (
+            <span className="expiry-forever">{t("copyright.expiryForever")}</span>
+          )}
           {expiry && (
             <button
               className="copyright-expiry-clear"
@@ -567,14 +575,197 @@ function LicenseSection({
   );
 }
 
-function TagEditor({ family, tags }: { family: string; tags: string[] }) {
+function TagEditor({
+  family,
+  tags,
+  autoTags,
+}: {
+  family: string;
+  tags: string[];
+  autoTags?: { tag: string; confidence: number; reason: string }[];
+}) {
   const t = useT();
   const setFamilyTags = useFontStore((s) => s.setFamilyTags);
+  const denyAutoTag = useFontStore((s) => s.denyAutoTag);
+  const clearAutoTagDenials = useFontStore((s) => s.clearAutoTagDenials);
+  const autoDenied = useFontStore((s) => s.autoTagDenied[family]);
+  const autoTagEnabled = useFontStore((s) => s.autoTagEnabled);
   const tagExpiry = useFontStore((s) => s.tagExpiry);
   const setTagExpiry = useFontStore((s) => s.setTagExpiry);
   const [draft, setDraft] = useState("");
   // 正在设置到期日期的那枚标签（同一时间只开一行内联日期选择器）
   const [expiryTag, setExpiryTag] = useState<string | null>(null);
+
+  // 从「库里已有的标签」挑：不用手打，还能一次多选。数据源跟侧栏同一份
+  // （`familyTagCounts` 只算当前库里真实存在的族，所以不会列出已删字体的幽灵标签）。
+  const fonts = useFontStore((s) => s.fonts);
+  const allTags = useFontStore((s) => s.tags);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [pq, setPq] = useState("");
+  /**
+   * 设到期日前的「波及面」确认（用户 2026-11-14，21:12 二次明确）。
+   *
+   * 标签按**名字**存在 state.json 里，一个名字常被几十上百个字体共用 —— 给「客户A」
+   * 设到期日，到期删掉的是**所有**带这个名字的字体上的它。2 个及以上字体就先问一句。
+   * **每次点击都问**：只要这个标签还没定过日期，点日历图标就弹（关面板、重启都一样）；
+   * 已经定过日期的不再问 —— 日期本身就说明用户已做过一次知情决定（见下面 onClick）。
+   */
+  const [expiryWarn, setExpiryWarn] = useState<{ tag: string; count: number } | null>(null);
+  const expiryRowRef = useRef<HTMLDivElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  // 列表的可用高度由 JS 量出来（见下面的 fitPicker）：固定 196px 在面板靠下时会
+  // 被详情面板底边裁掉，「确定」按钮看不见，用户每次都得手动滚一下。
+  const [listMax, setListMax] = useState(196);
+
+  // 标签名 → 有多少个族带它。除了喂给下面的候选清单，还用来判断「设到期日会波及几个字体」。
+  const counts = useMemo(
+    () => familyTagCounts(familiesFor(fonts, allTags)).counts,
+    [fonts, allTags],
+  );
+  /**
+   * 选择面板的清单 = 库里**全部**标签，包括已经在这个字体上的。
+   *
+   * 原来这里是「过滤掉本字体已有的」，于是用户搜一个自己的标签（比如 `nihaooff`）时
+   * 会得到「没有匹配的标签」—— 明明侧栏里就有一行（用户 2026-11-14）。已在本字体上的
+   * 直接列出来、勾着、不可点，比让它凭空消失更容易理解。
+   * `addable` 才是「还能加几个」，按钮上的角标用它。
+   */
+  const available = useMemo(
+    () => [...counts.entries()].sort((a, b) => tagLabel(a[0], t).localeCompare(tagLabel(b[0], t))),
+    // t 只影响排序与显示名，语言切换时会重渲染，这里跟着 counts 走就够
+    [counts],
+  );
+  const addable = useMemo(
+    () => available.filter(([name]) => !tags.includes(name)).length,
+    [available, tags],
+  );
+
+  const q = pq.trim().toLowerCase();
+  const visible = q
+    ? available.filter(
+        ([name]) => name.toLowerCase().includes(q) || tagLabel(name, t).toLowerCase().includes(q),
+      )
+    : available;
+
+  const closePicker = useCallback(() => {
+    setPickerOpen(false);
+    setPicked([]);
+    setPq("");
+  }, []);
+
+  /**
+   * 让选择面板「点一下就完整显现」。
+   *
+   * 起因（2026-11-14，用户反馈）：这块是跟着文档流展开的（不是绝对定位浮层，原因见
+   * app.css 里 .tag-pick-wrap 的注释），打开时会把下方内容往下推；而详情面板本身是
+   * 滚动容器，面板底边经常落在可视区外 —— 于是每点一次都得手动滚一下才能看到列表
+   * 尾巴和「确认」按钮。
+   *
+   * 做法：列表是唯一可伸缩的一段，先按「按钮下方还剩多少可见空间」反算它的高度；
+   * 空间不够就把详情面板往上滚**最小必要距离**，再让列表刚好填满剩余空间。
+   * 在 layout 阶段直接改 scrollTop（不做 smooth 动画），一次到位，用户看不到中间帧。
+   */
+  const fitPicker = useCallback(() => {
+    const wrap = pickerRef.current;
+    if (!wrap) return;
+    const picker = wrap.querySelector<HTMLElement>(".tag-picker");
+    const btn = wrap.querySelector<HTMLElement>(".tag-pick-btn");
+    if (!picker || !btn) return;
+
+    // 头部（搜索框）+ 底部（确认按钮）都是定高，只有列表可以伸缩
+    const chrome =
+      (picker.querySelector<HTMLElement>(".tag-picker-head")?.offsetHeight ?? 38) +
+      (picker.querySelector<HTMLElement>(".tag-picker-foot")?.offsetHeight ?? 38) +
+      14; // 边框 + 面板自身留白
+
+    const scroller = wrap.closest<HTMLElement>(".detail-inner");
+    if (!scroller) {
+      setListMax(PICK_LIST_WANT);
+      return;
+    }
+
+    // 面板刚展开时内容已经变高，可滚距离一定大于缺口；万一仍不够就滚到底为止
+    const room = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+    const fit = fitPickPanel({
+      boxBottom: scroller.getBoundingClientRect().bottom,
+      btnBottom: btn.getBoundingClientRect().bottom,
+      chrome,
+      gap: 6, // .tag-picker 的 margin-top
+      room,
+    });
+
+    if (fit.scrollBy > 0) scroller.scrollTop += fit.scrollBy;
+    setListMax(fit.listMax);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!pickerOpen) return;
+    fitPicker();
+    // 拖窗口/改面板宽度都会改可视高度，开着的时候跟着重算
+    window.addEventListener("resize", fitPicker);
+    return () => window.removeEventListener("resize", fitPicker);
+  }, [pickerOpen, fitPicker]);
+
+  /**
+   * 日期行与「波及面提示」点到别处就收起（用户 2026-11-14）。
+   *
+   * 原来只有再点一次日历按钮才能关掉：用户在别处点来点去时，这一行会一直挂在标签区，
+   * 还占着一整行高度。两条例外：
+   *   · 点行内（日期输入 / 清除按钮）不关 —— 那是用户正在操作它；
+   *   · 点日历按钮不关 —— 交给按钮自己 toggle，否则 mousedown 先关、click 又开，等于关不掉。
+   * Esc 也收，跟其它浮层一致。
+   */
+  useEffect(() => {
+    if (!expiryTag && !expiryWarn) return;
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as Element | null;
+      if (!el || typeof el.closest !== "function") return;
+      if (expiryRowRef.current?.contains(el)) return;
+      if (el.closest(".tag-expiry-btn")) return;
+      if (el.closest(".tag-expiry-warn")) return;
+      setExpiryTag(null);
+      setExpiryWarn(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setExpiryTag(null);
+      setExpiryWarn(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [expiryTag, expiryWarn]);
+
+  // 点外面 / 按 Esc 关掉：面板很窄，浮层挡住别的东西时用户第一反应就是点外面
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) closePicker();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePicker();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pickerOpen, closePicker]);
+
+  const commitPicked = () => {
+    const next = [...tags];
+    for (const p of picked) if (!next.includes(p)) next.push(p);
+    if (next.length !== tags.length) {
+      playTag(true);
+      void setFamilyTags(family, next);
+    }
+    closePicker();
+  };
 
   const add = () => {
     const next = draft.trim().toLowerCase();
@@ -588,18 +779,42 @@ function TagEditor({ family, tags }: { family: string; tags: string[] }) {
   return (
     <div className="tag-editor">
       <AnimatePresence>
-        {tags.map((tag) => (
+        {tags.map((tag) => {
+          // 自动标签不允许设到期日（用户 2026-11-14）：自动标签是按规则现算的，
+          // 到期删掉之后下一次推导又会长回来，只会让用户觉得「删了又回来」。
+          // 判据按**名字**，跟上面的图标同一个口径 —— 用户认可过的、或删掉后手打的
+          // 同名标签，仍然是软件词表里的名字，同样不给日期。
+          const expirable = canSetExpiry(tag);
+          return (
           <motion.span
             key={tag}
-            className="tag-chip"
+            className="tag-chip tag-chip-iconed"
             initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.85 }}
             transition={spring}
-            layout
+            /*
+             * 这里**不能**加 `layout`（2026-11-14 用户报的「点开选择面板后上方的
+             * 手工标签偏移」就是它）：motion 的 layout 投影用 getBoundingClientRect
+             * 比对新旧盒子，而入场动画本身在跑 `scale 0.85 → 1` ——
+             * 投影量到的是「被自己缩小后」的盒子，于是按 1/0.85 ≈ 1.18 反向缩放补偿，
+             * chip 会一直比同行的大一圈并向上错位、压住下一行（截图比例与 1.18 吻合）。
+             * 换个族 / 开关下面那块面板都会重新触发一次测量，所以看起来像「点一下就跑偏」。
+             * 代价是删除标签时其余 chip 直接落位、不再滑动 —— 可以接受。
+             */
           >
-            {tag}
-            {tagExpiry[tag] && (
+            {/* 图标按**名字**判定（`isAutoTagId`）：软件词表里的名字（class:serif / cn:song / vox:* …）
+                一律魔棒 —— 用户把这个建议「认可」成自己的标签之后仍然是软件的名字，图标不该跟着变；
+                用户删掉某条自动标签、后来又手打了一样的名字，也照样是魔棒。
+                只有用户自己造的词（「品牌A专用」）才是实线「标签」图标。
+                边框仍然是第二重编码：实线 = 已经在你名下（可删、会同步），虚线 = 软件此刻的建议。 */}
+            {isAutoTagId(tag) ? (
+              <Sparkles size={10} strokeWidth={1.6} className="tag-auto-spark" />
+            ) : (
+              <Tag size={10} strokeWidth={1.5} className="tag-manual-icon" />
+            )}
+            {tagLabel(tag, t)}
+            {expirable && tagExpiry[tag] && (
               <span
                 className="tag-expiry-date"
                 title={`${t("tag.expiryDate")}: ${tagExpiry[tag]}`}
@@ -607,15 +822,34 @@ function TagEditor({ family, tags }: { family: string; tags: string[] }) {
                 {formatTagExpiry(tagExpiry[tag])}
               </span>
             )}
-            <button
-              className="tag-expiry-btn"
-              aria-label={t("tag.expiryDate")}
-              title={t("tag.expiryDate")}
-              data-active={expiryTag === tag || undefined}
-              onClick={() => setExpiryTag((cur) => (cur === tag ? null : tag))}
-            >
-              <CalendarDays size={11} strokeWidth={1.5} />
-            </button>
+            {expirable && (
+              <button
+                className="tag-expiry-btn"
+                aria-label={t("tag.expiryDate")}
+                title={t("tag.expiryDate")}
+                data-active={expiryTag === tag || undefined}
+                onClick={() => {
+                  if (expiryTag === tag) {
+                    setExpiryTag(null);
+                    return;
+                  }
+                  // 同名标签会被**所有**字体共用：设日期等于给它们全部定了个死期。
+                  // 2 个及以上就先问一句（用户 2026-11-14：含 2 个），别让用户在不知情的
+                  // 情况下清掉半个库。**每次点击都问**（只要还没定过日期）：
+                  // 不做任何「问过就记住」的机制 —— 已定过日期的不再问，日期本身就是知情决定。
+                  const n = counts.get(tag) ?? 0;
+                  if (expiryNeedsConfirm(n) && !tagExpiry[tag]) {
+                    setExpiryTag(null);
+                    setExpiryWarn({ tag, count: n });
+                    return;
+                  }
+                  setExpiryWarn(null);
+                  setExpiryTag(tag);
+                }}
+              >
+                <CalendarDays size={11} strokeWidth={1.5} />
+              </button>
+            )}
             <button
               aria-label={t("tag.removeAria", { tag })}
               onClick={() => {
@@ -626,10 +860,70 @@ function TagEditor({ family, tags }: { family: string; tags: string[] }) {
               <X size={11} strokeWidth={1.5} />
             </button>
           </motion.span>
-        ))}
+          );
+        })}
       </AnimatePresence>
+      {/* 波及面提示：标签被 ≥2 个字体共用且还没定过日期时，每次点日历都弹，点继续才展开日期选择 */}
+      {expiryWarn && (
+        <div className="tag-expiry-warn" role="alert">
+          <AlertTriangle size={12} strokeWidth={1.8} className="tag-expiry-warn-icon" />
+          <div className="tag-expiry-warn-text">
+            <strong>{t("tag.expiryWarnTitle", { count: expiryWarn.count })}</strong>
+            <span>{t("tag.expiryWarnBody", { tag: tagLabel(expiryWarn.tag, t) })}</span>
+          </div>
+          <div className="tag-expiry-warn-actions">
+            <button
+              className="tag-expiry-warn-ok"
+              onClick={() => {
+                setExpiryTag(expiryWarn.tag);
+                setExpiryWarn(null);
+              }}
+            >
+              {t("tag.expiryWarnOk")}
+            </button>
+            <button className="tag-expiry-warn-cancel" onClick={() => setExpiryWarn(null)}>
+              {t("tag.expiryWarnCancel")}
+            </button>
+          </div>
+        </div>
+      )}
+      {/*
+        自动标签单独一段：虚线 chip + 魔棒角标，跟手工标签在视觉上分得开。
+        为什么要分开：用户必须一眼看出「这条是软件猜的」，否则删了还会被推回来时
+        会以为软件坏了。每条的 tooltip 里带理由（证据来源），这是可解释性的最低要求。
+        **只有一个按钮**：× = 不再建议（记进否决名单，永不复发）。用户 2026-11-14 明确
+        「不需要这个标签直接移除就好」—— 原来的 ✓「认可成我的标签」是多余的一道手续：
+        想要的标签用户自己打、或者从「从已有标签选」里勾，不需要软件先替他占个位。
+      */}
+      {autoTagEnabled && (autoTags?.length ?? 0) > 0 && (
+        <div className="tag-auto-row">
+          {autoTags!.map((d) => (
+            <span
+              key={d.tag}
+              className="tag-chip tag-chip-auto"
+              title={`${t("tag.autoHint")} · ${d.reason} · ${Math.round(d.confidence * 100)}%`}
+            >
+              <Sparkles size={10} strokeWidth={1.6} className="tag-auto-spark" />
+              {tagLabel(d.tag, t)}
+              <button
+                aria-label={t("tag.rejectAuto", { tag: d.tag })}
+                title={t("tag.rejectAuto", { tag: d.tag })}
+                onClick={() => denyAutoTag(family, d.tag)}
+              >
+                <X size={11} strokeWidth={1.5} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {(autoDenied?.length ?? 0) > 0 && (
+        <button className="tag-auto-restore" onClick={() => clearAutoTagDenials(family)}>
+          <RotateCcw size={11} strokeWidth={1.5} />
+          {t("tag.restoreAuto", { count: autoDenied!.length })}
+        </button>
+      )}
       {expiryTag && tags.includes(expiryTag) && (
-        <div className="tag-expiry-row">
+        <div className="tag-expiry-row" ref={expiryRowRef}>
           <span className="tag-expiry-label">{t("tag.expiryDate")}</span>
           <input
             type="date"
@@ -638,6 +932,9 @@ function TagEditor({ family, tags }: { family: string; tags: string[] }) {
             onChange={(e) => setTagExpiry(expiryTag, e.target.value || null)}
             aria-label={t("tag.expiryDate")}
           />
+          {!tagExpiry[expiryTag] && (
+            <span className="expiry-forever">{t("tag.expiryForever")}</span>
+          )}
           {tagExpiry[expiryTag] && (
             <button
               className="copyright-expiry-clear"
@@ -663,8 +960,86 @@ function TagEditor({ family, tags }: { family: string; tags: string[] }) {
           spellCheck={false}
         />
         <button aria-label={t("tag.addAria")} onClick={add} disabled={!draft.trim()}>
-          <Plus size={13} strokeWidth={1.5} />
+          <Check size={13} strokeWidth={2} />
         </button>
+      </div>
+
+      {/* ＋：不打字，直接从库里已有的标签里勾。多选后一次写入，走的是同一条 setFamilyTags。 */}
+      <div className="tag-pick-wrap" ref={pickerRef}>
+        <button
+          className={`tag-pick-btn ${pickerOpen ? "open" : ""}`}
+          aria-label={t("tag.pickAria")}
+          aria-expanded={pickerOpen}
+          title={t("tag.pickAria")}
+          onClick={() => (pickerOpen ? closePicker() : setPickerOpen(true))}
+        >
+          <Plus size={12} strokeWidth={1.5} />
+          {t("tag.pickOpen")}
+          {addable > 0 && <span className="tag-pick-badge tabular">{addable}</span>}
+        </button>
+
+        {pickerOpen && (
+          <div className="tag-picker" role="dialog" aria-label={t("tag.pickAria")}>
+            <div className="tag-picker-head">
+              {/* 用和其它搜索框同一个自绘闪烁块状光标：原生细光标在这块深色面板上
+                  又细又不闪，和顶栏搜索框明显不是一套（用户 2026-11-14）。 */}
+              <BlinkCaretInput
+                value={pq}
+                onChange={(e) => setPq(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && picked.length > 0) commitPicked();
+                }}
+                placeholder={t("tag.pickSearch")}
+                aria-label={t("tag.pickSearch")}
+                spellCheck={false}
+                autoFocus
+              />
+              <button className="tag-picker-close" aria-label={t("tag.pickClose")} onClick={closePicker}>
+                <X size={12} strokeWidth={1.5} />
+              </button>
+            </div>
+            {visible.length === 0 ? (
+              <div className="tag-picker-empty">
+                {available.length === 0 ? t("tag.pickEmpty") : t("tag.pickNoMatch")}
+              </div>
+            ) : (
+              <ul className="tag-picker-list" style={{ maxHeight: listMax }}>
+                {visible.map(([name, count]) => {
+                  // 已经在这个字体上的：勾着、不可点 —— 它的「添加」没有意义，
+                  // 但列出来能让用户确认「库里有这个名字，只是已经用上了」。
+                  const applied = tags.includes(name);
+                  const on = applied || picked.includes(name);
+                  return (
+                    <li key={name}>
+                      <button
+                        className={`tag-picker-item ${on ? "on" : ""} ${applied ? "applied" : ""}`}
+                        aria-pressed={on}
+                        aria-disabled={applied || undefined}
+                        disabled={applied}
+                        title={applied ? t("tag.pickApplied") : undefined}
+                        onClick={() =>
+                          setPicked((prev) =>
+                            prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name],
+                          )
+                        }
+                      >
+                        <span className="tag-picker-mark">{on && <Check size={11} strokeWidth={2} />}</span>
+                        <span className="tag-picker-name">{tagLabel(name, t)}</span>
+                        <span className="tag-picker-count tabular">{count}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div className="tag-picker-foot">
+              <button className="tag-picker-add" disabled={picked.length === 0} onClick={commitPicked}>
+                {t("tag.pickConfirm")}
+                {picked.length > 0 && <span className="tabular"> {picked.length}</span>}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -842,6 +1217,9 @@ export function DetailPanel() {
     family?.faces.find((f) => f.style === "Regular") ??
     family?.faces[0] ??
     null;
+  // OS/2 分类：只读展示，**不进 tags、不进筛选、不进搜索**。
+  // 用途只有一个 —— 用户想跟字体册 / Suitcase 对一下「那家软件把它叫什么」。
+  const os2 = os2ClassOf(family?.faces ?? []);
   const { fontFamily } = useFontCss(lead);
   const text = sampleText.trim() || family?.name || "";
 
@@ -1250,6 +1628,17 @@ export function DetailPanel() {
                     <dd>{t(`class.${family.classification}`)}</dd>
                   </>
                 )}
+                {os2 && (
+                  <>
+                    <dt>{t("detail.os2Class")}</dt>
+                    {/* 类名保持 OS/2 原文（Oldstyle Serifs / Slab Serifs…）：翻成中文
+                        「旧体衬线」只会让用户更难跟字体册、Suitcase 的界面逐字对上。 */}
+                    <dd data-hint-text={t("detail.os2ClassHint")}>
+                      {os2.label}
+                      <span className="detail-os2-id tabular">{os2.id}</span>
+                    </dd>
+                  </>
+                )}
                 {family.scripts.length > 0 && (
                   <>
                     <dt>{t("detail.scripts")}</dt>
@@ -1449,7 +1838,7 @@ export function DetailPanel() {
               variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: spring } }}
             >
               <div className="detail-heading">{t("detail.tags")}</div>
-              <TagEditor family={family.name} tags={family.tags} />
+              <TagEditor family={family.name} tags={family.tags} autoTags={family.autoTags} />
             </motion.section>
 
             <motion.section
