@@ -20,7 +20,9 @@
   --ink-3: #8a8a93;
   --ink-4: #a8a8b0;
   --line: #ececef;
-  --green: #0b3a22;
+  /* 2.1.7：品牌色由「深林绿」改为宝蓝（用户要求），变量名同步从 --green 改成 --brand，
+     免得以后有人看见 --green 以为是绿色。--blue 是渐变尾端的亮蓝。 */
+  --brand: #1b36c4;
   --blue: #1230c8;
   --paper: #fbfaf5;
   --font-ui: "Inter Variable", "Inter", "Segoe UI", system-ui, "Microsoft YaHei", "PingFang SC",
@@ -262,8 +264,31 @@ body.mode-uninstall .state[data-istep] {
   height: 100%;
   width: 0%;
   border-radius: 99px;
-  background: linear-gradient(90deg, #0b3a22 0%, #16408f 62%, #1230c8 100%);
+  background: linear-gradient(90deg, #0c1b6b 0%, #1b36c4 62%, #2c63ff 100%);
   transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* 等待中的"呼吸"（2.1.8）：真机上从 12% 到 88% 之间有几十秒没有任何事件，
+   宽度不动、数字不动，界面看起来就是死了。这里只让**已有那一段**做明暗呼吸，
+   宽度和百分比一个都不改（约束：进度不自己跑）。判断"在等"由 main.ts 的
+   ticker 负责，它给填充条 <i> 挂 running 类。 */
+/* 类挂在 <i> 自身上（main.ts 直接拿 #iProg），别写成后代选择器 */
+.prog i.running {
+  animation: progBreathe 1.6s ease-in-out infinite;
+}
+@keyframes progBreathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .prog i.running {
+    animation: none;
+  }
 }
 
 .sub {
@@ -432,7 +457,7 @@ body.mode-uninstall .state[data-istep] {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--brand);
   display: grid;
   place-items: center;
   margin-top: 26px;
@@ -486,13 +511,24 @@ body.mode-uninstall .state[data-istep] {
 }
 
 /* ───────────────── 右栏：品牌图（纯 CSS 合成，不烘位图 → 0 体积） ───────────────── */
+/*
+ * 2026-11-14 用户：「蓝色浅一些，太抢眼了，不要影响用户看左边的内容」+「不要看起来太脏」。
+ * 右图贴着左栏正文，原来那版是「深宝蓝底 + 0.55 的宝蓝光斑」，右上角亮到发紫，
+ * 视线一进窗口就被它拽过去 —— 而这一屏唯一的 Emphasis 应该是左栏的状态行（§2.3 硬规则 1）。
+ * 改法不是把它调亮，而是**提亮底 + 把光斑收到 0.17 + 保住色相纯度**：
+ *   底 #0a1550/#060e3a（L≈18%）→ #1e2a63/#131a3f（L≈25%，但 S 仍有 52%）
+ *   光斑 rgba(22,44,150,.55) → rgba(104,132,232,.17)，半径 60% → 64%
+ * 为什么不顺手把饱和度也压下来：实测压到 42% 会发灰，跟浅色主题那次「太暗太脏」
+ * 是同一种病 —— 灰蓝泥感比鲜艳更廉价。**降的是音量（面积×alpha），不是纯度。**
+ * 噪点同时 .13 → .09：底色比原来亮了，同一层噪点在亮背景上会显颗粒。
+ */
 .art {
   position: relative;
   border-radius: 14px;
   overflow: hidden;
   background:
-    radial-gradient(90% 70% at 78% 8%, rgba(24, 74, 46, 0.55) 0%, rgba(9, 40, 24, 0) 60%),
-    linear-gradient(158deg, #0d4429 0%, #093219 46%, #04170d 100%);
+    radial-gradient(96% 76% at 79% 6%, rgba(104, 132, 232, 0.17) 0%, rgba(104, 132, 232, 0) 64%),
+    linear-gradient(158deg, #1e2a63 0%, #131a3f 48%, #08090f 100%);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
@@ -512,7 +548,8 @@ body.mode-uninstall .state[data-istep] {
   content: "";
   position: absolute;
   inset: 0;
-  opacity: 0.13;
+  /* .13 → .09（2026-11-14）：底色提亮后同一层颗粒在亮面上会显脏 */
+  opacity: 0.09;
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 }
@@ -528,6 +565,9 @@ body.mode-uninstall .state[data-istep] {
   z-index: 1;
 }
 
+/* 圆点是右图里唯一的"实体彩色"，原来 #3455f2 是整块面板上最跳的一笔：
+   现在换成同一色相但低一档的雾蓝（#6b83e0 → #2b3378），阴影 .42 → .34。
+   注意别往灰里调：与底色同一套口径，降的是明度/面积，不是纯度。 */
 .disc {
   position: absolute;
   right: 26px;
@@ -535,8 +575,8 @@ body.mode-uninstall .state[data-istep] {
   width: 88px;
   height: 88px;
   border-radius: 50%;
-  background: radial-gradient(circle at 34% 26%, #3455f2 0%, #1429bb 62%, #0d1c85 100%);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
+  background: radial-gradient(circle at 34% 26%, #6b83e0 0%, #3f4ea6 62%, #2b3378 100%);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
   z-index: 4;
 }
 

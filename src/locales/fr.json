@@ -1109,7 +1109,6 @@
   "toast.pluginsScanEmpty": "Aucune extension dans le dossier pour l'instant",
   "toast.pluginsMasterOn": "Extensions activées",
   "toast.pluginsMasterOff": "Toutes les extensions arrêtées",
-  "about.linksTitle": "Issu de ZFontManager 0.8.0",
   "about.localTitle": "Ce projet",
   "about.featuresTitle": "Ce que fait FontManager",
   "about.featPreview": "Aperçus en direct : des dizaines de milliers de polices sans accroc",

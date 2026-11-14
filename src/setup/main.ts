@@ -137,6 +137,44 @@ function pushLog(el: HTMLElement, line: string) {
   while (el.children.length > 5) el.lastElementChild?.remove();
 }
 
+/* ───────────────── 「已用 N 秒」自己走字（2.1.8） ─────────────────
+ * 为什么需要：Rust 那边只在**跳步**时才发一次 `sub`，装到某一步之后长时间没有
+ * 新事件（真机上 24 MB 解压 + 注册表 + 快捷方式合计 40 秒上下），于是「已用 0 秒」
+ * 冻在那儿一动不动，进度条也不动 —— 用户实测原话「等太久，我还以为卡了」。
+ *
+ * 这里只接管**计时**，不碰百分比：约束 3 说的是"进度不自己拍脑袋跑"，时钟不是
+ * 进度，它是"我还在干活"的唯一证据。所以：
+ *   · 每秒把 sub 改成真实秒数（和 Rust 发的 `已用 N 秒` 同口径，不会互相打脸）
+ *   · 超过 20 秒补一句"正在写入，请勿关闭窗口" —— 沉默超过这个时长，任何界面
+ *     都会被当成死机
+ *   · 给填充条 `<i>` 挂 `running` 类，由 CSS 做呼吸动画（纯视觉，不改宽度、不改百分比）
+ * 收尾必须 stopTicker()：失败/取消/完成三种出口都会走到 finish*()。
+ */
+let tickTimer = 0;
+let tickFrom = 0;
+
+function startTicker(subSel: string, progSel: string) {
+  stopTicker();
+  tickFrom = Date.now();
+  const sub = $(subSel);
+  const prog = $(progSel);
+  prog.classList.add("running");
+  tickTimer = window.setInterval(() => {
+    if (!busy) {
+      stopTicker();
+      return;
+    }
+    const s = Math.round((Date.now() - tickFrom) / 1000);
+    sub.textContent = s >= 20 ? `已用 ${s} 秒 · 正在写入，请勿关闭窗口` : `已用 ${s} 秒`;
+  }, 1000);
+}
+
+function stopTicker() {
+  if (tickTimer) window.clearInterval(tickTimer);
+  tickTimer = 0;
+  document.querySelectorAll(".prog i.running").forEach((e) => e.classList.remove("running"));
+}
+
 /* ───────────────── 首屏：把真实环境填进去 ───────────────── */
 
 async function boot() {
@@ -272,6 +310,7 @@ async function blockedByRunning(next: () => Promise<void>): Promise<boolean> {
 
 function finishInstall(p: Progress) {
   busy = false;
+  stopTicker();
   if (p.failed || p.cancelled) {
     // 取消：退回欢迎屏，不留半装目录（目录清理由 Rust 做）
     goInstall(p.cancelled ? 0 : 2);
@@ -311,6 +350,7 @@ async function startInstall(force = false) {
   $("#iProg").style.width = "0%";
   $("#iStatus").textContent = "正在安装…";
   $("#iSub").textContent = "已用 0 秒";
+  startTicker("#iSub", "#iProg");
   try {
     await invoke("setup_install", {
       dir: targetDir,
@@ -335,6 +375,7 @@ async function startInstall(force = false) {
 
 function finishUninstall(p: Progress) {
   busy = false;
+  stopTicker();
   if (p.failed) {
     $("#uStatus").textContent = p.failed;
     $("#uProg").style.width = "100%";
@@ -358,6 +399,7 @@ async function startUninstall(force = false) {
   goUninstall(1);
   $("#uLog").innerHTML = "";
   $("#uProg").style.width = "0%";
+  startTicker("#uSub", "#uProg");
   $("#uStatus").textContent = "正在移除…";
   $("#uSub").textContent = "已用 0 秒";
   try {

@@ -1112,7 +1112,6 @@
   "toast.pluginsScanEmpty": "插件目录里还没有插件",
   "toast.pluginsMasterOn": "插件已启用",
   "toast.pluginsMasterOff": "插件已全部停止",
-  "about.linksTitle": "从 ZFontManager 0.8.0 迭代而来",
   "about.localTitle": "本项目仓库",
   "about.featuresTitle": "这款软件能做什么",
   "about.featPreview": "实时预览：万级字库也能顺滑浏览与搜索",
