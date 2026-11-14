@@ -105,6 +105,32 @@ ${StrLoc}
 !define ESTIMATEDSIZE "{{estimated_size}}"
 !define STARTMENUFOLDER "{{start_menu_folder}}"
 
+; ═══════════════════════════════════════════════════════════════════════════
+; ★ 2.1.7 · 路线 C：安装器/卸载器的界面由**主程序**画（规格书 §9.5 / PRD §9.7）
+;
+; 为什么：用户要求「尽量 0 体积占用的 1:1 还原」。NSIS 自绘上限 75%（照片级右图、
+; 墨黑按钮、1px 描边都画不出）；独立 Tauri 安装器要 +5MB。主程序里已经有 WebView2、
+; 已有 Inter、已有图标 —— 借它画，增量只有几百行 Rust。
+;
+; 开关就是下面这一行宏定义，**默认处于注释状态**：不打开时所有 ZFM_ROUTE_C 分支
+; 都不参与编译，打出来的包与 2.1.6 那条路完全同源（一个字节都没动）。
+;
+; 出路线 C 的包：
+;     node tools/route-c.mjs on     # 打开（改这一行，不新建文件）
+;     npx tauri build --config _tauri.nobuild.json --bundles nsis
+;     node tools/route-c.mjs off    # 关回去，别把开启状态留在仓库里
+;
+; 为什么不用「标记文件 + !if /FileExists」：tauri 打包前会把本模板**渲染到
+; `rust-target/release/nsis/x64/installer.nsi`** 再交给 makensis，那时
+; `${__FILEDIR__}` 指向的是那个临时目录而不是本目录 —— 标记文件永远找不到，
+; 开关恒为假（2026-11-14 实测：开与关打出来的包字节完全相同）。
+; 宏定义是纯文本，渲染后原样保留，所以在哪编译都有效。
+;
+; /S、/P、/UPDATE 三条一律走原来的路径 —— 更新是主程序内部触发的（update.rs 靠
+; `Start-Process -Wait` 等退出码），绝不能弹界面，也绝不能多一层等待。
+; ═══════════════════════════════════════════════════════════════════════════
+!define ZFM_ROUTE_C
+
 ; ★ 2.1.5 新增：data 根标记文件名（安装器与程序共用同一个名字）
 ;   安装器在 $INSTDIR\data\.zfm-data-root 写 v=1；
 ;   程序迁移成功后往同一个文件追加 migrated=1。
@@ -115,6 +141,9 @@ ${StrLoc}
 Var PassiveMode
 Var UpdateMode
 Var NoShortcutMode
+; 路线 C：界面明确要求"建桌面快捷方式"（`/DS`）。与 `NoShortcutMode` 是"要/不要"
+; 一对，谁最后被设置谁算数（`.onInit` 里 /NS 先、/DS 后）。
+Var ForceDesktop
 Var WixMode
 Var OldMainBinaryName
 
@@ -585,9 +614,36 @@ Function PageLeaveReinstall
         Abort
       ${EndIf}
 
-      ; Other errors? show generic error message and return to select un/reinstall page
-      MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
-      Abort
+      ; Other errors? 走 GUI 错误提示；静默分支保留但**当前不可达**（见下面的说明）。
+      ;
+      ; ★ 本函数是 `Page custom PageReinstall PageLeaveReinstall`（本文件 :347）的
+      ;   **页面 leave 回调**。NSIS 3.11 实测：`/S` 下页面回调**根本不执行**
+      ;   （`Page custom` 的 create / leave 都不会被调用，只有 Section 跑），
+      ;   所以这一段只覆盖 **GUI 的「重装 / 先卸载再装」路径**，
+      ;   **不是静默更新（`/S`）的保护**。
+      ;
+      ;   那为什么还留 `${If} ${Silent}` 分支？防的是未来重构：一旦有人把卸载旧版的
+      ;   逻辑挪进 Section 或 `.onInit`（那是 `/S` 会执行的），这里就会立刻变成活代码，
+      ;   届时"静默不弹窗 + 退出码非 0"必须已经是对的。在那之前它就是防御性代码，
+      ;   不要把它当"静默路径已受保护"的凭据 —— 静默下的 WebView2 失败由
+      ;   Section WebView2 里 downloadBootstrapper 分支的两处 `SetErrorLevel 1` + `Abort`
+      ;   （下载失败 / 安装失败，原行号 :901 / :933）负责，
+      ;   成功路径由 `.onInstSuccess` 的 `SetErrorLevel 0` 收口。
+      ;
+      ;   注：AttachConsole 会覆盖 $0（原值是旧卸载器的退出码），这里紧接着就 Abort，故无影响。
+      ${If} ${Silent}
+        System::Call 'kernel32::AttachConsole(i -1)i.r0'
+        ${If} $0 <> 0
+          System::Call 'kernel32::GetStdHandle(i -11)i.r0'
+          System::call 'kernel32::SetConsoleTextAttribute(i r0, i 0x0004)' ; set red color
+          FileWrite $0 "$(unableToUninstall)"
+        ${EndIf}
+        SetErrorLevel 1
+        Abort
+      ${Else}
+        MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
+        Abort
+      ${EndIf}
     ${EndIf}
   reinst_done:
 FunctionEnd
@@ -794,6 +850,18 @@ Function .onInit
     StrCpy $NoShortcutMode 1
   ${EndIf}
 
+  ; `/DS`：路线 C 的界面在**用户勾了**「在桌面创建快捷方式」时给的正向指令。
+  ; 只有 `/NS` 的反向逻辑不够：函数里 `$UpdateMode = 1` 会先 Return 跳过创建，
+  ; 光"不禁止"并不等于"要建"（RC-9）。两条都给，语义才闭合。
+  ; 只在路线 C 的构建里认这个参数 —— 老包一个字节都不受影响。
+  !ifdef ZFM_ROUTE_C
+  ${GetOptions} $CMDLINE "/DS" $R0
+  ${IfNot} ${Errors}
+    StrCpy $NoShortcutMode 0
+    StrCpy $ForceDesktop 1
+  ${EndIf}
+  !endif
+
   ${GetOptions} $CMDLINE "/UPDATE" $UpdateMode
   ${IfNot} ${Errors}
     StrCpy $UpdateMode 1
@@ -856,6 +924,35 @@ Function .onInit
     ${EndIf}
   ${EndIf}
   !endif
+
+  ; ── 路线 C：GUI 安装 ────────────────────────────────────────────────
+  ; NSIS 只做三件事：① 把主程序解到 $PLUGINSDIR（包里唯一的大件）；
+  ; ② 等它把四屏界面跑完；③ 按它的退出码决定这次算"装好"还是"用户取消"。
+  ; 真正的解包/注册表/快捷方式仍然由它内部拉起的 `setup.exe /S` 完成 —— 引擎只有一份。
+  !ifdef ZFM_ROUTE_C
+  ${IfNot} ${Silent}
+  ${AndIf} $PassiveMode <> 1
+  ${AndIf} $UpdateMode <> 1
+    ; **不要 SetSilent**：它会把页面不可逆地抑制掉，一旦界面挂掉就变成
+    ; 「没人点却自动装完」（2026-11-14 实测踩到）。.onInit 里 Quit 本身就
+    ; 足够阻止页面渲染 —— 因为页面比 .onInit 晚。
+    SetOutPath "$PLUGINSDIR"
+    File "/oname=${MAINBINARYNAME}.exe" "${MAINBINARYSRCPATH}"
+    ExecWait '"$PLUGINSDIR\${MAINBINARYNAME}.exe" --installer-ui --setup-exe="$EXEPATH" --install-dir="$INSTDIR"' $R9
+    StrCmp $R9 "0" zfm_rc_ok
+    StrCmp $R9 "10" zfm_rc_cancel
+    ; 其它返回值（界面起不来 / 被杀软拦 / WebView2 缺失）：什么都不做，
+    ; 让 .onInit 正常返回 → NSIS 照常画原生 MUI 页继续装（E7/G6 的降级面）。
+    Goto zfm_rc_done
+  zfm_rc_cancel:
+    SetErrorLevel 10            ; 用户自己取消：不算失败，但也不是"装好了"
+    Quit
+  zfm_rc_ok:
+    SetErrorLevel 0             ; 界面内部已经拉起 `setup.exe /S` 装完了
+    Quit
+  zfm_rc_done:
+  ${EndIf}
+  !endif
 FunctionEnd
 
 Section WebView2
@@ -883,6 +980,12 @@ Section WebView2
           DetailPrint "$(webview2DownloadSuccess)"
         ${Else}
           DetailPrint "$(webview2DownloadError)"
+          ; ★ 这是**本仓库真正会编译、真正会执行**的 WebView2 失败分支之一
+          ;   （INSTALLWEBVIEW2MODE = downloadBootstrapper）。
+          ;   显式置 1，不依赖 NSIS 未文档化默认值（实测裸 Abort 在 /S 下退 2，
+          ;   但那是实现细节，不能当契约）。update.rs 的唯一判据是 `ExitCode -eq 0`，
+          ;   这里必须保证"下载失败 = 非 0"，否则会被当成装好后删包重启。
+          SetErrorLevel 1
           Abort "$(webview2AbortError)"
         ${EndIf}
         StrCpy $6 "$TEMP\MicrosoftEdgeWebview2Setup.exe"
@@ -915,11 +1018,24 @@ Section WebView2
           DetailPrint "$(webview2InstallSuccess)"
         ${Else}
           DetailPrint "$(webview2InstallError)"
+          ; ★ 另一处真正会执行的 WebView2 失败分支（bootstrapper 下回来了，但装不上）。
+          ;   同上：显式非 0，不靠默认值。装了 WebView2 失败的机器上主程序必白屏，
+          ;   绝不能让它看起来"装成功"。
+          SetErrorLevel 1
           Abort "$(webview2AbortError)"
         ${EndIf}
       webview2_done:
     ${EndIf}
   ${Else}
+    ; ⚠️ 下面这一整块（`!if` 到 `!endif`）在本仓库**当前不参与编译**：
+    ;   tauri 渲染出的 `MINIMUMWEBVIEW2VERSION` 是 `""`（tauri.conf.json 未配置
+    ;   `minimumWebview2Version`），`!if "${MINIMUMWEBVIEW2VERSION}" != ""` 恒假。
+    ;   保留它是给"配了最低 WebView2 版本"的构建用的（那时走 EdgeUpdate 的
+    ;   /install appguid 通道，失败点是下面的 ExecWait）。
+    ;
+    ;   ★ 因此**真正保护静默更新的不在这里**，而是 Section WebView2 上半段那两处
+    ;   `SetErrorLevel 1` + `Abort`（原行号 :901 下载失败 / :933 安装失败），
+    ;   因为本仓库激活的是 INSTALLWEBVIEW2MODE = downloadBootstrapper。
     !if "${MINIMUMWEBVIEW2VERSION}" != ""
       ${VersionCompare} "${MINIMUMWEBVIEW2VERSION}" "$4" $R0
       ${If} $R0 = 1
@@ -940,8 +1056,30 @@ Section WebView2
             ${If} $1 = 0
               DetailPrint "$(webview2InstallSuccess)"
             ${Else}
-              MessageBox MB_ICONEXCLAMATION|MB_ABORTRETRYIGNORE "$(webview2InstallError)" IDIGNORE ignore IDRETRY update_webview
-              Quit
+              ; WebView2 装不上 = 主程序起来必白屏，属于最坏的一类失败，必须让上游知道。
+              ;
+              ; ★ 更正一处曾写错的事实（2.1.7 QA 实测）：旧代码 `MessageBox` + `Quit`
+              ;   在 `/S` 下的退出码**不是 0** —— 裸 `Abort`/`Quit` 在 `/S` 下实测退 **2**，
+              ;   所以 update.rs 的 `ExitCode -eq 0` 从来没被它骗过。
+              ;   真正的病是：`MessageBox` 在 `/S` 下**照常弹窗并阻塞**，而 update.rs 用
+              ;   `Start-Process -Wait -PassThru` 等进程退出 → **永久挂死**。
+              ;   `SetErrorLevel 1` 的意义是把"失败 = 非 0"写成显式契约，
+              ;   不依赖 NSIS 未文档化的默认值（默认值哪天变了就是"报成功但白屏"）。
+              ${If} ${Silent}
+                System::Call 'kernel32::AttachConsole(i -1)i.r0'
+                ${If} $0 <> 0
+                  System::Call 'kernel32::GetStdHandle(i -11)i.r0'
+                  System::call 'kernel32::SetConsoleTextAttribute(i r0, i 0x0004)' ; set red color
+                  FileWrite $0 "$(webview2InstallError)"
+                ${EndIf}
+                SetErrorLevel 1
+                Quit
+              ${Else}
+                MessageBox MB_ICONEXCLAMATION|MB_ABORTRETRYIGNORE "$(webview2InstallError)" IDIGNORE ignore IDRETRY update_webview
+                ; 走到这里 = 用户选了 Abort（Retry 会跳回 update_webview，Ignore 跳 ignore）
+                SetErrorLevel 1
+                Quit
+              ${EndIf}
               ignore:
             ${EndIf}
           ${EndIf}
@@ -1056,6 +1194,12 @@ Section Install
 SectionEnd
 
 Function .onInstSuccess
+  ; 成功路径**显式**置 0，不要依赖默认值：模板里多处 `Quit`/`Abort` 的退出码取决于
+  ; 之前有没有被 SetErrorLevel 改过，而 update.rs 的唯一判据就是 `ExitCode -eq 0`
+  ; （0 → 删包 + 重启）。在这里钉死"装完且装好 = 0"，语义才闭合。
+  ; 放在最前面：后面的 RunAsUser 属于"装完之后顺带拉起程序"，它失败不代表没装好。
+  SetErrorLevel 0
+
   ; Check for `/R` flag only in silent and passive installers because
   ; GUI installer has a toggle for the user to (re)start the app
   ${If} $PassiveMode = 1
@@ -1086,6 +1230,49 @@ Function un.onInit
   ${IfNot} ${Errors}
     StrCpy $UpdateMode 1
   ${EndIf}
+
+  ; `/PURGE=1`：静默卸载时"同时删除数据"的唯一入口。
+  ; 模板里 `$DeleteAppDataCheckboxState` 只有确认页（un.ConfirmShow）会置 1，
+  ; 而 /S 下页面根本不跑 —— 没有这条口子，路线 C 界面上的勾选框就是个摆设。
+  ; 只有在路线 C 的构建里才认这个参数：老包一个字节都不受影响。
+  !ifdef ZFM_ROUTE_C
+  ${GetOptions} $CMDLINE "/PURGE" $R0
+  ${IfNot} ${Errors}
+    StrCpy $DeleteAppDataCheckboxState 1
+  ${EndIf}
+  !endif
+
+  ; ── 路线 C：GUI 卸载 ────────────────────────────────────────────────
+  ; 先把主程序拷到 %TEMP% 再跑界面：界面一会儿要拉起 `uninstall.exe /S`，
+  ; 那个进程会删 `$INSTDIR\fontmanager.exe` —— 界面自己就是那个文件的话删不掉，
+  ; 用户看到的是"卸完了但程序还在"（这类 bug 最难解释，所以从一开始就避开）。
+  !ifdef ZFM_ROUTE_C
+  ${IfNot} ${Silent}
+  ${AndIf} $PassiveMode <> 1
+  ${AndIf} $UpdateMode <> 1
+    ; 同上：**不要 SetSilent**。界面失败就退回原生卸载页，不许静默把东西删了。
+    CreateDirectory "$TEMP\FontManager-setup-ui"
+    CopyFiles /SILENT "$INSTDIR\${MAINBINARYNAME}.exe" "$TEMP\FontManager-setup-ui\${MAINBINARYNAME}.exe"
+    ${If} ${FileExists} "$TEMP\FontManager-setup-ui\${MAINBINARYNAME}.exe"
+      ExecWait '"$TEMP\FontManager-setup-ui\${MAINBINARYNAME}.exe" --uninstall-ui --install-dir="$INSTDIR"' $R9
+      Delete "$TEMP\FontManager-setup-ui\${MAINBINARYNAME}.exe"
+      RMDir "$TEMP\FontManager-setup-ui"
+      ; 界面的 WebView2 数据目录（用完即弃，别在用户 %TEMP% 里留几十 MB）
+      RMDir /r "$TEMP\FontManager-setup-webview"
+      StrCmp $R9 "0" zfm_un_rc_ok
+      StrCmp $R9 "10" zfm_un_rc_cancel
+    ${EndIf}
+    ; 界面起不来 / 用户取消：都退回原生卸载页（原页面一行都没删）
+    Goto zfm_un_rc_done
+  zfm_un_rc_cancel:
+    SetErrorLevel 10
+    Quit
+  zfm_un_rc_ok:
+    SetErrorLevel 0
+    Quit
+  zfm_un_rc_done:
+  ${EndIf}
+  !endif
 FunctionEnd
 
 Section Uninstall
@@ -1280,10 +1467,14 @@ Function CreateOrUpdateDesktopShortcut
 
   ; Skip creating shortcut if in update mode or no shortcut mode
   ; but always create if migrating from wix
-  ${If} $WixMode = 0
-    ${If} $UpdateMode = 1
-    ${OrIf} $NoShortcutMode = 1
-      Return
+  ; 例外：路线 C 的 `/DS`（用户勾了"在桌面创建快捷方式"）压过上面两条 ——
+  ; 勾选是用户的明确指令，覆盖升级也得按它来（RC-9）。
+  ${If} $ForceDesktop <> 1
+    ${If} $WixMode = 0
+      ${If} $UpdateMode = 1
+      ${OrIf} $NoShortcutMode = 1
+        Return
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 

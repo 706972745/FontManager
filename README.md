@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.1.7-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,14 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.1.7 — A bigger splash, and the installer stops fighting itself**
+
+- **Installer asks before it bites**: if FontManager is still running when you start an install or an uninstall, a dialog says so and lets you pick "close it and continue" or "cancel". It no longer deletes files out from under your own open window.
+- **Splash screen redrawn at 2×**: the startup card is now 1120 × 760 with everything — icon, title, progress bar, status lines — scaled to match. It stays up for at least 1.5 s on every launch, even on a hot start where fonts are ready in milliseconds.
+- **Strict hand-off**: the splash closes first, then the main window appears. No more both-at-once flash.
+- **Installer and uninstaller share the app's own UI**: same fonts, same light/dark theme, same wording as the app — and a silent install (`/S`) stays genuinely silent.
+- **Cleaner uninstall**: leftover icon files and the empty `plugins` / font-library shells are removed; "delete my data too" is a separate, explicit choice.
 
 **2.1.5 — Your data follows the install folder**
 

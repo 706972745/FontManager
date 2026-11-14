@@ -63,6 +63,18 @@ jobs:
           workspaces: src-tauri
           key: windows-x64-ci
 
+      # 安装器「静默路径」护栏（2.1.7）：NSIS 的 MessageBox 在 `/S` 下照常弹窗并阻塞，
+      # 而 update.rs 靠 `Start-Process -Wait` 等进程退出 → 静默更新会永久挂死。
+      # 只拦「/S 会执行的区段里没走 ${If} ${Silent} 分流」这类硬错误；
+      # 页面回调的 WARN 不阻断（/S 下页面回调根本不执行）。
+      - name: 安装器静默路径护栏
+        run: node tools/check-silent-paths.mjs src-tauri/windows/installer.nsi
+
+      # 路线 C（安装器/卸载器界面由主程序画）自 2.1.7 起就是发版状态，开关必须是开启。
+      # 谁把它改回关闭（等于悄悄退回原生页面、丢掉运行中检测），CI 当场红。
+      - name: 路线 C 开关必须开启
+        run: node tools/route-c.mjs --assert-on
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 

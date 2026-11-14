@@ -59,6 +59,24 @@ import { refreshPluginMenus } from "./lib/pluginMenuBridge";
  */
 const DIAG_HUD = experiment.diag();
 
+/**
+ * 启动页最短显示时长：**2026-11-14 起移到原生侧**（`lib.rs::SPLASH_MIN_SHOW` = 1500ms）。
+ *
+ * 原来这里有一个 `SPLASH_MIN_MS` 在本侧 `setTimeout` 补足，问题是时间原点是
+ * 主窗口 JS 的开始时刻，而 splash 窗口比它晚建 200~400ms —— 按这个原点补 1.5 秒，
+ * 启动页实际只亮 1.1 秒。现在只保留一条判据：原生侧从**启动页 show 那一刻**算，
+ * 前端只管把「种子就绪」告诉它（`splash_done`），什么时候淡出由它定。
+ *
+ * 用户 2026-11-14 的要求是「每一次打开软件都要先看到启动页，字体少也不许一闪就没」，
+ * 所以这个值只会往大调，不要为了「启动更快」把它改小。
+ */
+
+/**
+ * 交接只许发生一次。StrictMode 会把 effect 跑两遍，而 `splash_done` 虽然幂等，
+ * 重复调用会让日志里出现两条交接记录（`splash_done` 内部还有一层 finished 判据）。
+ */
+let splashHandedOff = false;
+
 function ScanSkeleton() {
   const t = useT();
   const { done, total } = useFontStore((s) => s.scanProgress);
@@ -475,7 +493,9 @@ export default function App() {
     // 断点查询已收进 fontStore.init()（rescan 之后）：有未完成的批量时
     // 启动恢复让位、只弹 ResumeBatchDialog——见 init 里的 DEF-4 注释。
     void init().then(() => {
-      if (!useFontStore.getState().startMinimized) void getCurrentWindow().show();
+      // 窗口由原生侧打开（`splash_done`）：种子就绪那一刻它才 show，
+      // 所以这里**不再** show —— 那条旧路径会让主界面在黑屏上先亮起来，
+      // 启动页的存在就没意义了。
       // 双击 .S-/.P-/.L-FontManager 启动时，后端把路径暂存在这里；
       // init 完成再导入，扫描流程不会被插队
       void ipc
@@ -486,6 +506,34 @@ export default function App() {
         .catch(() => {});
     });
   }, [init]);
+
+  /**
+   * 启动页 → 主界面的交接（§5.3）。
+   *
+   * 分工是硬的：启动页画「种子装载」，主界面接手后画「全量扫描剩余部分」，
+   * 两段进度互不重叠。所以这里一旦看到 `seedReady` 就交棒，**绝不等全量结果**。
+   *
+   * `seedReady` 含 3s 超时兜底与「种子为空」两种终态，也就是说种子失败 / 超时
+   * 也走这条路 —— 启动页不写红字、不弹错，直接进主界面由它给可重试提示。
+   */
+  useEffect(() => {
+    const handoff = (seedReady: boolean) => {
+      if (!seedReady || splashHandedOff) return;
+      splashHandedOff = true;
+      // 不再在本侧等最短时长：`splash_done` 会从启动页 show 那一刻补足 1.5 秒，
+      // 补够了才置 finished（启动页据此淡出），再关窗、显示主界面。
+      void ipc.splashDone().catch(() => {
+        // 原生侧没接上（命令缺失 / 用的还是旧 Rust 产物）：自己把主窗口亮出来。
+        // 宁可闪一下骨架屏，也不能停在「splash 已淡出、什么都没有」的黑屏上 ——
+        // 那等于软件打不开。Rust 的 15s watchdog 是第二道保险，但用户不该为
+        // 一次 IPC 失败等 15 秒。
+        if (!useFontStore.getState().startMinimized) void getCurrentWindow().show();
+      });
+    };
+    handoff(useFontStore.getState().seedReady);
+    // 不能用 selector 版 subscribe：本项目没装 subscribeWithSelector 中间件
+    return useFontStore.subscribe((s) => handoff(s.seedReady));
+  }, []);
 
   // 软件已经开着时用户又点了一次桌面 / 开始菜单图标（原生侧拦下第二个进程并发来这个事件）：
   // 不管此刻停在速览细线、最小化还是托盘里，都回到已经在开着的那个「完整界面」。

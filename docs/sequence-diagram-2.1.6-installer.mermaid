@@ -1,0 +1,113 @@
+%% 2.1.6 安装器（路线 B）核心时序
+%% 文件：docs/sequence-diagram-2.1.6-installer.mermaid
+%% 对应设计：docs/架构设计-2.1.6-安装器路线B.md §1 / §7 / §8
+
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant EX as Explorer / 更新器(PowerShell)
+    participant M as 安装器 main()
+    participant WV as webview2.rs
+    participant AR as args.rs
+    participant PL as plan.rs
+    participant EN as install.rs (Engine)
+    participant PA as payload.rs
+    participant JR as journal.rs
+    participant RG as registry.rs
+    participant SC as shortcut.rs
+    participant MK as marker.rs
+    participant UN as uninstall.exe (NSIS)
+    participant APP as fontmanager.exe
+
+    Note over EX,M: 双击 → 单文件 FontManager_2.1.6_x64-setup.exe<br/>更新器路径：-Wait -PassThru，只认 ExitCode==0
+
+    EX->>M: 启动（argv 可带 /S /P /UPDATE /NS /D= /R /ARGS=）
+    M->>AR: parse(argv)
+    AR-->>M: CmdArgs{silent, passive, ...}
+
+    rect rgb(240,245,240)
+    Note over M,WV: E7 · WebView2 必须在 Tauri 初始化之前（PRD §4 E7 / installer.nsi:861-951）
+    M->>WV: ensure(quiet = args.silent)
+    WV->>WV: 读 HKLM\WOW6432Node & HKLM & HKCU<br/>EdgeUpdate\Clients\{F3017226-...}\pv
+    alt 缺失 / 过低
+        WV-->>U: 原生 MessageBox（仅 !silent）
+        WV->>WV: 下载 https://go.microsoft.com/fwlink/p/?LinkId=2124703<br/>GUI: /install  ·  /S: /silent /install
+        WV-->>M: Restart(self) → 旧进程 exit(0)
+    else 已具备
+        WV-->>M: Ok
+    end
+    end
+
+    alt args.silent == true
+        M->>PL: detect(&args, UninstalledInSession=false)
+        PL->>RG: 读 HKCU\Software\IIEOzo\FontManager 默认值
+        RG-->>PL: Option<PathBuf>（B3 的唯一判据）
+        PL->>PL: mode = Upgrade(默认值非空) / Fresh
+        PL->>PL: 目标目录 = /D= > 注册表 > %LOCALAPPDATA%\FontManager
+        PL->>PL: need = payload 解压后总字节 · free = GetDiskFreeSpaceEx
+        PL->>PL: 写探针 .zfm-probe（屏 2 的同等判定）
+        M->>EN: run(plan, SilentReporter)
+        EN->>EN: 见下方「引擎内部」块（无 UI、无 MessageBox）
+        M->>M: exit(code)  ← 0 成功 / 非 0 失败（PRD D3）
+    else GUI 路径
+        M->>M: tauri::Builder → 建 installer 窗口（1000×620，visible:false）
+        M->>U: 屏 1 欢迎（只读：注册表 / 空间 / WebView2 / 上次残留 journal）
+        U->>M: invoke installer_pick_dir → 屏 2
+        M->>PL: preflight(dir)（建目录 + .zfm-probe + 空间）
+        alt 不可写 / 空间不足
+            PL-->>U: 屏 2 红字 + 主按钮禁用（规格书 §4.7 ①②）
+        else 通过
+            U->>M: invoke installer_start
+            M->>EN: run(plan, UiReporter)（异步任务 + 取消令牌）
+            EN-->>U: install://progress {stage, done, total, currentFile}
+            U->>M: 屏 3（主按钮隐藏，仅「取消安装」）
+        end
+    end
+
+    rect rgb(245,240,240)
+    Note over EN,MK: 引擎内部顺序 = installer.nsi:953-1056 的等价重排
+    EN->>EN: 0. 运行中检测（B10，utils.nsh:24-69 语义）
+    EN->>EN:    RestartManager RmStartSession/RmRegisterFile/RmGetList
+    alt 有进程占用
+        EN-->>U: GUI: "fontmanager.exe 正在运行，请关闭后重试"（屏 3）<br/>/S: 强制 RmShutdown；失败即 exit(4) + 写日志
+    end
+    EN->>JR: open(mode)   ← 仅 Fresh 才创建（升级路径不回滚，见 §7）
+    EN->>PA: open(embedded zip) · 校验条目表
+    loop 每个 payload 条目（当前实测 2 个文件）
+        EN->>JR: record_write(relpath)  + fsync
+        EN->>EN: 解压 → <INSTDIR>\<relpath>（64KB 流式）
+        EN-->>U: on_file(done, total, relpath)
+    end
+    EN->>SC: create_start_menu()（/UPDATE 或 /NS → 跳过，installer.nsi:1252-1259）
+    EN->>RG: write_all(instdir, VERSION, total_bytes)
+    Note right of RG: 13 值 + Installer Language（附录 A + 实测第 14 值）
+    EN->>MK: ensure(<INSTDIR>\data\.zfm-data-root)（追加 v=1 / version=2.1.6）
+    end
+
+    alt Fresh 且用户点了「取消安装」并二次确认
+        EN->>JR: rollback()   ← 倒序删「本次写入」，只删空目录
+        EN-->>M: Canceled
+        M->>M: exit(1)
+    else Upgrade 且取消（PRD §3.3）
+        EN->>EN: 停止写入 · 保留现场 · 写 <INSTDIR>\data\install.log
+        EN-->>M: Interrupted（不回滚、不删任何既有文件）
+        M->>M: exit(8)
+    else 成功
+        EN->>JR: finish()（删 journal）
+        EN-->>U: 屏 4 完成
+        opt 勾选「立即运行」
+            EN->>APP: spawn（若自身已提权则经 explorer.exe 代启动）
+        end
+        opt 鼠标点「完成」且勾选「桌面快捷方式」
+            EN->>SC: create_desktop()（/S //P 在安装阶段无条件建，installer.nsi:1041-1046）
+        end
+        M->>M: exit(0)
+    end
+
+    Note over U,APP: E4「先卸载再装」支路
+    U->>M: 屏 1 点「先卸载再装」
+    M->>UN: ExecWait '"<INSTDIR>\uninstall.exe" /P'
+    Note right of UN: /P → 跳过确认页 → $DeleteAppDataCheckboxState 为空 → 保留数据<br/>（installer.nsi:743 · 1185-1186）
+    UN->>UN: 删程序文件 / UNINSTKEY / 快捷方式，保留 data\ 与 字体库\
+    UN-->>M: exit code
+    M->>M: Session.uninstalled_in_session = true<br/>下次 detect() 按 Fresh + 钉住旧目录处理（不回滚风险）

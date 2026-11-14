@@ -714,6 +714,16 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    */
   updateInstall: (path: string, sha256: string, version?: string) =>
     invoke<void>("update_install", { path, sha256, version }),
+
+  // ── 启动页（§5.3）：种子就绪即开主界面，不等全量扫描 ──
+  /**
+   * 「种子就绪了」→ 原生侧打开主界面、关闭启动页。
+   * 幂等：StrictMode 双调用、种子到达与 3s 超时同时触发都只会生效一次。
+   *
+   * 这里**不**再包 `splash_state`：启动页自己声明了同名接口并直接 invoke，
+   * 它不该为了一个类型去 import 整个 ipc 模块 —— 两份定义留着早晚漂移。
+   */
+  splashDone: () => invoke<void>("splash_done"),
 };
 
 /** `check_update` 的结果 */

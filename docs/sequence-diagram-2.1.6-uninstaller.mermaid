@@ -1,0 +1,85 @@
+%% 2.1.6 卸载器 + 回退链时序（v2 新增）
+%% 文件：docs/sequence-diagram-2.1.6-uninstaller.mermaid
+%% 对应设计：docs/架构设计-2.1.6-安装器路线B.md §14 / §15
+
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant CP as 控制面板 / 设置→应用
+    participant UI as uninstall.exe（Tauri 门面）
+    participant WV as webview2 探测
+    participant CORE as uninstall-core.exe（NSIS 内核）
+    participant FS as $INSTDIR / 注册表
+    participant APP as fontmanager.exe
+
+    Note over CP,UI: 四条入口最终都指向同一个路径<br/>UninstallString = "<INSTDIR>\uninstall.exe"（附录 A 的值不变）<br/>2.1.5 不创建开始菜单卸载快捷方式
+
+    CP->>UI: 启动 uninstall.exe（可带 /S /P /UPDATE）
+    UI->>UI: 解析 argv
+
+    alt argv 含 /S
+        Note right of UI: 门面**不建窗口**，直接转发内核（§15.3）
+        UI->>CORE: spawn /S
+        UI->>UI: exit(0)
+        CORE->>FS: 见下方「内核执行」块（保留数据：无 request 文件）
+        CORE-->>CP: exit(0/非0)
+    else 交互模式
+        UI->>WV: detect()（只看不装 —— 卸载时不往系统加东西）
+        alt WebView2 可用
+            UI->>U: 屏 U1 确认（复选框「同时删除全部数据与字体库」，默认不勾）
+            U->>UI: 点「卸载」
+            UI->>UI: 写 %TEMP%\zfm-uninstall-request.txt（delete_data=0|1）
+            UI->>CORE: spawn /S（**不等待**）
+            UI->>U: 屏 U2 进度（真实进度 + 日志 5 行，**无取消**）
+            loop 每 100ms
+                UI->>CORE: tail %TEMP%\zfm-uninstall-progress.txt
+                CORE-->>UI: 一行一项
+            end
+            UI->>U: 屏 U3 完成（数据已保留 / 已删除）
+            UI->>UI: exit(0)
+        else WebView2 不可用（PM 硬门槛 G4）
+            UI->>U: 原生 MessageBoxW(YESNO)<br/>「无法显示卸载界面…可以继续卸载，但不会显示进度；你的数据与字体库将被保留。是否继续？」
+            alt 是
+                UI->>CORE: spawn /S（**不带 delete_data**）
+                UI->>U: IProgressDialog（Win32 自带）
+                UI->>CORE: 轮询 progress.txt
+                UI->>U: MessageBox「已卸载。数据与字体库已保留。」
+                UI->>UI: exit(0)
+            else 否
+                UI->>UI: exit(1)（一个文件都没删）
+            end
+        end
+    end
+
+    rect rgb(240,240,245)
+    Note over CORE,FS: 内核执行（= 2.1.5 的 Section Uninstall + hooks.nsh，**白名单一行未改**）
+    CORE->>CORE: un.onInit：读 request.txt → 赋 $DeleteAppDataCheckboxState
+    CORE->>CORE: 等门面 pid 退出（上限 15s）
+    CORE->>FS: 枚举将要处理的项目 → %TEMP%\zfm-uninstall-plan.txt（只影响进度分母）
+    CORE->>APP: CheckIfAppIsRunning（installer.nsi:1097）：GUI 弹框 / /S 强杀
+    CORE->>APP: 按父 PID 等 msedgewebview2 子进程退出（有界，§15.6）
+    CORE->>FS: 删程序文件（fontmanager.exe :1101 / uninstall.exe :1130 / **uninstall-core.exe 新增**）
+    CORE->>FS: 删注册表（UNINSTKEY 整键 :1172；MANUPRODUCTKEY 仅勾选时 :1185-1189）
+    CORE->>FS: hooks 白名单 §1–§2.5（= W1–W12，/UPDATE 下全跳过）
+    CORE->>FS: RMDir "$INSTDIR"（:1135，**非递归**：有 data\字体库 时失败＝预期）
+    CORE->>CORE: 自删：NSIS 内建（复制到 %TEMP% 再运行，故能删 $INSTDIR 里那个自己）
+    end
+
+    Note over U,APP: 回退链（§14）：安装器 UI 起不来时
+    U->>UI: 双击 FontManager_<ver>_x64-setup.exe
+    UI->>WV: ensure()（安装方向：允许装 WebView2）
+    alt 已有 WebView2
+        UI->>U: L1 四屏 UI
+    else 缺失 / 下载失败
+        UI->>U: **L2 原生降级**：TaskDialogIndirect 三选项<br/>「兼容模式继续 / 打开下载页 / 取消」
+        alt 选「兼容模式」
+            UI->>U: IProgressDialog（零额外体积）
+            UI->>UI: 跑与 L1 相同的 Engine::run()
+            UI->>U: MessageBox「安装完成」；exit(0)
+        else L2 也失败
+            UI->>U: MessageBox 给「打开日志目录 / 打开 releases 页面」
+            UI->>UI: exit(非0)
+            U->>U: 手动下载 FontManager_<ver>_x64-nsis-fallback.exe（L3）
+            Note right of U: 回退件不以 -setup.exe 结尾<br/>→ update.rs::pick_setup 天然过滤，不会挑错
+        end
+    end

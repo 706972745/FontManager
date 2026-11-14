@@ -206,17 +206,49 @@ fn trim_notes(text: &str) -> String {
     out
 }
 
+/// 从资产名里抠版本：`FontManager_2.1.6_x64-setup.exe` → `(2, 1, 6)`。
+///
+/// **只做「把版本串从名字里切出来」这一件事**，切出来的片段一律交给 [`parse_version`]
+/// 解析 —— 版本口径全项目只有那一份（`v` 前缀、`-`/`+` 截断、缺段补 0、失败 None）。
+/// 这里若自己再写一套解析，就又是「两套规则慢慢漂移」的老坑。
+///
+/// 两个前置处理都有具体理由：
+/// - **先小写化**：[`pick_setup`] 判后缀时用的是 `to_ascii_lowercase()`，但 `name` 保留原样，
+///   直接按 `"FontManager_"` 剥前缀会让小写命名的资产静默降级成 `(0, 0, 0)`。
+/// - **只吃开头的「数字 + `.`」**：资产名里版本号后面还有 `_x64-setup.exe`，
+///   不截断就把整串塞给 `parse_version` 会解析失败。
+///
+/// 解析不出（或 `major == 0`，本项目版本号不会从 0 开始）一律给 `(0, 0, 0)`：
+/// 这样「名字里没有版本号」的资产永远排在有版本的后面，而不是随机插队。
+fn version_from_asset(name: &str) -> (u64, u64, u64) {
+    let lower = name.to_ascii_lowercase();
+    let rest = lower.strip_prefix("fontmanager_").unwrap_or(&lower);
+    let head: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    match parse_version(&head) {
+        Some((major, minor, patch)) if major != 0 => (major, minor, patch),
+        _ => (0, 0, 0),
+    }
+}
+
 /// 从 release 的 assets 里挑出「能静默装的安装包」。
 ///
 /// 只认 `*-setup.exe`（NSIS，currentUser 安装、不需要提权）。**不碰 MSI**：
 /// perMachine 安装要 UAC，静默跑会直接失败或者弹一个没人点的授权框。
-/// 同一版里若同时有 x64 与其它架构，优先 x64。
+/// 排序口径（字典序，先版本后架构）：
+///   ① 版本号高的优先 —— 同一个 release 里若挂了两个 `-setup.exe`，
+///      GitHub API 的顺序 ≈ 文件名字母序，`2.1.5` 会排在 `2.1.6` 前面，
+///      不比版本号就会**下发旧包**（2.1.7 R-1）；
+///   ② 版本相同时 x64 优先；
+///   ③ 完全相同（版本 + 架构）时保留**先到的**（见下面的 `>`，与历史行为一致）。
 /// 返回 (url, name, sha256, asset_id)。
 fn pick_setup(assets: &serde_json::Value) -> (String, String, String, u64) {
     let Some(list) = assets.as_array() else {
         return (String::new(), String::new(), String::new(), 0);
     };
-    let mut best: Option<(u8, String, String, String, u64)> = None;
+    let mut best: Option<((u64, u64, u64, u8), String, String, String, u64)> = None;
     for a in list {
         let name = a.get("name").and_then(|x| x.as_str()).unwrap_or("");
         if !name.to_ascii_lowercase().ends_with("-setup.exe") {
@@ -238,7 +270,13 @@ fn pick_setup(assets: &serde_json::Value) -> (String, String, String, u64) {
             .map(|h| h.to_ascii_lowercase())
             .unwrap_or_default();
         let id = a.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
-        let rank = if name.contains("x64") { 1 } else { 0 };
+        // 版本高的优先；版本相同才用 x64 做次级排序。
+        // 元组比较是按元素字典序，所以 (2,1,6,1) > (2,1,5,1)，且 (2,1,6,1) > (2,1,6,0)。
+        // ⚠️ 不要写成 `(version_from_asset(name), u8::from(..))` —— 那会构造出**嵌套元组**
+        //    `((u64,u64,u64), u8)`，比较结果碰巧也对，但 `cand` 的类型会变成
+        //    `(((u64,u64,u64),u8), String, …)`，与上面的类型标注对不上（E0308）。
+        let (vmaj, vmin, vpat) = version_from_asset(name);
+        let rank = (vmaj, vmin, vpat, u8::from(name.contains("x64")));
         let cand = (rank, name.to_string(), url.to_string(), digest, id);
         if best.as_ref().map(|b| cand.0 > b.0).unwrap_or(true) {
             best = Some(cand);
@@ -1196,6 +1234,142 @@ mod tests {
             let (url, name, sha, id) = pick_setup(&assets);
             assert!(url.is_empty() && name.is_empty() && sha.is_empty() && id == 0);
         }
+    }
+
+    // ── 选包按版本号排序（2.1.7 R-1）────────────────────────────────
+
+    /// 同一 release 里挂了两个 `-setup.exe` 时，必须取**版本高的**，
+    /// 不能靠「先到的」—— GitHub API 的顺序 ≈ 文件名字母序，`2.1.5` 会排在 `2.1.6` 前面，
+    /// 按旧逻辑（rank 只区分 x64）就会把旧包下发给所有人。
+    #[test]
+    fn pick_setup_prefers_newer_version_over_api_order() {
+        // 故意把 2.1.5 排在数组前面，复刻 GitHub API 的顺序
+        let assets = serde_json::json!([
+            { "name": "FontManager_2.1.5_x64-setup.exe", "browser_download_url": "https://github.com/old.exe",
+              "digest": "sha256:1111", "id": 7 },
+            { "name": "FontManager_2.1.6_x64-setup.exe", "browser_download_url": "https://github.com/new.exe",
+              "digest": "sha256:2222", "id": 8 }
+        ]);
+        let (url, name, sha, id) = pick_setup(&assets);
+        assert_eq!(name, "FontManager_2.1.6_x64-setup.exe", "要取版本高的那个");
+        assert_eq!(url, "https://github.com/new.exe");
+        assert_eq!(sha, "2222");
+        assert_eq!(id, 8);
+
+        // 顺序反过来也必须取同一个（结果与输入顺序无关）
+        let assets = serde_json::json!([
+            { "name": "FontManager_2.1.6_x64-setup.exe", "browser_download_url": "https://github.com/new.exe",
+              "digest": "sha256:2222", "id": 8 },
+            { "name": "FontManager_2.1.5_x64-setup.exe", "browser_download_url": "https://github.com/old.exe",
+              "digest": "sha256:1111", "id": 7 }
+        ]);
+        assert_eq!(pick_setup(&assets).1, "FontManager_2.1.6_x64-setup.exe");
+
+        // 主.次.修订要按数字比，不能按字符串比（1.10 > 1.9）
+        let assets = serde_json::json!([
+            { "name": "FontManager_1.9.9_x64-setup.exe", "browser_download_url": "https://github.com/a.exe",
+              "digest": "sha256:1111", "id": 1 },
+            { "name": "FontManager_1.10.0_x64-setup.exe", "browser_download_url": "https://github.com/b.exe",
+              "digest": "sha256:2222", "id": 2 }
+        ]);
+        assert_eq!(pick_setup(&assets).1, "FontManager_1.10.0_x64-setup.exe");
+    }
+
+    /// 回退件（`-nsis-fallback.exe`）不参与一键安装：后缀先把它挡掉，
+    /// 不能因为它版本号更高就把它当 setup 取走。
+    #[test]
+    fn pick_setup_skips_nsis_fallback_archive() {
+        let assets = serde_json::json!([
+            { "name": "FontManager_2.1.6_x64-nsis-fallback.exe", "browser_download_url": "https://github.com/f.exe",
+              "digest": "sha256:3333", "id": 9 }
+        ]);
+        let (url, name, sha, id) = pick_setup(&assets);
+        assert!(url.is_empty(), "回退件不能被当安装包：{name}");
+        assert!(name.is_empty() && sha.is_empty() && id == 0);
+    }
+
+    /// 名字里没有版本号（`fontmanager-setup.exe` 这种）不能 panic，
+    /// 而且必须排在有版本的后面 —— 否则一个命名不规范的新资产会把正主挤掉。
+    #[test]
+    fn pick_setup_handles_name_without_version() {
+        let assets = serde_json::json!([
+            { "name": "fontmanager-setup.exe", "browser_download_url": "https://github.com/nover.exe",
+              "digest": "sha256:4444", "id": 3 },
+            { "name": "setup.exe", "browser_download_url": "https://github.com/bare.exe",
+              "digest": "sha256:5555", "id": 4 },
+            { "name": "FontManager_2.1.6_x64-setup.exe", "browser_download_url": "https://github.com/real.exe",
+              "digest": "sha256:6666", "id": 5 }
+        ]);
+        let (url, name, sha, id) = pick_setup(&assets);
+        assert_eq!(name, "FontManager_2.1.6_x64-setup.exe", "无版本号的资产要排在后面");
+        assert_eq!(url, "https://github.com/real.exe");
+        assert_eq!(sha, "6666");
+        assert_eq!(id, 5);
+
+        // 只剩无版本号的资产时也不能 panic，且仍能给出结果（由上位流程决定要不要装）
+        let only_no_version = serde_json::json!([
+            { "name": "fontmanager-setup.exe", "browser_download_url": "https://github.com/nover.exe",
+              "digest": "sha256:4444", "id": 3 }
+        ]);
+        let (_, name, _, id) = pick_setup(&only_no_version);
+        assert_eq!(name, "fontmanager-setup.exe");
+        assert_eq!(id, 3);
+    }
+
+    /// 单资产回归：只有一个 x64 setup 时，结果必须与改前逐字段一致。
+    #[test]
+    fn pick_setup_single_x64_asset_unchanged() {
+        let assets = serde_json::json!([
+            { "name": "FontManager_1.8.3_x64-setup.exe", "browser_download_url": "https://github.com/only.exe",
+              "digest": "sha256:ABCDEF", "id": 42 }
+        ]);
+        let (url, name, sha, id) = pick_setup(&assets);
+        assert_eq!(url, "https://github.com/only.exe");
+        assert_eq!(name, "FontManager_1.8.3_x64-setup.exe");
+        assert_eq!(sha, "abcdef");
+        assert_eq!(id, 42);
+    }
+
+    /// `version_from_asset` 只负责「从名字里切出版本串」，口径必须与 [`parse_version`] 同一份。
+    #[test]
+    fn version_from_asset_extracts_semver() {
+        assert_eq!(version_from_asset("FontManager_2.1.6_x64-setup.exe"), (2, 1, 6));
+        // 复用关系：抠出来再交给 parse_version，结果必须逐段一致（两套规则漂移就会在这里红）
+        assert_eq!(
+            version_from_asset("FontManager_2.1.6_x64-setup.exe"),
+            parse_version("2.1.6").unwrap()
+        );
+        assert_eq!(parse_version("2.1.6"), Some((2, 1, 6)));
+        // 小写命名的资产（`name` 在 pick_setup 循环里保持原样）不能被静默降级成 (0,0,0)
+        assert_eq!(version_from_asset("fontmanager_2.1.6_x64-setup.exe"), (2, 1, 6));
+        assert_eq!(version_from_asset("fontmanager_2.1.6_x64-SETUP.EXE"), (2, 1, 6));
+        assert_eq!(version_from_asset("FONTMANAGER_2.1.6_X64-SETUP.EXE"), (2, 1, 6));
+        // 数字比的是数值，不是字符
+        assert_eq!(version_from_asset("FontManager_10.2.30_x64-setup.exe"), (10, 2, 30));
+        // 缺段同样由 parse_version 补 0（与 is_newer 那边一致）
+        assert_eq!(version_from_asset("FontManager_2.1_x64-setup.exe"), (2, 1, 0));
+        // 抠不到一律 (0,0,0)
+        assert_eq!(version_from_asset("setup.exe"), (0, 0, 0));
+        assert_eq!(version_from_asset("fontmanager-setup.exe"), (0, 0, 0));
+        assert_eq!(version_from_asset(""), (0, 0, 0));
+        // major == 0 也算没解析出来：避免 "0.9.0" 这类命名把排序弄乱
+        assert_eq!(version_from_asset("FontManager_0.9.0_x64-setup.exe"), (0, 0, 0));
+    }
+
+    /// 全小写资产名也必须能抠出版本，并且在选包时真的胜出（不只是单测层面成立）。
+    #[test]
+    fn pick_setup_reads_version_from_lowercase_asset_name() {
+        let assets = serde_json::json!([
+            { "name": "fontmanager_2.1.5_x64-setup.exe", "browser_download_url": "https://github.com/old.exe",
+              "digest": "sha256:1111", "id": 7 },
+            { "name": "fontmanager_2.1.6_x64-setup.exe", "browser_download_url": "https://github.com/new.exe",
+              "digest": "sha256:2222", "id": 8 }
+        ]);
+        let (url, name, sha, id) = pick_setup(&assets);
+        assert_eq!(name, "fontmanager_2.1.6_x64-setup.exe", "小写命名也要取版本高的");
+        assert_eq!(url, "https://github.com/new.exe");
+        assert_eq!(sha, "2222");
+        assert_eq!(id, 8);
     }
 
     // ── 下载通道接力（1.9.1）────────────────────────────────────────

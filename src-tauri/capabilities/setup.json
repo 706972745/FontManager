@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "setup",
+  "description": "安装器/卸载器窗口（路线 C，--installer-ui / --uninstall-ui）。只给画界面所需的最小权限：拖拽标题条、最小化、关闭、聚焦，以及进度事件与选目录对话框。",
+  "windows": ["setup"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:event:default",
+    "dialog:default"
+  ]
+}

@@ -56,17 +56,14 @@ a { color:#1B4FE0; }
   <h1>FontManager<br>UI 设计交付规格书</h1>
   <div class="sub">字体管理软件 · 纸墨两色 + 单一蓝强调 · 本文写的是软件里「实际生效」的规格，不是提案</div>
   <div class="meta">
-    <span>当前版本 <b>1.7.7</b></span>
-    <span>覆盖 <b>速览 / 主界面 / 设置 / 菜单 / Toast / 在线库 / 插件分区 / 插件面板</b></span>
-    <span>语言 <b>9 种</b></span>
-    <span>来源 <b>docs/UI设计交付规格书.md</b></span>
+    <span>当前版本 <b>1.7.7</b></span><span>覆盖 <b>速览 / 主界面 / 设置 / 菜单 / Toast / 在线库 / 插件分区 / 插件面板</b></span><span>语言 <b>9 种</b></span><span>来源 <b>docs/UI设计交付规格书.md</b></span>
   </div>
 </section>
 
 <nav class="doc-toc"><h2>目录</h2><ul>
 <li class=""><a href="#0-速查">0. 速查</a></li>
 <li class=""><a href="#1-设计令牌">1. 设计令牌</a></li>
-<li class="toc-l3"><a href="#1-1-颜色-速览专用---qb">1.1 颜色（速览专用，`--qb-*`）</a></li>
+<li class="toc-l3"><a href="#1-1-颜色-速览专用---qb">1.1 颜色（速览专用，--qb-*）</a></li>
 <li class="toc-l3"><a href="#1-2-字阶与字体">1.2 字阶与字体</a></li>
 <li class="toc-l3"><a href="#1-3-字号档位">1.3 字号档位</a></li>
 <li class=""><a href="#2-速览界面-quickbar">2. 速览界面（QuickBar）</a></li>
@@ -75,18 +72,18 @@ a { color:#1B4FE0; }
 <li class="toc-l3"><a href="#2-3-列表行">2.3 列表行</a></li>
 <li class="toc-l4"><a href="#2-3-1-行首定位锚点-三态">2.3.1 行首定位锚点（三态）</a></li>
 <li class="toc-l4"><a href="#2-3-2-行状态">2.3.2 行状态</a></li>
-<li class="toc-l3"><a href="#2-4-就地展开字重-n">2.4 就地展开字重（`› N`）</a></li>
+<li class="toc-l3"><a href="#2-4-就地展开字重-n">2.4 就地展开字重（› N）</a></li>
 <li class="toc-l3"><a href="#2-5-折叠态-拖回屏幕顶边">2.5 折叠态（拖回屏幕顶边）</a></li>
-<li class="toc-l4"><a href="#2-5-1-提示行-hint-阶段">2.5.1 提示行（`hint` 阶段）</a></li>
+<li class="toc-l4"><a href="#2-5-1-提示行-hint-阶段">2.5.1 提示行（hint 阶段）</a></li>
 <li class="toc-l3"><a href="#2-6-响应式">2.6 响应式</a></li>
 <li class="toc-l3"><a href="#2-7-交互地图-速览">2.7 交互地图（速览）</a></li>
 <li class="toc-l3"><a href="#2-8-可访问性">2.8 可访问性</a></li>
 <li class=""><a href="#3-完整界面-主窗口-r4-r5-已落地">3. 完整界面（主窗口 · R4/R5 已落地）</a></li>
 <li class="toc-l3"><a href="#3-1-窗口与标题栏">3.1 窗口与标题栏</a></li>
 <li class="toc-l3"><a href="#3-2-顶栏-搜索-视图切换-排序-筛选-字号">3.2 顶栏（搜索 / 视图切换 / 排序 / 筛选 / 字号）</a></li>
-<li class="toc-l3"><a href="#3-3-卡片视图-grid-一行一族">3.3 卡片视图（`grid` · 一行一族）</a></li>
-<li class="toc-l3"><a href="#3-4-列表视图-list-表格">3.4 列表视图（`list` · 表格）</a></li>
-<li class="toc-l3"><a href="#3-5-样张视图-specimen">3.5 样张视图（`specimen`）</a></li>
+<li class="toc-l3"><a href="#3-3-卡片视图-grid-一行一族">3.3 卡片视图（grid · 一行一族）</a></li>
+<li class="toc-l3"><a href="#3-4-列表视图-list-表格">3.4 列表视图（list · 表格）</a></li>
+<li class="toc-l3"><a href="#3-5-样张视图-specimen">3.5 样张视图（specimen）</a></li>
 <li class="toc-l3"><a href="#3-6-详情面板">3.6 详情面板</a></li>
 <li class="toc-l3"><a href="#3-7-设置面板">3.7 设置面板</a></li>
 <li class="toc-l3"><a href="#3-8-收藏-快照-分组">3.8 收藏 / 快照 / 分组</a></li>
@@ -110,9 +107,9 @@ a { color:#1B4FE0; }
 <li class="toc-l3"><a href="#7-3-替换硬约束-无论采用哪个方向都不变">7.3 替换硬约束（无论采用哪个方向都不变）</a></li>
 <li class=""><a href="#8-1-7-5-收口-相对上文的增量">8. 1.7.5 收口（相对上文的增量）</a></li>
 <li class=""><a href="#9-代码勘误-已修复-1-7-8">9. 代码勘误（已修复，1.7.8）</a></li>
-<li class="toc-l3"><a href="#9-1-compare-panel-生效圆角曾是-8px-应为-12px">9.1 `.compare-panel` 生效圆角曾是 8px，应为 12px</a></li>
+<li class="toc-l3"><a href="#9-1-compare-panel-生效圆角曾是-8px-应为-12px">9.1 .compare-panel 生效圆角曾是 8px，应为 12px</a></li>
 <li class=""><a href="#10-交互补全-2026-11-12-落地-随下一个版本发布">10. 交互补全（2026-11-12 落地，随下一个版本发布）</a></li>
-<li class="toc-l3"><a href="#10-1-字重名-复制字体全名-mw-卡片字重区-qb-a-就地展开-同一个-faceline">10.1 字重名 = 复制字体全名（`MW` 卡片字重区 + `QB-A` 就地展开，同一个 `FaceLine`）</a></li>
+<li class="toc-l3"><a href="#10-1-字重名-复制字体全名-mw-卡片字重区-qb-a-就地展开-同一个-faceline">10.1 字重名 = 复制字体全名（MW 卡片字重区 + QB-A 就地展开，同一个 FaceLine）</a></li>
 <li class="toc-l3"><a href="#10-2-搜索建议跳转-真选中-居中滚动-1-7s-落点高亮-三个视图一致">10.2 搜索建议跳转：真选中 + 居中滚动 + 1.7s 落点高亮（三个视图一致）</a></li>
 <li class="toc-l3"><a href="#10-3-样张视图单字重-样式胶囊不可点">10.3 样张视图单字重：样式胶囊不可点</a></li>
 <li class="toc-l3"><a href="#10-4-点选搜索建议后-输入框显示选中的名字-列表不过滤">10.4 点选搜索建议后：输入框显示选中的名字，列表不过滤</a></li>

@@ -1,6 +1,6 @@
 [package]
 name = "fontmanager"
-version = "2.1.5"
+version = "2.1.7"
 description = "Cross-platform font manager: preview, tag, activate/deactivate, and install fonts"
 authors = ["IIEOzo"]
 license = "GPL-3.0-only"
@@ -46,4 +46,4 @@ tokio = { version = "1.53.1", features = ["time", "rt", "net", "sync"] }
 axum = { version = "0.8", default-features = false, features = ["json", "query", "tokio", "http1"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry", "Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_UI_Shell", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.59", features = ["Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry", "Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_UI_Shell", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_ToolHelp"] }
