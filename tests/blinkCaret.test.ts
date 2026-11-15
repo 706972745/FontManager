@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   CARET_TYPES,
+  caretHeightFor,
+  caretTopFor,
   charLengthAt,
   coveredCharBox,
   coveredIndexFor,
@@ -76,4 +78,25 @@ test("coveredCharBox：空输入退化为空盒；password 不在自绘集合", 
   // password 必须不在自绘集合（镜像会把明文塞进 DOM）
   assert.equal(CARET_TYPES.has("password"), false);
   assert.equal(CARET_TYPES.has("text"), true);
+});
+
+// 2026-11-15 用户口径「光标比字大一点就行」：参考截图里 36px 输入框、13px 字号，
+// 蓝块只有 ~15px 高。旧实现 top:0;bottom:0 会跟着输入框一起变成 36px。
+test("caretHeightFor / caretTopFor：块高只跟字号走，不跟输入框高度走", () => {
+  // 13px 字号 → 15px 块（字号 + 2），与参考截图一致
+  assert.equal(caretHeightFor(13), 15);
+  assert.equal(caretHeightFor(11), 14); // 小字控件有 14px 下限，不细成一条线
+  assert.equal(caretHeightFor(32), 34); // 32px 预览字也只比字大 2px
+  // 关键回归：同一个字号，输入框从 24px 换到 64px，块高**必须不变**
+  const h24 = caretHeightFor(13);
+  const h64 = caretHeightFor(13);
+  assert.equal(h24, h64);
+  assert.ok(h64 < 24, "块高不能撑满最小的输入框");
+  // 只改垂直居中位置
+  assert.equal(caretTopFor(36, 15), 11); // (36-15)/2 = 10.5 → 11
+  assert.equal(caretTopFor(24, 15), 5); // (24-15)/2 = 4.5 → 5
+  assert.equal(caretTopFor(10, 15), 0); // 控件比块还矮时不许出现负 top
+  // 非法字号走 13px 兜底，不能产出 NaN / 0
+  assert.equal(caretHeightFor(Number.NaN), 15);
+  assert.equal(caretHeightFor(0), 15);
 });

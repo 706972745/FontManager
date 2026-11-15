@@ -52,6 +52,24 @@ export function charLengthAt(value: string, idx: number): number {
   return 1;
 }
 
+/**
+ * 蓝块高度（px）：**只跟字号走，不跟输入框高度走**（2026-11-15 用户口径「比字大一点就行」）。
+ *
+ * 用户给的参考截图里：36px 高的输入框、13px 字号，蓝块实测 ~15px 高、垂直居中，
+ * 也就是说块只占输入框 42%。旧实现用 `top:0;bottom:0` 撑满输入框，字越大反而越突兀。
+ * 这里取 `字号 + 2`，并给 14px 下限（9/10px 的小字控件也不至于细成一条线）。
+ */
+export function caretHeightFor(fontSizePx: number): number {
+  const fs = Number.isFinite(fontSizePx) && fontSizePx > 0 ? fontSizePx : 13;
+  return Math.max(14, Math.round(fs + 2));
+}
+
+/** 蓝块在输入框里垂直居中时的 top（px）。clamp 到 0，避免极小控件出现负偏移。 */
+export function caretTopFor(inputHeightPx: number, caretHeightPx: number): number {
+  const h = Number.isFinite(inputHeightPx) && inputHeightPx > 0 ? inputHeightPx : caretHeightPx;
+  return Math.max(0, Math.round((h - caretHeightPx) / 2));
+}
+
 /** 块状光标的几何盒（坐标相对输入框内容区左缘，px）。 */
 export interface CoveredCharBox {
   /** 块左缘：已做左缘裁切（滚出可视区左边的部分收回到 0）。 */

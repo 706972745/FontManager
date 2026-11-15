@@ -34,7 +34,7 @@
 
 <br>
 
-<img src="main.png?v=2.0.0" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
+<img src="main.png?v=2.2.1" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
 
 <sub>字体库：每个字族都以自己的字形实时渲染，离任何应用的字体菜单都只差一个开关。</sub>
 
@@ -149,7 +149,7 @@ FontManager 在这个起点上加了什么：
 
 ### 2. 认识主界面
 
-![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.0.0)
+![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.2.1)
 
 **先认路：主界面分五个区**
 
@@ -202,16 +202,16 @@ FontManager 在这个起点上加了什么：
 
 - **列表**：紧凑表格，一列看全库——字族 / 样式数 / 格式 / 大小 / 开关，适合大批量浏览
 
-![列表视图：一列看全库](view-list.png?v=2.0.0)
+![列表视图：一列看全库](view-list.png?v=2.2.1)
 
 - **样张**：整库**多列样张墙**——每格保留卡片头部全部信息（格式 / 族名 / 版权 / 收藏 / 开关），
   下面用当前字号把示例文字**大字铺开**；每格可单独选字重（记住选择）；字号独立可调——挑字体气质时最好用
 
-![样张视图：多列样张墙，大字铺开](view-specimen.png?v=2.0.0)
+![样张视图：多列样张墙，大字铺开](view-specimen.png?v=2.2.1)
 
 ### 5. 详情面板：点开一个字族看全部
 
-![详情面板：多字号样张与元数据](detail.png?v=2.0.0)
+![详情面板：多字号样张与元数据](detail.png?v=2.2.1)
 
 点任意卡片，右侧展开：
 
@@ -250,7 +250,7 @@ FontManager 在这个起点上加了什么：
 | 在线面板 | 见下图：按分类 / 许可筛选，一键入库 |
 | 本地 API / MCP | 自动化导入（见 [插件、本地 API 与 MCP](#-插件本地-api-与-mcp)） |
 
-![在线面板：左侧分类与许可筛选，右侧字体卡片与一键入库](online.png?v=2.0.0)
+![在线面板：左侧分类与许可筛选，右侧字体卡片与一键入库](online.png?v=2.2.1)
 
 在线面板怎么用：侧栏「在线」→ 顶部按**分类**（无衬线 / 衬线 / 展示 / 手写 / 等宽 / 图标）
 和**许可**（OFL / Apache / UFL）筛选，或直接搜；卡片上写明风格 · 样式数 · 许可证
@@ -275,14 +275,14 @@ FontManager 的专属文件都有**贴纸纸片风格图标**（撕纸毛边 + �
 软件图标（**TYPE FontManager** 字标）· 快照导出 **.S** · 导出-含字体 **.P** ·
 导出-仅数据 **.L** · 字体库文件夹 **.F**：
 
-![FontManager 图标方案：贴纸纸片终稿（白纸 + 墨色字母 + 手写体小字）](icons-overview.png?v=2.0.0)
+![FontManager 图标方案：贴纸纸片终稿（白纸 + 墨色字母 + 手写体小字）](icons-overview.png?v=2.2.1)
 
 ### 11. 回收站：删错了能后悔
 
 1. 右键字族 → 移到回收站（批量同理）——从系统卸载但文件先收着
 2. 侧栏「回收站」→ 可**还原**（原样回库）或**永久删除**（二次确认）
 
-![回收站：移除的字体先来这里，绝不悄悄消失](trash.png?v=2.0.0)
+![回收站：移除的字体先来这里，绝不悄悄消失](trash.png?v=2.2.1)
 
 ### 12. 版权与查重：不用开浏览器
 
@@ -309,7 +309,7 @@ FontManager 的专属文件都有**贴纸纸片风格图标**（撕纸毛边 + �
 
 ### 14. ⚡ 速览条：任何应用里 1 秒切字体
 
-![速览条：贴顶的启用字体面板](quickbar.png?v=2.0.0)
+![速览条：贴顶的启用字体面板](quickbar.png?v=2.2.1)
 
 1. 任何界面按 <kbd>Alt</kbd>+<kbd>`</kbd>——主窗口收成**贴顶速览面板**
    （热键在 设置 → 系统 → 「速览快捷键」里改，见下图）
@@ -328,23 +328,23 @@ FontManager 的专属文件都有**贴纸纸片风格图标**（撕纸毛边 + �
 
 - <kbd>Ctrl</kbd>+<kbd>K</kbd>：命令面板——输入即达（跳视图、启停、对比、在应用中应用、快照…）
 
-![命令面板：输入即达](palette.png?v=2.0.0)
+![命令面板：输入即达](palette.png?v=2.2.1)
 
 - **右键菜单打字即搜**：任何右键菜单（卡片 / 列表 / 样张 / 速览 / 详情面板）出现后**直接打字**，
   顶部立刻出现搜索框，全库字体实时过滤——<kbd>↑</kbd><kbd>↓</kbd> 选择、<kbd>Enter</kbd> 或点击选中，
   自动跳到对应视图并滚动到该字体位置；<kbd>Esc</kbd> 先清空搜索、再按一次关菜单
 
-![右键菜单里直接打字：菜单顶部出现搜索框，结果实时过滤，底部提示还能继续缩小](contextmenu.png?v=2.0.0)
+![右键菜单里直接打字：菜单顶部出现搜索框，结果实时过滤，底部提示还能继续缩小](contextmenu.png?v=2.2.1)
 
 - **Tab 切搜索范围**：搜索时按 <kbd>Tab</kbd>（或点搜索框旁的徽章）在「已启用 ↔ 全部字体」间切换——
   速览默认只搜已启用字体（选中就在速览内定位；选中未启用的会自动退回完整界面并定位），完整界面默认全部
 - <kbd>?</kbd>（或侧栏「快捷键」）：完整快捷键表——导航 / 选择 / 对选中操作 / 快照全都在
 
-![快捷键表：按 ? 或点侧栏「快捷键」打开，分「导航 / 选择 / 对选中操作」三组](shortcuts.png?v=2.0.0)
+![快捷键表：按 ? 或点侧栏「快捷键」打开，分「导航 / 选择 / 对选中操作」三组](shortcuts.png?v=2.2.1)
 
 ### 17. 多字体库：最多 3 个库地址，一键切换
 
-![设置 → 字体库文件夹：默认库 + 自定义库列表，行内切换](libraries.png?v=2.0.0)
+![设置 → 字体库文件夹：默认库 + 自定义库列表，行内切换](libraries.png?v=2.2.1)
 
 字体不放在一个地方？设置 → **字体库文件夹**：
 
@@ -355,7 +355,7 @@ FontManager 的专属文件都有**贴纸纸片风格图标**（撕纸毛边 + �
 
 ### 18. 外观与语言
 
-![设置面板：语言 / 系统 / 字体库…所有开关都在这一列](settings.png?v=2.0.0)
+![设置面板：语言 / 系统 / 字体库…所有开关都在这一列](settings.png?v=2.2.1)
 
 设置里可换：浅色 / 深色主题 · 界面音效开/关 · **减弱动效**（动画收敛、降透明度）·
 九种界面语言（简体中文 · 繁體中文 · English · 日本語 · Deutsch · Español · Français · Português (Brasil) · Русский）。
@@ -471,16 +471,23 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
   -d '{"family":"Noto Sans SC"}' $cfg.base/fonts/activate
 ```
 
-常用端点速查：
+常用端点速查（**本版共 20 条路由 / 21 个方法**，全部带权限闸门；完整表见
+[docs/PLUGINS.md](docs/PLUGINS.md)）：
 
 | 端点 | 作用 |
 |---|---|
-| `GET /health` | 健康检查 + 字体总数 |
-| `GET /fonts` `GET /fonts/families` | 列出 / 搜索字体（q、limit、offset） |
-| `POST /fonts/activate` `POST /fonts/deactivate` | 启用 / 停用字族 |
-| `POST /fonts/scan` | 触发一次库扫描 |
-| `GET/POST /snapshots` `POST /snapshots/{name}/apply` | 快照：列表 / 创建 / 应用 |
-| `GET/PUT /curation*` | 备注、评分、收藏、标签 |
+| `GET /health` | 健康检查：字体总数、当前令牌的权限、全部权限清单 |
+| `GET /fonts` `GET /fonts/families` | 列出 / 搜索字体（q、limit、offset、family、license） |
+| `POST /fonts/activate` `POST /fonts/deactivate` | 启用 / 停用字族（**只认字体库内的路径**） |
+| `POST /fonts/scan` `POST /fonts/apply` | 触发库扫描（30 秒节流） / 把字体套到 PS·AI·CDR |
+| `GET /apps/active` | 最近在用的设计软件（「自动套用」用） |
+| `GET/POST /snapshots` `DELETE /snapshots/{name}` `POST /snapshots/{name}/apply` | 快照：列表 / 创建 / 删除 / 应用 |
+| `GET /curation` `PUT /curation/{rating,favorite,tags,collection,note}` | 读整理数据 / 改评分、收藏、标签、分组、备注 |
+| `POST /export/pack` `GET /jobs/{id}` | 打包导出（异步任务） / 查进度 |
+| `POST /import` | 导入字体包（需「允许危险操作」总开关 + `import` 权限） |
+
+> 请求体上限 16 MiB；`/health` 里的 `permissions` 是**当前这枚令牌**的权限，
+> `allPermissions` 才是全局清单。端口每次启动轮换，脚本里别硬编码，从 `api.json` 现读。
 
 #### 权限：403 是怎么回事
 
@@ -494,6 +501,12 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
 | `read:snapshot` / `write:snapshot` | 看 / 建 / 删 / 应用方案快照 |
 | `read:curation` / `write:curation` | 读 / 改你写的标签、备注、评分、收藏 |
 | `export` / `import` | 触发打包导出、查进度 / 导入字体包 |
+| `write:apply` | **把字体套到 Photoshop / Illustrator / CorelDRAW**（会去驱动别的软件） |
+| `read:apps` | 问「现在最近在用的是哪个设计软件」 |
+
+这 **10 项**就是权限白名单的全部（`api.rs::PERMS`）。插件在 `plugin.json` 里写 `*`、
+或写错一个字母，都会被**直接丢掉并记日志**，不会拿到全权；`GET /health` 的
+`permissions` 能当场核对最终签发了什么。
 
 请求的判定顺序是 **401（没令牌）→ 403（没这项权限）→ 422（请求体格式错）**：
 权限检查在解析 body **之前**就跑完了，所以「缺权限」永远不会表现成 422。
@@ -666,8 +679,20 @@ npx vite build
 npx tauri build --bundles nsis,msi
 ```
 
-需要 Rust（MSVC）1.85+ 与 Node 24+（见 `package.json` 的 `engines`）。Rust 单元测试用 `cargo test --lib`，
-界面测试用 `npm test`。
+需要 Rust（MSVC）1.85+ 与 Node 24+（见 `package.json` 的 `engines`）。
+
+### 改完代码先跑这五条
+
+| 命令 | 2.2.1 的基线 |
+|---|---|
+| `npm test` | 428 项：427 通过 / 1 跳过 / 0 失败 |
+| `cargo test --lib` | 299 通过 / 0 失败 / 16 ignored（**必须带 `--lib`**，不带会因 `generate_context!` 缺 `custom-protocol` 编译失败） |
+| `npx tsc --noEmit` | 0 错误 |
+| `node check-locales.mjs` | 主程序 9 语言：zh-CN / zh-TW 100%，其余语言按设计回退英文；脚本判 `OK` |
+| `node tools/check-panel-i18n.mjs` | 插件中心面板 149 键 × 9 语言全齐 |
+
+另外 `node tools/check-silent-paths.mjs` 会扫安装器的静默安装路径（当前 FAIL 0 / WARN 2），
+`node tools/route-c.mjs status` 看安装器界面开关状态。这几条也是发版流水线在跑的门禁。
 
 ---
 

@@ -23,6 +23,7 @@ import {
   type PanelRuntimes,
 } from "./api.ts";
 import { isPanelLocale, panelT, type PanelLocale } from "./i18n.ts";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
 
 /**
@@ -450,7 +451,7 @@ export function WorkshopPanel() {
       <div className="ws-bar">
         <div className="ws-search">
           <Search size={14} strokeWidth={1.5} className="ws-search-icon" />
-          <input
+          <BlinkCaretInput
             className="ws-search-input"
             type="text"
             value={query}

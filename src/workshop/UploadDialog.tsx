@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput.tsx";
 import { holdBlurGuard, panelApi } from "./api.ts";
 import {
   ALLOWED_EXTS,
@@ -573,7 +574,7 @@ export function UploadDialog({
                     鼠标停在标签或输入框上就出当前语言的说明。 */}
                 <label className="ws-up-field" title={t("fIdTip")}>
                   <span className="ws-up-tip">{t("fId")}</span>
-                  <input
+                  <BlinkCaretInput
                     className="ws-input"
                     value={active.form.id}
                     onChange={(e) => setField("id", e.target.value)}
@@ -583,7 +584,7 @@ export function UploadDialog({
                 </label>
                 <label className="ws-up-field" title={t("fNameTip")}>
                   <span className="ws-up-tip">{t("fName")}</span>
-                  <input
+                  <BlinkCaretInput
                     className="ws-input"
                     value={active.form.name}
                     onChange={(e) => setField("name", e.target.value)}
@@ -591,7 +592,7 @@ export function UploadDialog({
                 </label>
                 <label className="ws-up-field" title={t("fVersionTip")}>
                   <span className="ws-up-tip">{t("fVersion")}</span>
-                  <input
+                  <BlinkCaretInput
                     className="ws-input"
                     value={active.form.version}
                     onChange={(e) => setField("version", e.target.value)}
@@ -601,7 +602,7 @@ export function UploadDialog({
                 </label>
                 <label className="ws-up-field" title={t("fEntryTip")}>
                   <span className="ws-up-tip">{t("fEntry")}</span>
-                  <input
+                  <BlinkCaretInput
                     className="ws-input"
                     value={active.form.entry}
                     onChange={(e) => setField("entry", e.target.value)}
@@ -638,7 +639,7 @@ export function UploadDialog({
                 </label>
                 <label className="ws-up-field ws-up-wide">
                   <span>{t("fBrief", { max: 200 })}</span>
-                  <input
+                  <BlinkCaretInput
                     className="ws-input"
                     value={active.form.brief}
                     maxLength={200}

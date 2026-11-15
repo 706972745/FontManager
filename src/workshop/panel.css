@@ -1326,3 +1326,26 @@ body {
 .ws-up-hint-warn {
   color: var(--ws-danger);
 }
+
+/* ─── 2026-11-15 · 与主程序统一的闪烁块状光标 ───────────────────────────
+   组件 BlinkCaretInput 会在 input 外面套一层 `.blink-caret-field`（共用样式的
+   display:flex / flex:1 1 auto / overflow:hidden）。这里只补「套壳之后布局别塌」：
+
+   ① `.ws-up-field` 是**纵向** flex（label + 输入框上下排）。wrapper 若沿用它自带的
+      `flex:1 1 auto`，会在纵向被拉伸，把 32px 输入框撑成整列高度 —— 必须钉成
+      `flex:0 0 auto` + 宽度 100%。
+   ② `.ws-search` 是横向 flex，`flex:1 1 auto` 正好，不用覆盖；但搜索框左右各有
+      30px 内边距（给放大镜与清除按钮），wrapper 的 overflow:hidden 会裁掉滚出左缘
+      的蓝块 —— 这是设计内行为（与底下真实字形一致），别为了「看全」去关掉裁切。
+
+   **仍用原生细光标的例外（有意为之，不是漏改）**：
+   - `type="password"`（令牌框）：自绘光标要把输入值渲染进隐藏镜像 span 才能测宽，
+     等于把令牌明文塞进 DOM，安全性优先，不接；
+   - `type="number"` / `checkbox`：CARET_TYPES 不收录，组件自动退回普通 input；
+   - `<textarea>`（详细说明）：组件只支持单行 input，多行光标另说。
+   样式本体在 src/design/primitives/blinkCaret.css，由 workshop/main.tsx 与主程序
+   main.tsx 各自 import —— **不要在这里复制一份**。 */
+.ws-up-field > .blink-caret-field {
+  flex: 0 0 auto;
+  width: 100%;
+}

@@ -7,6 +7,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { WorkshopPanel } from "./App.tsx";
+import "../design/primitives/blinkCaret.css";
 import "./panel.css";
 
 const root = document.getElementById("root");
