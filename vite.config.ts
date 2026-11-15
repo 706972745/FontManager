@@ -29,6 +29,11 @@ export default defineConfig(async () => ({
         // 主入口的 chunk 列表里不出现 setup-*.js。它由 `fontmanager.exe --installer-ui`
         // 单独加载（src-tauri/src/setup_ui.rs）。
         setup: resolve(root, "setup.html"),
+        // 插件中心面板（插件中心 v3）：**独立入口**，同样不进主 bundle。
+        // 插件中心是可下载、可单独更新的产物（workshop.html + assets/），主程序只负责
+        // 下载 / 校验 / 安装它，再通过本机回环打开面板窗口。产物打成
+        // workshop-panel.zip（tools/build-workshop-panel.mjs）。
+        workshop: resolve(root, "workshop.html"),
       },
     },
   },

@@ -1,7 +1,7 @@
 {
   "about.appRepo": "软件源代码",
   "about.desc": "预览、标签、分组与快照、双击安装、一键启停——几千款字体也能在一台机器上整理清楚；自动识别重复与授权来源，字体文件始终留在本地，不联网也能用全部功能。还能安装插件、开放本地 API、接入 MCP，把字体能力交给其他工具一起用。",
-  "about.pluginRepo": "插件仓库",
+  "about.pluginRepo": "GitHub 插件仓库",
   "about.stackAria": "技术栈",
   "about.version": "版本 {version} · {license}",
   "about.edition": "正式版",
@@ -1143,9 +1143,6 @@
   "settings.pluginsSettings": "插件设置",
   "settings.pluginsSettingsOff": "插件没在运行，先打开开关",
   "settings.pluginsRowHint": "右键这一行可以打开插件菜单",
-  "settings.pluginsGetMore": "获取更多插件",
-  "settings.pluginsGetMoreSub": "用浏览器打开插件仓库：每个插件都能单独下载 ZIP，解压后放进插件目录即可，也可以用上面的「从 ZIP 安装」。",
-  "settings.pluginsGetMoreOpen": "打开插件仓库",
   "settings.plugRtBundled": "自带 {runtime}",
   "settings.plugRtNeeds": "需要 {runtime}",
   "settings.plugRtSelfContained": "无需额外环境",
@@ -1230,5 +1227,17 @@
   "load.backgroundReading": "后台读取字体库 {done}/{total}（{percent}%）",
   "load.seedReady": "字体库已就绪",
   "load.partialData": "读取未完成，部分字体暂不可见",
-  "load.retry": "重试读取"
+  "load.retry": "重试读取",
+  "side.pluginCenter": "插件中心",
+  "settings.pluginCenterVersion": "插件中心面板 v{version}",
+  "settings.pluginCenterHint": "下载面板后可浏览社区插件，一键安装",
+  "settings.pluginCenterDownloading": "下载中 {percent}%",
+  "settings.pluginCenterDownloadingShort": "下载中…",
+  "settings.pluginCenterDownload": "下载插件中心面板",
+  "settings.pluginCenterOpen": "打开插件中心",
+  "settings.pluginCenterUninstall": "卸载",
+  "toast.pluginCenterPanelInstalled": "插件中心面板已安装（v{version}）",
+  "toast.pluginCenterPanelUninstalled": "插件中心面板已卸载",
+  "toast.pluginCenterPanelFailed": "插件中心面板安装失败",
+  "toast.pluginCenterOpenFailed": "打不开插件中心面板"
 }

@@ -30,6 +30,61 @@ pub fn set_app(handle: AppHandle) {
     let _ = APP.set(handle);
 }
 
+/// 主程序句柄（插件中心面板要借用它开外部浏览器 —— 见 workshop.rs 的 `api_open_url`）
+pub fn app_handle() -> Option<AppHandle> {
+    APP.get().cloned()
+}
+
+// ─────────────────── 下载安全：主机白名单 + 逐跳复检的重定向策略 ───────────────────
+//
+// 放在这一层（插件子系统）是因为**两条下载链路**都要用，且不能让它们各写一份：
+// - 运行时包下载（本文件）：自家 release 的资产直链，302 落到 release-assets；
+// - 插件中心（workshop.rs）：清单 / 元数据 / 社区件 / 面板包。
+//
+// 判据放低层还有一个好处：**能被单元测试直接断言**（reqwest 的 `Attempt`
+// 字段是私有的，crate 外构造不出来，所以断言落在策略实际调用的这道闸上）。
+
+/// 校验 URL：scheme 必须是 https，host 必须在 `allowed` 名单里。
+pub(crate) fn check_host_in(url: &str, allowed: &[&str]) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| e.to_string())?;
+    if parsed.scheme() != "https" {
+        return Err(format!("refusing non-https url: {url}"));
+    }
+    match parsed.host_str() {
+        Some(h) if allowed.contains(&h) => Ok(()),
+        Some(h) => Err(format!("host not allowed: {h}")),
+        None => Err(format!("url has no host: {url}")),
+    }
+}
+
+/// 重定向策略：**逐跳**校验落点的 host。
+///
+/// `Policy::limited(n)` 只管跳几次、**不管跳到哪去** —— 初始 URL 在白名单里，
+/// 302 一下就能跑到别处去（QA 2026-11-15 实测：release 直链会落到
+/// `release-assets.githubusercontent.com`）。所以落点必须逐个重验。
+///
+/// `allowed` 要传 `'static` 名单：`Policy::custom` 的闭包必须是 `'static`。
+pub(crate) fn redirect_policy_for(
+    allowed: &'static [&'static str],
+) -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(move |attempt| {
+        match check_host_in(attempt.url().as_str(), allowed) {
+            Ok(()) => attempt.follow(),
+            Err(e) => attempt.error(format!("重定向目标不在白名单里：{e}")),
+        }
+    })
+}
+
+/// 运行时下载允许的主机：自家 release 的资产直链 + 它的 302 落点。
+///
+/// 比插件中心的名单**更窄**（插件中心还要 raw 与社区件）；运行时包是我们自己
+/// release 上的资产，不需要更宽的口子。
+static RUNTIME_HOSTS: [&str; 3] = [
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com",
+];
+
 /// 安全校验：只放行本机回环地址。返回解析好的 URL，供开窗用 —— 单测覆盖。
 fn validate_panel_url(url: &str) -> Result<tauri::Url, String> {
     let parsed = tauri::Url::parse(url).map_err(|e| format!("URL 解析失败：{e}"))?;
@@ -71,7 +126,7 @@ fn classify_open_url(url: &str) -> UrlTarget {
 /// 这里把 prefs 里的 `themePref` 翻成 Tauri 的 Theme 塞给窗口，WebView2 会据此
 /// 决定 prefers-color-scheme，插件面板的 CSS 一行都不用改。
 /// `system`（或还没读到 prefs）返回 None = 交回系统默认，与主程序的「跟随系统」一致。
-fn panel_theme() -> Option<tauri::Theme> {
+pub(crate) fn panel_theme() -> Option<tauri::Theme> {
     let hub = crate::api::hub()?;
     let pref = hub
         .store
@@ -105,6 +160,74 @@ fn main_window_browser_args<'a>(
         .and_then(|(_, args)| args)
 }
 
+/// 诊断日志开关：设 `FONTMANAGER_PANEL_DIAG=1` 才输出**噪音类**诊断日志
+/// （打开的 URL、页面加载事件、「窗口已创建」）。
+///
+/// 为什么用环境变量而不是 `#[cfg(debug_assertions)]`：
+/// - 排查（真机白屏）用的是 **release 构建**（`tauri build --config _tauri.local.json`），
+///   cfg 守卫会让它一条日志都看不到 → 关键判据（「导航到底有没有开始」）就丢了；
+/// - env 门让**发布版默认静默** → 端用户日志里没有这些噪音，
+///   也不需要「打包前记得删掉插桩」这种靠人记的步骤（清单本身还是 gitignored 的，
+///   换机器/换人打包就会漏）。
+///
+/// 失败/异常那几条日志（已存在 / 创建失败 / panic，共三条）**不受这个开关控制** ——
+/// 它们罕见、且是「用户说面板打不开」时唯一能说清原因的东西，生产环境里值得留。
+/// 而且**常开的那几条里没有任何 URL、没有任何 key**（只有 label + Tauri 的错误文本）
+/// → 零安全面、纯诊断价值。
+fn panel_diag_enabled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("FONTMANAGER_PANEL_DIAG").is_ok())
+}
+
+/// 单调用途的时间戳（毫秒）。只用来比较「刚才动过窗口没有」，不是时钟显示，
+/// 所以取系统时间就够了；取不到就返回 0（调用方把 0 当「没有记录」）。
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// 诊断日志用：把 URL 里的**会话 key**（查询参数 `k=`）打码。
+///
+/// 只认查询参数里的 `k`（`?k=` / `&k=`），不会误伤路径或域名里的 "k="。
+fn mask_panel_url(url: &str) -> String {
+    let Some((base, query)) = url.split_once('?') else {
+        return url.to_string();
+    };
+    let masked = query
+        .split('&')
+        .map(|kv| match kv.split_once('=') {
+            Some((k, _)) if k == "k" => "k=***".to_string(),
+            _ => kv.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("&");
+    format!("{base}?{masked}")
+}
+
+/// 面板窗口的**独立 WebView2 数据目录**名（`<label>-webview`）。
+///
+/// **带 label 是硬要求**：插件面板与插件中心面板各用各的 user data folder ——
+/// 两个面板窗口同时开着时也不能共用同一个（共用正是 0x8007139F / tauri#8196 的成因）。
+/// 面板页面的数据仍来自 127.0.0.1 回环服务，这个目录只是 WebView2 的浏览器数据
+/// （cookie / 缓存 / 无障碍树）。
+fn panel_webview_dir_name(label: &str) -> String {
+    // 目录名要拼进文件系统路径 → 把取值范围**钉死**：将来若有人改成用插件名之类
+    // 的外部输入来命名，这里会当场炸掉（而不是变成一条路径穿越入口）。
+    debug_assert!(
+        matches!(label, "plugin-panel" | "workshop-panel"),
+        "面板窗口 label 只允许这两个常量：{label:?}"
+    );
+    debug_assert!(
+        label
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-'),
+        "label 含非法字符：{label:?}"
+    );
+    format!("{label}-webview")
+}
+
 /// 插件发 `open-url` 时创建应用内面板窗口。
 ///
 /// WebView2 的硬约束（MS Learn `CreateCoreWebView2EnvironmentWithOptions` /
@@ -124,59 +247,386 @@ fn main_window_browser_args<'a>(
 /// - wry 0.57.0 `src/webview2/mod.rs:300-366`：每次创建 webview 都把
 ///   `additional_browser_args` 传进 `CreateCoreWebView2EnvironmentWithOptions`。
 fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), String> {
+    open_panel_window_with_label(app, "plugin-panel", url, title, false)
+}
+
+/// 同上，但**窗口标签可指定**：插件面板用 `plugin-panel`，
+/// 插件中心面板用 `workshop-panel`。
+///
+/// `close_on_blur`：**失焦即关**。插件中心面板用 true（2026-11-15 用户要求：
+/// 点主窗口任何地方，面板就消失，要再看得重新点标题栏的插件中心按钮）；
+/// 插件自己的面板保持 false —— 那是插件的工作界面，用户可能要在主窗口里
+/// 挑字体、再回面板里确认，失焦就关会把它变成不可用。
+pub(crate) fn open_panel_window_with_label(
+    app: &AppHandle,
+    label: &str,
+    url: &str,
+    title: &str,
+    close_on_blur: bool,
+) -> Result<(), String> {
     // URL 先严格解析并校验，这个分支里**绝不 unwrap** —— 插件的数据不可信
     let url = validate_panel_url(url)?;
     let title = title.to_string();
+    let label = label.to_string();
+    // 诊断日志要带 label；下面建窗闭包要用自己的副本（`label_for_build`），
+    // 这样 `label` 本身留在外层、重试路径的日志还能用。
+    let label_for_log = label.clone();
     let theme = panel_theme();
     let app = app.clone();
     // 接收者用临时克隆：闭包要把 app 移进去，而方法调用本身又借用了接收者。
-    // run_on_main_thread 的 Result 只在「事件循环已退出」时才有意义，那时主程序
-    // 都在退出了，记一条日志即可 —— 不能因为开面板失败把同步/退出流程打断。
-    let scheduled = app.clone().run_on_main_thread(move || {
-        // build 本身返回 Result；再包一层 catch_unwind —— 任何意外都只记日志，
-        // 绝不能带崩主进程（与 api_server 的 catch_unwind 同一模式）。
-        // 配置读取与窗口构建都放在同一个 catch 边界内，语义与修复前一致。
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // 主窗口在 tauri.conf.json 里配了 additionalBrowserArgs
-            // （--disable-features=… --force-renderer-accessibility），新窗口不传就会撞
-            // 0x8007139F —— 症状是插件设置面板永远打不开，插件只能降级到系统浏览器。
-            // 直接原样透传：任何加工（split / filter / 剔除端口）都会让
-            // CoreWebView2EnvironmentOptions 与第一个窗口不一致，见函数上方说明。
-            let cfg = app.config();
-            let extra = main_window_browser_args(cfg.app.windows.iter().map(|w| {
-                (w.label.as_str(), w.additional_browser_args.as_deref())
-            }));
+    //
+    // 面板窗口**不能在 Tauri 命令的回调里直接建**：命令是从 webview 的 IPC 回调
+    // 派发到主线程执行的，此时再建 webview 会与「正在处理消息的 webview」死锁
+    // —— 症状是原生窗口壳出来、webview 不出来、纯白屏（2026-11-15 真机排查）。
+    // 插件面板不受影响：它是插件经本地 HTTP API 请求触发的，不在 webview 回调里。
+    // 做法：先起一个后台线程把建窗任务 post 出去，让当前 IPC 回调先返回，
+    // 任务在**下一个事件循环迭代**里执行（run_on_main_thread 是 post，不是同步等待）。
+    let app_for_post = app.clone();
+    // 用 Builder 版而不是 `std::thread::spawn`：后者在**线程创建失败**时直接 panic，
+    // 那个 panic 会一路冒到 IPC 处理器 → 把「面板开不出来」升级成「应用崩」。
+    // Builder 版返回 Result，失败只记日志（与本文件「任何意外都只记日志」的基调一致）。
+    let spawned = std::thread::Builder::new()
+        .name("panel-window".to_string())
+        .spawn(move || {
+            // 外层也包一层 catch_unwind：这一层只有「post + 记日志」，panic 概率极低，
+            // 但补上就彻底封死（里面的建窗逻辑本来就已经有 catch_unwind 兜着）。
+            // **catch 之后必须留痕** —— 这一轮排查的全部意义就是「别让异常悄悄消失」。
+            if let Err(p) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let app_for_task = app_for_post.clone();
+                let scheduled = app_for_post.run_on_main_thread(move || {
+                    // build 本身返回 Result；再包一层 catch_unwind —— 任何意外都只记日志，
+                    // 绝不能带崩主进程（与 api_server 的 catch_unwind 同一模式）。
+                    // 配置读取与窗口构建都放在同一个 catch 边界内，语义与修复前一致。
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        // 闭包里原本捕获的 app → 现在用任务自己的副本（内容与原来完全一致）
+                        let app = app_for_task.clone();
+                        // 主窗口在 tauri.conf.json 里配了 additionalBrowserArgs
+                        // （--disable-features=… --force-renderer-accessibility），新窗口不传就会撞
+                        // 0x8007139F —— 症状是插件设置面板永远打不开，插件只能降级到系统浏览器。
+                        // 直接原样透传：任何加工（split / filter / 剔除端口）都会让
+                        // CoreWebView2EnvironmentOptions 与第一个窗口不一致，见函数上方说明。
+                        let cfg = app.config();
+                        let extra = main_window_browser_args(cfg.app.windows.iter().map(|w| {
+                            (w.label.as_str(), w.additional_browser_args.as_deref())
+                        }));
 
-            let mut builder =
-                WebviewWindowBuilder::new(&app, "plugin-panel", WebviewUrl::External(url.clone()))
-                    .title(&title)
-                    .theme(theme)
-                    .inner_size(1040.0, 900.0)
-                    .min_inner_size(760.0, 560.0);
-            if let Some(args) = extra {
-                builder = builder.additional_browser_args(args);
-            }
-            builder.build()
-        }));
-        match result {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => {
-                let msg = e.to_string();
-                if msg.contains("exists") || msg.contains("已存在") || msg.contains("label") {
-                    crate::diag::log("[plugin] 面板窗口已经开着（关掉旧窗口可再开）");
-                } else {
-                    crate::diag::log(&format!(
-                        "[plugin] 面板窗口创建失败（不影响主程序）：{msg}"
-                    ));
+                        // ── 诊断插桩（2026-11-15 真机白屏二分）──
+                        // 噪音类日志由 env 门控制（`FONTMANAGER_PANEL_DIAG=1` 才输出），
+                        // 发布版默认静默 → 打包前不需要手动删任何东西。
+                        // ① 记下真正要打开的地址（会话 key 打码）
+                        if panel_diag_enabled() {
+                            crate::diag::log(&format!(
+                                "[panel/{label}] 打开 {}",
+                                mask_panel_url(url.as_str())
+                            ));
+                        }
+                        // ② 记下页面加载事件：Started = 开始加载，Finished = 加载完成。
+                        //    两个都没有 → 导航压根没开始；有 Started 没 Finished → 加载卡住/失败。
+
+                        // 每个面板窗口用自己的 **WebView2 数据目录**（tauri#8196 的官方 workaround）：
+                        // 与主窗口共享 user data folder 时，第二个 WebView2 environment 的创建在
+                        // 部分机器上会**卡住** —— 窗口壳出来、webview 不出来、纯白屏
+                        //（2026-11-15 真机排查的根因；启动页 lib.rs 与安装器窗口 setup_ui.rs
+                        // 早就为此各自分了目录，面板窗口是最后一个漏网的）。
+                        // 目录名带 label：插件面板与插件中心面板各用各的（同时开着也不该抢同一个）。
+                        // 独立目录只是 WebView2 的浏览器数据（cookie/缓存/无障碍树），
+                        // **面板页面的数据仍来自 127.0.0.1 回环服务**，一次性 key 与安装链路不受影响。
+                        use tauri::Manager;
+                        let webview_dir = match app.path().app_local_data_dir() {
+                            Ok(dir) => {
+                                let dir = dir.join(panel_webview_dir_name(&label));
+                                // 建目录要提前做：WebView2 不会替我们建 user data folder。
+                                // 建不出来（磁盘满 / 权限被杀软拦）就不配独立目录、退回默认行为：
+                                // 宁可冒一次与主窗口共享的风险，也不能因此让面板整个开不出来。
+                                if std::fs::create_dir_all(&dir).is_ok() {
+                                    Some(dir)
+                                } else {
+                                    crate::diag::log(&format!(
+                                        "[panel/{label}] 独立 WebView 数据目录创建失败，退回默认数据目录"
+                                    ));
+                                    None
+                                }
+                            }
+                            Err(e) => {
+                                crate::diag::log(&format!(
+                                    "[panel/{label}] 取 app_local_data_dir 失败（退回默认数据目录）：{e}"
+                                ));
+                                None
+                            }
+                        };
+
+                        // 二分对照窗口（**临时诊断用，确认后可删**）：一个普通公网地址，
+                        //    参数与面板窗口完全一致（同一串 additional_browser_args + 独立目录）。
+                        //    **放在面板建窗之前**：面板一卡（build() 不返回）后面的代码就再也
+                        //    跑不到 → 探针必须在前面，否则永远拿不到这个二分答案。
+                        //    - probe-ext 能加载 → 问题在 127.0.0.1:port 这个地址/端口上
+                        //    - probe-ext 也停在 about:blank → 问题在「第二个 WebView2 窗口」本身
+                        //    - 两个都能加载 → 问题在我们传的 URL 形状
+                        //
+                        //    **`#[cfg(debug_assertions)]` 守卫**：release 构建里**根本不存在**这段
+                        //    代码 —— 发布物里不会留下「能加载任意外部站点」的调试通道。
+                        //    代价：对照窗口只在 **debug 构建**（`tauri build --debug`）里才有；
+                        //    而下面 ①② 两条日志两种构建都有 → 排查期用 release 构建也能拿到
+                        //    「导航到底有没有开始」这个关键判据。
+                        #[cfg(debug_assertions)]
+                        {
+                            if std::env::var("FONTMANAGER_PROBE_WINDOW").is_ok() {
+                                let probe = WebviewWindowBuilder::new(
+                                    &app,
+                                    "probe-ext",
+                                    WebviewUrl::External("https://example.com".parse().unwrap()),
+                                )
+                                .title("probe-ext")
+                                .inner_size(800.0, 600.0)
+                                .on_page_load(|_win, payload| {
+                                    crate::diag::log(&format!(
+                                        "[probe] page_load url={} event={:?}",
+                                        payload.url(),
+                                        payload.event()
+                                    ));
+                                });
+                                let probe = match extra {
+                                    Some(args) => probe.additional_browser_args(args),
+                                    None => probe,
+                                };
+                                // 对照窗口**也要自己的数据目录**：否则它会跟面板窗口一样
+                                // 卡在「共享 user data folder」那一步 → 假阴性。
+                                let probe_dir = app
+                                    .path()
+                                    .app_local_data_dir()
+                                    .ok()
+                                    .map(|d| d.join("probe-ext-webview"))
+                                    .and_then(|d| std::fs::create_dir_all(&d).ok().map(|_| d));
+                                let probe = match probe_dir {
+                                    Some(d) => probe.data_directory(d),
+                                    None => probe,
+                                };
+                                match probe.build() {
+                                    Ok(_) => crate::diag::log("[probe] 对照窗口已创建"),
+                                    Err(e) => crate::diag::log(&format!("[probe] 对照窗口创建失败：{e}")),
+                                }
+                            }
+                        }
+                        // 建窗闭包：两种姿势（带 / 不带独立数据目录）**参数完全一致**，只有目录不同。
+                        let app_for_build = app.clone();
+                        // 闭包是 `move` 的 → 它会把 `label` 移进去；外层后面还要用 `label`
+                        // （重试路径的日志），所以闭包用**副本**、外层保留原件。
+                        let label_for_build = label.clone();
+                        let build = move |dir: Option<PathBuf>| {
+                            // on_page_load 的闭包要 'static → 每次建窗各带一份 label 副本
+                            let label_for_page = label_for_build.clone();
+                            let mut builder =
+                                WebviewWindowBuilder::new(
+                                    &app_for_build,
+                                    label_for_build.clone(),
+                                    WebviewUrl::External(url.clone()),
+                                )
+                                .title(&title)
+                                .theme(theme)
+                                .inner_size(1040.0, 900.0)
+                                .min_inner_size(760.0, 560.0)
+                                .on_page_load(move |_win, payload| {
+                                    if panel_diag_enabled() {
+                                        crate::diag::log(&format!(
+                                            "[panel/{label_for_page}] page_load url={} event={:?}",
+                                            payload.url(),
+                                            payload.event()
+                                        ));
+                                    }
+                                });
+                            if let Some(args) = extra {
+                                builder = builder.additional_browser_args(args);
+                            }
+                            if let Some(d) = dir {
+                                builder = builder.data_directory(d);
+                            }
+                            builder.build()
+                        };
+
+                        // 第一次带独立数据目录；失败就**换个姿势再试一次**（照抄安装器窗口的
+                        // 容错思路，setup_ui.rs）—— 独立目录被上次的 msedgewebview2 进程占着
+                        // 时会失败，换一个目录还有机会把窗口开出来。
+                        //
+                        // **与安装器的差别（重要）**：安装器那次的退路是「退回默认数据目录」，
+                        // 它安全是因为**安装器跑在主窗口起来之前**（默认目录那时没人占）。
+                        // 面板窗口是主窗口**已经开着**时建的 —— 默认目录正是与主窗口共享的那个
+                        // user data folder，退回去只会**再卡一次**（而 build() 卡住会把主线程
+                        // 一起拖住）。所以这里的退路是**另一个独立目录**，不是共享目录。
+                        let built = match build(webview_dir.clone()) {
+                            Ok(w) => Ok(w),
+                            Err(e) => {
+                                crate::diag::log(&format!(
+                                    "[panel/{label}] 带独立数据目录建窗失败（{e}），换另一个独立目录重试"
+                                ));
+                                // 失败的建窗可能已经留下一个**空壳窗口**（webview 没建成）→
+                                // 先关掉，否则重试会撞「label 已存在」。
+                                if let Some(w) = app.get_webview_window(&label) {
+                                    let _ = w.close();
+                                }
+                                let alt = app
+                                    .path()
+                                    .app_local_data_dir()
+                                    .ok()
+                                    .map(|d| d.join(format!("{}-2", panel_webview_dir_name(&label))))
+                                    .and_then(|d| std::fs::create_dir_all(&d).ok().map(|_| d));
+                                match build(alt) {
+                                    Ok(w) => Ok(w),
+                                    Err(e2) => {
+                                        crate::diag::log(&format!(
+                                            "[panel/{label}] 换目录重试仍失败（{e2}），放弃开窗"
+                                        ));
+                                        if let Some(w) = app.get_webview_window(&label) {
+                                            let _ = w.close();
+                                        }
+                                        Err(e2)
+                                    }
+                                }
+                            }
+                        };
+
+                        // 插件中心面板：**失焦就藏起来**（2026-11-15 用户要求：
+                        // 点主窗口任何地方，这个界面就消失；要再看得重新点标题栏
+                        // 的插件中心按钮）。
+                        //
+                        // 为什么 hide 而不是 close：
+                        // ① close 是异步销毁，用户「点别处 → 再点按钮」时旧窗口可能
+                        //    还没销毁完，新窗口会撞 `label already exists`，表现为
+                        //    「点了按钮没反应」；hide 没有这个窗口期。
+                        // ② hide 保住了页面状态（已装列表、滚动位置），再打开不闪白。
+                        // 卸载面板时会显式 close（见 workshop.rs 的 uninstall），
+                        // 别在这里留一个「永远藏着的窗口」。
+                        //
+                        // `armed` 这一层：窗口刚建出来时可能先来一次 Focused(false)
+                        // （还没被激活），直接藏会「面板一闪就没」。只有**先拿到过
+                        // 焦点**之后的失焦才算用户主动离开。
+                        if close_on_blur {
+                            if let Ok(w) = &built {
+                                let armed =
+                                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                                // 最近一次「窗口被移动/改大小」的时刻（毫秒）。拖标题栏时
+                                // Windows 会先给一次失焦，再连续发 WM_MOVE —— 所以这两个
+                                // 事件是「用户正在拖，不是走开了」的可靠暗号。
+                                let last_move = std::sync::Arc::new(
+                                    std::sync::atomic::AtomicU64::new(0),
+                                );
+                                let w_hide = w.clone();
+                                let moved_mark = last_move.clone();
+                                w.on_window_event(move |ev| match ev {
+                                    tauri::WindowEvent::Focused(focused) => {
+                                        if *focused {
+                                            armed.store(
+                                                true,
+                                                std::sync::atomic::Ordering::Relaxed,
+                                            );
+                                            return;
+                                        }
+                                        if !armed.load(std::sync::atomic::Ordering::Relaxed) {
+                                            return;
+                                        }
+                                        // 软件自己引发的失焦（选文件夹的系统对话框、
+                                        // 外部浏览器）：面板置了守卫位，这一下不藏。
+                                        if crate::workshop::blur_guarded() {
+                                            return;
+                                        }
+                                        // **不立刻藏**（2026-11-15 用户实测：拖标题栏
+                                        // 面板就消失）。延迟 300ms 再判：
+                                        //   ① 期间有 Moved/Resized → 正在拖，直接放弃；
+                                        //   ② 到点重新问 is_focused()，仍是 true（拖完还在
+                                        //      前台）也不藏；
+                                        //   ③ 只有「真的在别处」才藏。
+                                        // 用户点主窗口时焦点不会回来，300ms 后照常消失，
+                                        // 肉眼上还是「一点就没了」。
+                                        let w_hold = w_hide.clone();
+                                        let mark = moved_mark.clone();
+                                        let spawned = std::thread::Builder::new()
+                                            .name("panel-blur".to_string())
+                                            .spawn(move || {
+                                                std::thread::sleep(
+                                                    std::time::Duration::from_millis(300),
+                                                );
+                                                let t = mark.load(
+                                                    std::sync::atomic::Ordering::Relaxed,
+                                                );
+                                                if t != 0
+                                                    && now_millis().saturating_sub(t) < 700
+                                                {
+                                                    return; // 刚动过窗口 = 在拖
+                                                }
+                                                if matches!(w_hold.is_focused(), Ok(false)) {
+                                                    let _ = w_hold.hide();
+                                                }
+                                            });
+                                        if let Err(e) = spawned {
+                                            // 线程起不来（极端资源紧张）：退回立刻藏，
+                                            // 至少别留下「点别处不消失」的面板
+                                            crate::diag::log(&format!(
+                                                "[panel] 失焦判定线程未启动：{e}"
+                                            ));
+                                            let _ = w_hide.hide();
+                                        }
+                                    }
+                                    tauri::WindowEvent::Moved(_)
+                                    | tauri::WindowEvent::Resized(_) => {
+                                        moved_mark.store(
+                                            now_millis(),
+                                            std::sync::atomic::Ordering::Relaxed,
+                                        );
+                                    }
+                                    _ => {}
+                                });
+                            }
+                        }
+
+                        built
+                    }));
+                    match result {
+                        // 诊断（2026-11-15 真机白屏）：**带 label**，好把「插件面板」与
+                        // 「插件中心面板」两处的成败分开看（两者共用这个函数）。
+                        Ok(Ok(_)) => {
+                            if panel_diag_enabled() {
+                                crate::diag::log(&format!("[panel/{label_for_log}] 面板窗口已创建"));
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            let msg = e.to_string();
+                            if msg.contains("exists") || msg.contains("已存在") || msg.contains("label") {
+                                crate::diag::log(&format!(
+                                    "[panel/{label_for_log}] 面板窗口已经开着（关掉旧窗口可再开）"
+                                ));
+                            } else {
+                                crate::diag::log(&format!(
+                                    "[panel/{label_for_log}] 面板窗口创建失败（不影响主程序）：{msg}"
+                                ));
+                            }
+                        }
+                        Err(_) => crate::diag::log(&format!(
+                            "[panel/{label_for_log}] 面板窗口创建发生 panic，已被 catch_unwind 拦住，主程序不受影响"
+                        )),
+                    }
+                });
+                if let Err(e) = scheduled {
+                    // post 失败（事件循环已退出）也要留痕，不能把错误吞掉
+                    crate::diag::log(&format!("[panel] run_on_main_thread 失败：{e}"));
                 }
+            })) {
+                // panic 载荷是 `Box<dyn Any>`：能取出字符串就取，取不出也要留个痕
+                let msg = if let Some(s) = p.downcast_ref::<&str>() {
+                    (*s).to_string()
+                } else if let Some(s) = p.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "（未知 panic）".to_string()
+                };
+                // panic 文本是原样的 → 里面若含 URL 就可能带会话 key，
+                // 同样过一遍打码（「key 永不入日志」这条不留缺口）。
+                crate::diag::log(&format!(
+                    "[panel] 建窗线程 panic：{}",
+                    mask_panel_url(&msg)
+                ));
             }
-            Err(_) => crate::diag::log(
-                "[plugin] 面板窗口创建发生 panic，已被 catch_unwind 拦住，主程序不受影响",
-            ),
-        }
-    });
-    if let Err(e) = scheduled {
-        return Err(format!("run_on_main_thread 失败：{e}"));
+        });
+    if let Err(e) = spawned {
+        crate::diag::log(&format!("[panel] 建窗线程创建失败：{e}"));
     }
     Ok(())
 }
@@ -446,6 +896,17 @@ fn read_manifest(dir: &Path) -> Result<PluginManifest, String> {
     serde_json::from_str(&text).map_err(|e| format!("plugin.json 格式不对：{e}"))
 }
 
+/// 解析内存里的清单原文（workshop 社区件安装路径用）：写盘之前就要判
+/// 「这是不是能跑的插件包」，不能等装完再在插件目录里撞错。
+/// 与 `read_manifest` 同一语义，只是入口是字节而不是目录 —— 错误文案也保持
+/// 「plugin.json 格式不对：…」前缀，界面与日志两个口径一致。
+/// registry 的 plugin.json = 运行时清单 + 市场字段：运行时解析器忽略市场字段
+/// （serde 默认行为，别加 deny_unknown_fields）。
+pub fn parse_manifest_bytes(bytes: &[u8]) -> Result<PluginManifest, String> {
+    let text = std::str::from_utf8(bytes).map_err(|e| format!("plugin.json 不是 UTF-8：{e}"))?;
+    serde_json::from_str::<PluginManifest>(text).map_err(|e| format!("plugin.json 格式不对：{e}"))
+}
+
 // ── 从 ZIP 安装插件（1.4.4）────────────────────────────────────────────
 // UX：用户把插件 zip 拖进窗口或用「从 ZIP 安装」按钮选一个包。
 // 兼容两种布局：文件在 zip 根级（plugin.json 在根），或只有一个顶层目录
@@ -516,8 +977,18 @@ fn existing_dir_with_id(base: &Path, id: &str) -> Option<PathBuf> {
 }
 
 /// plugin.json 的 id 只允许安全字符：它要当目录名用。
-fn sanitize_plugin_id(id: &str) -> Result<String, String> {
-    let id = id.trim();
+/// 插件 id 白名单（只允许字母数字与 `.-_`，不以 `.` 开头，长度 ≤ 64）。
+///
+/// 面板也会传 id（来自远程可写的 index.json），所以这个校验对**两条**链路都要用：
+/// 清单里的 id 与面板请求里的 id。用 `pub(crate)` 是给 workshop.rs 复用 ——
+/// 两处各写一份规则迟早会漂。
+///
+/// **不做 trim**：首尾的空白/控制字符一律判非法，而不是「裁掉再说」。
+/// 静默纠正等于替上游把异常吞掉（与 `src/lib/workshop.ts` 里 `communityDirFor`
+/// 的「拒绝而不是纠正」同一口径）—— 尤其 `evil\r\n` 这种，裁掉后 id 看着干净，
+/// 但**原始** id 会被原样写进 plugin.json 并随后进日志（`[plugin] 已停用 {id}`），
+/// 等于留了一条伪造日志的口子。
+pub(crate) fn sanitize_plugin_id(id: &str) -> Result<String, String> {
     let ok = !id.is_empty()
         && id.len() <= 64
         && id
@@ -527,7 +998,7 @@ fn sanitize_plugin_id(id: &str) -> Result<String, String> {
     if ok {
         Ok(id.to_string())
     } else {
-        Err(format!("plugin.json 的 id 不合法（只允许字母数字 .-_）：{id:?}"))
+        Err(format!("插件 id 不合法（只允许字母数字 .-_）：{id:?}"))
     }
 }
 
@@ -597,6 +1068,20 @@ pub fn install_zip_into(zip_path: &Path, base: &Path) -> Result<(String, String,
 /// 安装到真实插件目录（装完**不**自动重扫 —— 前端装完自己刷清单）。
 pub fn install_zip(zip_path: &Path) -> Result<(String, String, String), String> {
     install_zip_into(zip_path, &plugins_dir())
+}
+
+/// 插件中心安装目标（M1）：已装清单里有同 id 的目录就装进原地
+///（保留 config/secret/state 数据文件），否则用 registry 的
+/// `<id>__<author>` 目录名新建 —— 不给同 id 插件造出第二个目录。
+pub fn install_target_for(base: &Path, id: &str, preferred_dir: &str) -> PathBuf {
+    existing_dir_with_id(base, id).unwrap_or_else(|| base.join(preferred_dir))
+}
+
+/// 按清单 id 找已安装目录（插件中心卸载用）；目录名可能与 id 不同
+///（font-sync vs com.fontmanager.font-sync），所以必须按 manifest 反查。
+pub fn plugin_dir_for_id(id: &str) -> Result<PathBuf, String> {
+    existing_dir_with_id(&plugins_dir(), id)
+        .ok_or_else(|| format!("插件未安装：{id}"))
 }
 
 /// 与启动逻辑完全同一套推断：py → python、js/mjs/cjs → node、其余 → exe。
@@ -1482,6 +1967,80 @@ pub fn runtime_download(app: AppHandle, kind: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 解压运行时 zip：zip 里顶层就是 `{kind}-runtime/…`，落点应为
+/// `<base>/{kind}-runtime/…`。
+///
+/// **顶层前缀只拼一次** —— 早先的写法把 `python-runtime/` 拼了两遍，文件落到
+/// `python-runtime/python-runtime/python.exe`，而 `shared_runtime()` 探测的是
+/// `python-runtime/python.exe` → 一键下载完设置页仍显示「运行时缺失」。
+///
+/// 抽成独立函数是为了能测：这段逻辑以前藏在下载线程里、零单测，
+/// 双前缀的 bug 潜伏了 4 天才被 QA 抓到。
+fn extract_runtime_zip<R: std::io::Read + std::io::Seek>(
+    reader: R,
+    kind: &str,
+    base: &Path,
+) -> Result<(), String> {
+    let top = format!("{kind}-runtime/");
+    let mut z = zip::ZipArchive::new(reader).map_err(|e| format!("运行时包损坏：{e}"))?;
+    for i in 0..z.len() {
+        let mut e = z.by_index(i).map_err(|e| e.to_string())?;
+        let name = e.name().to_string();
+        if !name.starts_with(&top) || name.ends_with('/') {
+            continue;
+        }
+        // zip-slip 防护（2026-11-11 审查）：原来的手写检查只挡 `..`，
+        // 挡不住 `C:/x`、`/x` 这类「join 会替换基目录」的绝对路径。
+        // `enclosed_name()` 是 zip crate 的官方清洗：拒绝绝对路径 / 盘符 / 父目录。
+        let Some(safe_rel) = e.enclosed_name() else {
+            return Err(format!("运行时包里有可疑路径：{name}"));
+        };
+        let rel = safe_rel.to_string_lossy().replace('\\', "/");
+        if rel.split('/').any(|c| c == "..") {
+            return Err(format!("运行时包里有可疑路径：{name}"));
+        }
+        // 只剥一次顶层前缀：rel 已经是 `python-runtime/python.exe`，
+        // 落点必须是 `base/python-runtime/python.exe`。
+        let Some(stripped) = rel.strip_prefix(&top) else {
+            return Err(format!("运行时包里有可疑路径：{name}"));
+        };
+        // 剥掉顶层前缀后，剩下的部分**可能又变成绝对路径 / 盘符** ——
+        // `C:/x`、`//x` 这类在完整条目名里是合法的，剥完前缀才现形。
+        // `Path::join` 遇到带盘符/根的路径会**整个替换 base**，所以必须再判一次。
+        let stripped_path = std::path::Path::new(stripped);
+        if stripped.is_empty()
+            || stripped_path.is_absolute()
+            || stripped_path.components().any(|c| {
+                matches!(
+                    c,
+                    std::path::Component::Prefix(_) | std::path::Component::RootDir
+                )
+            })
+            || stripped.contains(':')
+            || stripped.split('/').any(|c| c.is_empty() || c == "." || c == "..")
+        {
+            return Err(format!("运行时包里有可疑路径：{name}"));
+        }
+        let out = base.join(&top).join(stripped);
+        // 兜底：落点必须在 base 之内（`Path::join` 遇带盘符/根的参数会整个替换 base，
+        // 上面那些判据是「按规则拦」，这一条是「按结果验」，两道都要在）
+        if !out.starts_with(base) {
+            return Err(format!("运行时包里有可疑路径：{name}"));
+        }
+        if let Some(p) = out.parent() {
+            std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+        }
+        let mut w = std::fs::File::create(&out).map_err(|e| {
+            format!(
+                "写入 {} 失败：{e}。装在 Program Files 时需要管理员权限运行软件",
+                out.display()
+            )
+        })?;
+        std::io::copy(&mut e, &mut w).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// 打包时间上传到 release 的运行时 zip（release.yml 里 Compress-Archive 生成）。
 fn runtime_zip_url(kind: &str) -> String {
     format!("https://github.com/706972745/FontManager/releases/latest/download/{kind}-runtime.zip")
@@ -1494,6 +2053,8 @@ fn runtime_download_task(app: &AppHandle, kind: &str) -> Result<(), String> {
         .and_then(|p| p.parent().map(Path::to_path_buf))
         .ok_or("找不到软件安装目录")?;
     let url = runtime_zip_url(kind);
+    // 初始 URL 也要过白名单（URL 是硬编码的，这道闸是防将来有人把它参数化）
+    check_host_in(&url, &RUNTIME_HOSTS)?;
 
     let emit = |phase: &str, received: u64, total: u64, error: Option<&str>| {
         let _ = app.emit(
@@ -1514,6 +2075,10 @@ fn runtime_download_task(app: &AppHandle, kind: &str) -> Result<(), String> {
     let client = reqwest::blocking::Client::builder()
         .user_agent(concat!("FontManager/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(600))
+        // 302 的落点要逐跳复检 host（与插件中心同一套策略，见 redirect_policy_for）：
+        // release 直链会跳到 release-assets.githubusercontent.com，
+        // 但白名单外的主机一律不跟。
+        .redirect(redirect_policy_for(&RUNTIME_HOSTS))
         .build()
         .map_err(|e| e.to_string())?;
     let mut resp = client
@@ -1545,38 +2110,10 @@ fn runtime_download_task(app: &AppHandle, kind: &str) -> Result<(), String> {
     emit("download", total.max(1), total.max(1), None);
     emit("extract", 0, 0, None);
 
-    // 解到安装目录。zip 里顶层就是 {kind}-runtime/…；zip-slip 防护同插件 zip。
+    // 解到安装目录。zip 里顶层就是 {kind}-runtime/…；落点只拼一次顶层前缀
+    // （见 extract_runtime_zip 的注释 —— 拼两次会让探测永远找不到文件）。
     let f = std::fs::File::open(&tmp).map_err(|e| e.to_string())?;
-    let mut z = zip::ZipArchive::new(f).map_err(|e| format!("运行时包损坏：{e}"))?;
-    let top = format!("{kind}-runtime/");
-    for i in 0..z.len() {
-        let mut e = z.by_index(i).map_err(|e| e.to_string())?;
-        let name = e.name().to_string();
-        if name.starts_with(&top) && !name.ends_with('/') {
-            let rel = &name[top.len()..];
-            // zip-slip 防护（2026-11-11 审查）：原来的手写检查只挡 `..`，
-            // 挡不住 `C:/x`、`/x` 这类「join 会替换基目录」的绝对路径。
-            // `enclosed_name()` 是 zip crate 的官方清洗：拒绝绝对路径 / 盘符 / 父目录。
-            let Some(safe_rel) = e.enclosed_name() else {
-                return Err(format!("运行时包里有可疑路径：{name}"));
-            };
-            let rel = safe_rel.to_string_lossy().replace('\\', "/");
-            if rel.split('/').any(|c| c == "..") {
-                return Err(format!("运行时包里有可疑路径：{name}"));
-            }
-            let out = exe_base.join(&top).join(&rel);
-            if let Some(p) = out.parent() {
-                std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
-            }
-            let mut w = std::fs::File::create(&out).map_err(|e| {
-                format!(
-                    "写入 {} 失败：{e}。装在 Program Files 时需要管理员权限运行软件",
-                    out.display()
-                )
-            })?;
-            std::io::copy(&mut e, &mut w).map_err(|e| e.to_string())?;
-        }
-    }
+    extract_runtime_zip(f, kind, &exe_base)?;
     let _ = std::fs::remove_file(&tmp);
     crate::diag::log(&format!("[runtime] {kind} 运行时补全完成（{}）", exe_base.display()));
     invalidate_runtimes_status(); // 大小/版本变了，下次打开设置要重算
@@ -2679,6 +3216,135 @@ mod tests {
             got.contains("line 20") && got.contains(" → "),
             "帧行被中间的源码行冲掉了：{got:?}"
         );
+    }
+
+    /// 回归：一键下载的运行时 zip 曾经把**顶层前缀拼了两遍**，文件落到
+    /// `python-runtime/python-runtime/python.exe`，而 `shared_runtime()` 探测的是
+    /// `python-runtime/python.exe` → 下载完设置页仍显示「运行时缺失」。
+    /// 这段逻辑以前藏在下载线程里、零单测，所以潜伏了 4 天。
+    #[test]
+    fn runtime_zip_extracts_under_kind_runtime_dir() {
+        let dir = tempfile_dir("runtime-zip-ok");
+        let zip_path = dir.join("python-runtime.zip");
+        write_test_zip(
+            &zip_path,
+            &[
+                ("python-runtime/python.exe", b"MZ fake exe"),
+                ("python-runtime/Lib/site.py", b"print(1)"),
+            ],
+        );
+        let bytes = std::fs::read(&zip_path).unwrap();
+        extract_runtime_zip(std::io::Cursor::new(bytes), "python", &dir).expect("解压应成功");
+
+        // 落点必须是 <base>/python-runtime/python.exe —— 顶层前缀只拼一次
+        assert!(dir.join("python-runtime").join("python.exe").is_file());
+        assert!(dir.join("python-runtime").join("Lib").join("site.py").is_file());
+        // 不能再出现第二层前缀
+        assert!(
+            !dir.join("python-runtime").join("python-runtime").exists(),
+            "顶层前缀被拼了两次"
+        );
+    }
+
+    /// zip-slip 负例：运行时包里的越界条目一律拒（`enclosed_name()` 会挡掉
+    /// 绝对路径 / 盘符 / 父目录；`..` 再单独查一遍）。
+    #[test]
+    fn runtime_zip_rejects_zip_slip() {
+        for evil in [
+            "python-runtime/../../evil.exe",
+            "python-runtime/../evil.exe",
+            "python-runtime/..\\..\\evil.exe",
+            // 剥掉顶层前缀之后才露出盘符：`enclosed_name()` 抓不到
+            // （Windows 的路径解析只在**开头**认盘符，中段的 "C:" 是普通分量），
+            // 而 Path::join 遇带盘符的参数会**替换**基目录 → 写到 C:\ 逃出去。
+            "python-runtime/C:/evil.exe",
+            // 余下段看起来是绝对路径 / 带 "." 段
+            "python-runtime//evil.exe",
+            "python-runtime/./evil.exe",
+            // 盘符不在紧邻顶层前缀的那一段（更深一层也一样露出来）
+            "python-runtime/sub/C:/evil.exe",
+        ] {
+            let dir = tempfile_dir("runtime-zip-slip");
+            let zip_path = dir.join("evil.zip");
+            write_test_zip(&zip_path, &[(evil, b"evil")]);
+            let bytes = std::fs::read(&zip_path).unwrap();
+            assert!(
+                extract_runtime_zip(std::io::Cursor::new(bytes), "python", &dir).is_err(),
+                "应拒绝越界条目：{evil}"
+            );
+            // 不能有文件落到 base 之外
+            assert!(!dir.join("evil.exe").exists(), "{evil} 竟然落盘了");
+        }
+    }
+
+    /// 插件 id 白名单：面板传来的 id 会进日志（`[plugin:{id}]`），
+    /// 恶意 id 可以塞控制字符 / 换行做**日志注入**，也可能被将来的代码拼进路径。
+    #[test]
+    fn plugin_id_gate_rejects_log_injection_and_paths() {
+        // 正常 id
+        assert!(sanitize_plugin_id("font-renamer").is_ok());
+        assert!(sanitize_plugin_id("font-renamer__alice").is_ok());
+        assert!(sanitize_plugin_id("com.fontmanager.font-sync").is_ok());
+        // 空白 / 超长 / 非法字符
+        assert!(sanitize_plugin_id("").is_err());
+        assert!(sanitize_plugin_id("   ").is_err());
+        assert!(sanitize_plugin_id("bad id").is_err());
+        assert!(sanitize_plugin_id("evil/id").is_err());
+        assert!(sanitize_plugin_id(&"a".repeat(65)).is_err());
+        // 日志注入：换行 / 控制字符
+        assert!(sanitize_plugin_id("evil\n[plugin:fake]").is_err());
+        assert!(sanitize_plugin_id("evil\r\n").is_err());
+        assert!(sanitize_plugin_id("evil\r\n[plugin:admin]").is_err());
+        assert!(sanitize_plugin_id("evil\t").is_err());
+        // **首尾空白不静默纠正**（不做 trim）：与 TS 侧 communityDirFor 同一口径
+        assert!(sanitize_plugin_id(" font-renamer").is_err());
+        assert!(sanitize_plugin_id("font-renamer ").is_err());
+        // 路径相关：以点开头 / 含 ..
+        assert!(sanitize_plugin_id(".hidden").is_err());
+        assert!(sanitize_plugin_id("../evil").is_err());
+    }
+
+    /// 面板窗口的独立 WebView2 数据目录必须**按 label 隔离**：
+    /// 两个面板窗口同时开着时共用同一个 user data folder 正是 tauri#8196 的成因
+    /// （第二个 WebView2 environment 创建卡住 → 窗口壳出来、webview 不出来、白屏）。
+    #[test]
+    fn panel_webview_dir_is_label_scoped() {
+        assert_eq!(panel_webview_dir_name("plugin-panel"), "plugin-panel-webview");
+        assert_eq!(
+            panel_webview_dir_name("workshop-panel"),
+            "workshop-panel-webview"
+        );
+        assert_ne!(
+            panel_webview_dir_name("plugin-panel"),
+            panel_webview_dir_name("workshop-panel"),
+            "两个面板窗口不能共用同一个 WebView2 数据目录"
+        );
+    }
+
+    /// 运行时下载的重定向：**落点必须逐跳复检 host**。    ///
+    /// 断言落在策略实际调用的那道闸（`check_host_in`）上 —— reqwest 的 `Attempt`
+    /// 字段是私有的，crate 外构造不出来，所以没法直接断言 `Policy` 的返回值；
+    /// 但策略的判定完全由这个函数决定，单元层面等价，也不需要发网络请求。
+    #[test]
+    fn runtime_redirect_host_gate_rejects_foreign_host() {
+        // 白名单内：自家 release 直链 + 它的两个 302 落点
+        assert!(check_host_in(
+            "https://github.com/706972745/FontManager/releases/latest/download/python-runtime.zip",
+            &RUNTIME_HOSTS
+        )
+        .is_ok());
+        assert!(
+            check_host_in("https://release-assets.githubusercontent.com/x", &RUNTIME_HOSTS).is_ok()
+        );
+        assert!(check_host_in("https://objects.githubusercontent.com/x", &RUNTIME_HOSTS).is_ok());
+
+        // 白名单外：重定向到这些地方一律不跟
+        assert!(check_host_in("https://evil.example/x", &RUNTIME_HOSTS).is_err());
+        assert!(check_host_in("https://raw.githubusercontent.com/x", &RUNTIME_HOSTS).is_err());
+        // 非 https 也拒
+        assert!(check_host_in("http://github.com/x", &RUNTIME_HOSTS).is_err());
+        // 名单别被顺手开大：运行时只该覆盖这 3 个 host
+        assert_eq!(RUNTIME_HOSTS.len(), 3);
     }
 }
 

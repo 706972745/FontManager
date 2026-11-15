@@ -216,6 +216,17 @@ body,
   gap: 4px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* 滚动条右移到侧栏最右缘（用户 2026-11-15：发丝线不要缩在内容里面，
+     要贴着侧栏与主区的分界线）。做法：负 margin 把滚动容器向右扩进
+     .sidebar 的右内距，再用等量 padding-right 把行内容宽度补回来 ——
+     滚动条永远画在容器最外侧，于是贴到边框上；行的视觉位置不变。 */
+  margin-right: -10px;
+  padding-right: 10px;
+}
+/* 样张视图侧栏右内距收成 7px，扩进量同步改 7，否则会压过分界线 3px */
+.app-shell.shell-specimen .sidebar-scroll {
+  margin-right: -7px;
+  padding-right: 7px;
 }
 
 .sidebar-section {
@@ -2545,8 +2556,11 @@ h2.detail-title.copy-name {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* 菜单项超出窗口高度时可滚动，滚动条要看得见（同 .lang-menu 风格） */
-  scrollbar-width: thin;
+  /* 菜单项超出窗口高度时可滚动。滚动条不再自管（用户 2026-11-15：菜单里的
+     滚动条要和软件里其他滚动条一样）—— 删掉旧的 .lang-menu 同款覆盖，
+     让 7900 行那段全局发丝线规则（1px 视觉 / 靠近变 6px）直接生效。
+     注意 `scrollbar-width: thin` 也必须去掉：Chromium 里只要声明了
+     scrollbar-width，::-webkit-scrollbar 系列会被整体禁用。 */
   border-radius: 6px;
   padding: 4px;
   transform-origin: top left;
@@ -2554,25 +2568,7 @@ h2.detail-title.copy-name {
     linear-gradient(rgba(var(--scrim-rgb), 0.3), rgba(var(--scrim-rgb), 0.3)),
     var(--e3);
 }
-/* 菜单超出窗口高度时内部滚动，滚动条要看得见（同 .lang-menu 风格） */
-.ctx-menu::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-.ctx-menu::-webkit-scrollbar-track {
-  background: transparent;
-}
-.ctx-menu::-webkit-scrollbar-thumb {
-  background: rgba(var(--ink-rgb), 0.16);
-  border: 3.5px solid transparent;
-  border-radius: 5px;
-  background-clip: padding-box;
-}
-.ctx-menu::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--ink-rgb), 0.26);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
+/* 菜单滚动条 2026-11-15 起走全局规则（见 .ctx-menu 上方注释），此处不再覆盖 */
 .ctx-item {
   display: flex;
   align-items: center;
@@ -3157,33 +3153,10 @@ h2.detail-title.copy-name {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-/* 结果列表的滚动条整套自管（2026-11-13）：全局那条 10px 宽 + 4.5px 透明边
-   （靠 background-clip: padding-box 把 10px 收成 1px 视觉）套到 6px 宽度上
-   会直接裁没，所以不能用 width 覆盖了事。这里是一条细淡的 6px；
-   鼠标靠近右缘（App 给容器挂 .scroll-hot）也不加宽加深 —— 否则徽章正下方
-   会出现一块变宽变深的灰，看着像「文字压着灰块」。.scroll-hot 挂在滚动容器
-   自己身上，必须用 `.ctx-hits.scroll-hot` 复合选择器才能压过全局的
-   `*::-webkit-scrollbar-thumb`（同为 (0,1,0)，写在前面会被 7729 那段盖回去）。 */
-.ctx-menu .ctx-hits::-webkit-scrollbar {
-  width: 6px;
-}
-.ctx-menu .ctx-hits::-webkit-scrollbar-track {
-  background: transparent;
-}
-.ctx-menu .ctx-hits::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--ui-fg) 16%, transparent);
-  border: 0;
-  border-radius: 999px;
-  min-height: 24px;
-}
-.ctx-menu .ctx-hits::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--ui-fg) 26%, transparent);
-}
-.ctx-menu .ctx-hits.scroll-hot::-webkit-scrollbar-thumb,
-.ctx-menu .ctx-hits.scroll-hot::-webkit-scrollbar-thumb:hover {
-  border-width: 0;
-  background: color-mix(in srgb, var(--ui-fg) 16%, transparent);
-}
+/* 结果列表的滚动条 2026-11-15 起也走全局发丝线规则（用户：菜单里的滚动条
+   要和软件里其他滚动条一样）—— 原来那条自管的 6px 细淡线（2026-11-13，
+   为避免 scroll-hot 加宽在徽章下压出一块灰而设）删除。发丝线平时只有 1px
+   视觉，加宽只在指针贴边/悬停时出现，可接受；若再反馈再单独收。 */
 .ctx-more {
   padding: 6px 9px 7px;
   font-size: 11.5px;
@@ -5197,24 +5170,7 @@ h2.detail-title.copy-name {
   color: var(--accent-a);
 }
 
-.lang-menu::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-.lang-menu::-webkit-scrollbar-track {
-  background: transparent;
-}
-.lang-menu::-webkit-scrollbar-thumb {
-  background: rgba(var(--ink-rgb), 0.16);
-  border: 3.5px solid transparent;
-  border-radius: 5px;
-  background-clip: padding-box;
-}
-.lang-menu::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--ink-rgb), 0.26);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
+/* 语言菜单的滚动条 2026-11-15 起走全局规则（与右键菜单同一次统一），不再覆盖 */
 
 .settings-translate {
   display: flex;
@@ -5316,7 +5272,7 @@ h2.detail-title.copy-name {
   font-size: var(--fs-11);
   font-weight: 500;
   padding: 5px 10px;
-  border-radius: 999px;
+  border-radius: 4px;
   color: var(--text-secondary);
   background: rgba(var(--ink-rgb), 0.05);
   border: 1px solid rgba(var(--ink-rgb), 0.08);
@@ -8743,7 +8699,9 @@ body.ui-fade-out .app-frame {
 }
 
 /* ─── 在线字体库（R4 §4.1） ────────────────────────────────────────── */
-/* 分类标签改成 0 圆角方片，选中蓝底白字（原来是胶囊 + 描边） */
+/* 分类标签：0 圆角方片 → 2026-11-15 用户要求改回**圆角矩形，与搜索框同一个圆角**
+ * （`.online-search-input` 最终生效 4px，见本文件末尾 R8 收口段）。
+ * 保持 26px 高 + 描边 + 选中蓝底白字不变，只动圆角。 */
 .online-chips > * {
   height: 26px;
   min-width: 76px;
@@ -8751,7 +8709,7 @@ body.ui-fade-out .app-frame {
   align-items: center;
   justify-content: center;
   padding: 0 10px;
-  border-radius: 0;
+  border-radius: 4px;
   border: 1px solid var(--ui-line);
   background: none;
   font-size: var(--fs-11);
@@ -9967,11 +9925,44 @@ body.tour-qb .qb-actions .qb-btn-text {
   background: transparent;
   color: var(--text-tertiary);
 }
-/* ④ 「导入」与「设置」之间多 4px 呼吸：`.titlebar-controls` 的 gap 只有 1px，
-   四个动作会连成一条；这一档把「窗口动作 / 库级动作」分成两组，
-   分组边界正好落在导入按钮左边（右侧已有 `.titlebar-sep` 兜住）。 */
-.rescan-btn.tb-action-first {
-  margin-left: 4px;
+/* ④ 动作按钮排 `.titlebar-actions`：五个图标的**视觉间距必须一致**（用户 11-15）。
+   原来 `.tb-action` 是 30×30，而「速览 / 设置」还是窗口按钮那套 38×30，
+   父级 gap 又只有 1px → icon 中心间距变成 31 / 34 / 35 三种，看着「有的挤有的松」。
+   收成一个 flex 行：**一律 30×30 + gap 6**，中心间距恒为 36，五个等距。
+   （原来那条「导入按钮右侧 4px 分组间距」随之一并取消：它与「等距」互斥。） */
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-actions > button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  transition: background var(--t-quick) ease, color var(--t-quick) ease;
+}
+
+.titlebar-actions > button:hover:not(:disabled) {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+
+/* 扫描中 / 导入中：45% 透明、不出 hover 底（与 `.tb-action` 原口径一致，
+   30px 的小图标用全局 .4 会灰到看不清还有这个动作） */
+.titlebar-actions > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: transparent;
+  color: var(--text-tertiary);
 }
 
 /* 顶栏少了两个按钮之后，右侧只剩「视图切换」一组。
@@ -10445,3 +10436,4 @@ body.tour-qb .qb-actions .qb-btn-text {
   color: var(--text-tertiary);
   white-space: nowrap;
 }
+

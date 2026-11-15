@@ -1,7 +1,7 @@
 {
   "about.appRepo": "Исходный код",
   "about.desc": "Просмотр, теги, группы и снимки, установка двойным щелчком, включение и отключение семей в один клик — тысячи шрифтов в порядке даже офлайн: дубликаты и лицензии распознаются автоматически. Файлы шрифтов всегда остаются на вашем компьютере.Устанавливаемые плагины, локальный API и поддержка MCP позволяют связать шрифты с другими инструментами.",
-  "about.pluginRepo": "Репозиторий плагинов",
+  "about.pluginRepo": "Репозиторий плагинов на GitHub",
   "about.stackAria": "Технологии",
   "about.version": "Версия {version} · {license}",
   "about.edition": "Стабильная",
@@ -1157,9 +1157,6 @@
   "settings.pluginsSettings": "Настройки плагина",
   "settings.pluginsSettingsOff": "Плагин не запущен — сначала включите его",
   "settings.pluginsRowHint": "Правый клик по строке открывает меню плагина",
-  "settings.pluginsGetMore": "Больше плагинов",
-  "settings.pluginsGetMoreSub": "Открывает репозиторий плагинов в браузере — скачайте ZIP нужного плагина и положите его в папку плагинов (или используйте «Установить из ZIP» выше).",
-  "settings.pluginsGetMoreOpen": "Открыть репозиторий плагинов",
   "settings.plugRtBundled": "В комплекте: {runtime}",
   "settings.plugRtNeeds": "Нужен {runtime}",
   "settings.plugRtSelfContained": "Доп. среда не нужна",
@@ -1237,5 +1234,17 @@
   "load.backgroundReading": "Фоновое чтение шрифтов {done}/{total} ({percent} %)",
   "load.seedReady": "Библиотека шрифтов готова",
   "load.partialData": "Чтение не завершено — часть шрифтов пока не видна",
-  "load.retry": "Прочитать заново"
+  "load.retry": "Прочитать заново",
+  "side.pluginCenter": "Центр плагинов",
+  "settings.pluginCenterVersion": "Панель Центра плагинов v{version}",
+  "settings.pluginCenterHint": "Скачайте панель — потом просматривайте плагины сообщества и ставьте их в один клик",
+  "settings.pluginCenterDownloading": "Загрузка {percent}%",
+  "settings.pluginCenterDownloadingShort": "Загрузка…",
+  "settings.pluginCenterDownload": "Скачать панель Центра плагинов",
+  "settings.pluginCenterOpen": "Открыть Центр плагинов",
+  "settings.pluginCenterUninstall": "Удалить",
+  "toast.pluginCenterPanelInstalled": "Панель Центра плагинов установлена (v{version})",
+  "toast.pluginCenterPanelUninstalled": "Панель Центра плагинов удалена",
+  "toast.pluginCenterPanelFailed": "Не удалось установить панель Центра плагинов",
+  "toast.pluginCenterOpenFailed": "Не удалось открыть Центр плагинов"
 }

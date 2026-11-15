@@ -1,7 +1,7 @@
 {
   "about.appRepo": "軟體原始碼",
   "about.desc": "預覽、標籤、分組與快照、雙擊安裝、一鍵啟停——幾千款字體也能在一台機器上整理清楚；自動辨識重複與授權來源，字體檔案始終留在本機，不連網也能使用全部功能。還能安裝外掛、開放本機 API、接入 MCP，把字體能力交給其他工具一起用。",
-  "about.pluginRepo": "外掛倉庫",
+  "about.pluginRepo": "GitHub 外掛倉庫",
   "about.stackAria": "技術堆疊",
   "about.version": "版本 {version} · {license}",
   "about.edition": "正式版",
@@ -1135,9 +1135,6 @@
   "settings.pluginsSettings": "外掛設定",
   "settings.pluginsSettingsOff": "外掛沒有在執行，請先開啟開關",
   "settings.pluginsRowHint": "在這一列按右鍵可以開啟外掛選單",
-  "settings.pluginsGetMore": "取得更多外掛",
-  "settings.pluginsGetMoreSub": "用瀏覽器開啟外掛儲存庫：每個外掛都能單獨下載 ZIP，解壓後放進外掛資料夾即可，也可以使用上方的「從 ZIP 安裝」。",
-  "settings.pluginsGetMoreOpen": "開啟外掛儲存庫",
   "settings.plugRtBundled": "自帶 {runtime}",
   "settings.plugRtNeeds": "需要 {runtime}",
   "settings.plugRtSelfContained": "無需額外環境",
@@ -1222,5 +1219,17 @@
   "load.backgroundReading": "背景讀取字型庫 {done}/{total}（{percent}%）",
   "load.seedReady": "字型庫已就緒",
   "load.partialData": "讀取未完成，部分字型暫時看不到",
-  "load.retry": "重新讀取"
+  "load.retry": "重新讀取",
+  "side.pluginCenter": "插件中心",
+  "settings.pluginCenterVersion": "插件中心面板 v{version}",
+  "settings.pluginCenterHint": "下載面板後可瀏覽社群插件，一鍵安裝",
+  "settings.pluginCenterDownloading": "下載中 {percent}%",
+  "settings.pluginCenterDownloadingShort": "下載中…",
+  "settings.pluginCenterDownload": "下載插件中心面板",
+  "settings.pluginCenterOpen": "開啟插件中心",
+  "settings.pluginCenterUninstall": "解除安裝",
+  "toast.pluginCenterPanelInstalled": "插件中心面板已安裝（v{version}）",
+  "toast.pluginCenterPanelUninstalled": "插件中心面板已解除安裝",
+  "toast.pluginCenterPanelFailed": "插件中心面板安裝失敗",
+  "toast.pluginCenterOpenFailed": "打不開插件中心面板"
 }

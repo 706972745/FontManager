@@ -1,12 +1,15 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Minus, PanelTop, RefreshCw, Square, X } from "lucide-react";
+import { Minus, PanelTop, Puzzle, RefreshCw, Square, X } from "lucide-react";
 import { useFontStore } from "../state/fontStore";
 import { motion, useReducedMotion } from "motion/react";
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
-import { useT } from "../lib/i18n";
+import { activeLocale, useT } from "../lib/i18n";
 import { useState } from "react";
+import { ipc } from "../lib/ipc";
+import { toast } from "../design/primitives/Toast";
+import { useWorkshopInstalled } from "../lib/useWorkshopPanel";
 
 function SettingsGlyph({ size = 15 }: { size?: number }) {
   return (
@@ -48,7 +51,7 @@ function ImportFolderButton() {
   return (
     <motion.button
       data-hint="hint.importFolder"
-      className="rescan-btn tb-action tb-action-first"
+      className="rescan-btn tb-action"
       aria-label={t("top.importFolder")}
       disabled={busy}
       onClick={async () => {
@@ -149,6 +152,37 @@ function RescanButton() {
   );
 }
 
+/**
+ * 插件中心入口（2026-11-15 用户要求从侧栏搬上来）。
+ *
+ * 侧栏那一行会被「在线 / 回收站 / 关于 / 快捷键」这组导航淹没，而插件中心是**窗口级**
+ * 的东西（点开是一个独立面板窗口），语义上该和导入 / 重扫 / 设置待在一起。
+ * 所以只留图标、悬停出提示（`data-hint`，与标题栏其它按钮同一套）。
+ *
+ * **没装面板就不渲染** —— 装了才有这个入口，和侧栏时代同一条口径
+ * （`useWorkshopInstalled` 读后端真相：prefs 标记 + 目录里真有 workshop.html）。
+ */
+function PluginCenterButton() {
+  const t = useT();
+  const installed = useWorkshopInstalled();
+  if (!installed) return null;
+  return (
+    <motion.button
+      className="rescan-btn tb-action"
+      data-hint="side.pluginCenter"
+      aria-label={t("side.pluginCenter")}
+      onClick={() => {
+        void ipc
+          .workshopOpenPanel(activeLocale())
+          .catch((err) => toast.error(t("toast.pluginCenterOpenFailed"), String(err)));
+      }}
+      whileTap={{ scale: 0.94, transition: springSnappy }}
+    >
+      <Puzzle size={14} strokeWidth={1.5} />
+    </motion.button>
+  );
+}
+
 export function Titlebar() {
   const t = useT();
   const win = getCurrentWindow();
@@ -170,27 +204,37 @@ export function Titlebar() {
         </span>
       </div>
       <div className="titlebar-controls">
-        <button
-          data-hint="hint.enterQuickbar"
-          data-tour="quickbar"
-          aria-label={t("quickbar.enter")}
-          onClick={() => void setQuickbar(true)}
-        >
-          <PanelTop size={14} strokeWidth={1.5} />
-        </button>
-        <button
-          data-hint="hint.settings"
-          data-tour="settings"
-          aria-label={t("titlebar.settings")}
-          onClick={() => setSettingsOpen(true)}
-        >
-          <SettingsGlyph />
-        </button>
-        {/* 顺序固定：导入文件夹 → 重新扫描。两者都靠 Tab 可达，aria-label 与
-            data-hint 原样保留；`-webkit-app-region: no-drag` 由 .titlebar-controls
-            继承，不要给按钮单独加 drag 属性（加了反而会盖掉继承的 no-drag）。 */}
-        <ImportFolderButton />
-        <RescanButton />
+        {/* 动作区顺序（2026-11-15 用户定的口径）：**从右往左**依次是
+            设置 → 速览 → 导入文件夹 → 刷新 → 插件中心，也就是 DOM 里从左到右反过来排。
+            右边贴着窗口按钮（最小化/最大化/关闭），最常用、最不该动的留在原位不动。
+
+            **以后再加按钮，一律加在这组的最左边**（即下面第一个位置）——
+            新东西往外长，老按钮不挪窝，肌肉记忆才不会被一次改动打乱。
+
+            外层 `.titlebar-actions` 不是可有可无的：五个按钮必须**同尺寸 + 同间距**，
+            否则 30×30 的 tb-action 和 38×30 的窗口按钮混排，icon 中心间距会变成
+            31 / 34 / 35 三种，肉眼就是「有的挤有的松」。详见 app.css 同名段。 */}
+        <div className="titlebar-actions">
+          <PluginCenterButton />
+          <RescanButton />
+          <ImportFolderButton />
+          <button
+            data-hint="hint.enterQuickbar"
+            data-tour="quickbar"
+            aria-label={t("quickbar.enter")}
+            onClick={() => void setQuickbar(true)}
+          >
+            <PanelTop size={14} strokeWidth={1.5} />
+          </button>
+          <button
+            data-hint="hint.settings"
+            data-tour="settings"
+            aria-label={t("titlebar.settings")}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <SettingsGlyph />
+          </button>
+        </div>
         <span className="titlebar-sep" />
         <button aria-label={t("titlebar.minimize")} onClick={() => void win.minimize()} data-hint="hint.minimize">
           <Minus size={13} strokeWidth={1.5} />

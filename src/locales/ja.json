@@ -1,7 +1,7 @@
 {
   "about.appRepo": "アプリのソース",
   "about.desc": "プレビュー、タグ、グループとスナップショット、ダブルクリックでインストール、ワンクリックで有効/無効化——数千のフォントも一台のマシンで整理でき、重複やライセンスも自動判別。フォントファイルは常にローカルに残り、オフラインでも全機能が使えます。プラグインのインストール、ローカル API、MCP に対応し、フォント機能を他のツールとつなげられます。",
-  "about.pluginRepo": "プラグインリポジトリ",
+  "about.pluginRepo": "GitHub プラグインリポジトリ",
   "about.stackAria": "使用技術",
   "about.version": "バージョン {version} · {license}",
   "about.edition": "正式版",
@@ -1106,9 +1106,6 @@
   "settings.pluginsSettings": "プラグイン設定",
   "settings.pluginsSettingsOff": "プラグインが動作していません。先にスイッチを入れてください",
   "settings.pluginsRowHint": "この行を右クリックするとプラグインのメニューが開きます",
-  "settings.pluginsGetMore": "プラグインを追加",
-  "settings.pluginsGetMoreSub": "ブラウザでプラグインのリポジトリを開きます。各プラグインの ZIP をダウンロードしてプラグインフォルダーに入れるか、上の「ZIP からインストール」を使ってください。",
-  "settings.pluginsGetMoreOpen": "プラグインのリポジトリを開く",
   "settings.plugRtBundled": "{runtime} を同梱",
   "settings.plugRtNeeds": "{runtime} が必要",
   "settings.plugRtSelfContained": "追加環境不要",
@@ -1186,5 +1183,17 @@
   "load.backgroundReading": "バックグラウンドでフォントを読み込み中 {done}/{total}（{percent}%）",
   "load.seedReady": "フォントライブラリの準備ができました",
   "load.partialData": "読み込みが完了していないため、一部のフォントは表示されません",
-  "load.retry": "読み込みをやり直す"
+  "load.retry": "読み込みをやり直す",
+  "side.pluginCenter": "プラグインセンター",
+  "settings.pluginCenterVersion": "プラグインセンターパネル v{version}",
+  "settings.pluginCenterHint": "パネルをダウンロードすると、コミュニティのプラグインを一覧してワンクリックで導入できます",
+  "settings.pluginCenterDownloading": "ダウンロード中（{percent}%）",
+  "settings.pluginCenterDownloadingShort": "ダウンロード中…",
+  "settings.pluginCenterDownload": "プラグインセンターパネルをダウンロード",
+  "settings.pluginCenterOpen": "プラグインセンターを開く",
+  "settings.pluginCenterUninstall": "アンインストール",
+  "toast.pluginCenterPanelInstalled": "プラグインセンターパネルをインストールしました（v{version}）",
+  "toast.pluginCenterPanelUninstalled": "プラグインセンターパネルをアンインストールしました",
+  "toast.pluginCenterPanelFailed": "プラグインセンターパネルのインストールに失敗しました",
+  "toast.pluginCenterOpenFailed": "プラグインセンターを開けませんでした"
 }

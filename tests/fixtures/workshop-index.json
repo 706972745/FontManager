@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-14T22:50:00Z",
+  "official": [
+    {
+      "id": "font-sync",
+      "name": "字体同步",
+      "brief": "把字体库增量同步到你自己的 GitHub 私有仓，多台电脑自动保持一致。",
+      "detail": "按字体族打包增量同步：上传 / 下载 / sha256 校验 / 自动重扫。令牌 DPAPI 加密，多账号隔离。",
+      "author": "official",
+      "official": true,
+      "version": "0.9.3",
+      "runtime": "python",
+      "minAppVersion": "1.9.2",
+      "lang": "zh-CN",
+      "download": "https://github.com/706972745/FontManager-Plugin/releases/download/v1/font-sync-0.9.3.zip",
+      "size": 107642
+    },
+    {
+      "id": "font-stats",
+      "name": "字体统计",
+      "brief": "统计字体库：家族、字重、风格、版权分布，生成图表报告。",
+      "detail": "对当前字体库做全量统计并生成可视化报告。",
+      "author": "official",
+      "official": true,
+      "version": "1.0.0",
+      "runtime": "python",
+      "minAppVersion": "1.9.0",
+      "lang": "zh-CN",
+      "download": "https://github.com/706972745/FontManager-Plugin/releases/download/v1/font-stats.zip",
+      "size": 20000035
+    },
+    {
+      "id": "specimen-export",
+      "name": "字样导出",
+      "brief": "把字体导出为字样图 / PDF 样张。",
+      "detail": "选中字体族生成字样图或 PDF 样张，支持批量。",
+      "author": "official",
+      "official": true,
+      "version": "1.0.0",
+      "runtime": "python",
+      "minAppVersion": "1.9.0",
+      "lang": "zh-CN",
+      "download": "https://github.com/706972745/FontManager-Plugin/releases/download/v1/specimen-export.zip",
+      "size": 20018319
+    },
+    {
+      "id": "font-apply",
+      "name": "字体应用",
+      "brief": "按场景一键应用字体组合。",
+      "detail": "预设场景（标题/正文/代码）一键切换启用字体组合。",
+      "author": "official",
+      "official": true,
+      "version": "1.0.0",
+      "runtime": "python",
+      "minAppVersion": "1.9.0",
+      "lang": "zh-CN",
+      "download": "https://github.com/706972745/FontManager-Plugin/releases/download/v1/font-apply.zip",
+      "size": 20790
+    },
+    {
+      "id": "template-hello",
+      "name": "插件模板",
+      "brief": "官方插件开发模板：最小可运行插件 + 面板示例。",
+      "detail": "复制本插件作为起点开发你自己的 FontManager 插件。",
+      "author": "official",
+      "official": true,
+      "version": "1.0.0",
+      "runtime": null,
+      "minAppVersion": "1.9.0",
+      "lang": "zh-CN",
+      "download": "https://github.com/706972745/FontManager-Plugin/releases/download/v1/template-hello.zip",
+      "size": 4268
+    }
+  ],
+  "plugins": [
+    {
+      "id": "font-renamer",
+      "name": "批量重命名",
+      "brief": "按规则批量重命名字体族：前缀、后缀、序号、正则替换。",
+      "detail": "对当前字体库中的字体族批量重命名。\n支持：加前缀/后缀、序号填充、正则替换、预览 diff 后再应用。\n所有改动写入主程序字体库，可撤销。",
+      "author": "alice",
+      "version": "1.0.0",
+      "permissions": [
+        "fonts:read",
+        "fonts:write"
+      ],
+      "runtime": null,
+      "minAppVersion": "2.1.7",
+      "lang": "zh-CN",
+      "official": false,
+      "uploadedAt": "2026-11-14T14:00:00Z",
+      "files": [
+        {
+          "path": "plugin.json",
+          "sha256": "38ce07e9a5e304ec9f05574c62358d7e82a7c9b00fdaada53fc5e7c607d783c0",
+          "url": "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/plugins/font-renamer__alice/plugin.json",
+          "size": 682
+        },
+        {
+          "path": "rename.py",
+          "sha256": "814dbf941bffe9ebc858947b5e64f925286b71f23f614fb5c6fbf45111b8b184",
+          "url": "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/plugins/font-renamer__alice/rename.py",
+          "size": 36
+        }
+      ],
+      "dir": "plugins/font-renamer__alice"
+    },
+    {
+      "id": "spec-counter",
+      "name": "字数统计",
+      "brief": "统计字体库字符覆盖率，导出 CSV。",
+      "detail": "扫描字体 cmap，统计指定文本的字符覆盖率，导出 CSV 报告。",
+      "author": "anonymous-7f3a",
+      "version": "0.3.0",
+      "permissions": [
+        "fonts:read"
+      ],
+      "runtime": "python",
+      "minAppVersion": "2.1.7",
+      "lang": "zh-CN",
+      "official": false,
+      "uploadedAt": "2026-11-14T15:00:00Z",
+      "files": [
+        {
+          "path": "count.py",
+          "sha256": "d5d1f8ae95684487761f5f8ddeb24af04ec2faece88eb4690928e8e3456021a5",
+          "url": "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/plugins/spec-counter__anonymous-7f3a/count.py",
+          "size": 36
+        },
+        {
+          "path": "plugin.json",
+          "sha256": "824566c3f497a395015f0ef778f99c97f5713289a936d7493ae53fa222dac0d4",
+          "url": "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/plugins/spec-counter__anonymous-7f3a/plugin.json",
+          "size": 528
+        }
+      ],
+      "dir": "plugins/spec-counter__anonymous-7f3a"
+    }
+  ]
+}

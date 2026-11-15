@@ -295,7 +295,8 @@ pub fn is_running() -> bool {
 /// 攻击者只要知道进程 id 和大致启动时间就能枚举出令牌（2026-11-10 审查发现）。
 /// `RandomState` 的 key 由操作系统在进程启动时随机播种（Windows 走 `ProcessPrng`），
 /// 拿它做两轮哈希、各取 64 位，本地回环鉴权够用，也不必为此引入 rand。
-fn random_hex() -> String {
+/// 一次性会话 key / 令牌都从这里来（面板会话也用它 —— 见 workshop.rs）。
+pub(crate) fn random_hex() -> String {
     use std::hash::{BuildHasher, Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);

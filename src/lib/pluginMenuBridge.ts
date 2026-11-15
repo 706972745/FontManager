@@ -26,3 +26,16 @@ export async function refreshPluginMenus(): Promise<void> {
     usePluginStore.setState({ loaded: false });
   }
 }
+
+/**
+ * 插件清单变了（插件中心面板装/卸插件后主程序广播 `plugins:changed`）：
+ * 一次 IPC 同时喂「右键菜单缓存」和「搜索建议 store」。
+ *
+ * 为什么要专门开这个函数：插件清单以前只在启动时拉一次，插件中心是独立窗口，
+ * 它装完插件主窗口根本不知道 —— 用户装完在中心看得见、回到主界面搜不到。
+ * 设置页里的启停走的是自己的刷新路径，两边共用这一份实现（少一次 IPC）。
+ */
+export async function refreshPluginList(): Promise<PluginInfo[]> {
+  await refreshPluginMenus();
+  return cache;
+}

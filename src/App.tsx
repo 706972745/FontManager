@@ -51,7 +51,7 @@ import { useT, t as translate } from "./lib/i18n";
 import { DiagHud } from "./components/DiagHud";
 import { experiment } from "./lib/experiment";
 import { ensureThumbIndex } from "./lib/thumb";
-import { refreshPluginMenus } from "./lib/pluginMenuBridge";
+import { refreshPluginMenus, refreshPluginList } from "./lib/pluginMenuBridge";
 
 /**
  * 诊断 HUD 开关。只在 `?diag=1` 时挂载：它每 500ms 刷一次文本、常驻一个 rAF 采样循环，
@@ -642,6 +642,29 @@ export default function App() {
       un?.();
     };
   }, [t]);
+
+  // 插件中心面板是独立窗口，装/卸插件后主程序广播 `plugins:changed`：
+  // 这里重拉一次清单（同时喂右键菜单缓存与搜索建议 store）。
+  // 必须写在速览的提前 return 之前 —— 速览里也要能搜到刚装的插件。
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    let dead = false;
+    void listen("plugins:changed", () => {
+      void refreshPluginList();
+    })
+      .then((f) => {
+        if (dead) {
+          void f();
+          return;
+        }
+        un = f;
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+      un?.();
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

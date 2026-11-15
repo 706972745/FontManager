@@ -314,6 +314,11 @@ export function Sidebar() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renamingSnapshot, setRenamingSnapshot] = useState<string | null>(null);
 
+  /**
+   * 插件中心面板装了没有 —— 入口已搬到标题栏（`Titlebar.tsx` 的
+   * `PluginCenterButton`，共用 `useWorkshopInstalled`），这里不再需要。
+   */
+
   useEffect(() => {
     if (pendingCollectionFor) setCreating(true);
   }, [pendingCollectionFor]);
@@ -764,6 +769,10 @@ export function Sidebar() {
       </div>
 
       <div className="sidebar-footer">
+        {/* 插件中心入口已挪到标题栏（2026-11-15 用户要求）：侧栏这一行会混在
+            「在线 / 回收站 / 关于 / 快捷键」里，而插件中心是窗口级动作
+            （点开是一个独立面板窗口）—— 现在是标题栏上的纯图标按钮，
+            悬停出「插件中心」，**没装面板就不显示**。 */}
         {onlineEnabled && (
           <NavRow
             nav={{ kind: "online" }}
