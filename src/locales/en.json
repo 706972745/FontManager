@@ -1,7 +1,7 @@
 {
   "about.appRepo": "App source",
   "about.desc": "Preview, tag, group and snapshot thousands of fonts, install them with a double click, enable or disable any family in one click — all offline, with duplicate detection and license notes. Your font files always stay on your machine.Installable plugins, a local HTTP API and MCP support let you wire font power into other tools.",
-  "about.pluginRepo": "Plugin repo",
+  "about.pluginRepo": "GitHub plugin repo",
   "about.stackAria": "Tech stack",
   "about.version": "Version {version} · {license}",
   "about.edition": "Stable",
@@ -1152,9 +1152,6 @@
   "settings.pluginsSettings": "Plugin settings",
   "settings.pluginsSettingsOff": "Plugin isn't running — switch it on first",
   "settings.pluginsRowHint": "Right-click this row to open the plugin menu",
-  "settings.pluginsGetMore": "More plugins",
-  "settings.pluginsGetMoreSub": "Opens the plugin repository in your browser — download any plugin's ZIP and drop it into the plugin folder (or use “Install from ZIP” above).",
-  "settings.pluginsGetMoreOpen": "Open plugin repository",
   "settings.plugRtBundled": "Bundled {runtime}",
   "settings.plugRtNeeds": "Needs {runtime}",
   "settings.plugRtSelfContained": "No runtime needed",
@@ -1239,5 +1236,17 @@
   "load.backgroundReading": "Reading {done}/{total} font files in the background ({percent}%)",
   "load.seedReady": "Font library ready",
   "load.partialData": "Reading didn’t finish — some fonts are not listed yet",
-  "load.retry": "Read again"
+  "load.retry": "Read again",
+  "side.pluginCenter": "Plugin Center",
+  "settings.pluginCenterVersion": "Plugin Center panel v{version}",
+  "settings.pluginCenterHint": "Download the panel, then browse community plugins and install them in one click",
+  "settings.pluginCenterDownloading": "Downloading {percent}%",
+  "settings.pluginCenterDownloadingShort": "Downloading…",
+  "settings.pluginCenterDownload": "Download the Plugin Center panel",
+  "settings.pluginCenterOpen": "Open Plugin Center",
+  "settings.pluginCenterUninstall": "Uninstall",
+  "toast.pluginCenterPanelInstalled": "Plugin Center panel installed (v{version})",
+  "toast.pluginCenterPanelUninstalled": "Plugin Center panel uninstalled",
+  "toast.pluginCenterPanelFailed": "Couldn't install the Plugin Center panel",
+  "toast.pluginCenterOpenFailed": "Couldn't open the Plugin Center panel"
 }

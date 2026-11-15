@@ -1,0 +1,1328 @@
+/*
+ * 插件中心面板样式（**独立产物，自带 CSS**）。
+ *
+ * 面板不依赖主包的 app.css —— 它可能被单独更新，样式必须跟着面板走。
+ * 口径仍按仓库的硬约定：
+ * - 圆角 5 档：0 卡片/菜单项、4 控件、8 浮层菜单、12 面板；
+ * - 控件高度 24 / 28 / 32；
+ * - 字阶 --fs-9 / 10 / 11 / 13；
+ * - 不用半像素（边框 1px、位移取整）。
+ */
+
+:root {
+  --ws-fs-9: 9px;
+  --ws-fs-10: 10px;
+  --ws-fs-11: 11px;
+  --ws-fs-13: 13px;
+  --ws-bg: #f6f6f4;
+  --ws-panel: #ffffff;
+  --ws-text: #1b1b1b;
+  --ws-text-2: #55554f;
+  --ws-text-3: #8a8a82;
+  --ws-line: rgba(27, 27, 27, 0.1);
+  --ws-hover: rgba(27, 27, 27, 0.05);
+  --ws-accent: #2f6bdb;
+  --ws-accent-soft: rgba(47, 107, 219, 0.1);
+  --ws-danger: #b3261e;
+  --ws-ok: #1f7a3d;
+  --ws-radius: 0px;
+  --ws-radius-ctl: 4px;
+  --ws-radius-pop: 8px;
+  --ws-radius-panel: 12px;
+}
+
+:root[data-theme="dark"] {
+  --ws-bg: #1b1b1b;
+  --ws-panel: #232323;
+  --ws-text: #ececec;
+  --ws-text-2: #b6b6b0;
+  --ws-text-3: #86867f;
+  --ws-line: rgba(255, 255, 255, 0.12);
+  --ws-hover: rgba(255, 255, 255, 0.06);
+  --ws-accent: #4c8dff;
+  --ws-accent-soft: rgba(76, 141, 255, 0.14);
+  --ws-danger: #ff6b6b;
+  --ws-ok: #5ac37f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ws-bg);
+  color: var(--ws-text);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: var(--ws-fs-13);
+  -webkit-font-smoothing: antialiased;
+}
+
+.ws-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px;
+  gap: 12px;
+  overflow: hidden;
+}
+
+/* ── 面板标题：独立窗口要自己说清「这是什么」 ───────────────────────── */
+.ws-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ws-line);
+}
+
+.ws-head-icon {
+  color: var(--ws-accent);
+  flex: none;
+}
+
+.ws-head-title {
+  margin: 0;
+  font-size: var(--ws-fs-13);
+  font-weight: 600;
+  color: var(--ws-text);
+  letter-spacing: 0.01em;
+}
+
+/* 顶栏图标按钮（重看导览）：**只要图标，不要方框**（用户 11-15 明确要求）。
+   这个 class 之前没写样式，所以 <button> 带的是系统默认边框 + 灰底，
+   远看就是一个「框里塞了个问号」。 */
+.ws-head-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--ws-text-3);
+  background: none;
+  border: none;
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.ws-head-help:hover {
+  color: var(--ws-text);
+  background: color-mix(in srgb, var(--ws-text) 9%, transparent);
+}
+
+/* ── 顶栏：搜索 + 筛选 chips ───────────────────────────────────────── */
+.ws-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ws-search {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+}
+
+.ws-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--ws-text-3);
+  pointer-events: none;
+}
+
+.ws-search-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 30px 0 30px;
+  font-size: var(--ws-fs-13);
+  color: var(--ws-text);
+  background: var(--ws-hover);
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius-ctl);
+  outline: none;
+}
+
+.ws-search-input:focus {
+  border-color: var(--ws-accent);
+  background: var(--ws-accent-soft);
+}
+
+.ws-clear {
+  position: absolute;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ws-text-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+}
+
+.ws-clear:hover {
+  color: var(--ws-text);
+  background: var(--ws-hover);
+}
+
+.ws-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ws-chip {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--ws-fs-11);
+  font-weight: 500;
+  color: var(--ws-text-2);
+  background: var(--ws-hover);
+  border: 1px solid var(--ws-line);
+  /* 圆角矩形，不是胶囊：与搜索框用同一个变量，两处永远一致
+     （用户 2026-11-15：胶囊看着像标签，筛选按钮应该像输入框那一类控件） */
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.ws-chip:hover {
+  color: var(--ws-text);
+  background: var(--ws-panel);
+}
+
+.ws-chip-on,
+.ws-chip-on:hover {
+  color: #fff;
+  background: var(--ws-accent);
+  border-color: transparent;
+}
+
+.ws-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ws-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--ws-accent);
+}
+
+/* ── 信息行 ────────────────────────────────────────────────────────── */
+.ws-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text-3);
+}
+
+.ws-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text-2);
+  background: var(--ws-hover);
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+}
+
+.ws-refresh:hover {
+  color: var(--ws-text);
+}
+
+.ws-refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ws-notice {
+  color: var(--ws-text-2);
+  overflow-wrap: anywhere;
+}
+
+/* ── 温馨提醒横幅 ──────────────────────────────────────────────────── */
+.ws-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--ws-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--ws-accent) 30%, transparent);
+  border-radius: var(--ws-radius-ctl);
+}
+
+.ws-banner-text {
+  flex: 1;
+  font-size: var(--ws-fs-11);
+  line-height: 16px;
+  color: var(--ws-text-2);
+}
+
+.ws-banner-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ws-text-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+}
+
+.ws-banner-close:hover {
+  color: var(--ws-text);
+}
+
+/* ── 卡片网格 ──────────────────────────────────────────────────────── */
+.ws-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-auto-rows: max-content;
+  gap: 12px;
+  align-content: start;
+  padding-bottom: 20px;
+}
+
+.ws-card {
+  padding: 12px 13px;
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius);
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.ws-card:hover {
+  border-color: color-mix(in srgb, var(--ws-accent) 45%, transparent);
+}
+
+.ws-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ws-accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.ws-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-card-name {
+  font-size: var(--ws-fs-13);
+  font-weight: 600;
+  color: var(--ws-text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-spacer {
+  flex: 1;
+}
+
+.ws-author {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  max-width: 120px;
+  height: 18px;
+  padding: 0 7px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--ws-fs-9);
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 999px;
+  color: var(--ws-text-2);
+  background: var(--ws-hover);
+  border: 1px solid var(--ws-line);
+}
+
+.ws-author-official {
+  color: #fff;
+  background: var(--ws-accent);
+  border-color: transparent;
+}
+
+.ws-author-anon {
+  color: var(--ws-text-3);
+}
+
+.ws-installed {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  font-size: var(--ws-fs-9);
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 999px;
+  color: var(--ws-ok);
+  background: color-mix(in srgb, var(--ws-ok) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ws-ok) 32%, transparent);
+}
+
+.ws-card-brief {
+  margin: 6px 0 0;
+  font-size: var(--ws-fs-11);
+  line-height: 15px;
+  color: var(--ws-text-2);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.ws-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}
+
+.ws-runtime-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: var(--ws-fs-9);
+  line-height: 1;
+  border-radius: var(--ws-radius-ctl);
+  color: var(--ws-text-2);
+  border: 1px solid var(--ws-line);
+  background: var(--ws-hover);
+}
+
+/* ── 详情弹层 ──────────────────────────────────────────────────────── */
+.ws-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.ws-detail {
+  width: min(560px, 100%);
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius-panel);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.ws-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ws-detail-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.ws-detail-sub {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text-2);
+}
+
+.ws-detail-desc {
+  margin: 0;
+  font-size: var(--ws-fs-13);
+  line-height: 20px;
+  color: var(--ws-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ws-runtime-note {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: var(--ws-fs-11);
+  line-height: 16px;
+  color: var(--ws-text);
+  background: color-mix(in srgb, var(--ws-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ws-danger) 30%, transparent);
+  border-radius: var(--ws-radius-ctl);
+}
+
+.ws-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ws-section-label {
+  font-size: var(--ws-fs-10);
+  font-weight: 500;
+  color: var(--ws-text-3);
+}
+
+/* 权限：一行一条「权限名 + 它到底能做什么」。
+   只列出来，不授予 —— 授权发生在用户打开插件开关时（设置页）。 */
+.ws-perms {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-perm-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ws-perm-name {
+  flex: none;
+  padding: 1px 6px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: var(--ws-fs-10);
+  line-height: 16px;
+  color: var(--ws-text-2);
+  background: var(--ws-hover);
+  border: 1px solid var(--ws-line);
+  border-radius: 4px;
+}
+
+.ws-perm-desc {
+  font-size: var(--ws-fs-11);
+  line-height: 16px;
+  color: var(--ws-text-2);
+}
+
+.ws-perm-none {
+  margin: 0;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text-3);
+}
+
+/* 本地 API 关着的常驻提醒：比 banner 更「警告」一点（黄色系），
+   但同样是纯文字提示 —— 不提供「一键打开」，开关属于用户。 */
+.ws-apiwarn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--ws-warn, #b45309) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ws-warn, #b45309) 32%, transparent);
+  border-radius: var(--ws-radius-ctl);
+}
+
+.ws-apiwarn-icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--ws-warn, #b45309);
+}
+
+.ws-apiwarn-text {
+  font-size: var(--ws-fs-11);
+  line-height: 16px;
+  color: var(--ws-text-2);
+}
+
+/* ── 首次导览 ──────────────────────────────────────────────────────── */
+.ws-tour-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #000 42%, transparent);
+  backdrop-filter: blur(1px);
+}
+
+.ws-tour {
+  width: min(460px, calc(100vw - 64px));
+  padding: 16px 18px 14px;
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px color-mix(in srgb, #000 22%, transparent);
+}
+
+.ws-tour-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-tour-count {
+  flex: 1;
+  font-size: var(--ws-fs-10);
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-text-3);
+}
+
+.ws-tour-title {
+  margin: 6px 0 0;
+  font-size: var(--ws-fs-13);
+  font-weight: 600;
+  color: var(--ws-text);
+}
+
+.ws-tour-body {
+  margin: 8px 0 0;
+  font-size: var(--ws-fs-11);
+  line-height: 18px;
+  color: var(--ws-text-2);
+}
+
+.ws-tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ws-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.ws-files li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text-2);
+}
+
+.ws-file-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-file-size {
+  flex: none;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}
+
+.ws-detail-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.ws-source {
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}
+
+.ws-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px;
+  font-size: var(--ws-fs-13);
+  font-weight: 500;
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+}
+
+.ws-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ws-btn-primary {
+  color: #fff;
+  background: var(--ws-accent);
+  border: 1px solid transparent;
+}
+
+.ws-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.ws-btn-ghost {
+  color: var(--ws-text-2);
+  background: var(--ws-hover);
+  border: 1px solid var(--ws-line);
+}
+
+.ws-btn-ghost:hover:not(:disabled) {
+  color: var(--ws-text);
+}
+
+/* ── 空态 / 错误态 ─────────────────────────────────────────────────── */
+.ws-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 0;
+  text-align: center;
+}
+
+.ws-empty h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.ws-empty p {
+  margin: 0;
+  font-size: var(--ws-fs-13);
+  color: var(--ws-text-2);
+}
+
+.ws-empty-tile {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ws-radius-pop);
+  background: var(--ws-hover);
+  color: var(--ws-text-3);
+}
+
+.ws-cta {
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 16px;
+  font-size: var(--ws-fs-13);
+  font-weight: 500;
+  color: #fff;
+  background: var(--ws-accent);
+  border: none;
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+}
+
+.ws-mono {
+  font-family: ui-monospace, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.ws-footer {
+  margin: 0;
+  padding-bottom: 12px;
+  text-align: center;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}
+
+.ws-spin {
+  animation: ws-spin 900ms linear infinite;
+}
+
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-spin {
+    animation: none;
+  }
+}
+
+/* ───────────────── 上传弹窗（M3）─────────────────
+   尺寸照 R8：控件高 32、圆角 4（控件档）/ 12（面板档）。
+   弹窗比详情层宽（表单是两列），但**不超过面板窗口**，小窗口下退成一列。 */
+
+.ws-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--ws-fs-11);
+  font-weight: 500;
+  color: #fff;
+  background: var(--ws-accent);
+  border: 1px solid var(--ws-accent);
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.ws-upload-btn:hover {
+  opacity: 0.88;
+}
+
+.ws-upload {
+  width: min(760px, 100%);
+  max-height: min(86vh, 820px);
+  display: flex;
+  flex-direction: column;
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius-panel);
+  overflow: hidden;
+}
+
+.ws-upload-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ws-line);
+  color: var(--ws-text-2);
+}
+
+.ws-upload-title {
+  margin: 0;
+  font-size: var(--ws-fs-13);
+  font-weight: 600;
+  color: var(--ws-text);
+  flex: 1;
+}
+
+.ws-upload-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ws-upload-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--ws-line);
+  background: color-mix(in srgb, var(--ws-bg) 60%, var(--ws-panel));
+}
+
+.ws-upload-intro {
+  margin: 0;
+  font-size: var(--ws-fs-11);
+  line-height: 1.6;
+  color: var(--ws-text-2);
+}
+
+.ws-up-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ws-up-sec-title {
+  margin: 0;
+  font-size: var(--ws-fs-11);
+  font-weight: 600;
+  color: var(--ws-text);
+}
+
+.ws-up-hint {
+  margin: 0;
+  font-size: var(--ws-fs-10);
+  line-height: 1.6;
+  color: var(--ws-text-3);
+}
+
+.ws-up-error {
+  margin: 0;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-danger);
+}
+
+.ws-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  font-size: var(--ws-fs-11);
+  font-family: inherit;
+  color: var(--ws-text);
+  background: var(--ws-bg);
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius-ctl);
+  outline: none;
+}
+
+.ws-input:focus {
+  border-color: var(--ws-accent);
+}
+
+.ws-up-textarea {
+  height: auto;
+  padding: 8px 10px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.ws-up-token-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ws-up-token-row .ws-input {
+  flex: 1;
+}
+
+.ws-up-token-row .ws-cta,
+.ws-up-pickrow .ws-cta,
+.ws-up-done .ws-cta,
+.ws-upload-foot .ws-cta {
+  margin-top: 0;
+}
+
+.ws-up-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ws-up-login {
+  font-size: var(--ws-fs-11);
+  font-weight: 600;
+  color: var(--ws-ok);
+}
+
+.ws-linkbtn {
+  align-self: flex-start;
+  padding: 0;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ws-up-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ws-fs-10);
+  line-height: 1.7;
+  color: var(--ws-text-2);
+}
+
+.ws-up-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ws-accent);
+  word-break: break-all;
+}
+
+.ws-up-pickrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ws-up-pickmeta {
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-up-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.ws-up-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}
+
+.ws-up-field select.ws-input {
+  cursor: pointer;
+}
+
+.ws-up-wide {
+  grid-column: 1 / -1;
+}
+
+.ws-up-field-label {
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}
+
+.ws-up-perms {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ws-up-permlist {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+
+.ws-up-perm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-2);
+  cursor: pointer;
+}
+
+.ws-up-perm code {
+  font-family: var(--ws-mono, ui-monospace, monospace);
+}
+
+.ws-up-issues {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ws-up-issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--ws-fs-10);
+  line-height: 1.5;
+}
+
+.ws-up-issue-err {
+  color: var(--ws-danger);
+}
+
+.ws-up-issue-warn {
+  color: var(--ws-text-2);
+}
+
+.ws-up-rules {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--ws-fs-10);
+  line-height: 1.7;
+  color: var(--ws-text-2);
+}
+
+.ws-up-agree {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text);
+  cursor: pointer;
+}
+
+.ws-up-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text);
+  background: color-mix(in srgb, var(--ws-ok) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ws-ok) 35%, transparent);
+  border-radius: var(--ws-radius-pop);
+}
+
+.ws-up-done > svg {
+  color: var(--ws-ok);
+  flex: none;
+}
+
+.ws-up-done span {
+  flex: 1;
+}
+
+.ws-up-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ws-fs-11);
+  color: var(--ws-text-2);
+}
+
+.ws-up-submit:disabled,
+.ws-upload .ws-cta:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (max-width: 720px) {
+  .ws-up-grid,
+  .ws-up-permlist {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 匿名勾选项：不是维护者令牌时禁用（灰掉 + 不可点），但**仍显示** ——
+   藏起来会让用户以为软件不支持匿名上传，摆在这儿配上说明才是实话。 */
+.ws-up-agree-off {
+  color: var(--ws-text-3);
+  cursor: not-allowed;
+}
+
+.ws-up-agree-off input {
+  cursor: not-allowed;
+}
+
+/* 多插件列表（一次上传 N 个）：每行是一个待提交的插件目录 */
+.ws-up-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 216px;
+  overflow-y: auto;
+}
+
+.ws-up-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius-pop);
+  background: var(--ws-bg);
+}
+
+.ws-up-item-on {
+  border-color: var(--ws-accent);
+  background: var(--ws-accent-soft);
+}
+
+.ws-up-item-bad {
+  border-color: color-mix(in srgb, var(--ws-danger) 45%, transparent);
+}
+
+.ws-up-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-up-item-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--ws-fs-11);
+  font-weight: 500;
+  color: var(--ws-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-up-item-meta {
+  flex: none;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-up-item-state {
+  flex: none;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-2);
+}
+
+.ws-up-item-bad .ws-up-item-state {
+  color: var(--ws-danger);
+}
+
+/* ── 「会改动字体库」的提示（2026-11-15 用户要求）──
+   判定来自 permissions（write:fonts / import），不是插件自述。
+   卡片上一个短徽标，详情弹层里一条完整警示 —— 下载前必须看到。 */
+.ws-lib-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-danger);
+  background: color-mix(in srgb, var(--ws-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ws-danger) 35%, transparent);
+  border-radius: var(--ws-radius-ctl);
+  white-space: nowrap;
+}
+
+.ws-libwarn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  margin: 12px 0 0;
+  background: color-mix(in srgb, var(--ws-danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ws-danger) 35%, transparent);
+  border-radius: var(--ws-radius-pop);
+}
+
+.ws-libwarn-icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--ws-danger);
+}
+
+.ws-libwarn-text {
+  min-width: 0;
+}
+
+.ws-libwarn-title {
+  margin: 0 0 3px;
+  font-size: var(--ws-fs-11);
+  font-weight: 600;
+  color: var(--ws-danger);
+}
+
+.ws-libwarn-body {
+  margin: 0;
+  font-size: var(--ws-fs-10);
+  line-height: 1.65;
+  color: var(--ws-text-2);
+}
+
+/* ── 上传弹窗的「说明文字」（2026-11-15）─────────────────────────────
+   口径：能翻译的一律走 t()（当前选的语言）；**必须保持原文**的
+   （权限名 read:fonts、后缀 .ps1、Python/Node、目录名）原样显示，
+   旁边跟一句本语言的说明，整行 title 悬停看完整解释。 */
+
+/* 带说明的字段标签：虚线下划线是「可以悬停」的视觉提示，
+   cursor:help 是浏览器给的问号光标，两边都指同一件事。 */
+.ws-up-tip {
+  cursor: help;
+  text-decoration: underline dotted color-mix(in srgb, currentColor 50%, transparent);
+  text-underline-offset: 3px;
+}
+
+/* 权限列表从两列改成一列：加了中文说明以后，两列会把句子挤成两行，
+   而这里本来就是"逐条读"的内容，不需要省那点高度。 */
+.ws-up-permlist {
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+
+.ws-up-perm {
+  padding: 3px 4px;
+  border-radius: var(--ws-radius-ctl);
+}
+
+.ws-up-perm:hover {
+  background: color-mix(in srgb, var(--ws-text) 6%, transparent);
+}
+
+/* 标识符固定宽度对齐，说明文字从同一条线开始 —— 一列十行读下来才不乱 */
+.ws-up-perm code {
+  flex: none;
+  width: 96px;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text);
+}
+
+.ws-up-perm-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}
+
+/* 匿名勾选框「点不动的原因」：用告警色，别跟普通说明混在一起 ——
+   灰掉的框 + 灰字说明，用户根本看不出是该先连账号还是账号不够格。 */
+.ws-up-hint-warn {
+  color: var(--ws-danger);
+}

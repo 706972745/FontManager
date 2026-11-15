@@ -692,6 +692,17 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   pluginInstallZip: (path: string) =>
     invoke<{ id: string; name: string; version: string }>("plugin_install_zip", { path }),
 
+  // ── 插件中心（M1，v3）：插件中心是**独立面板产物**（workshop.html + assets），
+  //    主程序只负责下载/安装面板、开面板窗口、安装请求的落地 ──
+  /** 面板是否已安装（决定侧栏入口显不显示） */
+  workshopPanelStatus: () => invoke<WorkshopPanelStatus>("workshop_panel_status"),
+  /** 下载并安装插件中心面板（进度走 `workshop:progress` 事件） */
+  workshopPanelDownload: () => invoke<WorkshopPanelStatus>("workshop_panel_download"),
+  /** 卸载插件中心面板（删目录 + 清 prefs） */
+  workshopPanelUninstall: () => invoke<WorkshopPanelStatus>("workshop_panel_uninstall"),
+  /** 打开插件中心面板窗口（主程序起回环服务 + 一次性 key） */
+  workshopOpenPanel: (lang: string) => invoke<void>("workshop_open_panel", { lang }),
+
   /** 插件运行时状态（1.4.11）：内置/系统版本、占用、被哪些插件使用 */
   runtimesStatus: () =>
     invoke<RuntimeStatus[]>("runtimes_status"),
@@ -821,6 +832,20 @@ export interface ApiStatus {
   version?: string;
 }
 
+/**
+ * 插件中心面板的安装状态（`workshop_panel_status`）。
+ *
+ * 插件中心是**独立产物**（workshop.html + assets），装在用户数据目录里；
+ * 侧栏的「插件中心」入口**只在 installed 为真时**出现。
+ */
+export interface WorkshopPanelStatus {
+  installed: boolean;
+  /** 面板版本（来自 panel-meta.json） */
+  version: string | null;
+  /** 面板目录（本机路径，出问题时给用户看） */
+  dir: string;
+}
+
 /** 插件清单里的一项（`plugins_list`） */
 export interface PluginInfo {
   id: string;
@@ -856,8 +881,7 @@ export interface PluginInfo {
   lastLog?: string | null;
 }
 
-/** 插件在 plugin.json 里自述的运行环境（技术名词，不翻译） */
-export interface PluginRequirements {
+/** 插件在 plugin.json 里自述的运行环境（技术名词，不翻译） */export interface PluginRequirements {
   /** 运行时及版本，如 "Python 3.10+" */
   runtime: string | null;
   /** 第三方库，如 ["Pillow 13"] */

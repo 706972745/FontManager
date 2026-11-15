@@ -280,12 +280,12 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 标题 `.titlebar-title` | 13px / 500 / 字距 0.01em / 次文字色 |
 | 右侧动作 `.titlebar-controls` | flex / gap 1px；`-webkit-app-region: no-drag` |
 | 动作分隔线 `.titlebar-sep` | 1px × 16px / margin 0 4px |
-| 库级动作 `.titlebar-controls .tb-action` | 30×30 / **无边框 · 透明底** / 4px 圆角 / 图标 14；hover = `--e2` 底 + 主文字色；禁用（扫描中 / 导入中）45% 透明、不出 hover 底。顺序固定 **导入文件夹 → 重新扫描**，紧跟在「设置」之后、`.titlebar-sep` 之前（2026-11-13 从顶栏迁来） |
-| 分组间距 `.tb-action-first` | 「导入文件夹」`margin-left: 4px`：`.titlebar-controls` 的 gap 只有 1px，这 4px 把「窗口动作（速览 / 设置）」与「字库动作（导入 / 重扫）」分成两组，右侧由 `.titlebar-sep` 兜住 |
+| 库级动作 `.titlebar-controls .tb-action` | 30×30 / **无边框 · 透明底** / 4px 圆角 / 图标 14；hover = `--e2` 底 + 主文字色；禁用（扫描中 / 导入中）45% 透明、不出 hover 底。**从右往左**依次是 **设置 → 速览 → 导入文件夹 → 重新扫描 → 插件中心**（DOM 里从左到右反过来排），整组包在 `.titlebar-actions` 里、紧贴 `.titlebar-sep` 左侧。**以后新增动作一律加在这组最左边**——新按钮往外长，老按钮不挪位（2026-11-15 用户定，取代 2026-11-13 的 导入 → 重扫 顺序） |
+| 动作按钮排 `.titlebar-actions` | flex / **gap 6px** / `margin-right: 2px`；**五个按钮一律 30×30**（速览、设置也收成 30，不再是窗口按钮的 38）。这样 icon 中心间距恒为 36px，**五个等距**（2026-11-15 用户：原来 30 与 38 混排 + gap 1px，间距是 31/34/35 三种，看着有的挤有的松）。**不要**再给其中某个按钮加 margin 做「分组间距」——与等距互斥 |
 | 输入光标 `BlinkCaretInput` | **自绘闪烁块状光标**（2.1.2，用户点名效果）：全部 6 个输入框（顶栏搜索/预览、速览搜索/预览、右键菜单搜索、在线视图搜索）的光标为 2px 蓝竖条（`--caret-blue` 深色 #4c8dff / 浅色 #2f6bdb），1.1s 硬切闪烁，`prefers-reduced-motion` 时常亮。原生 caret 隐藏（`caret-color: transparent`），中文 IME 组合期间自动切回原生光标（`.blink-caret-field.is-composing`）。password 类型不支持（明文进镜像 DOM），退回原生。readOnly 由 `input[readonly] { caret-color: auto }` 兜底 |
 | 导入图标 `ImportFolderGlyph` | **打开文件夹 + 右下角外挂加号**（2.1.1，用户定的 V2）：FolderOpen 原路径缩到 86%，加号（臂长 6.3 / 圆头）压在右下角；加号先垫一圈 `--canvas` 底衬（4.2 宽）再叠 1.5 主色描边，交叠处自动留白 —— 看起来是加号浮在文件夹上而不是穿过它。纯内联 SVG，`currentColor` + `var(--canvas)`，深浅主题自动跟随 |
 | 关闭按钮 `.tc-close` | 悬停 = 错误红 18% 底 + 红字（**全软件唯一的红**只用在这个危险动作上） |
-| 侧栏 `.sidebar` | 底 `--ui-bg`；`.sidebar-scroll` flex 1 / gap 4px |
+| 侧栏 `.sidebar` | 底 `--ui-bg`；`.sidebar-scroll` flex 1 / gap 4px；**滚动条贴右缘**（2026-11-15）：`.sidebar-scroll` 用 `margin-right: -10px; padding-right: 10px` 把滚动条推进侧栏右内距、贴着分界线，行内容宽度不变（样张视图 62px 时同法用 7px） |
 | 侧栏分组标题 `.sidebar-heading` | 10px / 600 / 全大写 / 字距 0.1em / 弱色；`padding: 14px 11px 5px` |
 | 侧栏行 `.nav-row` | 高 **32px**；11px；次文字色；**0 圆角**；底透明；悬停 = `--ui-hover` |
 | 侧栏选中态 | 底色由 `.nav-pill` 承担（**纯底色、0 圆角、无描边无阴影**，1.7.5 拆掉旧玻璃壳）+ `::before` 2×32 蓝竖线（`z-index: 1`，否则会被 pill 盖住） |
@@ -305,7 +305,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | 控件高度 | `--control-h: 36px`（R8 §3 明确「36px 的特殊块保持不动」） |
 | 搜索框 `.topbar-search` | `flex: 1 1 90px` / `min-width: 0`（窄时先让搜索缩） |
 | 输入框 `.topbar-field` | 高 36；`padding: 0 12px`；1px 描边；**4px 圆角**（R8）；底 `--ui-panel`；聚焦边框转 `--ui-accent` |
-| 滚动条 `*::-webkit-scrollbar`（全局，所有滚动容器） | 槽位固定 **10px**；thumb 用透明 border 收细：平时 **1px 视觉宽度**（发丝线），指针进入**该容器右缘 14px 内**（容器自己挂 `.scroll-hot`）或压在条上（`:hover` / `:active`）→ **6px** + 40% 墨（抓得住、拖得动）；槽位不变，变粗不挤压布局。右键菜单 / 语言菜单单列：槽位同为 10px，thumb **3px** → 悬停 **6px**（菜单要看得见） |
+| 滚动条 `*::-webkit-scrollbar`（全局，所有滚动容器） | 槽位固定 **10px**；thumb 用透明 border 收细：平时 **1px 视觉宽度**（发丝线），指针进入**该容器右缘 14px 内**（容器自己挂 `.scroll-hot`）或压在条上（`:hover` / `:active`）→ **6px** + 40% 墨（抓得住、拖得动）；槽位不变，变粗不挤压布局。**2026-11-15 起无例外**：右键菜单（含标签 / 分组 / 快照二级菜单与搜索结果列表）、语言菜单的旧局部覆盖（thumb 3px）已删，与全局完全同一套 |
 | 底部进度条 `.load-progress` | 高 3px 轨道 + 一句实时详情；**整包导出带「取消」**（`.load-cancel`，取消后删除半成品）；扫描 / 批量启停各自有独立取消入口 |
 | 视图切换 `.view-toggle` | 项 **4px 圆角**；当前项 = 主文字色 + 2% 墨底（**不套蓝框**） |
 | 排序 / 筛选按钮 `.sort-btn` | 4px 圆角；生效时 `.filter-live` = 主文字色 + 1px `--accent-glow-soft` 环 |
@@ -478,7 +478,7 @@ SIZES = [8, 14, 18, 24, 32, 48, 64, 96]   // 默认 32（1.6.2 起；此前 24�
 | `VAR` | 34 × 16 蓝底白字、8px 等宽、0 圆角 |
 | `已在库` / `部分在库` | 1px 描边小标签，文字不靠颜色单独表意 |
 | 悬停 | 底色 `--ui-hover` + 边框混 40% 蓝 + `--shadow-mass` 轻浮起 |
-| 分类标签 | 76 × 26、0 圆角方片，选中蓝底白字 |
+| 分类标签 | 76 × 26、**圆角 4px**（与 `.online-search-input` 同一圆角），选中蓝底白字 |
 | 网格 | `repeat(auto-fill, minmax(220px, 1fr))`，间距 12px |
 
 > 与设计稿的差异（0 圆角 / 无锚点）记录在 §4 与本仓库的《UI待定问题清单》A12。
@@ -738,6 +738,161 @@ Windows 的 WebView2 没有滚轮惯性：滚一格走一格、松手就停。1.
 **删字体不再删标签**：单个/批量卸载都不清 `state.json.tags`；分组与收藏仍按原逻辑清理。
 代价是被删字体的标签留在文件里（几十字节/条），换回字体即恢复 —— 这是用户 2026-11-14 明确要求的。
 
+---
+
+### 3.18 插件中心面板（v3 架构，落地 2.2.0）
+
+**这一版推翻了 v1 的「主窗口内嵌插件中心页」**：插件中心 UI **不进主 bundle**，改为**独立面板产物**，
+由设置页下载安装、侧栏按需打开。理由是插件中心是一个独立演进的功能域（要能被单独更新、
+单独发版），塞进主包会让主包变大、也让插件中心的迭代受主程序发版节奏约束。
+
+#### 3.18.1 产物与分发
+
+| 项 | 规格 |
+|---|---|
+| 独立入口 | vite 多入口：`rollupOptions.input` 增加 `workshop: resolve(root, "workshop.html")`，与既有 `setup` 入口同写法 |
+| 产物 | `dist/workshop.html` + `dist/assets/*`（**只有面板自己 import 图上的 chunk**，不夹带主包产物） |
+| 打包 | `tools/build-workshop-panel.mjs` 从 `dist/workshop.html` 出发沿 import 图收集 assets → 自写极简 ZIP 写入器（zlib deflateRaw + CRC32，固定日期保证可复现）→ 输出 `workshop-panel.zip` |
+| 下载地址 | `https://github.com/706972745/FontManager-Workshop/releases/download/v1/workshop-panel.zip` |
+| 元数据 | `https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/panel-meta.json`（`{version, sha256, size}`） |
+| 校验 | 主程序下载后**必须**比对 `sha256`（元数据里没有 / 长度不对 → **直接拒装**，不装「未经校验的面板包」）；`size` 是辅助核对，缺了只当未知 |
+| 解包白名单 | zip 内**只允许** `workshop.html` 与 `assets/`；其余条目一律拒绝（防目录穿越） |
+| 换装 | staging 目录 → 备份旧版本 → 落位 → 失败回滚；装好写 `prefs.workshopInstalled=true` / `prefs.workshopPanelVersion` |
+| 体积上限 | 20MB（`PANEL_MAX_BYTES`），超出即失败 |
+
+> **主包不含插件中心 UI 的佐证方式**：构建后 `grep dist/assets/main-*.js` 查 `ws-card` /
+> `filter.official` / `ws-banner` / `FontManager-Workshop` 等面板专有串，**必须 0 命中**；
+> 同一批串在面板 chunk（`workshop-*.js`）里必须命中。
+
+#### 3.18.2 设置页 ·「获取更多插件」区块（**两行并存**）
+
+设置 → 插件 → 末尾**两个独立的描边块**（各自 `1px` 描边 / r=2 / `padding: 13px 14px`）：
+
+**① 官方插件仓（保留原有入口，一个字没改）**
+
+| 元素 | 规格 |
+|---|---|
+| 标题 | `Puzzle` 图标 13px / 1.5 + 「获取更多插件」+ 悬停提示圈（原文案） |
+| 地址行 | `github.com/706972745/FontManager-Plugin`（等宽 10px，强调色） |
+| 按钮 | 「打开插件仓库」+ `PackageOpen` 13px + `ArrowUpRight` 12px（`settings-btn-arrow`） |
+
+**② 插件中心面板（v3 新增的一行）**
+
+| 状态 | 区块内容 | 右侧按钮 |
+|---|---|---|
+| 未安装 | 来源行 `github.com/706972745/FontManager-Workshop`（等宽 10px，强调色） | 「下载插件中心面板」（`Puzzle` 图标 13px / 1.5） |
+| 下载中 | 同上 + 进度行「下载中 42%」（数字随 `workshop:progress` 事件推进） | 按钮换 `LoaderCircle` 自旋，文案「下载中…」，禁用 |
+| 已安装 | 版本行「插件中心面板 v1.0.0」 | 「打开插件中心」（`Puzzle` 13px）+「卸载」（`Trash2` 13px，卸载中禁用） |
+
+- **两行不互相顶掉**（2026-11-15 用户口径）：官方插件仍然要能从官方仓下 ZIP，
+  插件中心是另一条路。**原有的「从 ZIP 安装」「重新扫描」「打开插件目录」
+  与运行时管理（探测 / 删除 / 一键下载）一个都没动、没挪位置、没改语义。**
+- 交互**复用解释器运行时的下载模式**：同样的进度事件、同样的失败可重试、同样的 Toast。
+- 失败走 `toast.pluginCenterPanelFailed`；装好走 `toast.pluginCenterPanelInstalled`（带版本号）；
+  卸载走 `toast.pluginCenterPanelUninstalled`。
+- 装/卸完成后主程序派发一个 `workshop-panel-changed` 窗口事件，侧栏据此刷新入口。
+
+#### 3.18.3 侧栏入口（**仅安装后出现**）
+
+- 侧栏**底部**（`.sidebar-footer`，在「在线」之上）一个按钮行：`Puzzle` 图标 15px / 1.5 + 「插件中心」。
+- **只有 `prefs.workshopInstalled === true` 才渲染**。没装时侧栏**看不到这一行** —— 唯一的
+  获得途径是设置页下载。这样「装没装」这件事在界面上是自洽的，不会出现点了打不开的死入口。
+- 复用 `.nav-row` 的既有形态（图标槽 15px、行高、选中/悬停态），不新造一套按钮样式。
+- 点击 → `ipc.workshopOpenPanel(activeLocale())`；失败弹 `toast.pluginCenterOpenFailed`。
+
+#### 3.18.4 面板窗口（复用插件面板机制）
+
+| 项 | 规格 |
+|---|---|
+| 窗口 | 复用 `plugins.rs::open_panel_window` 的机制，`window label = "workshop-panel"` |
+| 地址 | `http://127.0.0.1:<随机端口>/workshop.html?k=<一次性key>` |
+| 绑定 | **只绑 127.0.0.1**（`Ipv4Addr::LOCALHOST`），端口随机（`:0`） |
+| 主题 | 主程序按 `prefs.themePref` 设 Tauri Theme；面板 HTML 再用 `data-theme` 强制浅/深 |
+| 语言 | 打开时把界面语言作为参数下发，面板 i18n 跟随主程序语言 |
+| 窗口标题 | **按界面语言**：Rust 侧 `panel_window_title(lang)` 映射 9 语言（照抄面板 i18n 的 `title` 词条），未知语言码回落英文。硬编码中文会让 9 语言环境恒为「插件中心」 |
+
+**会话安全**：静态文件（`workshop.html` / `assets/*`）**不带 key**；三个 API
+（`/api/plugins`、`/api/install`、`/api/uninstall`、`/api/open-url`）**必须带
+`x-workshop-key` 头**，key 是 32 位一次性随机 hex。面板页从 URL 的 `?k=` 取 key 存内存，
+后续请求放进请求头。绑定回环 + 随机端口 + 一次性 key 三层，外部进程猜不到端口也拿不到 key。
+
+#### 3.18.5 面板内容（面板自带 i18n，自带 CSS）
+
+面板**不依赖主包的 `app.css` 与 locale** —— 它可能被单独更新，样式和文案必须跟着面板走。
+
+| 元素 | 规格 |
+|---|---|
+| 标题行 | `Puzzle` 图标 13px / 1.5（强调色）+ 「插件中心」标题 13px / 600 + 底部 1px 发丝线。**独立窗口要自己说清「这是什么」** —— 面板不嵌在主程序里，标题不能省 |
+| 顶栏 | 搜索框（`Search` 图标 14px + 可清除）+ 三组筛选 chips |
+| 筛选 chips | 「全部 / 官方 / 社区」+「Python / Node / 无需」+「仅已安装」开关（`ws-toggle`） |
+| 信息行 | 「共 N 个插件 · X 分钟前更新 · 刷新」；刷新按钮 24 高，`RefreshCw` 自旋 |
+| 卡片网格 | 名称 / 作者徽标（官方 = 强调色实底徽标，社区 = 作者名，匿名 = 「匿名」）/ 简介两行截断 / 底部「版本 · 大小 · 运行时 · 已安装 ✓」 |
+| 详情弹层 | 全文说明 + 权限清单 chips + 文件列表（路径 + 大小）+ 安装/卸载按钮；缺运行时时给提示文案而不是硬拦 |
+| 横幅 | 一次性温馨提醒横幅（`role="note"`），可关闭；关闭状态记在面板本地存储 |
+| 页脚 | 一行小字说明（插件中心是第三方目录、风险自担口径） |
+| 离线错误态 | 整屏错误态 + 「重试」按钮（不空转）；空态 / 错误态的大图标也是 `Puzzle` 26px / 1.5 |
+
+**命名（2026-11-15 用户口径）**：界面上一律叫「**插件中心** / Plugin Center」——
+侧栏行名、设置页两行、面板标题、Toast、面板自己的 9 语言词条
+（`插件中心 / 插件中心 / Plugin Center / Plugin-Center / Centro de plugins /
+Centre de plugins / プラグインセンター / Central de Plugins / Центр плагинов`）。
+**仓库名与 URL 里的 `FontManager-Workshop` 不变** —— 那是地址，不是界面上的名字。
+内部标识符（`workshop.rs` / `workshop.html` / `workshop:progress` 事件 / prefs 键）**不动**：
+改名会牵动已发布的产物名与用户的 prefs，改名收益不抵风险。
+
+**面板的视觉令牌自成一套**（`src/workshop/panel.css` 的 `--ws-*`），但**口径仍按仓库硬约定**：
+
+- 圆角 5 档：`0` 卡片/菜单项、`4` 控件、`8` 浮层菜单、`12` 面板（`--ws-radius*`）
+- 控件高度：`24` 行内图标 / `28` 标准按钮 / `32` 主按钮、输入框
+- 字阶：`--ws-fs-9` / `10` / `11` / `13`
+- 不用半像素：边框 1px、位移取整
+
+#### 3.18.6 安装链路（面板只调接口，不碰文件系统）
+
+```
+面板 (fetch raw index.json)
+  └─ POST /api/install  { x-workshop-key }
+       └─ 主程序 workshop.rs
+            ├─ 官方件：url → 下载 zip → sha256 校验 → plugins::install_zip → 重扫
+            └─ 社区件：dir + files[{path, sha256, url}] → 全量 sha256 通过后才落盘
+                                              → plugins::install_target_for → 重扫
+```
+
+- 面板**自己 fetch** `raw.githubusercontent.com/.../index.json` 渲染卡片（浏览器直连，无 CORS 问题），
+  **安装必须回主程序**（写文件系统、算 sha256、装插件、触发重扫）。
+- 官方件走 zip（复用既有 `install_zip`，含 zip-slip 防护与 api_level 校验）；社区件逐文件
+  `path + sha256 + url`，**全部校验通过才落盘**，避免装到一半留下半个插件。
+- **社区件的 sha256 是硬门槛**（2026-11-15 QA）：`index.json` 远程可写，把某个文件的
+  sha256 留空就等于放行未经哈希校验的代码进插件目录并被执行。规则与面板包一致 ——
+  sha256 缺失 / 不是 64 位 hex / 与内容不符，一律拒装该文件（`verify_payload`）。
+- **全有或全无是结构保证的**（`verify_and_write`）：先把每个文件都验一遍，任一个不过就
+  直接返回 Err（此时一个字节都没写），全过了才逐个写盘。
+- **下载链路每次重定向都复检 host**（`Policy::custom`）：`Policy::limited(6)` 只管跳几次、
+  不管跳到哪去。白名单 = raw.githubusercontent.com / github.com /
+  objects.githubusercontent.com / release-assets.githubusercontent.com（release 资产的合法落点）。
+- **面板开外链也走同一套白名单**（`api_open_url`）：面板内容来自远程可写的 index.json，
+  不设闸的话它能让主程序用系统浏览器打开任意地址 —— 现成的钓鱼面。
+- **registry 的 `dir` 是仓库相对路径**（如 `plugins/font-renamer__alice`），落到插件目录时
+  **只取最后一段**（TS 侧 `communityDirFor`、Rust 侧 `dir_name_of` 各做一遍，两道闸叠着）。
+  **两侧都是「拒绝」语义，不做「静默纠正」**：输入里只要有 `..` 段、`.` 段、
+  反斜杠 `\` 或盘符冒号 `:`，一律判非法 —— 远程可写的 registry 不能借
+  「取最后一段」把越界标记吃掉。
+  - TS 侧 `communityDirFor` 返回 `null` → `installRequestFor` 抛 `BadRegistryDirError`
+    → 界面给本地化的「清单里的目录字段不合法」（9 语言，`badDir` 词条）。
+    **不静默跳过，也不用 id 兜底造一个目录名**（兜底等于把上游异常吞掉）。
+  - Rust 侧 `dir_name_of` 返回 `None` → 装插件直接报错「registry 目录名不合法」。
+- **装插件的通道只有面板那条回环服务**（一次性 key + 127.0.0.1 随机端口）。
+  本地 API（`api.rs`）**不登记**装插件的路由：仓库铁律是「路由声明的权限名必须在
+  `PERMS` 白名单里」，而装插件这项能力本就不该让插件令牌申请到。与其登记一条插件
+  拿不到的路由（死路由），不如不登记 —— 安全面更小，也不违反不变式。
+
+#### 3.18.7 文案
+
+- 面板自带 **9 语言字典**（`src/workshop/i18n.ts`），跟随主程序界面语言；
+- 复数走 `Intl.PluralRules` + `_one/_few/_many/_other` 四个变体（与主包同一套机制）；
+- 主包 locale 里只保留**主程序自己要说**的那几句（侧栏行名、设置页区块、Toast），
+  9 份**必须完全一致**（`check-locales` 100%）。
+
 ## 4. 与早期设计稿的偏离（已实现，本文档为准）
 
 设计稿是提案，落地时按「实际能不能用」做了几处调整。**本文档这些条目是最终口径。**
@@ -754,6 +909,9 @@ Windows 的 WebView2 没有滚轮惯性：滚一格走一格、松手就停。1.
 | 顶栏换行与底边线 | R4 §3.6：顶栏容器改 `.toolbar`，`min-height: 64px`、底边用发丝线 | 组件里用的是 **`.topbar`**（`.toolbar` 是遗留类名，已无任何元素使用），那两行覆盖因此**没生效**；`.topbar` 本来就会换行（`flex-wrap: wrap` + `row-gap: 8`），但底边线仍是旧的 `rgba(var(--ink-rgb), .05)` 而不是 `--ui-line` |
 | 排序菜单 vs 筛选菜单 | 同为浮层菜单 | `.sort-menu` **8px**（R8 归入「菜单归 8」），`.filter-menu` 仍是 **4px**（R8 没列它）—— 同一类浮层两种圆角 |
 | 在线库小卡 | 304×96、1px 描边、**0 圆角**、卡内无锚点 | **8px 圆角** + 1px 描边 + 行首锚点；族名与小字同为 22 缩进（距左缘 37） | 小卡是网格里的独立卡片而非整行，方角像裁出来的贴片；行首锚点是全软件统一的位置标记，悬停生长反馈也要一致 |
+| 插件中心入口 | 侧栏常驻一个「插件中心」导航项，点击在主窗口内切换到插件中心页 | **侧栏入口只在面板安装后出现**，点击**开一个独立面板窗口**；安装入口在 设置 → 插件 →「获取更多插件」 | 插件中心改为独立面板产物（可单独发版、单独更新），不再占用主窗口的导航位与主 bundle 的体积 |
+| 设置页插件区块 | 「打开插件仓库 ↗」外链按钮 | **保留**该外链（官方插件仍要能下 ZIP），**另起一行**放「下载插件中心面板」（带进度与重试） | 两条路不互相顶掉：官方插件走官方仓，社区插件与面板走插件中心 |
+| 功能命名 | 插件工坊 / Plugin workshop | **插件中心 / Plugin Center**（9 语言照抄口径） | 2026-11-15 用户口径：名字与图标（lucide `Puzzle` 拼图块）一起定 |
 
 ---
 
@@ -791,6 +949,8 @@ Windows 的 WebView2 没有滚轮惯性：滚一格走一格、松手就停。1.
 | 2.1.7 | **自动标签**（见 §3.17）：详情面板虚线 chip + 魔棒、侧栏/筛选菜单自动标签标记、设置总开关；手工标签优先，否决按族名记忆；删字体不再删标签 |
 | 2.1.8 | **设置弹窗字阶层级**（用户：「这里的字体要比这些字体大，最顶部的设置要比所有字体都大，要有大小和粗细对比」）：面板标题 16 → **20 / 650**；分区标题（语言 / 系统 / 字体库）13 / 500 → **16 / 600 / 正体 / 主文字色**；行标签 14 / 500 不动；`.settings-section` 之间补 4px。实现在 `app.css` 末尾追加段，删整段即回滚。见 §3.7 |
 | 2.1.2 | **自绘闪烁光标**（§3.1）｜**右键菜单「打字即搜」**：「全部字体」按钮去下划线恢复胶囊（R4 重样式清理），`.ctx-hits` 滚动条改细淡且不响应 scroll-hot 热区（§3.12 相邻）｜**授权状态改名**：「收费」→「永久」（徽标「永久授权」）、「有时间限制」→「已购买（到期日期）」（徽标带日期）；自动判定文案不变｜**标签到期**：chip 日历按钮设日期，红色显示（跨年 YYYY-MM-DD / 今年 MM-DD），到期次日免确认自动移除（§3.8）｜**版权设置修复**：许可证盒子手动结论优先 + 自动识别降为附注；"free" 口径统一（目录（未知版权）→（商用免费）一次性改名）|
+| 2.2.0 | **插件中心改为独立面板**（见 §3.18）：**改名「插件工坊」→「插件中心 / Plugin Center」**（9 语言照抄口径；locale 键里的 workshop 一律换成 pluginCenter，共 12 个键）；图标统一 lucide `Puzzle`（拼图块，尺寸/描边照邻居：侧栏 15/1.5、设置页 13/1.5）；插件中心 UI 移出主 bundle（独立 vite 入口 `workshop` → `workshop.html` + assets → `workshop-panel.zip`）；设置 → 插件 →「获取更多插件」区块**两行并存**：① 保留原「打开插件仓库 ↗」外链（官方插件仍要能下 ZIP），② 新起一行「下载插件中心面板」（进度 + 失败重试），装好后显示版本 + 「打开插件中心」+「卸载」；侧栏「插件中心」**仅在安装后渲染**，点击开面板窗口（回环 HTTP + 一次性 key）；面板自带 9 语言 i18n 与 CSS |
+| 2.1.9（在建） | **标题栏动作顺序反转 + 等距**（用户 2026-11-15：「从右往左是 设置 → 速览 → 导入文件夹 → 刷新 → 插件」「icon 之间间距视觉上要一样」）：DOM 从左到右改为 **插件中心 → 重新扫描 → 导入文件夹 → 速览 → 设置**，外层新增 `.titlebar-actions`（gap 6、五个按钮统一 30×30），icon 中心间距恒为 36px；原 `.tb-action-end`（导入右侧 4px 分组间距）删除——与等距互斥；**以后新增动作一律加在这组最左边**。见 §3.1 |
 
 ---
 

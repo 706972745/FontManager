@@ -1,21 +1,21 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, Sparkles, SunMoon, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, Sparkles, SunMoon, Trash2, Volume2, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { LoaderCircle } from "lucide-react";
 import { ArtIcon } from "./ArtIcon";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { scrimFade, springSoft } from "../design/springs";
-import { ipc, type PluginInfo } from "../lib/ipc";
+import { ipc, type PluginInfo, type WorkshopPanelStatus } from "../lib/ipc";
 import { openPluginMenu, openPluginSettings } from "../lib/pluginMenu";
-import { usePluginStore } from "../lib/pluginStore";
-import { refreshPluginMenus } from "../lib/pluginMenuBridge";
+import { refreshPluginList } from "../lib/pluginMenuBridge";
 import { toast } from "../design/primitives/Toast";
 import { familiesFor, useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
-import { useT } from "../lib/i18n";
+import { useT, activeLocale } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { LabelResyncDialog } from "./LabelResyncDialog";
 import { RuntimeManager } from "./RuntimeManager";
@@ -36,11 +36,11 @@ const TRANSLATE_GUIDE_URL =
 const REQUEST_LANGUAGE_URL = "https://github.com/706972745/FontManager/issues/new";
 
 /**
- * 插件从哪来（2026-11-08 用户要求）：设置 → 插件 里给一个直达插件仓库的入口。
- * 之前用户得先知道仓库地址、自己去 GitHub 找 —— 软件里能装 ZIP，却不说去哪拿 ZIP。
- * 用系统浏览器打开（openUrl），不在应用内加载网页。
+ * 插件中心的来源仓库（插件中心 M1，v3）：社区插件清单（index.json）与面板发布包
+ * 都在这个仓库里。（2026-11-15：官方插件仓的外链常量已随「获取更多插件」一行一起删除，
+ * 官方插件同样在插件中心里展示、下载。）
  */
-const PLUGIN_REPO_URL = "https://github.com/706972745/FontManager-Plugin";
+const PLUGIN_CENTER_REPO_URL = "https://github.com/706972745/FontManager-Workshop";
 
 /** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
 const EXPORT_FONTS_KEY = "zfm.exportFonts";
@@ -303,6 +303,80 @@ export function SettingsOverlay() {
   const [showToken, setShowToken] = useState(false);
   const [portDraft, setPortDraft] = useState("");
 
+  // ── 插件中心面板（v3）：装 / 卸 / 开面板 ──
+  const [workshopPanel, setWorkshopPanel] = useState<WorkshopPanelStatus | null>(null);
+  const [workshopDownloading, setWorkshopDownloading] = useState(false);
+  const [workshopProgress, setWorkshopProgress] = useState({ received: 0, total: 0 });
+
+  /** 面板装好 / 卸掉后：告诉侧栏「入口该显不显」 */
+  const announceWorkshopPanel = () => {
+    window.dispatchEvent(new CustomEvent("workshop-panel-changed"));
+  };
+
+  const downloadWorkshopPanel = async () => {
+    setWorkshopDownloading(true);
+    setWorkshopProgress({ received: 0, total: 0 });
+    try {
+      const next = await ipc.workshopPanelDownload();
+      setWorkshopPanel(next);
+      announceWorkshopPanel();
+      toast.success(t("toast.pluginCenterPanelInstalled", { version: next.version ?? "?" }));
+    } catch (err) {
+      toast.error(t("toast.pluginCenterPanelFailed"), String(err));
+    } finally {
+      setWorkshopDownloading(false);
+    }
+  };
+
+  const uninstallWorkshopPanel = async () => {
+    setWorkshopDownloading(true);
+    try {
+      const next = await ipc.workshopPanelUninstall();
+      setWorkshopPanel(next);
+      announceWorkshopPanel();
+      toast.success(t("toast.pluginCenterPanelUninstalled"));
+    } catch (err) {
+      toast.error(t("toast.pluginCenterPanelFailed"), String(err));
+    } finally {
+      setWorkshopDownloading(false);
+    }
+  };
+
+  const openWorkshopPanel = async () => {
+    try {
+      await ipc.workshopOpenPanel(activeLocale());
+    } catch (err) {
+      toast.error(t("toast.pluginCenterOpenFailed"), String(err));
+    }
+  };
+
+  useEffect(() => {
+    if (!openState) return;
+    let alive = true;
+    void ipc
+      .workshopPanelStatus()
+      .then((s) => {
+        if (alive) setWorkshopPanel(s);
+      })
+      .catch(() => {});
+    // 下载进度：后端在下载 / 解压两个阶段各发一次
+    const unlisten = listen<{ phase: string; received: number; total: number }>(
+      "workshop:progress",
+      (e) => {
+        if (!alive) return;
+        if (e.payload.phase === "done") {
+          setWorkshopProgress({ received: e.payload.total, total: e.payload.total });
+          return;
+        }
+        setWorkshopProgress({ received: e.payload.received, total: e.payload.total });
+      },
+    );
+    return () => {
+      alive = false;
+      void unlisten.then((off) => off());
+    };
+  }, [openState]);
+
   useEffect(() => {
     if (!openState) return;
     let alive = true;
@@ -414,12 +488,10 @@ export function SettingsOverlay() {
 
   const refreshPlugins = async () => {
     try {
-      const next = await ipc.pluginsList();
+      // 一次 IPC 同时更新：本组件列表 + 搜索建议 store + 右键菜单缓存
+      // （与 `plugins:changed` 事件走的是同一个 `refreshPluginList`，别各发一遍）
+      const next = await refreshPluginList();
       setPlugins(next);
-      // 搜索建议共用同一份清单（1.8.1）：设置里刚装的插件，搜索框立刻能搜到
-      usePluginStore.setState({ plugins: next, loaded: true });
-      // 右键菜单里那份缓存也要一起刷，不然新装的插件在菜单里看不见
-      await refreshPluginMenus();
       return next;
     } catch {
       return [];
@@ -460,8 +532,6 @@ export function SettingsOverlay() {
       toast.error(String(e));
     } finally {
       await refreshPlugins();
-      // 右键菜单里的插件项要跟着变
-      await refreshPluginMenus();
     }
   };
 
@@ -1409,27 +1479,81 @@ export function SettingsOverlay() {
                 {/* 运行时管理（1.4.11）：安装包不再自带 Python/Node —— 在这看得见、可下载补全、可删除 */}
                 <RuntimeManager />
               </div>
-              {/* 「能装 ZIP」不等于「知道去哪拿 ZIP」：插件仓库入口直接放在插件区末尾 */}
+              {/* 插件中心（插件中心 M1，v3）：独立面板产物（workshop.html + assets），
+                  装在用户数据目录；装好后侧栏才出现「插件中心」入口。
+                  图标用 lucide `Puzzle`（拼图块）—— 尺寸与 strokeWidth 照邻居：13 / 1.5。
+                  2026-11-15 用户要求：删掉上方「获取更多插件」（官方插件仓外链）这一行，
+                  只留插件中心 —— 取插件的唯一入口就是中心，不再教用户手动去 GitHub 下 ZIP。 */}
               <div className="settings-translate settings-plugins-more">
                 <div className="settings-translate-text">
                   <div className="settings-translate-title">
                     <Puzzle size={13} strokeWidth={1.5} />
-                    {t("settings.pluginsGetMore")}
-                    <SettingHint text={t("settings.pluginsGetMoreSub")} />
+                    {t("side.pluginCenter")}
+                    <SettingHint text={t("settings.pluginCenterHint")} />
                   </div>
-                  <div className="settings-plugins-url">
-                    {PLUGIN_REPO_URL.replace(/^https:\/\//, "")}
-                  </div>
+                  {workshopPanel?.installed ? (
+                    <div className="settings-plugins-url">
+                      {t("settings.pluginCenterVersion", {
+                        version: workshopPanel.version ?? "?",
+                      })}
+                    </div>
+                  ) : (
+                    <div className="settings-plugins-url">
+                      {PLUGIN_CENTER_REPO_URL.replace(/^https:\/\//, "")}
+                    </div>
+                  )}
+                  {workshopDownloading && workshopProgress.total > 0 && (
+                    <div className="settings-plugins-url">
+                      {t("settings.pluginCenterDownloading", {
+                        // 夹在 0–100：实际下载长度可能与服务端给的 total 有出入
+                        percent: Math.min(
+                          100,
+                          Math.max(
+                            0,
+                            Math.round(
+                              (workshopProgress.received / workshopProgress.total) * 100,
+                            ),
+                          ),
+                        ),
+                      })}
+                    </div>
+                  )}
                 </div>
                 <div className="settings-data-actions">
-                  <button
-                    className="settings-data-btn"
-                    onClick={() => void openUrl(PLUGIN_REPO_URL).catch(() => {})}
-                  >
-                    <PackageOpen size={13} strokeWidth={1.5} />
-                    {t("settings.pluginsGetMoreOpen")}
-                    <ArrowUpRight size={12} strokeWidth={1.5} className="settings-btn-arrow" />
-                  </button>
+                  {workshopPanel?.installed ? (
+                    <>
+                      <button
+                        className="settings-data-btn"
+                        onClick={() => void openWorkshopPanel()}
+                      >
+                        <Puzzle size={13} strokeWidth={1.5} />
+                        {t("settings.pluginCenterOpen")}
+                      </button>
+                      <button
+                        className="settings-data-btn"
+                        onClick={() => void uninstallWorkshopPanel()}
+                        disabled={workshopDownloading}
+                      >
+                        <Trash2 size={13} strokeWidth={1.5} />
+                        {t("settings.pluginCenterUninstall")}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="settings-data-btn"
+                      onClick={() => void downloadWorkshopPanel()}
+                      disabled={workshopDownloading}
+                    >
+                      {workshopDownloading ? (
+                        <LoaderCircle size={13} strokeWidth={1.5} className="spin" />
+                      ) : (
+                        <Puzzle size={13} strokeWidth={1.5} />
+                      )}
+                      {workshopDownloading
+                        ? t("settings.pluginCenterDownloadingShort")
+                        : t("settings.pluginCenterDownload")}
+                    </button>
+                  )}
                 </div>
               </div>
             </section>

@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1.7-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.2.0-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,15 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.2.0 — Plugin Center: browse, install, and upload from inside the app**
+
+- **The panel is downloaded on demand**: the installer no longer ships the workshop UI. **Settings → Plugins → "Download Plugin Center panel"** pulls the panel bundle from GitHub (verified by `sha256`); once installed, a puzzle icon appears in the title bar and opens a separate window that follows the app's theme and language, and closes when you click away.
+- **You can upload plugins from the panel**: a four-step dialog (connect GitHub → pick folders → review manifests → submit). You can pick **several plugin folders at once** and they share one commit and one pull request; the validation rules match the repository's CI line by line.
+- **Plugins that touch your font library warn you first**: anything requesting write / import permissions gets a red badge on its card and a full warning at the top of its detail view — it can delete fonts, add files to the library, modify font files or restructure library folders.
+- **The review policy is stated in the UI**: community plugins are listed after an automated AI rule check that **never modifies plugin contents** — the banner says so, permanently.
+- **Faster to open**: fetching the index now has a 12 s timeout plus one retry, backed by a three-level cache (memory → local data folder → network).
+- **Title bar actions reordered and evenly spaced**: settings → QuickBar → import folder → rescan → plugin center, right to left, with a constant 36 px between icon centres.
 
 **2.1.7 — Automatic tags, so imported fonts are filterable from day one**
 
@@ -463,6 +472,49 @@ Manual steps (any version):
    opens the plugin's settings panel (when the plugin declares one), and
    **right-clicking the row** lists its no-family-needed actions (open export
    folder, change save location…)
+
+### 🧩 Plugin Center: browse, install, upload
+
+Community plugins live in the **[FontManager-Workshop](https://github.com/706972745/FontManager-Workshop)**
+repository and are browsed through the **Plugin Center** — a separate panel that is
+**downloaded on demand**, so the installer itself carries none of its UI:
+
+1. **Settings → Plugins → "Download Plugin Center panel"**: fetches the bundle from GitHub, verifies
+   its `sha256`, installs it into your data folder (progress + retry, same as the runtime downloads above)
+2. Once installed, a **puzzle icon appears at the far left of the title bar** (hover shows "Plugin Center");
+   clicking it opens a separate window
+3. Search, filter by official / community and by runtime, open a card for the full description,
+   requested permissions and file list, then install or uninstall in one click — installed ones are marked
+
+Behaviour worth knowing:
+
+- **Browsing, downloading and installing need no GitHub account** — only uploading your own plugin does
+- **Click anywhere else and it hides**: the panel dismisses itself on focus loss, and you reopen it from the
+  title bar icon (dragging the window does *not* dismiss it)
+- **Plugins that touch your font library are flagged**: anything requesting `write:fonts`
+  (activate / deactivate / delete / move fonts) or `import` (add font files to the library) gets an
+  "edits library" badge on its card and a full warning at the top of its detail view.
+  **Uploading is unaffected** — the warning only appears downstream, before you install
+- **Review policy**: community plugins are listed after an automated AI rule check that
+  **never modifies plugin contents**; only install plugins you trust
+- **Three-level index cache** (memory → local data folder → network), with a 12 s timeout and one retry,
+  so a stalled connection can no longer spin forever
+
+#### Uploading your own plugin (all inside the panel, no web detour)
+
+**Upload plugin** in the panel's top-right corner opens a four-step dialog:
+
+| Step | What happens |
+|---|---|
+| **① Connect GitHub** | Paste a fine-grained token once (only `Contents` + `Pull requests`, read & write). It is stored locally with **DPAPI** encryption — never uploaded — and remembered afterwards |
+| **② Pick folders** | The app opens a native folder picker; you can select **several plugin folders at once** |
+| **③ Review the manifest** | If the folder has a `plugin.json` it is pre-filled, otherwise fill it in. Rules match the repository CI exactly: id pattern, file-extension allowlist, 10 MB per file / 20 MB per plugin, permission allowlist, entry script must be inside the bundle |
+| **④ Submit** | Automatically forks → syncs main → uploads each file → creates the commit → opens a pull request. **All selected plugins share one commit and one PR**, with a four-stage progress display |
+
+The plugin only shows up in the center after the PR is merged and CI has regenerated `index.json`.
+"Upload anonymously" is available to the **repository maintainer only**: CI requires the folder name to end
+with `__<PR author>`, so anonymous submissions from anyone else would be rejected — that checkbox stays
+disabled for them.
 
 ### 🖥️ Using the local API
 

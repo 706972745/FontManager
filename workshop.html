@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FontManager · 插件中心</title>
+    <!--
+      插件中心面板（插件中心 M1，v3 架构）。
+
+      【它为什么是独立入口】
+      插件中心**不在主程序里**：主包只保留「设置 → 插件 → 下载插件中心面板」与
+      「装好后侧栏出现入口」两处。面板本体是一个**可下载、可独立更新**的产物
+      （workshop.html + assets/），由主程序装到用户数据目录，再通过本机回环
+      （127.0.0.1 + 一次性 key）打开。它不进主 bundle —— 见 vite.config.ts 的
+      workshop 入口与 docs/UI设计交付规格书.md 的插件中心章节。
+
+      【它怎么干活】
+      - 清单：面板自己 fetch registry 的 index.json（webview 里没有 CORS 限制）；
+      - 安装：面板**不碰文件系统**，把清单交给主程序的回环服务
+        （POST /api/install，带一次性 key），由 Rust 侧下载、sha256 校验、落盘；
+      - 语言 / 主题：主程序开窗时用查询参数下发（?lang=zh-CN&theme=dark）。
+    -->
+    <script>
+      // 发布版没有控制台：脚本挂了就是一块白板，用户只能截个白屏来报障。
+      (function () {
+        function show(msg) {
+          if (document.getElementById("boot-err")) return;
+          var d = document.createElement("pre");
+          d.id = "boot-err";
+          d.style.cssText =
+            "position:fixed;inset:0;z-index:99999;margin:0;padding:18px;overflow:auto;" +
+            "background:#fff;color:#b3261e;font:12px/1.55 ui-monospace,Consolas,monospace;" +
+            "white-space:pre-wrap";
+          d.textContent = String(msg);
+          document.body.appendChild(d);
+        }
+        window.addEventListener("error", function (e) {
+          show((e.error && e.error.stack) || e.message || "unknown error");
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          show((e.reason && e.reason.stack) || e.reason || "unknown rejection");
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/workshop/main.tsx"></script>
+  </body>
+</html>

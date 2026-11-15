@@ -1,7 +1,7 @@
 {
   "about.appRepo": "Código de la app",
   "about.desc": "Previsualiza, etiqueta, agrupa y crea instantáneas de miles de fuentes, instálalas con doble clic y activa o desactiva familias con un clic: todo sin conexión, con detección de duplicados y notas de licencia. Tus archivos de fuente siempre permanecen en tu equipo.Los complementos instalables, la API local y la compatibilidad con MCP conectan las fuentes con otras herramientas.",
-  "about.pluginRepo": "Repositorio de plugins",
+  "about.pluginRepo": "Repositorio de plugins en GitHub",
   "about.stackAria": "Tecnologías",
   "about.version": "Versión {version} · {license}",
   "about.edition": "Estable",
@@ -1140,9 +1140,6 @@
   "settings.pluginsSettings": "Ajustes del complemento",
   "settings.pluginsSettingsOff": "El complemento no está activo; actívalo primero",
   "settings.pluginsRowHint": "Haz clic derecho en esta fila para abrir el menú del complemento",
-  "settings.pluginsGetMore": "Más plugins",
-  "settings.pluginsGetMoreSub": "Abre el repositorio de plugins en el navegador: descarga el ZIP de cualquier plugin y colócalo en la carpeta de plugins (o usa «Instalar desde ZIP» arriba).",
-  "settings.pluginsGetMoreOpen": "Abrir repositorio de plugins",
   "settings.plugRtBundled": "Incluye {runtime}",
   "settings.plugRtNeeds": "Requiere {runtime}",
   "settings.plugRtSelfContained": "Sin entorno adicional",
@@ -1220,5 +1217,17 @@
   "load.backgroundReading": "Leyendo fuentes en segundo plano {done}/{total} ({percent} %)",
   "load.seedReady": "Biblioteca de fuentes lista",
   "load.partialData": "La lectura no ha terminado: algunas fuentes aún no aparecen",
-  "load.retry": "Volver a leer"
+  "load.retry": "Volver a leer",
+  "side.pluginCenter": "Centro de plugins",
+  "settings.pluginCenterVersion": "Panel del Centro de plugins v{version}",
+  "settings.pluginCenterHint": "Descarga el panel y luego explora los plugins de la comunidad e instálalos con un clic",
+  "settings.pluginCenterDownloading": "Descargando {percent}%",
+  "settings.pluginCenterDownloadingShort": "Descargando…",
+  "settings.pluginCenterDownload": "Descargar panel del Centro de plugins",
+  "settings.pluginCenterOpen": "Abrir el Centro de plugins",
+  "settings.pluginCenterUninstall": "Desinstalar",
+  "toast.pluginCenterPanelInstalled": "Panel del Centro de plugins instalado (v{version})",
+  "toast.pluginCenterPanelUninstalled": "Panel del Centro de plugins desinstalado",
+  "toast.pluginCenterPanelFailed": "No se pudo instalar el panel del Centro de plugins",
+  "toast.pluginCenterOpenFailed": "No se pudo abrir el Centro de plugins"
 }

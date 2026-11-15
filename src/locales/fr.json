@@ -1,7 +1,7 @@
 {
   "about.appRepo": "Code de l'app",
   "about.desc": "Prévisualisez, étiquetez, regroupez et créez des instantanés de milliers de polices, installez-les d'un double clic, activez ou désactivez une famille en un clic — le tout hors ligne, avec détection des doublons et notes de licence. Vos fichiers de polices restent sur votre machine.Extensions installables, API locale et prise en charge MCP : connectez vos polices à d'autres outils.",
-  "about.pluginRepo": "Dépôt des plugins",
+  "about.pluginRepo": "Dépôt des plugins sur GitHub",
   "about.stackAria": "Technologies",
   "about.version": "Version {version} · {license}",
   "about.edition": "Stable",
@@ -1140,9 +1140,6 @@
   "settings.pluginsSettings": "Réglages de l’extension",
   "settings.pluginsSettingsOff": "L’extension n’est pas active — activez-la d’abord",
   "settings.pluginsRowHint": "Clic droit sur cette ligne pour ouvrir le menu de l’extension",
-  "settings.pluginsGetMore": "Plus de plugins",
-  "settings.pluginsGetMoreSub": "Ouvre le dépôt des plugins dans le navigateur — téléchargez le ZIP d’un plugin et placez-le dans le dossier des plugins (ou utilisez « Installer depuis un ZIP » ci-dessus).",
-  "settings.pluginsGetMoreOpen": "Ouvrir le dépôt des plugins",
   "settings.plugRtBundled": "{runtime} fourni",
   "settings.plugRtNeeds": "Requiert {runtime}",
   "settings.plugRtSelfContained": "Aucun environnement requis",
@@ -1220,5 +1217,17 @@
   "load.backgroundReading": "Lecture des polices en arrière-plan {done}/{total} ({percent} %)",
   "load.seedReady": "Bibliothèque de polices prête",
   "load.partialData": "La lecture n’est pas terminée — certaines polices ne sont pas encore visibles",
-  "load.retry": "Relancer la lecture"
+  "load.retry": "Relancer la lecture",
+  "side.pluginCenter": "Centre de plugins",
+  "settings.pluginCenterVersion": "Panneau du Centre de plugins v{version}",
+  "settings.pluginCenterHint": "Téléchargez le panneau, puis parcourez les plugins communautaires et installez-les en un clic",
+  "settings.pluginCenterDownloading": "Téléchargement {percent}%",
+  "settings.pluginCenterDownloadingShort": "Téléchargement…",
+  "settings.pluginCenterDownload": "Télécharger le panneau du Centre de plugins",
+  "settings.pluginCenterOpen": "Ouvrir le Centre de plugins",
+  "settings.pluginCenterUninstall": "Désinstaller",
+  "toast.pluginCenterPanelInstalled": "Panneau du Centre de plugins installé (v{version})",
+  "toast.pluginCenterPanelUninstalled": "Panneau du Centre de plugins désinstallé",
+  "toast.pluginCenterPanelFailed": "Impossible d'installer le panneau du Centre de plugins",
+  "toast.pluginCenterOpenFailed": "Impossible d'ouvrir le Centre de plugins"
 }

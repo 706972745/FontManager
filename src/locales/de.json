@@ -1,7 +1,7 @@
 {
   "about.appRepo": "App-Quellcode",
   "about.desc": "Vorschau, Tags, Gruppen und Snapshots, Installation per Doppelklick, Aktivieren/Deaktivieren mit einem Klick – Tausende Schriften bleiben übersichtlich; Duplikate und Lizenzen werden automatisch erkannt. Die Schriftdaten bleiben jederzeit auf deinem Rechner.Installierbare Plugins, eine lokale HTTP-API und MCP-Anbindung bringen Schriftfunktionen in andere Tools.",
-  "about.pluginRepo": "Plugin-Repository",
+  "about.pluginRepo": "GitHub-Plugin-Repository",
   "about.stackAria": "Technik",
   "about.version": "Version {version} · {license}",
   "about.edition": "Stabil",
@@ -1123,9 +1123,6 @@
   "settings.pluginsSettings": "Plugin-Einstellungen",
   "settings.pluginsSettingsOff": "Plugin läuft nicht – zuerst einschalten",
   "settings.pluginsRowHint": "Rechtsklick auf diese Zeile öffnet das Plugin-Menü",
-  "settings.pluginsGetMore": "Weitere Plugins",
-  "settings.pluginsGetMoreSub": "Öffnet das Plugin-Repository im Browser — lade das ZIP eines Plugins herunter und lege es im Plugin-Ordner ab (oder nutze oben „Aus ZIP installieren“).",
-  "settings.pluginsGetMoreOpen": "Plugin-Repository öffnen",
   "settings.plugRtBundled": "{runtime} mitgeliefert",
   "settings.plugRtNeeds": "Benötigt {runtime}",
   "settings.plugRtSelfContained": "Keine Laufzeit nötig",
@@ -1203,5 +1200,17 @@
   "load.backgroundReading": "Schriften werden im Hintergrund gelesen {done}/{total} ({percent} %)",
   "load.seedReady": "Schriftbibliothek ist bereit",
   "load.partialData": "Der Lesevorgang ist nicht abgeschlossen – einige Schriften fehlen noch",
-  "load.retry": "Erneut lesen"
+  "load.retry": "Erneut lesen",
+  "side.pluginCenter": "Plugin-Center",
+  "settings.pluginCenterVersion": "Plugin-Center-Panel v{version}",
+  "settings.pluginCenterHint": "Panel herunterladen, dann Community-Plugins durchsuchen und mit einem Klick installieren",
+  "settings.pluginCenterDownloading": "Wird heruntergeladen ({percent} %)",
+  "settings.pluginCenterDownloadingShort": "Wird heruntergeladen…",
+  "settings.pluginCenterDownload": "Plugin-Center-Panel herunterladen",
+  "settings.pluginCenterOpen": "Plugin-Center öffnen",
+  "settings.pluginCenterUninstall": "Deinstallieren",
+  "toast.pluginCenterPanelInstalled": "Plugin-Center-Panel installiert (v{version})",
+  "toast.pluginCenterPanelUninstalled": "Plugin-Center-Panel deinstalliert",
+  "toast.pluginCenterPanelFailed": "Plugin-Center-Panel konnte nicht installiert werden",
+  "toast.pluginCenterOpenFailed": "Plugin-Center konnte nicht geöffnet werden"
 }

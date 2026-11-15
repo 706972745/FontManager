@@ -5,6 +5,8 @@ mod aim;
 // 1.3.0：本地 HTTP API（只绑 127.0.0.1）与进程外插件
 mod api;
 mod plugins;
+// 插件中心（M1）：registry index.json 拉取 + 免登录下载安装（浏览/安装，上传在 M3）
+mod workshop;
 // 路线 C（2.1.7）：`--installer-ui` / `--uninstall-ui`，安装器/卸载器的界面画在主程序里
 mod setup_ui;
 #[cfg(target_os = "windows")]
@@ -3395,6 +3397,10 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             plugins_open_dir,
             plugin_probe_zip,
             plugin_install_zip,
+            workshop::workshop_panel_status,
+            workshop::workshop_panel_download,
+            workshop::workshop_panel_uninstall,
+            workshop::workshop_open_panel,
             runtimes_status,
             runtime_delete,
             runtime_download,
