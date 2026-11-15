@@ -477,7 +477,9 @@ Manual steps (any version):
 
 Community plugins live in the **[FontManager-Workshop](https://github.com/706972745/FontManager-Workshop)**
 repository and are browsed through the **Plugin Center** — a separate panel that is
-**downloaded on demand**, so the installer itself carries none of its UI:
+**downloaded on demand** into **your data folder** (`<data root>\workshop-panel`) and opened by the app
+over a loopback service. **The installer ships no entry point for it, and nothing is ever loaded from
+the install folder:**
 
 1. **Settings → Plugins → "Download Plugin Center panel"**: fetches the bundle from GitHub, verifies
    its `sha256`, installs it into your data folder (progress + retry, same as the runtime downloads above)
