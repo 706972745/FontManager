@@ -9,6 +9,8 @@ import {
 } from "react";
 import {
   CARET_TYPES,
+  caretHeightFor,
+  caretTopFor,
   charLengthAt,
   coveredCharBox,
   coveredIndexFor,
@@ -19,8 +21,10 @@ import {
  *
  * Windows 11 的「文本光标指示器」是 OS 级覆盖层，应用侧去不掉、也改不成闪烁；
  * 原生细光标又满足不了诉求，所以自绘老终端那种**块状光标**：
- * - 蓝色块的宽度 = 光标**前面**那个字符的宽度（中文全宽、拉丁窄宽，天然自适应），
- *   高度撑满输入框；
+ * - 蓝色块的宽度 = 光标**前面**那个字符的宽度（中文全宽、拉丁窄宽，天然自适应）
+ *   + 左右各 BLOCK_PAD；**高度 = 字号 + 2px，垂直居中**（2026-11-15 用户参考截图，
+ *   36px 输入框里只占 15px 高）。高度绝不跟着输入框变，见 blinkCaret.ts::caretHeightFor；
+ *   样式在 ./blinkCaret.css，主程序与插件中心面板共用同一份；
  * - 块内叠一个**白色**的同字符 span，字体六项 computed style 与 input 完全一致 ——
  *   块左缘对齐字符左缘、宽度等于字符 advance，白字形与底下真实字形天然重合，
  *   视觉上就是那个字「变白」了；
@@ -108,6 +112,15 @@ export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps
       const value = input.value;
       const sel = input.selectionStart ?? value.length;
 
+      // ── 纵向几何（两边共用）──
+      // 块高只跟字号走；top 让它在输入框里垂直居中。白字形是绝对定位在**块内部**的，
+      // 所以下面算 glyph.top 时要减掉 blockTop，否则块一居中，白字就会整体下移。
+      const fontSize = Number.parseFloat(cs.fontSize) || 13;
+      const caretH = caretHeightFor(fontSize);
+      const blockTop = input.offsetTop + caretTopFor(input.clientHeight, caretH);
+      caret.style.height = `${caretH}px`;
+      caret.style.top = `${blockTop}px`;
+
       // ── 空输入：0.55em 空块贴在 x=0，没有白字形 ──
       if (coveredIndexFor(value, sel) < 0) {
         caret.style.left = `${Number.parseFloat(cs.paddingLeft) || 0}px`;
@@ -162,10 +175,10 @@ export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps
           const lh = Number.parseFloat(cs.lineHeight);
           if (Number.isFinite(lh) && lh > 0) {
             glyph.style.lineHeight = `${lh}px`;
-            glyph.style.top = `${contentTop + Math.max(0, (contentH - lh) / 2)}px`;
+            glyph.style.top = `${contentTop + Math.max(0, (contentH - lh) / 2) - blockTop}px`;
           } else {
             glyph.style.lineHeight = `${contentH}px`;
-            glyph.style.top = `${contentTop}px`;
+            glyph.style.top = `${contentTop - blockTop}px`;
           }
         }
       }

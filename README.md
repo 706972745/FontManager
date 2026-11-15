@@ -34,7 +34,7 @@ and MCP when you want your tools to join in.
 
 <br>
 
-<img src="main.png?v=2.0.0" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
+<img src="main.png?v=2.2.1" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -156,7 +156,7 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.0.0)
+![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.2.1)
 
 **Find your way first: the window has five regions**
 
@@ -218,18 +218,18 @@ The three icons at the toolbar's right edge:
 - **List**: a compact table — family / styles / format / size / toggle — best for
   sweeping a big library
 
-![List view: the whole library in one table](view-list.png?v=2.0.0)
+![List view: the whole library in one table](view-list.png?v=2.2.1)
 
 - **Specimen**: a **multi-column specimen wall** — every cell keeps the full card
   header (format / name / license / ★ / toggle) and spreads the sample text **large**
   underneath; pick a face per cell (remembered); its own size control — best for
   judging a typeface's character
 
-![Specimen view: multi-column specimen wall with large sample text](view-specimen.png?v=2.0.0)
+![Specimen view: multi-column specimen wall with large sample text](view-specimen.png?v=2.2.1)
 
 ### 5. The detail panel: everything about one family
 
-![Detail panel: multi-size specimen and metadata](detail.png?v=2.0.0)
+![Detail panel: multi-size specimen and metadata](detail.png?v=2.2.1)
 
 Click any card and the right panel opens:
 
@@ -278,7 +278,7 @@ Click any card and the right panel opens:
 | Online panel | see below: filter by category / license, one-click add |
 | Local API / MCP | automated imports (see [Plugins, local API & MCP](#-plugins-local-api--mcp)) |
 
-![Online panel: category and license filters on the left, font cards with one-click add](online.png?v=2.0.0)
+![Online panel: category and license filters on the left, font cards with one-click add](online.png?v=2.2.1)
 
 How to use it: sidebar "Online" → filter by **category** (sans / serif / display /
 handwriting / mono / icons) and **license** (OFL / Apache / UFL), or just search;
@@ -307,7 +307,7 @@ a handwritten caption), easy to spot in Explorer: the app icon (a **TYPE
 FontManager** wordmark) · snapshot export **.S** · pack-with-fonts **.P** ·
 data-only export **.L** · library folder **.F**:
 
-![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png?v=2.0.0)
+![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png?v=2.2.1)
 
 ### 11. Trash: regret is allowed
 
@@ -316,7 +316,7 @@ data-only export **.L** · library folder **.F**:
 2. Sidebar "Trash" → **restore** (back exactly as it was) or **delete forever**
    (double confirmation)
 
-![Trash: removed fonts land here first — nothing disappears silently](trash.png?v=2.0.0)
+![Trash: removed fonts land here first — nothing disappears silently](trash.png?v=2.2.1)
 
 ### 12. Licenses & duplicates: no browser needed
 
@@ -353,7 +353,7 @@ faster routes:
 
 ### 14. ⚡ The QuickBar: switch fonts in 1 second, anywhere
 
-![QuickBar: the docked panel of activated fonts](quickbar.png?v=2.0.0)
+![QuickBar: the docked panel of activated fonts](quickbar.png?v=2.2.1)
 
 1. Press <kbd>Alt</kbd>+<kbd>`</kbd> anywhere — the main window collapses into the
    **docked QuickBar** (change the hotkey under Settings → System → "QuickBar
@@ -379,7 +379,7 @@ faster routes:
 - <kbd>Ctrl</kbd>+<kbd>K</kbd>: the command palette — type to jump (views, toggles,
   compare, apply-in-app, snapshots…)
 
-![Command palette](palette.png?v=2.0.0)
+![Command palette](palette.png?v=2.2.1)
 
 - **Type-to-search in any context menu**: with any right-click menu open
   (cards / list / specimens / QuickBar / detail panel), just **start typing** —
@@ -388,7 +388,7 @@ faster routes:
   switches to the right view and scrolls the family into view.
   <kbd>Esc</kbd> clears the query first, then closes the menu
 
-![Type-to-search inside a context menu: a search box appears on top, results filter live, and the footer tells you more matches are available](contextmenu.png?v=2.0.0)
+![Type-to-search inside a context menu: a search box appears on top, results filter live, and the footer tells you more matches are available](contextmenu.png?v=2.2.1)
 
 - **Tab toggles the search scope**: while searching, <kbd>Tab</kbd> (or the
   badge next to the box) switches between "enabled ↔ all fonts" — the QuickBar
@@ -398,11 +398,11 @@ faster routes:
 - <kbd>?</kbd> (or the sidebar "Shortcuts" entry): the full shortcut list —
   navigation / selection / actions on selection / snapshots
 
-![Shortcut list: open with ? or the sidebar "Shortcuts" entry — grouped into navigation / selection / actions](shortcuts.png?v=2.0.0)
+![Shortcut list: open with ? or the sidebar "Shortcuts" entry — grouped into navigation / selection / actions](shortcuts.png?v=2.2.1)
 
 ### 17. Multiple libraries: up to 3 folders, one-click switching
 
-![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png?v=2.0.0)
+![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png?v=2.2.1)
 
 Fonts scattered across folders? **Settings → Library folders**:
 
@@ -417,7 +417,7 @@ Fonts scattered across folders? **Settings → Library folders**:
 
 ### 18. Look & language
 
-![Settings: language / system / library — every toggle in one column](settings.png?v=2.0.0)
+![Settings: language / system / library — every toggle in one column](settings.png?v=2.2.1)
 
 In settings: light / dark theme · interface sounds on/off · **reduced motion**
 (calmer animation, less transparency) · nine interface languages
@@ -552,10 +552,24 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
   -d '{"family":"Noto Sans SC"}' $cfg.base/fonts/activate
 ```
 
-Handy endpoints: `GET /health` · `GET /fonts` & `GET /fonts/families` ·
-`POST /fonts/activate` & `POST /fonts/deactivate` · `POST /fonts/scan` ·
-`GET/POST /snapshots` & `POST /snapshots/{name}/apply` · `GET/PUT /curation*`
-(notes, ratings, favorites, tags).
+**20 routes / 21 handlers**, all permission-gated (full table in
+[docs/PLUGINS.md](docs/PLUGINS.md)):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Totals, this token's scopes, full scope catalogue |
+| `GET /fonts` `GET /fonts/families` | List / search fonts (`q`, `limit`, `offset`, `family`, `license`) |
+| `POST /fonts/activate` `POST /fonts/deactivate` | Enable / disable families (**library paths only**) |
+| `POST /fonts/scan` `POST /fonts/apply` | Rescan (30 s throttle) / apply a font in PS·AI·CDR |
+| `GET /apps/active` | Most recently used design app (for "auto" apply) |
+| `GET/POST /snapshots` `DELETE /snapshots/{name}` `POST /snapshots/{name}/apply` | List / create / delete / apply snapshots |
+| `GET /curation` `PUT /curation/{rating,favorite,tags,collection,note}` | Read / edit ratings, favorites, tags, collections, notes |
+| `POST /export/pack` `GET /jobs/{id}` | Async pack export + progress |
+| `POST /import` | Import a font pack (needs the dangerous-ops master switch **and** `import`) |
+
+> Body limit is 16 MiB. `permissions` in `/health` is **this token's** scope list;
+> `allPermissions` is the catalogue. The port rotates on every launch — read `api.json`
+> at runtime instead of hard-coding it.
 
 #### Permissions — where 403 comes from
 
@@ -570,6 +584,12 @@ with the missing scope named in the body.
 | `read:snapshot` / `write:snapshot` | Read / create / delete / apply setting snapshots |
 | `read:curation` / `write:curation` | Read / modify your notes, ratings, favorites, tags |
 | `export` / `import` | Start a pack export + poll progress / import a font pack |
+| `write:apply` | **Apply a font in Photoshop / Illustrator / CorelDRAW** (drives another app) |
+| `read:apps` | Ask "which design app was used most recently" |
+
+These **10 scopes** are the entire whitelist (`api.rs::PERMS`). A plugin that declares
+`*` or misspells a scope gets it **silently dropped and logged** — it never receives full
+access. `GET /health` → `permissions` shows what was actually minted.
 
 The order is **401 (no token) → 403 (scope missing) → 422 (malformed body)**: the gate runs
 before the body is parsed, so a missing scope never shows up as 422.
@@ -757,8 +777,21 @@ npx vite build
 npx tauri build --bundles nsis,msi
 ```
 
-Rust (MSVC) 1.85+ and Node 24+ are required (see `engines` in `package.json`). Rust unit tests run with
-`cargo test --lib`, interface tests with `npm test`.
+Rust (MSVC) 1.85+ and Node 24+ are required (see `engines` in `package.json`).
+
+### Run these five gates before opening a PR
+
+| Command | 2.2.1 baseline |
+|---|---|
+| `npm test` | 428 tests: 427 pass / 1 skipped / 0 fail |
+| `cargo test --lib` | 299 pass / 0 fail / 16 ignored (`--lib` is **required**: without it `generate_context!` fails for missing `custom-protocol`) |
+| `npx tsc --noEmit` | 0 errors |
+| `node check-locales.mjs` | 9 locales: zh-CN / zh-TW at 100%, others fall back to English by design; script prints `OK` |
+| `node tools/check-panel-i18n.mjs` | Workshop panel: 149 keys × 9 locales complete |
+
+`node tools/check-silent-paths.mjs` also audits the installer's silent path (currently
+FAIL 0 / WARN 2), and `node tools/route-c.mjs status` reports the installer-UI switch.
+The release pipeline runs the same gates.
 
 ---
 

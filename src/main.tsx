@@ -4,6 +4,8 @@ import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import "./design/tokens.css";
 import "./app.css";
+// 块状闪烁光标与主程序/插件中心面板共用一份（面板是独立 vite 入口，不会加载 app.css）
+import "./design/primitives/blinkCaret.css";
 import App from "./App";
 import { installMomentumScroll } from "./lib/momentumScroll";
 
