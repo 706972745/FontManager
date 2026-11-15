@@ -19,6 +19,7 @@ import { useT, activeLocale } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { LabelResyncDialog } from "./LabelResyncDialog";
 import { RuntimeManager } from "./RuntimeManager";
+import { PluginCenterAutoUpdate } from "./PluginCenterAutoUpdate";
 import { UpdateSection } from "./UpdateSection";
 import { APP_LICENSE, displayVersion } from "../lib/version";
 import { DEFAULT_HOTKEY, hotkeyFromEvent } from "../lib/hotkey";
@@ -1556,6 +1557,10 @@ export function SettingsOverlay() {
                   )}
                 </div>
               </div>
+              {/* 面板自动更新（2.2.1）：面板是独立产物、不跟软件发版，
+                  不开自动检查的话用户会永远停在装它那天的版本。默认开，
+                  关掉后连一次请求都不发（后端同样以此为准）。 */}
+              <PluginCenterAutoUpdate />
             </section>
 
             {!IS_LINUX && (

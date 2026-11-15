@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.2.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.2.1-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,12 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.2.1 — The panel updates itself; interpreter updates are only announced**
+
+- **The Plugin Center panel auto-updates**: one check after launch, at most once every 24 hours; a newer panel is installed in the background and you get a one-line notice. **Nothing is checked or downloaded while the panel isn't installed** (that's your call), and you can switch it off in Settings → Plugins.
+- **Interpreter updates are announced, not applied**: the Settings → Runtimes row shows the newest version when one exists — uninstall and download again to move up. **Nothing is replaced automatically**, because swapping Python / Node pulls plugin dependencies (Pillow / fontTools ABI) with it.
+- The panel is now fully decoupled from the app: it ships and updates on its own schedule.
 
 **2.2.0 — Plugin Center: browse, install, and upload from inside the app**
 
@@ -491,6 +497,9 @@ the install folder:**
 Behaviour worth knowing:
 
 - **Browsing, downloading and installing need no GitHub account** — only uploading your own plugin does
+- **The panel updates itself**: once installed, the app checks after launch (never more than once every 24 h)
+  and installs a newer panel in the background with a one-line notice; **nothing at all happens while the panel
+  isn't installed**, and you can turn the check off in Settings → Plugins. New panels no longer wait for an app release
 - **Click anywhere else and it hides**: the panel dismisses itself on focus loss, and you reopen it from the
   title bar icon (dragging the window does *not* dismiss it)
 - **Plugins that touch your font library are flagged**: anything requesting `write:fonts`
@@ -514,6 +523,13 @@ Behaviour worth knowing:
 | **④ Submit** | Automatically forks → syncs main → uploads each file → creates the commit → opens a pull request. **All selected plugins share one commit and one PR**, with a four-stage progress display |
 
 The plugin only shows up in the center after the PR is merged and CI has regenerated `index.json`.
+
+**Managing what you uploaded follows your GitHub account, not this computer**: once you're connected, the
+dialog lists every plugin signed with your name (anonymous ones included) with a **Take down** button that
+opens a "delete this folder" pull request. The anonymous signature is derived from your login
+(`anonymous-<hash(login)>` — never stored locally, never random), so signing in on another machine or after
+a reinstall still lets you update or take down your own plugins.
+
 "Upload anonymously" is available to the **repository maintainer only**: CI requires the folder name to end
 with `__<PR author>`, so anonymous submissions from anyone else would be rejected — that checkbox stays
 disabled for them.

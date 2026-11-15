@@ -1162,6 +1162,8 @@
   "settings.rtBundled": "インストール済み · {size} MB",
   "settings.rtMissing": "未インストール",
   "settings.rtMissingHint": "未インストール — 依存するプラグインはシステムのインタプリタにフォールバックします",
+  "settings.rtUpdateAvailable": "更新があります: {version}",
+  "settings.rtUpdateHint": "アンインストール後に再ダウンロードすると最新版になります",
   "settings.rtSystemFound": "システム: {version}",
   "settings.rtUsing": "使用中: {plugins}",
   "settings.rtUsingNone": "使用中のプラグインなし",
@@ -1186,6 +1188,8 @@
   "load.retry": "読み込みをやり直す",
   "side.pluginCenter": "プラグインセンター",
   "settings.pluginCenterVersion": "プラグインセンターパネル v{version}",
+  "settings.pluginCenterAutoUpdate": "プラグインセンターパネルを自動更新",
+  "settings.pluginCenterAutoUpdateSub": "1 日 1 回まで確認し、新しい版があればバックグラウンドで導入して通知します。パネル未導入のときは何もダウンロードしません",
   "settings.pluginCenterHint": "パネルをダウンロードすると、コミュニティのプラグインを一覧してワンクリックで導入できます",
   "settings.pluginCenterDownloading": "ダウンロード中（{percent}%）",
   "settings.pluginCenterDownloadingShort": "ダウンロード中…",
@@ -1195,5 +1199,6 @@
   "toast.pluginCenterPanelInstalled": "プラグインセンターパネルをインストールしました（v{version}）",
   "toast.pluginCenterPanelUninstalled": "プラグインセンターパネルをアンインストールしました",
   "toast.pluginCenterPanelFailed": "プラグインセンターパネルのインストールに失敗しました",
-  "toast.pluginCenterOpenFailed": "プラグインセンターを開けませんでした"
+  "toast.pluginCenterOpenFailed": "プラグインセンターを開けませんでした",
+  "toast.pluginCenterUpdated": "プラグインセンターを {version} に更新しました"
 }

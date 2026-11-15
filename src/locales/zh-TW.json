@@ -1191,6 +1191,8 @@
   "settings.rtBundled": "已安裝 · {size} MB",
   "settings.rtMissing": "未安裝",
   "settings.rtMissingHint": "未安裝 —— 依賴它的外掛將退回系統直譯器",
+  "settings.rtUpdateAvailable": "有可用更新 {version}",
+  "settings.rtUpdateHint": "解除安裝後會重新下載最新版",
   "settings.rtSystemFound": "系統偵測到 {version}",
   "settings.rtUsing": "使用中：{plugins}",
   "settings.rtUsingNone": "暫無外掛使用",
@@ -1222,6 +1224,8 @@
   "load.retry": "重新讀取",
   "side.pluginCenter": "插件中心",
   "settings.pluginCenterVersion": "插件中心面板 v{version}",
+  "settings.pluginCenterAutoUpdate": "自動更新外掛中心面板",
+  "settings.pluginCenterAutoUpdateSub": "每天最多查一次；有新版本會在背景下載並提示你。面板沒裝時不會下載任何東西",
   "settings.pluginCenterHint": "下載面板後可瀏覽社群插件，一鍵安裝",
   "settings.pluginCenterDownloading": "下載中 {percent}%",
   "settings.pluginCenterDownloadingShort": "下載中…",
@@ -1231,5 +1235,6 @@
   "toast.pluginCenterPanelInstalled": "插件中心面板已安裝（v{version}）",
   "toast.pluginCenterPanelUninstalled": "插件中心面板已解除安裝",
   "toast.pluginCenterPanelFailed": "插件中心面板安裝失敗",
-  "toast.pluginCenterOpenFailed": "打不開插件中心面板"
+  "toast.pluginCenterOpenFailed": "打不開插件中心面板",
+  "toast.pluginCenterUpdated": "外掛中心已更新到 {version}"
 }

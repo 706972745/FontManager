@@ -17,7 +17,7 @@
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.2.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.2.1-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,14 @@
 ---
 
 ## 🆕 最近更新
+
+**2.2.1 —— 面板会自己更新；解释器更新只提示**
+
+- **插件中心面板自动更新**：启动后查一次、24 小时内不重复查；有新版本在后台装好并提示一句。
+  **面板没装就什么都不查、不下载**（装不装是你的事），也可以在 设置 → 插件 里关掉。
+- **解释器有新版本只在设置页提示**：设置 → 运行时 那一行会写出最新版本号，卸载后重新下载即可换新 ——
+  **不会自动替换**（换 Python / Node 版本会牵动插件依赖的 ABI，这活儿该你点头）。
+- 面板与软件彻底解耦：面板单独发版、单独更新，不用等软件新版本。
 
 **2.2.0 —— 插件中心：浏览、安装，还能直接上传**
 
@@ -412,6 +420,8 @@ fontTools，位于软件目录 `python-runtime/`）——**机器上没装 Pytho
 几件和行为有关的事：
 
 - **下载与安装都不需要 GitHub 账号**；只有「上传自己的插件」才需要登录
+- **面板会自己更新**：装过之后，启动时会查一次（24 小时内不重复），有新版本**后台装好并提示一句**；
+  **没装就什么都不下载**，也可以在 设置 → 插件 里把自动更新关掉。所以面板发新版不用等软件发版
 - **点别处自动收起**：面板失焦就隐藏，再打开还是点标题栏那个图标（拖动窗口时不会误收）
 - **会动字体库的插件有警示**：申请了 `write:fonts`（启停 / 删除 / 移动字体）或 `import`
   （往库里加字体文件）的插件，卡片上带「改动字体库」标记，详情页顶部有整条警告。
@@ -432,6 +442,12 @@ fontTools，位于软件目录 `python-runtime/`）——**机器上没装 Pytho
 | **④ 提交** | 后台自动 fork → 同步 main → 逐文件上传 → 建提交 → 开 PR。**多个插件共用一次提交、一个 PR**，进度分四段显示 |
 
 PR 合并后 CI 重算 `index.json`，插件才会出现在中心里。
+
+**下架与迭代跟着你的 GitHub 账号走，不跟这台电脑**：连上账号后，弹窗里会列出署名属于你的插件
+（含匿名上传的），每条一个「下架」按钮，提交后是一条「删除该目录」的 PR。
+匿名署名由登录名稳定派生（`anonymous-<hash(login)>`，不存本机、不是随机串），
+所以换电脑、重装软件，只要登录同一个账号，照样能更新或下架自己的插件。
+
 「以匿名身份上传」只对**仓库维护者**可用：CI 的归属校验要求目录名以 `__<PR 作者>` 结尾，
 普通用户以匿名身份提交会被拦下，所以那一项对其他人是灰的。
 

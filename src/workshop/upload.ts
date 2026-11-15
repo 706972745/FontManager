@@ -442,6 +442,127 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
   return { prUrl: pr.html_url, prNumber: pr.number, branch };
 }
 
+/**
+ * 下架（删除）自己上传过的插件 —— 走「以删除方式建一个 PR」。
+ *
+ * 归属判定与现实口径（2026-11-15 用户要求「换电脑也能管自己的插件」）：
+ * 匿名上传的署名是 `anonymous-<hash(login)>`，**由 GitHub 登录名稳定派生**，
+ * 不落本机、不是随机串 —— 所以在任何一台电脑上登录同一个账号，算出来的作者名一样，
+ * 既能覆盖更新（同一个目录），也能删除（同一个目录）。不需要「记住这台电脑」。
+ *
+ * 客户端先按 `__<login>` / `__<anonymousAuthorFor(login)>` 判一次归属，
+ * 只是为了让「不是你的」有个清楚的中文报错；真正的闸门仍在 CI 与人工合并。
+ */
+export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
+  const { token, login, dirs, onPhase } = args;
+  if (dirs.length === 0) throw new UploadMessage("uploadErrEmpty");
+  const mine = new Set([login, anonymousAuthorFor(login)]);
+  for (const d of dirs) {
+    const cut = d.lastIndexOf("__");
+    const owner = cut >= 0 ? d.slice(cut + 2) : "";
+    if (!mine.has(owner)) throw new UploadMessage("uploadErrNotOwner");
+  }
+  const branch = `remove/${dirs[0].replace(/__.*/, "")}-${Date.now()}`;
+
+  const upRef = await gh<{ object: { sha: string } }>(
+    token,
+    `${UPSTREAM_API}/git/ref/heads/main`,
+  );
+  const upstreamSha = upRef.object.sha;
+  const upCommit = await gh<{ tree: { sha: string } }>(
+    token,
+    `${UPSTREAM_API}/git/commits/${upstreamSha}`,
+  );
+  const upstreamTree = upCommit.tree.sha;
+
+  // 我的 fork（复用上传那条路：没有就建、建完等它出现）
+  onPhase("fork");
+  let mineRepo = await ghOrNull<{ name: string }>(token, `/repos/${login}/${REPO}`);
+  if (!mineRepo) {
+    await gh(token, `${UPSTREAM_API}/forks`, { method: "POST", body: "{}" });
+    for (let i = 0; i < 20; i++) {
+      await sleep(1500);
+      mineRepo = await ghOrNull<{ name: string }>(token, `/repos/${login}/${REPO}`);
+      if (mineRepo) break;
+    }
+    if (!mineRepo) throw new UploadMessage("uploadErrFork");
+  }
+  const mineRef = await ghOrNull<{ object: { sha: string } }>(
+    token,
+    `/repos/${login}/${REPO}/git/ref/heads/main`,
+  );
+  if (!mineRef || mineRef.object.sha !== upstreamSha) {
+    await gh(token, `/repos/${login}/${REPO}/git/refs/heads/main`, {
+      method: "PATCH",
+      body: JSON.stringify({ sha: upstreamSha, force: true }),
+    });
+  }
+
+  // 目录下每个文件各来一条 `sha: null` —— 比「删目录」稳（tree API 对 tree 类型的
+  // null 条目行为在官方文档里说得含糊，逐 blob 删除是明确的）
+  onPhase("commit");
+  const flat = await gh<{ tree: { path: string; type: string }[]; truncated: boolean }>(
+    token,
+    `${UPSTREAM_API}/git/trees/${upstreamTree}?recursive=1`,
+  );
+  if (flat.truncated) throw new UploadMessage("uploadErrTreeTooBig");
+  const entries = flat.tree
+    .filter((e) => e.type === "blob" && dirs.some((d) => e.path.startsWith(`plugins/${d}/`)))
+    .map((e) => ({ path: e.path, mode: "100644", type: "blob", sha: null }));
+  if (entries.length === 0) throw new UploadMessage("uploadErrNotFound");
+
+  const tree = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/trees`, {
+    method: "POST",
+    body: JSON.stringify({ base_tree: upstreamTree, tree: entries }),
+  });
+
+  const title = dirs.length === 1 ? `[remove] ${dirs[0]} by ${login}` : `[remove] ${dirs.length} 个插件 by ${login}`;
+  const commit = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/commits`, {
+    method: "POST",
+    body: JSON.stringify({ message: title, tree: tree.sha, parents: [upstreamSha] }),
+  });
+  try {
+    await gh(token, `/repos/${login}/${REPO}/git/refs`, {
+      method: "POST",
+      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+    });
+  } catch (e) {
+    if (e instanceof GhError && e.status === 422) {
+      await gh(token, `/repos/${login}/${REPO}/git/refs/heads/${branch}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sha: commit.sha, force: true }),
+      });
+    } else throw e;
+  }
+
+  onPhase("pr");
+  const pr = await gh<{ html_url: string; number: number }>(token, `${UPSTREAM_API}/pulls`, {
+    method: "POST",
+    body: JSON.stringify({
+      title,
+      head: `${login}:${branch}`,
+      base: "main",
+      body: [
+        `由 @${login} 通过 FontManager 插件中心请求下架：`,
+        "",
+        ...dirs.map((d) => `- \`plugins/${d}/\``),
+        "",
+        "> 合并后该插件的目录会被删除，聚合脚本重算 `index.json` 后中心里就不再显示。",
+      ].join("\n"),
+    }),
+  });
+  return { prUrl: pr.html_url, prNumber: pr.number, branch };
+}
+
+/** 下架请求的入参 */
+export interface DeleteArgs {
+  token: string;
+  login: string;
+  /** 要下架的目录名（清单里的 `dir`，形如 `<id>__<author>`） */
+  dirs: string[];
+  onPhase: (phase: UploadPhase) => void;
+}
+
 /** registry 的 plugin.json = 运行时清单 + 市场字段（见方案 §3） */
 function buildManifest(form: PluginForm, login: string, paths: string[]) {
   const all = Array.from(new Set([...paths, "plugin.json"])).sort();

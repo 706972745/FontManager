@@ -266,6 +266,34 @@ jobs:
           if (-not $zips) { Write-Host '（仓库里没有运行时资源 —— 跳过，运行时管理会提示手动下载）' }
           else { $zips | Format-Table Name, Length }
 
+          # 运行时版本清单：设置页靠它判断「本机解释器有没有新版」（只提示，不自动换）。
+          # **必须和两个 zip 同批上传**：分成两批的话，清单说 3.13.20、zip 还是 3.13.14，
+          # 用户卸载重下也升不上去，界面会一直显示「有可用更新」。
+          $py = $null; $node = $null
+          $pyExe = 'src-tauri/resources/python-runtime/python.exe'
+          if (Test-Path $pyExe) {
+            $raw = (& $pyExe -V 2>&1 | Out-String).Trim()   # 形如 Python 3.13.14
+            if ($raw -match '(\d+\.\d+\.\d+)') { $py = $Matches[1] }
+            else { Write-Host "⚠ 读不出 Python 版本：$raw" }
+          }
+          $nodeExe = 'src-tauri/resources/node-runtime/node.exe'
+          if (Test-Path $nodeExe) {
+            $raw = (& $nodeExe -v 2>&1 | Out-String).Trim() # 形如 v24.11.0
+            if ($raw -match 'v?(\d+\.\d+\.\d+)') { $node = $Matches[1] }
+            else { Write-Host "⚠ 读不出 Node 版本：$raw" }
+          }
+          $meta = [ordered]@{}
+          if ($py) { $meta['python'] = $py }
+          if ($node) { $meta['node'] = $node }
+          if ($py -or $node) {
+            $meta['source'] = "${{ inputs.tag || github.ref_name }}"
+            $json = $meta | ConvertTo-Json -Compress
+            Set-Content -Path release/runtime-meta.json -Value $json -Encoding utf8 -NoNewline
+            Write-Host "runtime-meta.json = $json"
+          } else {
+            Write-Host '（两个运行时都不在仓库里 —— 不生成 runtime-meta.json）'
+          }
+
       # ── 代码签名（SignPath Foundation，免费 OV）──────────────────────
       # 未配置 SIGNPATH_TOKEN 时本步骤自动跳过，发布仍为「未签名 + SHA-256」，
       # 与现有行为完全一致；在 GitHub Secrets 配齐后自动切换为签名发布。

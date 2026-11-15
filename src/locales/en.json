@@ -1208,6 +1208,8 @@
   "settings.rtBundled": "Installed · {size} MB",
   "settings.rtMissing": "not installed",
   "settings.rtMissingHint": "Not installed — plugins that need it fall back to a system interpreter",
+  "settings.rtUpdateAvailable": "Update available: {version}",
+  "settings.rtUpdateHint": "uninstalling and downloading again picks up the latest version",
   "settings.rtSystemFound": "system: {version}",
   "settings.rtUsing": "in use by: {plugins}",
   "settings.rtUsingNone": "no plugin uses it",
@@ -1239,6 +1241,8 @@
   "load.retry": "Read again",
   "side.pluginCenter": "Plugin Center",
   "settings.pluginCenterVersion": "Plugin Center panel v{version}",
+  "settings.pluginCenterAutoUpdate": "Auto-update the Plugin Center panel",
+  "settings.pluginCenterAutoUpdateSub": "Checks at most once a day; a newer panel is installed in the background and you get a notice. Nothing is downloaded while the panel isn't installed",
   "settings.pluginCenterHint": "Download the panel, then browse community plugins and install them in one click",
   "settings.pluginCenterDownloading": "Downloading {percent}%",
   "settings.pluginCenterDownloadingShort": "Downloading…",
@@ -1248,5 +1252,6 @@
   "toast.pluginCenterPanelInstalled": "Plugin Center panel installed (v{version})",
   "toast.pluginCenterPanelUninstalled": "Plugin Center panel uninstalled",
   "toast.pluginCenterPanelFailed": "Couldn't install the Plugin Center panel",
-  "toast.pluginCenterOpenFailed": "Couldn't open the Plugin Center panel"
+  "toast.pluginCenterOpenFailed": "Couldn't open the Plugin Center panel",
+  "toast.pluginCenterUpdated": "Plugin Center updated to {version}"
 }

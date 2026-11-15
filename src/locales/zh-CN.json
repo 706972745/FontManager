@@ -1199,6 +1199,8 @@
   "settings.rtBundled": "已安装 · {size} MB",
   "settings.rtMissing": "未安装",
   "settings.rtMissingHint": "未安装 —— 依赖它的插件将回退到系统解释器",
+  "settings.rtUpdateAvailable": "有可用更新 {version}",
+  "settings.rtUpdateHint": "卸载后会重新下载最新版",
   "settings.rtSystemFound": "系统检测到 {version}",
   "settings.rtUsing": "使用中：{plugins}",
   "settings.rtUsingNone": "暂无插件使用",
@@ -1230,6 +1232,8 @@
   "load.retry": "重试读取",
   "side.pluginCenter": "插件中心",
   "settings.pluginCenterVersion": "插件中心面板 v{version}",
+  "settings.pluginCenterAutoUpdate": "自动更新插件中心面板",
+  "settings.pluginCenterAutoUpdateSub": "每天最多查一次；有新版本会在后台装好并提示你。面板没装时不会下载任何东西",
   "settings.pluginCenterHint": "下载面板后可浏览社区插件，一键安装",
   "settings.pluginCenterDownloading": "下载中 {percent}%",
   "settings.pluginCenterDownloadingShort": "下载中…",
@@ -1239,5 +1243,6 @@
   "toast.pluginCenterPanelInstalled": "插件中心面板已安装（v{version}）",
   "toast.pluginCenterPanelUninstalled": "插件中心面板已卸载",
   "toast.pluginCenterPanelFailed": "插件中心面板安装失败",
-  "toast.pluginCenterOpenFailed": "打不开插件中心面板"
+  "toast.pluginCenterOpenFailed": "打不开插件中心面板",
+  "toast.pluginCenterUpdated": "插件中心已更新到 {version}"
 }

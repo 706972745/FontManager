@@ -17,11 +17,35 @@ interface DlState {
   error?: string;
 }
 
+/**
+ * 版本比较：`"Python 3.13.14"` / `"v24.11.0"` / `"3.13"` 都取前三个数字段。
+ *
+ * 只用来说明「远端比本机新」，不承担语义化版本的完整规则（rc / post 不参与）——
+ * 内置运行时是官方发行版，`3.13.14` 这样的三段号足够判先后。
+ */
+function verTuple(raw: string): [number, number, number] | null {
+  const m = raw.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)];
+}
+
+function verNewer(a: string, b: string): boolean {
+  const x = verTuple(a);
+  const y = verTuple(b);
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) {
+    if (x[i] !== y[i]) return x[i] > y[i];
+  }
+  return false;
+}
+
 export function RuntimeManager() {
   const t = useT();
   const [rows, setRows] = useState<RuntimeStatus[] | null>(null);
   const [dl, setDl] = useState<Record<string, DlState>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  /** 最新 release 里的运行时版本（null = 还没问到；{} = 问过但拿不到） */
+  const [remote, setRemote] = useState<Record<string, string> | null>(null);
 
   const refresh = useCallback(() => {
     ipc
@@ -32,6 +56,12 @@ export function RuntimeManager() {
 
   useEffect(() => {
     refresh();
+    // 远端版本只用来「提示有新版」：断网/老 release 没有这个文件都返回 {}，
+    // 属于正常情况，界面什么都不显示。
+    void ipc
+      .runtimesRemoteVersions()
+      .then(setRemote)
+      .catch(() => setRemote({}));
     const un = listen<RuntimeProgress>("runtime:progress", (e) => {
       const p = e.payload;
       if (p.phase === "done") {
@@ -107,6 +137,12 @@ export function RuntimeManager() {
       </div>
       {rows.map((r) => {
         const st = dl[r.kind];
+        // 远端版本：只在「本机已装」且「远端确实更新」时提示一句。
+        // **不自动下载** —— 换解释器版本会牵动插件依赖（Pillow / fontTools 的 ABI），
+        // 装不装由用户自己卸载后重下（用户 2026-11-15 口径）。
+        const remoteVer = remote?.[r.kind];
+        const newer =
+          !!remoteVer && !!r.bundledVersion && verNewer(remoteVer, r.bundledVersion);
         const using =
           r.pluginsUsing.length > 0
             ? t("settings.rtUsing", { plugins: r.pluginsUsing.join("、") })
@@ -148,6 +184,13 @@ export function RuntimeManager() {
                   </>
                 )}
               </div>
+              {newer && (
+                <div className="settings-sub settings-rt-update">
+                  {t("settings.rtUpdateAvailable", { version: remoteVer ?? "" })}
+                  {" · "}
+                  {t("settings.rtUpdateHint")}
+                </div>
+              )}
               {st?.phase === "download" && (
                 <div className="load-progress" aria-hidden>
                   <div className="load-track">

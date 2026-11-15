@@ -700,12 +700,28 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   workshopPanelDownload: () => invoke<WorkshopPanelStatus>("workshop_panel_download"),
   /** 卸载插件中心面板（删目录 + 清 prefs） */
   workshopPanelUninstall: () => invoke<WorkshopPanelStatus>("workshop_panel_uninstall"),
+  /**
+   * 面板自动更新：查一次 `panel-meta.json`，有新版本就**静默装**。
+   *
+   * 后端自己把闸门走完（开关关掉 / 面板没装 / 24 小时内查过 → `checked: false` 直接返回），
+   * 所以前端只管「有更新就提示一句」，不用判条件。**面板没装时它连查都不查**。
+   */
+  workshopPanelAutoupdate: () => invoke<PanelUpdateOutcome>("workshop_panel_autoupdate"),
   /** 打开插件中心面板窗口（主程序起回环服务 + 一次性 key） */
   workshopOpenPanel: (lang: string) => invoke<void>("workshop_open_panel", { lang }),
 
   /** 插件运行时状态（1.4.11）：内置/系统版本、占用、被哪些插件使用 */
   runtimesStatus: () =>
     invoke<RuntimeStatus[]>("runtimes_status"),
+  /**
+   * 最新 release 里的运行时版本（`{ python: "3.13.20", node: "24.11.0" }`）。
+   *
+   * **只用于提示「有新版」**，不自动下载：换解释器版本会牵动插件依赖
+   * （Pillow / fontTools 的 ABI），装不装由用户自己卸载后重下。
+   * 断网或老 release 没有这个文件时返回空对象（不是错误）。
+   */
+  runtimesRemoteVersions: () =>
+    invoke<Record<string, string>>("runtimes_remote_versions"),
   /** 删除内置运行时：正在运行的插件占用 exe 会被后端拦下 */
   runtimeDelete: (kind: string) => invoke<void>("runtime_delete", { kind }),
   /** 从 GitHub release 下载运行时补全；进度监听 `runtime:progress` 事件 */
@@ -844,6 +860,22 @@ export interface WorkshopPanelStatus {
   version: string | null;
   /** 面板目录（本机路径，出问题时给用户看） */
   dir: string;
+}
+
+/**
+ * 面板自动更新的结果（`workshop_panel_autoupdate`）。
+ *
+ * `checked: false` 有四种可能：自动更新关掉了、面板没装、24 小时内查过、
+ * 或者刚查过但远端没有更新 —— 前端不需要区分，只要看 `updated`。
+ */
+export interface PanelUpdateOutcome {
+  checked: boolean;
+  updated: boolean;
+  from: string | null;
+  to: string | null;
+  version: string | null;
+  /** 失败原因（只用于日志，不弹窗） */
+  error: string | null;
 }
 
 /** 插件清单里的一项（`plugins_list`） */
