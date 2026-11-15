@@ -7,6 +7,7 @@ import {
   charLengthAt,
   coveredCharBox,
   coveredIndexFor,
+  textStartOffset,
 } from "../src/design/primitives/blinkCaret.ts";
 
 /**
@@ -99,4 +100,25 @@ test("caretHeightFor / caretTopFor：块高只跟字号走，不跟输入框高�
   // 非法字号走 13px 兜底，不能产出 NaN / 0
   assert.equal(caretHeightFor(Number.NaN), 15);
   assert.equal(caretHeightFor(0), 15);
+});
+
+// 2.2.4：端口号 / 字符筛选这类 `text-align:center` 的窄输入框。镜像测宽是左对齐的，
+// 不补偏移蓝块就贴左边跑（实测端口框偏左约 30px）。
+test("textStartOffset：只有居中/右对齐才偏移，文本装不下时归零", () => {
+  // 左对齐：有没有富余都不偏移
+  assert.equal(textStartOffset("left", 96, 30), 0);
+  assert.equal(textStartOffset("start", 96, 30), 0);
+  assert.equal(textStartOffset("justify", 96, 30), 0);
+  assert.equal(textStartOffset("", 96, 30), 0);
+  // 居中：富余的一半
+  assert.equal(textStartOffset("center", 96, 30), 33);
+  assert.equal(textStartOffset("center", 96, 0), 48); // 空输入：块贴在居中位置
+  // 右对齐（end 在 LTR 下等同 right）
+  assert.equal(textStartOffset("right", 96, 30), 66);
+  assert.equal(textStartOffset("end", 96, 30), 66);
+  // 文本比内容区宽（开始横向滚动）：交给 scrollLeft，不再偏移
+  assert.equal(textStartOffset("center", 40, 80), 0);
+  assert.equal(textStartOffset("right", 40, 40), 0);
+  // 非数字输入不能产出 NaN
+  assert.equal(textStartOffset("center", Number.NaN, 30), 0);
 });

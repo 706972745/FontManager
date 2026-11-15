@@ -581,8 +581,9 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                 {t("filter.containsChar")}
               </li>
               <li className="filter-charrow" role="none">
-                <input
+                <BlinkCaretInput
                   className="filter-charinput"
+                  fieldClassName="char-field"
                   value={charFilter}
                   maxLength={2}
                   spellCheck={false}

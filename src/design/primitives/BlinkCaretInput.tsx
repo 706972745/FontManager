@@ -14,6 +14,7 @@ import {
   charLengthAt,
   coveredCharBox,
   coveredIndexFor,
+  textStartOffset,
 } from "./blinkCaret";
 
 /**
@@ -48,7 +49,12 @@ import {
  * blinkCaret.ts：`node --test` 只做类型剥离、不转 JSX，单测必须 import 那份无 JSX 的模块。
  */
 
-export type BlinkCaretInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "ref">;
+export type BlinkCaretInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "ref"> & {
+  /** 附加到 wrapper（`<span class="blink-caret-field">`）上的类名。
+   *  窄输入框（端口号 / 字符筛选 / 标签输入）要在 wrapper 上写 `flex: 0 0 <宽度>`，
+   *  而 className 是透传给 input 的，两者不能共用同一个属性。 */
+  fieldClassName?: string;
+};
 
 /** 蓝块比被覆盖字符左右各多出的内边距（px）——「清晰度优先于严丝合缝」。 */
 const BLOCK_PAD = 4;
@@ -78,7 +84,7 @@ function syncFont(el: HTMLElement, cs: CSSStyleDeclaration): void {
  */
 export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps>(
   function BlinkCaretInput(props, ref) {
-    const { type, ...rest } = props;
+    const { type, fieldClassName, ...rest } = props;
     const caretWanted = CARET_TYPES.has(type);
 
     const inputRef = useRef<HTMLInputElement | null>(null);
@@ -121,9 +127,23 @@ export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps
       caret.style.height = `${caretH}px`;
       caret.style.top = `${blockTop}px`;
 
-      // ── 空输入：0.55em 空块贴在 x=0，没有白字形 ──
+      const padL = Number.parseFloat(cs.paddingLeft) || 0;
+      const padR = Number.parseFloat(cs.paddingRight) || 0;
+      const contentWidth = Math.max(0, input.clientWidth - padL - padR);
+
+      // 居中 / 右对齐（端口号、字符筛选）：镜像测宽按左对齐算，得先量整段文本宽度补偏移，
+      // 否则蓝块会贴着左边跑（2.2.4 实测端口框偏左约 30px）。左对齐时同步跳过这步。
+      const align = cs.textAlign;
+      syncFont(mirror, cs);
+      let textOffset = 0;
+      if (align === "center" || align === "right" || align === "end") {
+        mirror.textContent = value;
+        textOffset = textStartOffset(align, contentWidth, mirror.offsetWidth);
+      }
+
+      // ── 空输入：0.55em 空块贴在文本起始位置，没有白字形 ──
       if (coveredIndexFor(value, sel) < 0) {
-        caret.style.left = `${Number.parseFloat(cs.paddingLeft) || 0}px`;
+        caret.style.left = `${padL + textOffset}px`;
         caret.style.width = "";
         caret.classList.add("blink-caret-empty");
         if (glyph) glyph.textContent = "";
@@ -133,17 +153,13 @@ export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps
       caret.classList.remove("blink-caret-empty");
 
       // ── 镜像两次测宽：字符左缘、字符 advance ──
-      syncFont(mirror, cs);
       const covered = coveredIndexFor(value, sel);
       mirror.textContent = value.slice(0, covered);
-      const startWidth = mirror.offsetWidth;
+      const startWidth = mirror.offsetWidth + textOffset;
       const charLen = charLengthAt(value, covered);
       mirror.textContent = value.slice(covered, covered + charLen);
       const charWidth = mirror.offsetWidth;
 
-      const padL = Number.parseFloat(cs.paddingLeft) || 0;
-      const padR = Number.parseFloat(cs.paddingRight) || 0;
-      const contentWidth = Math.max(0, input.clientWidth - padL - padR);
       // 「清晰度优先于严丝合缝」（用户 2026-11-13）：块比字符左右各宽 4px，
       // 白字四周留蓝边，一眼看清是哪个字。
       const box = coveredCharBox(
@@ -235,7 +251,11 @@ export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps
 
     return (
       <span
-        className={"blink-caret-field" + (composing ? " is-composing" : "")}
+        className={
+          "blink-caret-field" +
+          (fieldClassName ? ` ${fieldClassName}` : "") +
+          (composing ? " is-composing" : "")
+        }
         data-composing={composing || undefined}
       >
         <input

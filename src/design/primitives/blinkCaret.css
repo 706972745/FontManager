@@ -98,3 +98,14 @@
 .blink-caret-field input[readonly] {
   caret-color: auto;
 }
+
+/* ── 窄输入框（2.2.4）───────────────────────────────────────────────
+   wrapper 默认 `flex: 1 1 auto`，是给「顶栏搜索 / 命令面板」这种要撑满一行的输入框用的。
+   标签输入（72px）、字符筛选（42px）、本地 API 端口（96px）这类控件宽度由里面的
+   input 自己定，wrapper 必须退出伸缩 —— 否则它们会被撑成整行。
+   类名由 `BlinkCaretInput` 的 fieldClassName 传进来（面板没有这几个类，不受影响）。 */
+.tag-field,
+.port-field,
+.char-field {
+  flex: 0 0 auto;
+}

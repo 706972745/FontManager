@@ -70,6 +70,35 @@ export function caretTopFor(inputHeightPx: number, caretHeightPx: number): numbe
   return Math.max(0, Math.round((h - caretHeightPx) / 2));
 }
 
+/**
+ * 居中 / 右对齐输入框里，文本相对内容区左缘的起始偏移（px）。
+ *
+ * 为什么需要：镜像测宽是**左对齐**渲染的，`offsetWidth` 只反映字形宽度。端口号、
+ * 字符筛选这类 `text-align:center` 的窄输入框里，真实字形比内容区窄，会整体居中；
+ * 不补这个偏移，蓝块就会贴着左边跑（2.2.4 实测端口框偏左约 30px）。
+ *
+ * 左对齐（start/left/justify/空串）恒为 0；文本比内容区宽（单行输入框开始滚动）时
+ * 也返回 0 —— 那时视觉上就是左对齐 + scrollLeft，由 coveredCharBox 继续处理。
+ */
+export function textStartOffset(
+  textAlign: string,
+  contentWidth: number,
+  textWidth: number,
+): number {
+  if (!Number.isFinite(contentWidth) || !Number.isFinite(textWidth)) return 0;
+  const spare = contentWidth - textWidth;
+  if (spare <= 0) return 0;
+  switch (textAlign) {
+    case "center":
+      return spare / 2;
+    case "right":
+    case "end":
+      return spare;
+    default:
+      return 0;
+  }
+}
+
 /** 块状光标的几何盒（坐标相对输入框内容区左缘，px）。 */
 export interface CoveredCharBox {
   /** 块左缘：已做左缘裁切（滚出可视区左边的部分收回到 0）。 */

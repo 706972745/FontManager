@@ -4,6 +4,29 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.4] — 2026-11-15
+
+> **Ctrl+K 命令面板的光标也统一成蓝块了**，顺手补上另外 6 处漏网的文字输入框；
+> 居中/右对齐的窄输入框原本会把蓝块画偏（实测偏左约 30px），这一版按 `text-align` 补了偏移。
+
+### 修复
+
+- Ctrl+K 命令面板的搜索框还是系统细光标（2.2.2 统一时漏了这个浮层）→ 接入 `BlinkCaretInput`。
+- 一并补齐其余漏网的文字输入框：批量打标签、详情页「添加标签」、侧栏分组/快捷重命名（3 处）、
+  排序菜单「包含字符」、设置页「本地 API 端口」与「允许的客户端」。`range` / `date` /
+  `checkbox` / `password` / `number` 按既有口径保持原生。
+- `BlinkCaretInput` 新增 `fieldClassName`：72 / 42 / 96px 这类窄输入框的 wrapper 不能吃
+  `flex: 1 1 auto`，否则控件被撑成整行；样式在 `blinkCaret.css` 末尾统一收口。
+- 新增 `textStartOffset`：`text-align: center / right` 的输入框（端口号、字符筛选）按对齐方式
+  补文本起始偏移 —— 镜像测宽是左对齐渲染的，不补的话蓝块会贴着左边跑。
+  新增 1 条单测，`npm test` 428 → **429**。
+
+### 验证
+
+- 真机 CDP 实测五处：命令面板（`gd` → 块盖在 `d` 上、宽 16 = 4+8+4）、顶栏搜索（`He` → 块盖在 `e` 上）、
+  标签输入（`测试标签` → 块盖「签」、wrapper 72px 未被撑宽）、本地 API 端口（`55458` 居中 → 块盖最后一个 `8`）、
+  分组重命名。截图逐张核对块与字形重合、无偏移。
+
 ## [2.2.3] — 2026-11-15
 
 > **系统字体点「位置」不再弹「无法打开文件管理器」**。`C://Windows//Fonts` 是 shell 的虚拟字体

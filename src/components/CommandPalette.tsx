@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { scrimFade, springSnappy } from "../design/springs";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { familiesFor, useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
@@ -323,7 +324,8 @@ export function CommandPalette() {
           >
             <div className="palette-input">
               <Search size={15} strokeWidth={1.5} />
-              <input
+              {/* 块状光标：与顶栏搜索、右键筛选、速览同一套（2.2.4 补上，之前漏了这个浮层） */}
+              <BlinkCaretInput
                 ref={inputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
