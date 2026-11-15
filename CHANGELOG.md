@@ -4,6 +4,41 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.2] — 2026-11-15
+
+> **输入光标统一了：主程序和插件中心面板用同一块会闪的蓝块**。之前面板还是系统细光标，
+> 主程序的块又会跟着输入框一起变高；这一版把块高钉成「字号 + 2px、垂直居中」，
+> 两个入口共用同一份组件和样式，改一处两边同时生效。
+
+### 输入光标
+
+- 主程序 6 处、面板 6 处文字输入框统一走 `BlinkCaretInput`：蓝色圆角块包住光标前那个字符、
+  字变白、1.1 秒一闪。**块高 = 字号 + 2px**（13px 字 → 15px），在输入框里垂直居中，
+  不再用 `top:0;bottom:0` 撑满 32/36px 的输入框；宽度仍是字符 advance + 左右各 4px、圆角 3px。
+- 样式从 `app.css` 抽成 `src/design/primitives/blinkCaret.css`，由 `src/main.tsx` 与
+  `src/workshop/main.tsx` 分别引入 —— 面板是独立 vite 入口，不加载主包 CSS，共用一份才不会漂移。
+- 中文输入法组合期仍恢复原生细光标跟随拼音；`readOnly` 输入框保留原生光标兜底。
+- `password`（GitHub 令牌）、`textarea`、`checkbox`、`number` 保持原生：镜像测宽会把输入明文
+  写进 DOM，安全性优先。
+- 新增 `caretHeightFor` / `caretTopFor` 纯函数与单测；`npm test` 427 → **428 项**。
+
+### 插件中心面板（1.2.2）
+
+- 面板底部与上传弹窗「连 GitHub」那一步，常驻同一句说明：**「上传插件」只是把插件存进可分享、
+  可留存的共用仓库；登录 GitHub 只为让你管理自己上传的插件（迭代更新、下架删除），并无其他用途**。
+  新增 i18n 键 `uploadPurpose`，9 语言全齐（`check-panel-i18n.mjs` 从 149 → **150 键 × 9**）。
+- 选 footer 而不是会被永久关掉的 banner：这句要一直在，用户粘令牌时也要再看到一次。
+
+### 文档与工具
+
+- README 中英同步：本地 API 端点表补齐到 **20 条路由 / 21 个方法**，权限表补齐 **10 项白名单**
+  （原来少 `write:apply` 与 `read:apps`）；新增「改完代码先跑这五条」自检门禁段，
+  并按 `check-locales.mjs` 的真实口径写语言包（zh-CN/zh-TW 100%，其余语言按设计回退英文）。
+- 13 张 UI 截图用浅色 + 中文界面重拍，缓存参数 `v=2.0.0` → `v=2.2.2`；
+  `icons-overview.png` 是图标设计稿，不重拍。
+- 新增零依赖 CDP 截图采集工具链 `tools/shoot-readme.mjs` + `tools/shoot/{cdp,png,scenes}.mjs`
+  （DOM 定位、固定视口、逐场景可单独重跑、自检 14 项）。
+
 ## [2.2.1] — 2026-11-15
 
 > **面板会自己更新了；解释器只提示、不动手**。面板是独立产物，不跟软件发版走 —— 没有这条通道，

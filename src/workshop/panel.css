@@ -785,6 +785,19 @@ body {
   color: var(--ws-text-3);
 }
 
+/* 上传按钮 / GitHub 登录的用途说明：常驻在页脚下面，与上传弹窗共用同一条 i18n 文案。
+   **这是说明、不是警告** —— 只用更淡的字色与小一档字阶，绝不碰 --ws-danger。
+   字阶取 :root 里已定义的 --ws-fs-9（面板硬约定 9/10/11/13，不引新令牌）：
+   .ws-footer 本身是 --ws-fs-10，这里正好小一号；透明度再压低一档，比上行更淡。
+   放在 .ws-footer 之后，margin-top 才能盖住它的 `margin: 0` 简写。 */
+.ws-footer-note {
+  margin-top: 4px;
+  font-size: var(--ws-fs-9);
+  line-height: 1.6;
+  color: var(--ws-text-3);
+  opacity: 0.78;
+}
+
 .ws-spin {
   animation: ws-spin 900ms linear infinite;
 }

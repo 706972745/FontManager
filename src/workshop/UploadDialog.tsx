@@ -436,7 +436,9 @@ export function UploadDialog({
                     {t("uploadTokenSave")}
                   </button>
                 </div>
+                {/* 粘令牌这一步正是「为什么要登录」的疑问点：与面板页脚复用同一条说明 */}
                 <p className="ws-up-hint">{t("uploadTokenHint")}</p>
+                <p className="ws-up-hint">{t("uploadPurpose")}</p>
                 <button className="ws-linkbtn" onClick={() => setShowSteps((v) => !v)}>
                   {t("uploadTokenSteps")}
                 </button>

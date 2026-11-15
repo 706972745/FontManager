@@ -17,7 +17,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.2.1-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.2.2-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -34,7 +34,7 @@ and MCP when you want your tools to join in.
 
 <br>
 
-<img src="main.png?v=2.2.1" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
+<img src="main.png?v=2.2.2" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -45,6 +45,22 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.2.2 — One caret everywhere; the panel now explains what upload / GitHub sign-in is for**
+
+- **The main window and the Plugin Center panel share one blinking blue block caret.** Its height
+  is no longer the whole input box: it is now **font size + 2 px, vertically centred** (13 px text →
+  15 px block). Width is still the character advance plus 4 px on each side, with a 3 px radius.
+  Both entry points use the same component and stylesheet, so a change lands in both at once.
+  IME composition still falls back to the native caret so pinyin tracks correctly. Password fields,
+  textareas and checkboxes stay native — the measurement mirror would put plain text into the DOM.
+- **The panel spells out what uploading and signing in are for:** uploading a plugin only stores it
+  in a shared repository for sharing and safekeeping; signing in to GitHub is only so you can manage
+  the plugins you uploaded (iterate or take them down) — **there is no other use for it**. The line is
+  always visible at the bottom of the panel and shown again where you paste the token.
+- **README rewritten against measured behaviour**: the local API table now covers all 20 routes, the
+  permission table all 10 scopes, plus a "run these five gates" section. All UI screenshots and the
+  Plugin Center screenshot were retaken for 2.2.2.
 
 **2.2.1 — The panel updates itself; interpreter updates are only announced**
 
@@ -156,7 +172,7 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.2.1)
+![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.2.2)
 
 **Find your way first: the window has five regions**
 
@@ -218,18 +234,18 @@ The three icons at the toolbar's right edge:
 - **List**: a compact table — family / styles / format / size / toggle — best for
   sweeping a big library
 
-![List view: the whole library in one table](view-list.png?v=2.2.1)
+![List view: the whole library in one table](view-list.png?v=2.2.2)
 
 - **Specimen**: a **multi-column specimen wall** — every cell keeps the full card
   header (format / name / license / ★ / toggle) and spreads the sample text **large**
   underneath; pick a face per cell (remembered); its own size control — best for
   judging a typeface's character
 
-![Specimen view: multi-column specimen wall with large sample text](view-specimen.png?v=2.2.1)
+![Specimen view: multi-column specimen wall with large sample text](view-specimen.png?v=2.2.2)
 
 ### 5. The detail panel: everything about one family
 
-![Detail panel: multi-size specimen and metadata](detail.png?v=2.2.1)
+![Detail panel: multi-size specimen and metadata](detail.png?v=2.2.2)
 
 Click any card and the right panel opens:
 
@@ -278,7 +294,7 @@ Click any card and the right panel opens:
 | Online panel | see below: filter by category / license, one-click add |
 | Local API / MCP | automated imports (see [Plugins, local API & MCP](#-plugins-local-api--mcp)) |
 
-![Online panel: category and license filters on the left, font cards with one-click add](online.png?v=2.2.1)
+![Online panel: category and license filters on the left, font cards with one-click add](online.png?v=2.2.2)
 
 How to use it: sidebar "Online" → filter by **category** (sans / serif / display /
 handwriting / mono / icons) and **license** (OFL / Apache / UFL), or just search;
@@ -307,7 +323,7 @@ a handwritten caption), easy to spot in Explorer: the app icon (a **TYPE
 FontManager** wordmark) · snapshot export **.S** · pack-with-fonts **.P** ·
 data-only export **.L** · library folder **.F**:
 
-![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png?v=2.2.1)
+![FontManager icon set: sticker-paper final (white sheet + ink letter + handwritten caption)](icons-overview.png?v=2.2.2)
 
 ### 11. Trash: regret is allowed
 
@@ -316,7 +332,7 @@ data-only export **.L** · library folder **.F**:
 2. Sidebar "Trash" → **restore** (back exactly as it was) or **delete forever**
    (double confirmation)
 
-![Trash: removed fonts land here first — nothing disappears silently](trash.png?v=2.2.1)
+![Trash: removed fonts land here first — nothing disappears silently](trash.png?v=2.2.2)
 
 ### 12. Licenses & duplicates: no browser needed
 
@@ -353,7 +369,7 @@ faster routes:
 
 ### 14. ⚡ The QuickBar: switch fonts in 1 second, anywhere
 
-![QuickBar: the docked panel of activated fonts](quickbar.png?v=2.2.1)
+![QuickBar: the docked panel of activated fonts](quickbar.png?v=2.2.2)
 
 1. Press <kbd>Alt</kbd>+<kbd>`</kbd> anywhere — the main window collapses into the
    **docked QuickBar** (change the hotkey under Settings → System → "QuickBar
@@ -379,7 +395,7 @@ faster routes:
 - <kbd>Ctrl</kbd>+<kbd>K</kbd>: the command palette — type to jump (views, toggles,
   compare, apply-in-app, snapshots…)
 
-![Command palette](palette.png?v=2.2.1)
+![Command palette](palette.png?v=2.2.2)
 
 - **Type-to-search in any context menu**: with any right-click menu open
   (cards / list / specimens / QuickBar / detail panel), just **start typing** —
@@ -388,7 +404,7 @@ faster routes:
   switches to the right view and scrolls the family into view.
   <kbd>Esc</kbd> clears the query first, then closes the menu
 
-![Type-to-search inside a context menu: a search box appears on top, results filter live, and the footer tells you more matches are available](contextmenu.png?v=2.2.1)
+![Type-to-search inside a context menu: a search box appears on top, results filter live, and the footer tells you more matches are available](contextmenu.png?v=2.2.2)
 
 - **Tab toggles the search scope**: while searching, <kbd>Tab</kbd> (or the
   badge next to the box) switches between "enabled ↔ all fonts" — the QuickBar
@@ -398,11 +414,11 @@ faster routes:
 - <kbd>?</kbd> (or the sidebar "Shortcuts" entry): the full shortcut list —
   navigation / selection / actions on selection / snapshots
 
-![Shortcut list: open with ? or the sidebar "Shortcuts" entry — grouped into navigation / selection / actions](shortcuts.png?v=2.2.1)
+![Shortcut list: open with ? or the sidebar "Shortcuts" entry — grouped into navigation / selection / actions](shortcuts.png?v=2.2.2)
 
 ### 17. Multiple libraries: up to 3 folders, one-click switching
 
-![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png?v=2.2.1)
+![Settings → Library folders: the default library plus your own folders, switch inline](libraries.png?v=2.2.2)
 
 Fonts scattered across folders? **Settings → Library folders**:
 
@@ -417,7 +433,7 @@ Fonts scattered across folders? **Settings → Library folders**:
 
 ### 18. Look & language
 
-![Settings: language / system / library — every toggle in one column](settings.png?v=2.2.1)
+![Settings: language / system / library — every toggle in one column](settings.png?v=2.2.2)
 
 In settings: light / dark theme · interface sounds on/off · **reduced motion**
 (calmer animation, less transparency) · nine interface languages
@@ -481,6 +497,9 @@ Manual steps (any version):
 
 ### 🧩 Plugin Center: browse, install, upload
 
+![Plugin Center panel: cards, search and filters; the footer explains what upload and GitHub sign-in are for](workshop.png?v=2.2.2)
+
+
 Community plugins live in the **[FontManager-Workshop](https://github.com/706972745/FontManager-Workshop)**
 repository and are browsed through the **Plugin Center** — a separate panel that is
 **downloaded on demand** into **your data folder** (`<data root>\workshop-panel`) and opened by the app
@@ -497,6 +516,10 @@ the install folder:**
 Behaviour worth knowing:
 
 - **Browsing, downloading and installing need no GitHub account** — only uploading your own plugin does
+- **What upload and sign-in are actually for**: uploading a plugin only puts it into a shared repository
+  for storing and sharing. Signing in to GitHub is only so you can manage the plugins *you* uploaded —
+  iterate on them later or take them down. **There is no other use for it.** The line stays at the
+  bottom of the panel and appears again where you paste the token
 - **The panel updates itself**: once installed, the app checks after launch (never more than once every 24 h)
   and installs a newer panel in the background with a one-line notice; **nothing at all happens while the panel
   isn't installed**, and you can turn the check off in Settings → Plugins. New panels no longer wait for an app release
@@ -781,7 +804,7 @@ Rust (MSVC) 1.85+ and Node 24+ are required (see `engines` in `package.json`).
 
 ### Run these five gates before opening a PR
 
-| Command | 2.2.1 baseline |
+| Command | 2.2.2 baseline |
 |---|---|
 | `npm test` | 428 tests: 427 pass / 1 skipped / 0 fail |
 | `cargo test --lib` | 299 pass / 0 fail / 16 ignored (`--lib` is **required**: without it `generate_context!` fails for missing `custom-protocol`) |
