@@ -17,6 +17,17 @@ const FOLDER_ICON: &[u8] = include_bytes!("../icons/library-folder.ico");
 const ICON_NAME: &str = ".zfm-folder.ico";
 const INI_NAME: &str = "desktop.ini";
 
+/// 本软件往用户库里写的两个元数据文件（隐藏）。**导出/打包一律要排掉**：
+/// 它们是「这台机器上这个库」的显示配置，跟着字体包发给别人毫无意义，
+/// 解压到别人机器上还会指向不存在的路径。`folder_export` / `library_pack` 共用这份清单。
+pub const MARKER_FILES: [&str; 2] = [ICON_NAME, INI_NAME];
+
+/// 文件名是不是本软件的库元数据（大小写不敏感，Windows 上 `Desktop.ini` 也常见）
+pub fn is_marker_file(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    MARKER_FILES.iter().any(|m| n == m.to_ascii_lowercase())
+}
+
 /// 给 `dir` 挂上库文件夹图标。目录不存在时返回 Err，其余失败也带上原因，
 /// 但调用方可以只记日志 —— 图标是装饰，不该阻断换库。
 pub fn apply(dir: &str) -> Result<(), String> {
@@ -28,17 +39,33 @@ pub fn apply(dir: &str) -> Result<(), String> {
     let icon_path = root.join(ICON_NAME);
     let ini_path = root.join(INI_NAME);
 
-    write_file(&icon_path, FOLDER_ICON)?;
-    write_file(&ini_path, &desktop_ini(&icon_path))?;
+    // 尊重用户：`desktop.ini` 在、但不指向我们的 ico —— 说明是用户自己在资源管理器里
+    // 换过图标（或别的软件设的），一个字节都不碰，下次启动也不盖回去。
+    // 与 `retire()` 的「只动自己的」对称。
+    if let Ok(bytes) = std::fs::read(&ini_path) {
+        if !decode_ini(&bytes).contains(ICON_NAME) {
+            return Ok(());
+        }
+    }
+
+    // 2.2.5：写入改成幂等 —— 内容没变就不写、属性已对就不重设，启动时库内零写入，
+    // mtime 不再抖，同步盘 / 备份工具不会误判「库被改」。
+    let mut changed = write_file(&icon_path, FOLDER_ICON)?;
+    changed |= write_file(&ini_path, &desktop_ini(&icon_path))?;
 
     #[cfg(windows)]
     {
-        set_attrs(&icon_path, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
-        set_attrs(&ini_path, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN);
+        changed |= set_attrs(&icon_path, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+        changed |= set_attrs(&ini_path, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN);
         // Shell 只认带只读 / 系统属性的目录上的 desktop.ini
-        set_attrs(root, FILE_ATTRIBUTE_READONLY);
-        notify_dir_changed(root);
+        changed |= set_attrs(root, FILE_ATTRIBUTE_READONLY);
+        // 什么都没变就别惊动资源管理器
+        if changed {
+            notify_dir_changed(root);
+        }
     }
+    #[cfg(not(windows))]
+    let _ = changed;
 
     Ok(())
 }
@@ -85,6 +112,67 @@ pub fn retire(dir: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 卸载前把用户字体库上的专属图标全摘掉。
+///
+/// 2.2.5 修的真实缺口：`retire()` 原来只在**换库**时调用，卸载流程不管 —— 软件都卸了，
+/// 用户的字体库文件夹还挂着 FontManager 的图标，里面留着 `.zfm-folder.ico` 与
+/// `desktop.ini` 两个孤儿文件。
+///
+/// 数据根就在安装目录里，卸载会连它一起删，所以必须**在拉起卸载引擎之前**读
+/// `state.json` 拿库路径。读不到 / 解析失败一律当「没有库」处理：卸载不能因为
+/// 读不懂一个文件就卡住。
+///
+/// 返回 (已摘干净的目录, 失败详情)，交给调用方记日志。
+pub fn retire_libraries_from_state<P: AsRef<Path>>(state_files: &[P]) -> (Vec<String>, Vec<String>) {
+    let mut dirs: Vec<String> = Vec::new();
+    for f in state_files {
+        for d in library_dirs_in(f.as_ref()) {
+            if !dirs.iter().any(|x| x.eq_ignore_ascii_case(&d)) {
+                dirs.push(d);
+            }
+        }
+    }
+    let mut retired = Vec::new();
+    let mut failed = Vec::new();
+    for d in dirs {
+        // 登记过但已经不在了的库（换过盘、删过目录）不算「摘掉了」，也不该进日志
+        if !Path::new(&d).is_dir() {
+            continue;
+        }
+        match retire(&d) {
+            Ok(()) => retired.push(d),
+            Err(e) => failed.push(format!("{d}: {e}")),
+        }
+    }
+    (retired, failed)
+}
+
+/// 从 `state.json`（camelCase）里取所有登记过的库目录：`libraryDir` + `libraryDirs`。
+fn library_dirs_in(state_file: &Path) -> Vec<String> {
+    let Ok(bytes) = std::fs::read(state_file) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    push_dir(&mut out, v.get("libraryDir").and_then(|x| x.as_str()));
+    if let Some(arr) = v.get("libraryDirs").and_then(|x| x.as_array()) {
+        for it in arr {
+            push_dir(&mut out, it.as_str());
+        }
+    }
+    out
+}
+
+fn push_dir(out: &mut Vec<String>, s: Option<&str>) {
+    if let Some(s) = s.map(str::trim).filter(|s| !s.is_empty()) {
+        if !out.iter().any(|x| x.eq_ignore_ascii_case(s)) {
+            out.push(s.to_string());
+        }
+    }
+}
+
 /// UTF-16LE（带 BOM）或 ANSI/UTF-8 的 desktop.ini 都尽量解出文本，仅供内部判断。
 fn decode_ini(bytes: &[u8]) -> String {
     if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
@@ -121,11 +209,20 @@ fn desktop_ini(icon: &Path) -> Vec<u8> {
     out
 }
 
-/// 覆盖写：先摘掉只读（上一版留下的 desktop.ini 是只读的），写完再恢复由调用方设置。
-fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+/// 覆盖写（幂等）：内容与现有字节相同就不写，返回是否真的落了盘。
+///
+/// 每次启动都会调一次 `apply()`，无条件 `fs::write` 会让库里的 `mtime` 每次都变，
+/// 同步盘 / 备份工具看到的是「库一直在被改」。
+fn write_file(path: &Path, bytes: &[u8]) -> Result<bool, String> {
+    if let Ok(cur) = std::fs::read(path) {
+        if cur == bytes {
+            return Ok(false);
+        }
+    }
     #[cfg(windows)]
     clear_readonly(path);
-    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(true)
 }
 
 #[cfg(windows)]
@@ -158,15 +255,17 @@ fn clear_readonly(path: &Path) {
 }
 
 #[cfg(windows)]
-fn set_attrs(path: &Path, add: u32) {
+fn set_attrs(path: &Path, add: u32) -> bool {
     let w = wide(path);
     unsafe {
         let cur = GetFileAttributesW(w.as_ptr());
         if cur == INVALID_FILE_ATTRIBUTES {
-            return;
+            return false;
         }
         if cur & add != add {
-            SetFileAttributesW(w.as_ptr(), cur | add);
+            SetFileAttributesW(w.as_ptr(), cur | add) != 0
+        } else {
+            false
         }
     }
 }
@@ -276,6 +375,103 @@ mod tests {
 
         retire(&root.to_string_lossy()).unwrap();
         assert!(ini.exists(), "别人的 desktop.ini 不该被删");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 2.2.5 建议 1：第二次 apply 内容没变 → 一个字节都不写，mtime 不动
+    #[test]
+    fn apply_is_idempotent() {
+        let root = std::env::temp_dir().join(format!("zfm-idem-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = root.to_string_lossy().to_string();
+
+        apply(&dir).unwrap();
+        let icon = root.join(ICON_NAME);
+        let ini = root.join(INI_NAME);
+        let icon_m = std::fs::metadata(&icon).unwrap().modified().unwrap();
+        let ini_m = std::fs::metadata(&ini).unwrap().modified().unwrap();
+
+        // 隔开 1 秒，避免文件系统时间戳分辨率掩盖「其实又写了一次」
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        apply(&dir).unwrap();
+        assert_eq!(
+            std::fs::metadata(&icon).unwrap().modified().unwrap(),
+            icon_m,
+            "ico 内容未变时不该重写"
+        );
+        assert_eq!(
+            std::fs::metadata(&ini).unwrap().modified().unwrap(),
+            ini_m,
+            "desktop.ini 内容未变时不该重写"
+        );
+
+        #[cfg(windows)]
+        {
+            clear_readonly(&icon);
+            clear_readonly(&ini);
+            clear_readonly(&root);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 2.2.5 建议 2：用户自己设过图标 → apply 不覆盖、也不往里塞我们的 ico
+    #[test]
+    fn apply_keeps_foreign_desktop_ini() {
+        let root = std::env::temp_dir().join(format!("zfm-apply-foreign-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let ini = root.join(INI_NAME);
+        let foreign = b"[.ShellClassInfo]\r\nIconResource=C:\\Users\\me\\my.ico,0\r\n";
+        std::fs::write(&ini, foreign).unwrap();
+
+        apply(&root.to_string_lossy()).unwrap();
+        assert_eq!(std::fs::read(&ini).unwrap(), foreign, "用户的 desktop.ini 不该被改");
+        assert!(!root.join(ICON_NAME).exists(), "不该往用户库塞我们的 ico");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 2.2.5 建议 3：卸载前按 state.json 把库图标摘掉（含 libraryDirs 里的历史库）
+    #[test]
+    fn retire_libraries_from_state_cleans_every_library() {
+        let root = std::env::temp_dir().join(format!("zfm-uninst-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let a = root.join("libA");
+        let b = root.join("libB");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        apply(&a.to_string_lossy()).unwrap();
+        apply(&b.to_string_lossy()).unwrap();
+
+        // libraryDir 与 libraryDirs[0] 重复，只该摘一次；不存在的路径要静默跳过
+        let state = root.join("state.json");
+        std::fs::write(
+            &state,
+            format!(
+                r#"{{"libraryDir":"{}","libraryDirs":["{}","{}","{}"]}}"#,
+                a.display().to_string().replace('\\', "\\\\"),
+                a.display().to_string().replace('\\', "\\\\"),
+                b.display().to_string().replace('\\', "\\\\"),
+                root.join("gone").display().to_string().replace('\\', "\\\\"),
+            ),
+        )
+        .unwrap();
+
+        let (retired, failed) = retire_libraries_from_state(&[&state]);
+        assert!(failed.is_empty(), "不该有失败：{failed:?}");
+        assert_eq!(retired.len(), 2, "只报真的存在并摘过的库：{retired:?}");
+        assert!(!a.join(ICON_NAME).exists(), "A 库 ico 应被摘掉");
+        assert!(!a.join(INI_NAME).exists(), "A 库 ini 应被摘掉");
+        assert!(!b.join(ICON_NAME).exists(), "B 库 ico 应被摘掉");
+
+        // 文件不存在 / 内容坏掉时不能报错，也不能影响卸载
+        let (r2, f2) = retire_libraries_from_state(&[&root.join("nope.json")]);
+        assert!(r2.is_empty() && f2.is_empty());
+        std::fs::write(&state, b"{ not json").unwrap();
+        let (r3, f3) = retire_libraries_from_state(&[&state]);
+        assert!(r3.is_empty() && f3.is_empty());
 
         let _ = std::fs::remove_dir_all(&root);
     }

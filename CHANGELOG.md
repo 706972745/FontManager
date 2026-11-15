@@ -4,6 +4,34 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.5] — 2026-11-15
+
+> **库文件夹图标这套机制收口了**：不再每次启动重写用户库里的 `.zfm-folder.ico` /
+> `desktop.ini`；用户在资源管理器里换过图标就不会被盖回去；卸载时也会把这些痕迹摘干净。
+> 导出（「全部导出」与字体库整包）不再带这两个文件。
+
+### 修复
+
+- **启动不再无条件重写库里的两个文件**：`.zfm-folder.ico`（72 KB）与 `desktop.ini` 内容相同
+  就不写、属性已正确就不重设、什么都没变就不惊动资源管理器。此前每次启动都会改 mtime，
+  OneDrive / 坚果云 / 备份工具会当成「库一直在被改」。
+- **用户自己换的图标不会被盖回去**：`apply()` 先读 `desktop.ini`，不指向我们的
+  `.zfm-folder.ico` 就认定是用户（或别的软件）设的，一个字节都不碰 —— 与 `retire()` 的
+  「只动自己的」对称。此前库图标会被下次启动悄悄重置。
+- **卸载不再留幽灵图标**：卸载界面在拉起卸载引擎之前，按 `state.json`（含 `.bak` 与 2.1.4 的
+  `%APPDATA%\FontManager` 旧位置）把库里挂过的专属图标摘掉，再删安装目录。此前软件卸完了，
+  字体库文件夹还挂着 FontManager 的图标，里面留着两个孤儿文件。
+- **导出不带库元数据**：字体库整包（`.P-FontManager`）显式排掉 `.zfm-folder.ico` /
+  `desktop.ini`（大小写不敏感，库根与字族子目录都排）；「全部导出」原本就跳过，但跳过计数
+  恒为 0，现在如实回给 `FolderExportReport.skipped`。两份清单统一由
+  `library_marker::MARKER_FILES` 提供，不再各写一份。
+
+### 验证
+
+- `cargo test --lib`：新增 4 条 —— 幂等（二次 `apply` 不动 mtime）、尊重用户图标、
+  卸载前按 `state.json` 摘图标（含去重 / 坏 JSON / 已不存在的库）、整包不含两个标记文件；
+  「全部导出」的既有用例补了 `.zfm-folder.ico` 与跳过计数断言。
+
 ## [2.2.4] — 2026-11-15
 
 > **Ctrl+K 命令面板的光标也统一成蓝块了**，顺手补上另外 6 处漏网的文字输入框；
