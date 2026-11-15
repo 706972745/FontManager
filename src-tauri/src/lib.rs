@@ -2301,6 +2301,14 @@ fn open_folder(path: String) -> Result<(), String> {
     if !p.is_dir() {
         return Err(format!("not a folder: {path}"));
     }
+    shell_open(&p)
+}
+
+/// ShellExecuteW 的 "open" 动词：目录就进目录，文件就交给关联程序。
+///
+/// 不用 `spawn`：explorer 的命令行解析很怪，本机实测会被忽略、落到「文档」。
+#[allow(dead_code)]
+fn shell_open(p: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::ffi::OsStrExt;
@@ -2330,6 +2338,105 @@ fn open_folder(path: String) -> Result<(), String> {
     {
         tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())
     }
+}
+
+/// 在资源管理器里**打开文件所在目录并选中它**（「位置」「在文件管理器中显示」用）。
+///
+/// 不能直接用 plugin-opener 的 `revealItemInDir`：它先把路径转成 shell PIDL，
+/// 而 `C:\Windows\Fonts` 是 shell 的**虚拟字体文件夹**，在 COM 已初始化的情况下
+/// `ILCreateFromPathW("C:\Windows\Fonts\xxx.ttf")` 返回 NULL，插件直接抛
+/// `FailedToConvertPathToItemIdList` —— 系统字体点「位置」必弹「无法打开文件管理器」。
+/// （2.2.2 上实测：STHUPO.TTF / arial.ttf 均稳定复现；同一函数对普通目录正常。）
+///
+/// 所以自己实现，并且**失败也不报错**：
+/// 1. PIDL 建得出来 → `SHOpenFolderAndSelectItems`（正常文件/目录）；
+/// 2. 建不出来（系统字体就是这种）、调用失败、甚至路径已经过期（扫描缓存里的旧路径，
+///    文件被人删了）→ 退化成「打开父目录」，用户仍能落到那个文件夹里；
+/// 3. 连父目录都不在，才算真失败（返回 Err，界面才提示）。
+#[tauri::command]
+fn reveal_in_folder(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+
+    #[cfg(target_os = "windows")]
+    {
+        if p.exists() && reveal_select(&p) {
+            return Ok(());
+        }
+        return match reveal_fallback_dir(&p) {
+            Some(dir) => shell_open(&dir),
+            None => Err(format!("not found: {path}")),
+        };
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if !p.exists() {
+            return Err(format!("not found: {path}"));
+        }
+        tauri_plugin_opener::reveal_item_in_dir(&p).map_err(|e| e.to_string())
+    }
+}
+
+/// 「选中」这条路走不通时该打开哪个目录；`None` = 连目录都不存在（调用方应报错）。
+fn reveal_fallback_dir(p: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dir = if p.is_dir() {
+        p.to_path_buf()
+    } else {
+        p.parent()?.to_path_buf()
+    };
+    if dir.is_dir() {
+        Some(dir)
+    } else {
+        None
+    }
+}
+
+/// 试着用 `SHOpenFolderAndSelectItems` 打开父目录并选中 `p`。
+/// `true` 表示已经打开了；`false` 表示这条路走不通（调用方自己退化）。
+#[cfg(target_os = "windows")]
+fn reveal_select(p: &std::path::Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::Common::ITEMIDLIST;
+    use windows_sys::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems};
+
+    fn pidl(path: &std::path::Path) -> Option<*const ITEMIDLIST> {
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let raw = unsafe { ILCreateFromPathW(wide.as_ptr()) };
+        if raw.is_null() {
+            None
+        } else {
+            Some(raw as *const ITEMIDLIST)
+        }
+    }
+
+    let is_dir = p.is_dir();
+    let parent = if is_dir {
+        p.to_path_buf()
+    } else {
+        match p.parent() {
+            Some(d) => d.to_path_buf(),
+            None => return false,
+        }
+    };
+    let parent_idl = match pidl(&parent) {
+        Some(idl) => idl,
+        None => return false,
+    };
+    let selected = if is_dir {
+        let hr = unsafe { SHOpenFolderAndSelectItems(parent_idl, 0, std::ptr::null(), 0) };
+        hr >= 0
+    } else {
+        match pidl(p) {
+            Some(item_idl) => {
+                let hr = unsafe { SHOpenFolderAndSelectItems(parent_idl, 1, &item_idl, 0) };
+                unsafe { ILFree(item_idl) };
+                hr >= 0
+            }
+            // 文件本身转不成 PIDL（C:\Windows\Fonts 就是）→ 不选中，直接算失败
+            None => false,
+        }
+    };
+    unsafe { ILFree(parent_idl) };
+    selected
 }
 
 /// activation.log 的完整路径（2.1.5 起跟着数据根走，默认 `<安装目录>\data\activation.log`；
@@ -2353,35 +2460,7 @@ fn open_file(path: String) -> Result<(), String> {
     if !p.is_file() {
         return Err(format!("not a file: {path}"));
     }
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::UI::Shell::ShellExecuteW;
-
-        let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-        let op: Vec<u16> = "open\0".encode_utf16().collect();
-        // SW_SHOWNORMAL
-        let ret = unsafe {
-            ShellExecuteW(
-                std::ptr::null_mut(),
-                op.as_ptr(),
-                wide.as_ptr(),
-                std::ptr::null(),
-                std::ptr::null(),
-                1,
-            )
-        };
-        // ShellExecute 的返回值 <= 32 都是错误码，> 32 才算成功
-        if ret as isize > 32 {
-            Ok(())
-        } else {
-            Err(format!("ShellExecuteW failed: {}", ret as isize))
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())
-    }
+    shell_open(&p)
 }
 
 fn allow_dir(app: &tauri::AppHandle, dir: &std::path::Path) {
@@ -3412,6 +3491,7 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             set_settings,
             default_library_dir,
             open_folder,
+            reveal_in_folder,
             log_file_path,
             open_file,
             apply_library_folder_icon,
@@ -3673,3 +3753,57 @@ mod lib_label_probe {
         }
     }
 }
+
+/// 「位置 / 在文件管理器中显示」回归（2.2.3 修）。
+///
+/// 系统字体在 `C:/Windows/Fonts` —— shell 的**虚拟字体文件夹**，COM 初始化后
+/// `ILCreateFromPathW("C:/Windows/Fonts/xxx.ttf")` 返回 NULL。以前前端直接调
+/// plugin-opener 的 `revealItemInDir`，它拿到 NULL 就抛 `FailedToConvertPathToItemIdList`，
+/// 界面弹「无法打开文件管理器 ×N」。现在必须落到「打开父目录」退化分支，不抛错。
+#[cfg(all(test, target_os = "windows"))]
+mod reveal_tests {
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn system_font_file_takes_the_fallback_branch() {
+        let p = Path::new(r"C:/Windows/Fonts/arial.ttf");
+        if !p.exists() {
+            return; // 精简系统里可能没有，跳过
+        }
+        assert!(
+            !crate::reveal_select(p),
+            "系统字体的文件项转不成 PIDL，必须返回 false 让调用方退化成打开目录"
+        );
+        assert_eq!(
+            crate::reveal_fallback_dir(p),
+            Some(PathBuf::from(r"C:/Windows/Fonts")),
+            "退化目标是字体文件夹本身"
+        );
+    }
+
+    #[test]
+    fn fallback_dir_covers_dir_file_and_missing() {
+        // 目录 → 打开它自己
+        assert_eq!(
+            crate::reveal_fallback_dir(Path::new(r"C:/Windows/Fonts")),
+            Some(PathBuf::from(r"C:/Windows/Fonts"))
+        );
+        // 普通文件 → 打开父目录
+        assert_eq!(
+            crate::reveal_fallback_dir(Path::new(r"C:/Windows/win.ini")),
+            Some(PathBuf::from(r"C:/Windows"))
+        );
+        // 父目录都不在 → None，界面才该提示
+        assert_eq!(
+            crate::reveal_fallback_dir(Path::new(r"C:/__zfm_not_here__/nope.ttf")),
+            None
+        );
+    }
+
+    #[test]
+    fn missing_path_is_an_error() {
+        let r = crate::reveal_in_folder(r"C:/__zfm_not_here__/nope.ttf".to_string());
+        assert!(r.is_err(), "父目录都不存在时应该返回 Err，界面才好提示");
+    }
+}
+

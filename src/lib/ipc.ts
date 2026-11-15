@@ -393,6 +393,13 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    */
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
   /**
+   * 打开文件所在目录并选中它（「位置」「在文件管理器中显示」）。
+   * 文件也不要用 plugin-opener 的 revealItemInDir —— 系统字体放在 `C:\Windows\Fonts`，
+   * 那是 shell 的虚拟字体文件夹，转 PIDL 会失败，插件直接抛错、界面弹「无法打开文件管理器」。
+   * Rust 侧建不出 PIDL 时退化成「打开父目录」，不报错。
+   */
+  revealInFolder: (path: string) => invoke<void>("reveal_in_folder", { path }),
+  /**
    * 用系统默认程序打开**一个文件**（不走资源管理器，直接交给关联程序）。
    * 目前只有 activation.log 用：插件崩了、界面上那行小字说不清时，用户能自己点开看全文。
    * 路径不存在时 Rust 侧返回 `Err("not a file: …")`。

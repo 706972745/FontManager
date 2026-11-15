@@ -1,5 +1,4 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   Camera,
   Columns2,
@@ -499,7 +498,7 @@ export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
       label: t("menu.showInFileManager"),
       icon: <FolderOpen size={14} strokeWidth={1.5} />,
       action: () =>
-        revealItemInDir(face.path).catch((e) =>
+        void ipc.revealInFolder(face.path).catch((e) =>
           toast.error(t("toast.couldntOpenFileManager"), String(e)),
         ),
     },
@@ -699,7 +698,7 @@ export function buildFamilyMenu(family: Family): MenuItem[] {
       label: t("menu.showInFileManager"),
       icon: <FolderOpen size={14} strokeWidth={1.5} />,
       action: () =>
-        revealItemInDir(lead.path).catch((e) =>
+        void ipc.revealInFolder(lead.path).catch((e) =>
           toast.error(t("toast.couldntOpenFileManager"), String(e)),
         ),
     },
