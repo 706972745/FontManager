@@ -6,6 +6,7 @@ import { useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { playTag } from "../lib/sound";
 import { useT } from "../lib/i18n";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 
 export function BulkTagPrompt() {
   const t = useT();
@@ -68,7 +69,7 @@ export function BulkTagPrompt() {
               </button>
             </header>
             <div className="topbar-field">
-              <input
+              <BlinkCaretInput
                 ref={inputRef}
                 value={tag}
                 onChange={(e) => setTag(e.target.value)}

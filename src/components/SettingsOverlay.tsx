@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, Sparkles, SunMoon, Trash2, Volume2, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { LoaderCircle } from "lucide-react";
 import { ArtIcon } from "./ArtIcon";
@@ -1206,8 +1207,9 @@ export function SettingsOverlay() {
                   <div className="settings-label">{t("settings.apiPort")}</div>
                   <div className="settings-sub">{t("settings.apiPortHint")}</div>
                 </div>
-                <input
+                <BlinkCaretInput
                   className="settings-port-input tabular"
+                  fieldClassName="port-field"
                   type="text"
                   inputMode="numeric"
                   value={portDraft}
@@ -1293,8 +1295,9 @@ export function SettingsOverlay() {
                         })}
                       </div>
                       <div className="settings-row settings-allow-add">
-                        <input
+                        <BlinkCaretInput
                           className="settings-input"
+                          fieldClassName="allow-field"
                           value={allowDraft}
                           placeholder={t("settings.apiClientAddHint")}
                           onChange={(e) => setAllowDraft(e.target.value)}

@@ -951,7 +951,8 @@ function TagEditor({
         </div>
       )}
       <div className="tag-input">
-        <input
+        <BlinkCaretInput
+          fieldClassName="tag-field"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}

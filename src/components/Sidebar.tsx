@@ -12,6 +12,7 @@ import { faceKey } from "../lib/snapshotKey";
 import { sortContainers } from "../lib/faceContainers";
 import { countKnown, navCountText } from "../lib/seedOverrides";
 import { exportFontList, snapshotToggleAction } from "../lib/menus";
+import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { t as translate, useT } from "../lib/i18n";
 import { formatTagExpiry } from "../lib/tagExpiry";
 
@@ -143,7 +144,7 @@ function NewCollectionInput({ onDone }: { onDone: () => void }) {
       transition={intro ? spring : INTRO_OFF}
     >
       <FolderOpen size={15} strokeWidth={1.5} />
-      <input
+      <BlinkCaretInput
         ref={ref}
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -181,7 +182,7 @@ function NewSnapshotInput({ onDone }: { onDone: () => void }) {
       transition={spring}
     >
       <Camera size={15} strokeWidth={1.5} />
-      <input
+      <BlinkCaretInput
         ref={ref}
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -217,7 +218,7 @@ function RenameInput({
   return (
     <div className="collection-input">
       <FolderOpen size={15} strokeWidth={1.5} />
-      <input
+      <BlinkCaretInput
         ref={ref}
         value={name}
         onChange={(e) => setName(e.target.value)}
