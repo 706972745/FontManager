@@ -29,14 +29,14 @@ All notable changes to FontManager are documented here. The format follows
 
 ## [2.2.3] — 2026-11-15
 
-> **系统字体点「位置」不再弹「无法打开文件管理器」**。`C://Windows//Fonts` 是 shell 的虚拟字体
+> **系统字体点「位置」不再弹「无法打开文件管理器」**。`%WINDIR%\Fonts` 是 shell 的虚拟字体
 > 文件夹，`tauri-plugin-opener` 把路径转 shell PIDL 时必失败；这一版换成自实现，转不出来就退化
 > 成「打开所在文件夹」。README 的中英文也并进了同一份，点「简体中文」在仓库首页原地切换。
 
 ### 修复
 
 - 详情页「位置」、右键「在文件管理器中显示」对系统字体一律弹「无法打开文件管理器」：
-  `revealItemInDir` 内部 `ILCreateFromPathW("C://Windows//Fonts//xxx.ttf")` 返回 NULL（虚拟字体
+  `revealItemInDir` 内部 `ILCreateFromPathW("C:\Windows\Fonts\xxx.ttf")` 返回 NULL（虚拟字体
   文件夹），插件抛 `FailedToConvertPathToItemIdList`。新增后端命令 `reveal_in_folder`：PIDL 建得
   出来就走 `SHOpenFolderAndSelectItems` 选中；建不出、调用失败或路径已过期，退化成打开父目录；
   只有父目录都不存在才报错。顺带把 `open_folder` / `open_file` 里三份重复的 `ShellExecuteW`
