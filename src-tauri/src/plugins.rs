@@ -1884,6 +1884,70 @@ pub fn invalidate_runtimes_status() {
     }
 }
 
+/// 最新 release 里的运行时版本清单：`{ "python": "3.13.20", "node": "24.11.0" }`。
+///
+/// 由 release.yml 在打包运行时那一步顺手生成（读 `python-runtime/python.exe -V` /
+/// `node-runtime/node.exe -v`），跟两个 zip 同批上传 —— 三者永远对得上。
+const RUNTIME_META_URL: &str =
+    "https://github.com/706972745/FontManager/releases/latest/download/runtime-meta.json";
+
+/// 远端版本缓存 6 小时：设置页会被反复打开，而远端版本一天也不变一次。
+fn remote_runtime_cache() -> &'static Mutex<Option<(std::time::Instant, HashMap<String, String>)>> {
+    static C: OnceLock<Mutex<Option<(std::time::Instant, HashMap<String, String>)>>> =
+        OnceLock::new();
+    C.get_or_init(|| Mutex::new(None))
+}
+
+const REMOTE_TTL: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+
+/// 最新 release 里两个内置运行时的版本。
+///
+/// **只用于「告诉你有没有新版」** —— 解释器不走静默更新：换 Python/Node 版本会牵动
+/// 插件依赖（Pillow / fontTools 的 ABI），自动替换比让用户手动卸载重装危险得多，
+/// 所以这里只回版本号，装不装由用户在设置页自己决定。
+///
+/// 断网 / 资产缺失（老 release 没有这个文件）都返回空表：这是提示性信息，
+/// 拿不到就当"不知道"，不该在设置页弹错误。
+#[tauri::command]
+pub async fn runtimes_remote_versions() -> Result<HashMap<String, String>, String> {
+    if let Ok(c) = remote_runtime_cache().lock() {
+        if let Some((at, v)) = c.as_ref() {
+            if at.elapsed() < REMOTE_TTL {
+                return Ok(v.clone());
+            }
+        }
+    }
+    let bytes = match crate::workshop::release_asset_bytes(
+        RUNTIME_META_URL,
+        std::time::Duration::from_secs(12),
+    )
+    .await
+    {
+        Ok(b) => b,
+        Err(e) => {
+            crate::diag::log(&format!("[runtime] 版本清单取不到（忽略）：{e}"));
+            return Ok(HashMap::new());
+        }
+    };
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        crate::diag::log("[runtime] runtime-meta.json 不是合法 JSON（忽略）");
+        return Ok(HashMap::new());
+    };
+    let mut out: HashMap<String, String> = HashMap::new();
+    for kind in ["python", "node"] {
+        if let Some(v) = value.get(kind).and_then(|v| v.as_str()) {
+            let v = v.trim().trim_start_matches('v');
+            if !v.is_empty() {
+                out.insert(kind.to_string(), v.to_string());
+            }
+        }
+    }
+    if let Ok(mut c) = remote_runtime_cache().lock() {
+        *c = Some((std::time::Instant::now(), out.clone()));
+    }
+    Ok(out)
+}
+
 /// 删除内置运行时。运行中的插件占用 exe 文件（Windows 锁住打开的可执行文件），
 /// 先拦；装到 Program Files 的 MSI 版没有管理员权限也删不动，错误里说清楚。
 pub fn runtime_delete(kind: &str) -> Result<(), String> {

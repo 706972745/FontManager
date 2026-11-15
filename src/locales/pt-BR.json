@@ -1196,6 +1196,8 @@
   "settings.rtBundled": "Instalado · {size} MB",
   "settings.rtMissing": "não instalado",
   "settings.rtMissingHint": "Não instalado — os plugins usarão o interpretador do sistema",
+  "settings.rtUpdateAvailable": "Atualização disponível: {version}",
+  "settings.rtUpdateHint": "ao desinstalar e baixar de novo, você recebe a versão mais recente",
   "settings.rtSystemFound": "sistema: {version}",
   "settings.rtUsing": "em uso por: {plugins}",
   "settings.rtUsingNone": "nenhum plugin usa",
@@ -1220,6 +1222,8 @@
   "load.retry": "Ler novamente",
   "side.pluginCenter": "Central de Plugins",
   "settings.pluginCenterVersion": "Painel da Central de Plugins v{version}",
+  "settings.pluginCenterAutoUpdate": "Atualizar automaticamente o painel da Central de plugins",
+  "settings.pluginCenterAutoUpdateSub": "Verifica no máximo uma vez por dia; a versão mais nova é instalada em segundo plano e você é avisado. Se o painel não estiver instalado, nada é baixado",
   "settings.pluginCenterHint": "Baixe o painel e depois explore os plugins da comunidade e instale com um clique",
   "settings.pluginCenterDownloading": "Baixando {percent}%",
   "settings.pluginCenterDownloadingShort": "Baixando…",
@@ -1229,5 +1233,6 @@
   "toast.pluginCenterPanelInstalled": "Painel da Central de Plugins instalado (v{version})",
   "toast.pluginCenterPanelUninstalled": "Painel da Central de Plugins desinstalado",
   "toast.pluginCenterPanelFailed": "Falha ao instalar o painel da Central de Plugins",
-  "toast.pluginCenterOpenFailed": "Não foi possível abrir a Central de Plugins"
+  "toast.pluginCenterOpenFailed": "Não foi possível abrir a Central de Plugins",
+  "toast.pluginCenterUpdated": "Central de plugins atualizada para {version}"
 }

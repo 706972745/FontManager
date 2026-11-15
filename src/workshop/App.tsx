@@ -692,7 +692,12 @@ export function WorkshopPanel() {
       {/* 上传弹窗（M3）：连账号 → 选文件夹 → 填清单 → 提交 PR，全在面板内 */}
       <AnimatePresence>
         {uploadOpen && (
-          <UploadDialog t={t} locale={locale} onClose={() => setUploadOpen(false)} />
+          <UploadDialog
+            t={t}
+            locale={locale}
+            entries={entries ?? []}
+            onClose={() => setUploadOpen(false)}
+          />
         )}
       </AnimatePresence>
 

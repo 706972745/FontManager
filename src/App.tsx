@@ -341,6 +341,47 @@ function MainContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * 插件中心面板的**自动更新**（2.2.1）。
+   *
+   * 为什么不在「点开面板」时做：面板是藏在数据目录里的一堆静态文件，
+   * 用户不点它就一直用不上新版本；而设置页在「已安装」状态下只有「打开 / 卸载」，
+   * 没有「检查更新」这个动作 —— 不主动查，用户永远不知道有新面板。
+   *
+   * 口径（与后端 `workshop_panel_autoupdate` 的闸门对齐，这里只做第一道）：
+   *   - **面板没装 → 什么都不做**：装不装是用户的选择，不能替他决定；
+   *   - 开关 `pluginCenterAutoUpdate === false` → 不查（后端也再判一次）；
+   *   - 后端 24 小时内查过就自己跳过，前端不重复判时间；
+   *   - 延迟 12 秒再跑：别和首屏加载、字体扫描抢网络与线程；
+   *   - 失败静默：断网、限流、仓库改名都是常态，自动更新不该弹错误。
+   */
+  useEffect(() => {
+    let alive = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const prefs = await ipc.getPrefs();
+        if (!alive || prefs?.pluginCenterAutoUpdate === false) return;
+        const status = await ipc.workshopPanelStatus();
+        // 没装就不查（后端同样有这道闸门，这里先挡住一次 IPC 往返）
+        if (!alive || !status.installed) return;
+        const out = await ipc.workshopPanelAutoupdate();
+        if (!alive || !out.updated) return;
+        window.dispatchEvent(new CustomEvent("workshop-panel-changed"));
+        toast.success(
+          translate("toast.pluginCenterUpdated", { version: out.to ?? "" }),
+        );
+      } catch {
+        /* 静默：见上面的注释 */
+      }
+    }, 12_000);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+    // 挂载时起一次；切语言不该重新触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 标签到期的自动清除（用户 2026-11-13）：到期粒度是天，10 分钟扫一次足够。
   // 启动那一次在 fontStore.init() 恢复完偏好之后已经扫过，这里只负责后续。
   useEffect(() => {

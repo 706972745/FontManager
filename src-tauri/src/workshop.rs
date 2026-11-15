@@ -118,6 +118,18 @@ fn client() -> Result<reqwest::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+/// 读一个 release 小资产（不是 zip）。
+///
+/// 给「运行时版本提示」用：走的是**和面板包完全相同的一条链路** ——
+/// 同一份 host 白名单、同一次重定向复检、同一个 UA。别在调用方另起一套 reqwest，
+/// 那等于把校验口径拆成两份，迟早只剩一份是对的。
+pub(crate) async fn release_asset_bytes(
+    url: &str,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
+    get_bytes(url, timeout).await
+}
+
 async fn get_bytes(url: &str, timeout: Duration) -> Result<Vec<u8>, String> {
     check_host(url)?;
     let res = client()?
@@ -616,13 +628,143 @@ struct PanelProgress {
     total: u64,
 }
 
-/// 下载并安装面板（设置 → 插件 →「获取更多插件」）。
+/// 取面板元数据（版本 + sha256 + 体积）。12 秒超时，失败原样抛给调用方。
+async fn fetch_panel_meta() -> Result<PanelMeta, String> {
+    let meta_bytes = get_bytes(PANEL_META_URL, INDEX_TIMEOUT).await?;
+    serde_json::from_slice(&meta_bytes).map_err(|e| format!("panel-meta.json 格式不对：{e}"))
+}
+
+/// 下载并安装面板（设置 → 插件 →「插件中心」）。
 /// 校验口径与检查更新一致：先取元数据里的 sha256，再逐字节比。
 #[tauri::command]
 pub async fn workshop_panel_download(app: AppHandle) -> Result<PanelStatus, String> {
-    let meta_bytes = get_bytes(PANEL_META_URL, INDEX_TIMEOUT).await?;
-    let meta: PanelMeta = serde_json::from_slice(&meta_bytes)
-        .map_err(|e| format!("panel-meta.json 格式不对：{e}"))?;
+    let meta = fetch_panel_meta().await?;
+    install_panel_from_meta(&app, &meta).await?;
+    Ok(panel_status())
+}
+
+/// 自动更新时最多两天查一次面板元数据。元数据只有一百多字节，
+/// 但常驻型软件开好几天，按「每次启动都查」算下来就是每天十几次 —— 没必要。
+const PANEL_CHECK_TTL_SECS: u64 = 24 * 3600;
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// 面板自动更新的结果。**失败也走这里**（不当成错误弹窗）——
+/// 前端只在 `updated` 为真时提示，其余情况全静默。
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelUpdateOutcome {
+    /// 这次是否真的联网查了（关掉开关 / 面板没装 / 24 小时内查过 → false）
+    pub checked: bool,
+    /// 是否装了新版本
+    pub updated: bool,
+    /// 更新前的版本
+    pub from: Option<String>,
+    /// 更新后的版本（`updated` 为真时才有）
+    pub to: Option<String>,
+    /// 当前生效版本（未更新时等于 `from`）
+    pub version: Option<String>,
+    /// 失败原因：只写 diag，不弹窗
+    pub error: Option<String>,
+}
+
+/// 面板自动更新：查 meta → 比版本 → 新则**静默装**。
+///
+/// 为什么需要它：面板是独立产物，**面板更新不跟软件发版走**。没有这条自动通道，
+/// 用户装完某个版本就永远停在那个版本 —— 设置页在「已安装」状态下只有「打开 / 卸载」，
+/// 压根没有「检查更新」这个动作，他连"有新面板"都不会知道。
+///
+/// 四条闸门（与 `check_update` 同一套口径，缺一条就变成骚扰或偷偷联网）：
+///   ① `pluginCenterAutoUpdate === false` → 一次都不查；
+///   ② 面板**没装** → 不查也不自动装（用户明确选择过不装，不能替他改主意）；
+///   ③ 24 小时内查过 → 跳过（GitHub 匿名 60 次/小时/IP）；
+///   ④ 失败一律静默：断网、限流、仓库改名都是常态，自动更新不该制造错误弹窗。
+#[tauri::command]
+pub async fn workshop_panel_autoupdate(app: AppHandle) -> Result<PanelUpdateOutcome, String> {
+    let auto = !matches!(prefs_value("pluginCenterAutoUpdate"), Some(Value::Bool(false)));
+    let st = panel_status();
+    let mut out = PanelUpdateOutcome {
+        checked: false,
+        updated: false,
+        from: st.version.clone(),
+        to: None,
+        version: st.version.clone(),
+        error: None,
+    };
+    if !auto || !st.installed {
+        return Ok(out);
+    }
+    let now = unix_now();
+    if let Some(last) = prefs_value("panelUpdateCheckedAt").and_then(|v| v.as_u64()) {
+        if now.saturating_sub(last) < PANEL_CHECK_TTL_SECS {
+            return Ok(out);
+        }
+    }
+    out.checked = true;
+
+    let meta = match fetch_panel_meta().await {
+        Ok(m) => m,
+        Err(e) => {
+            crate::diag::log(&format!("[workshop] 面板自动更新：取元数据失败 {e}"));
+            out.error = Some(e);
+            return Ok(out);
+        }
+    };
+    let remote = meta.version.clone().unwrap_or_default();
+    // 本机版本记录缺失/损坏时按「需要更新」处理：宁可重装一次面板，也不要卡在旧版。
+    let newer = match (
+        crate::update::parse_version(&remote),
+        st.version.as_deref().and_then(crate::update::parse_version),
+    ) {
+        (Some(r), Some(cur)) => r > cur,
+        (Some(_), None) => true,
+        _ => false,
+    };
+    if !newer {
+        let _ = set_prefs("panelUpdateCheckedAt", json!(now));
+        return Ok(out);
+    }
+
+    match install_panel_from_meta(&app, &meta).await {
+        Ok(v) => {
+            let _ = set_prefs("panelUpdateCheckedAt", json!(now));
+            out.updated = true;
+            out.to = Some(v.clone());
+            out.version = Some(v.clone());
+            // 面板窗口多半处于「藏着」的状态（失焦即 hide），里面跑的还是旧 JS：
+            // 直接关掉，下次点入口重新加载新资产。不关的话用户会看到「更新完了界面没变」。
+            {
+                use tauri::Manager;
+                if let Some(win) = app.get_webview_window(PANEL_LABEL) {
+                    let _ = win.close();
+                }
+            }
+            crate::diag::log(&format!(
+                "[workshop] 面板已自动更新：v{} → {v}",
+                st.version.as_deref().unwrap_or("?")
+            ));
+            Ok(out)
+        }
+        Err(e) => {
+            // 装失败不写 `panelUpdateCheckedAt`：下次启动再试一次，
+            // 免得一次网络抖动让面板卡在旧版一整天。
+            crate::diag::log(&format!("[workshop] 面板自动更新失败：{e}"));
+            out.error = Some(e);
+            Ok(out)
+        }
+    }
+}
+
+/// 真正的下载 + 校验 + 解包 + 写 prefs，返回装好的版本号。
+///
+/// 抽成函数给「手动下载」与「自动更新」共用：两条路必须走**同一条**校验路径，
+/// 否则迟早出现「只有一条带 sha256」这种事故。
+async fn install_panel_from_meta(app: &AppHandle, meta: &PanelMeta) -> Result<String, String> {
     let expect_sha = meta
         .sha256
         .as_ref()
@@ -706,7 +848,7 @@ pub async fn workshop_panel_download(app: AppHandle) -> Result<PanelStatus, Stri
         "[workshop] 插件中心面板已安装：v{version} → {}",
         dir.display()
     ));
-    Ok(panel_status())
+    Ok(version)
 }
 
 /// 卸载面板：删目录 + 清 prefs（标题栏入口随之消失）

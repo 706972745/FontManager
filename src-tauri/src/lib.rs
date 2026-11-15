@@ -3400,8 +3400,12 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             workshop::workshop_panel_status,
             workshop::workshop_panel_download,
             workshop::workshop_panel_uninstall,
+            // 面板自动更新：**只在已安装时才走**（没装由用户自己在设置页决定装不装，
+            // 这个命令连查都不查 —— 见 `workshop_panel_autoupdate` 里的第 ② 条闸门）
+            workshop::workshop_panel_autoupdate,
             workshop::workshop_open_panel,
             runtimes_status,
+            plugins::runtimes_remote_versions,
             runtime_delete,
             runtime_download,
             get_settings,

@@ -14,6 +14,7 @@ import { holdBlurGuard, panelApi } from "./api.ts";
 import {
   ALLOWED_EXTS,
   anonymousAuthorFor,
+  deletePlugins,
   GhError,
   MAINTAINER,
   PERMS,
@@ -30,6 +31,7 @@ import {
   type UploadItem,
   type UploadPhase,
 } from "./upload.ts";
+import type { WorkshopEntry } from "../lib/workshop.ts";
 
 /**
  * 上传弹窗（M3）：连账号 → 选目录（**可多选**）→ 逐个确认清单 → 勾规则 → 一次提交。
@@ -72,10 +74,13 @@ interface Draft {
 export function UploadDialog({
   t,
   locale,
+  entries,
   onClose,
 }: {
   t: TFn;
   locale: string;
+  /** 清单里的条目：用来列「我上传的插件」（下架入口） */
+  entries: WorkshopEntry[];
   onClose: () => void;
 }) {
   const [token, setToken] = useState<string | null>(null);
@@ -95,6 +100,53 @@ export function UploadDialog({
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ prUrl: string; prNumber: number } | null>(null);
+  /** 正在下架的目录（按钮显示 loading、其余禁用） */
+  const [deleting, setDeleting] = useState<string | null>(null);
+  /** 本次会话里已提交下架的目录（提交后先从列表里去掉，不必等 PR 合并） */
+  const [deleted, setDeleted] = useState<string[]>([]);
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+
+  /**
+   * 「我上传的插件」：署名 = 我的登录名，或由登录名派生的匿名署名。
+   *
+   * 关键在于**不依赖本机任何状态** —— 匿名署名是 `anonymous-<hash(login)>`，
+   * 换电脑、重装软件、换浏览器都算得一样，所以删除/覆盖更新跟着 GitHub 账号走。
+   */
+  const mine = useMemo(() => {
+    if (!login) return [];
+    const authors = new Set([login, anonymousAuthorFor(login)]);
+    return entries.filter((e) => {
+      if (e.official || !e.dir) return false;
+      const cut = e.dir.lastIndexOf("__");
+      if (cut < 0) return false;
+      return authors.has(e.dir.slice(cut + 2)) && !deleted.includes(e.dir);
+    });
+  }, [entries, login, deleted]);
+
+  const removeOne = useCallback(
+    async (dir: string, name: string) => {
+      if (!token || !login) return;
+      if (!window.confirm(t("uploadDeleteConfirm", { name }))) return;
+      setDeleting(dir);
+      setError(null);
+      setDeleteMsg(null);
+      try {
+        const out = await deletePlugins({ token, login, dirs: [dir], onPhase: setPhase });
+        setDeleted((d) => [...d, dir]);
+        setDeleteMsg(t("uploadDeleteSubmitted", { number: out.prNumber }));
+      } catch (e) {
+        setError(
+          e instanceof UploadMessage
+            ? t(e.key)
+            : `${t("uploadFail")} — ${String((e as Error).message)}`,
+        );
+      } finally {
+        setDeleting(null);
+        setPhase(null);
+      }
+    },
+    [login, t, token],
+  );
 
   // 打开时取回上次存的令牌，并验证一次（验证失败就当没连上，但不清令牌）
   useEffect(() => {
@@ -419,6 +471,37 @@ export function UploadDialog({
               </>
             )}
           </section>
+
+          {/* ①b 我上传过的插件：下架入口。
+              归属按**署名**认，不按"这台电脑"：匿名上传的署名是 `anonymous-<hash(login)>`，
+              由 GitHub 登录名稳定派生 —— 所以换任何一台电脑登录同一账号，
+              既能覆盖更新，也能在这里下架（2026-11-15 用户要求）。 */}
+          {login && mine.length > 0 && (
+            <section className="ws-up-sec">
+              <h3 className="ws-up-sec-title">{t("uploadMineTitle")}</h3>
+              <p className="ws-up-hint">{t("uploadMineHint")}</p>
+              <ul className="ws-up-list">
+                {mine.map((e) => (
+                  <li key={e.dir} className="ws-up-item">
+                    <span className="ws-up-item-main" style={{ cursor: "default" }}>
+                      <span className="ws-up-item-name">{e.name}</span>
+                      <span className="ws-up-item-meta">
+                        v{e.version} · {e.dir}
+                      </span>
+                    </span>
+                    <button
+                      className="ws-linkbtn"
+                      onClick={() => void removeOne(e.dir!, e.name)}
+                      disabled={deleting !== null}
+                    >
+                      {deleting === e.dir ? t("uploadDeleting") : t("uploadDelete")}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {deleteMsg && <p className="ws-up-hint">{deleteMsg}</p>}
+            </section>
+          )}
 
           {/* ② 目录（可多选） */}
           <section className="ws-up-sec">
