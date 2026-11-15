@@ -547,7 +547,10 @@ export function WorkshopPanel() {
         </div>
       )}
 
+      {/* 常驻说明（不能放进 banner：banner 被 dismissBanner 关掉后就再也看不到了）。
+          上传按钮 / GitHub 登录的真实用途，与上传弹窗里用的是同一条文案。 */}
       <p className="ws-footer">{t("footer")}</p>
+      <p className="ws-footer ws-footer-note">{t("uploadPurpose")}</p>
 
       <AnimatePresence>
         {detail && (
