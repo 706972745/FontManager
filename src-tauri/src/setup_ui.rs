@@ -876,6 +876,35 @@ fn setup_uninstall(
             );
         }
 
+        // ⓪.5 卸载会在下一步连数据根一起删掉，所以必须**在拉起引擎之前**把用户字体库上的
+        //      专属图标摘掉：否则软件都卸完了，库文件夹还挂着 FontManager 的图标，里面留着
+        //      `.zfm-folder.ico` + `desktop.ini` 两个孤儿文件（2.2.5 修的真实缺口）。
+        //      这里只按 JSON 取库路径，**不** `store::load()`（setup 模式不加载用户态），
+        //      读不到 / 解析失败就当没有库 —— 图标是显示层，绝不挡住卸载。
+        {
+            let mut states = vec![dir.join("data").join("state.json")];
+            let bak = dir.join("data").join("state.json.bak");
+            if bak.is_file() {
+                states.push(bak);
+            }
+            // 2.1.4 及更早：数据根还在 %APPDATA%\FontManager
+            let legacy = crate::store::legacy_app_data_dir().join("state.json");
+            if legacy.is_file() {
+                states.push(legacy);
+            }
+            let (retired, failed) = crate::library_marker::retire_libraries_from_state(&states);
+            if !retired.is_empty() {
+                log_line(&format!(
+                    "[setup] 卸载前已还原 {} 个字体库的文件夹图标：{}",
+                    retired.len(),
+                    retired.join("；")
+                ));
+            }
+            for e in &failed {
+                log_line(&format!("[setup] 字体库图标还原失败（不影响卸载）：{e}"));
+            }
+        }
+
         let mut uargs: Vec<&str> = vec!["/S"];
         // 模板里默认不删数据（`$DeleteAppDataCheckboxState` 只有确认页会置 1，静默下永远是 0）。
         // `/PURGE=1` 是我们在 un.onInit 里补的一条口子，语义只有"勾了那个框"。

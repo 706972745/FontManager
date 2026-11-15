@@ -25,8 +25,6 @@ use serde::Serialize;
 
 /// 库标记文件：由 `library_marker` 往字体库根目录写，用来认出「这是整个库」
 const LIBRARY_MARKER: &str = ".zfm-folder.ico";
-/// 这两个是本软件自己往库里写的元数据，不该出现在给别人的 zip 里
-const SKIP_NAMES: [&str; 2] = [LIBRARY_MARKER, "desktop.ini"];
 /// 这些后缀本身已经是压缩格式（或压不动），一律 Stored
 const STORED_EXT: [&str; 7] = ["ttf", "otf", "ttc", "otc", "woff", "woff2", "eot"];
 
@@ -85,19 +83,26 @@ fn looks_like_library(dir: &Path) -> bool {
     false
 }
 
-/// 递归收集文件（保持目录结构，排序保证每次导出结果一致）
+/// 递归收集文件（保持目录结构，排序保证每次导出结果一致）。
+///
+/// 库里那两个隐藏元数据（`.zfm-folder.ico` / `desktop.ini`）**不进 zip**：它们是本机
+/// 这个库的显示配置，发给别人没用，解压到别人机器上还会指向不存在的路径。
+/// 跳过数要如实回给用户（`FolderExportReport.skipped`），2.2.5 之前这里恒为 0。
 fn walk(dir: &Path, base: &Path, out: &mut Vec<(PathBuf, String)>) -> Result<u32, String> {
     let mut skipped = 0;
     let entries = fs::read_dir(dir).map_err(|e| format!("读不到 {}：{e}", dir.display()))?;
-    let mut items: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            !p.file_name()
-                .map(|n| SKIP_NAMES.contains(&n.to_string_lossy().as_ref()))
+    let mut items: Vec<PathBuf> = Vec::new();
+    for p in entries.flatten().map(|e| e.path()) {
+        if !p.is_dir()
+            && p.file_name()
+                .map(|n| crate::library_marker::is_marker_file(&n.to_string_lossy()))
                 .unwrap_or(false)
-        })
-        .collect();
+        {
+            skipped += 1;
+            continue;
+        }
+        items.push(p);
+    }
     items.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     for p in items {
         if p.is_dir() {
@@ -337,12 +342,19 @@ mod tests {
         fs::write(fam.join("Antonio-Bold.ttf"), "fake-font-bytes").unwrap();
         fs::write(fam.join("License.txt"), "免费商用，详见作者主页").unwrap();
         fs::write(fam.join("说明/readme.pdf"), "%PDF-1.4 fake").unwrap();
+        // 本软件的两个元数据：字族目录根一份 desktop.ini（用户给这个文件夹设过图标），
+        // 子目录里各一份 —— 都不能进 zip。
+        // 注意：`.zfm-folder.ico` **不能**放在字族目录根，那会让 `looks_like_library`
+        // 把整个字族当成「字体库根」（那正是它的用途），走不到递归分支。
         fs::write(fam.join("desktop.ini"), "[.ShellClassInfo]").unwrap();
+        fs::write(fam.join("说明/desktop.ini"), "[.ShellClassInfo]").unwrap();
+        fs::write(fam.join("说明/.zfm-folder.ico"), "fake-ico").unwrap();
 
         let dest = base.join("Antonio.zip");
         let report = export_folder(&fam.join("Antonio-Regular.ttf"), &dest, &[]).unwrap();
         assert_eq!(report.scope, "folder");
-        assert_eq!(report.files, 4, "两个字体 + 授权书 + pdf（desktop.ini 跳过）");
+        assert_eq!(report.files, 4, "两个字体 + 授权书 + pdf（元数据跳过）");
+        assert_eq!(report.skipped, 3, "两个 desktop.ini + 一个 .zfm-folder.ico");
         assert_eq!(report.root, "Antonio（商用免费）");
         assert!(report.zip_bytes > 0);
 
@@ -353,6 +365,10 @@ mod tests {
         assert!(
             !names.iter().any(|n| n.ends_with("desktop.ini")),
             "本软件的元数据文件不该进 zip"
+        );
+        assert!(
+            !names.iter().any(|n| n.ends_with(LIBRARY_MARKER)),
+            "库标记图标不该进 zip"
         );
         let _ = fs::remove_dir_all(&base);
     }

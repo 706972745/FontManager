@@ -341,6 +341,16 @@ fn walk_fonts(library: &Path, skip: Option<&Path>, sys: &HashSet<String>) -> (Ve
                 }
                 continue;
             }
+            // 库里两个隐藏元数据（`.zfm-folder.ico` / `desktop.ini`）不打包。
+            // 现在靠扩展名过滤其实也进不来，但那是「.ico 恰好不是字体后缀」的巧合；
+            // 把意图写死，免得以后扩字体后缀或改过滤方式时把它们漏进用户的包里。
+            if path
+                .file_name()
+                .map(|n| crate::library_marker::is_marker_file(&n.to_string_lossy()))
+                .unwrap_or(false)
+            {
+                continue;
+            }
             if !crate::parser::is_font_file(&path) {
                 continue;
             }
@@ -767,6 +777,45 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    fn zip_entry_names(p: &Path) -> Vec<String> {
+        let mut a = zip::ZipArchive::new(fs::File::open(p).unwrap()).unwrap();
+        (0..a.len())
+            .map(|i| a.by_index(i).unwrap().name().to_string())
+            .collect()
+    }
+
+    /// 2.2.5（用户 2026-11-15 明确）：导出字体文件包不该带库里的
+    /// `.zfm-folder.ico` / `desktop.ini` —— 那是本机的显示配置，发给别人没意义。
+    #[test]
+    fn pack_excludes_library_marker_files() {
+        let root = tmp("markers");
+        let library = root.join("lib");
+        let fam = library.join("族A");
+        fs::create_dir_all(&fam).unwrap();
+        fs::write(fam.join("A.ttf"), vec![1u8; 64]).unwrap();
+        // 库根 + 字族目录各放一份，两处都不能进包（大小写用混合写法，验证比较不区分大小写）
+        for dir in [&library, &fam] {
+            fs::write(dir.join(".zfm-folder.ico"), vec![9u8; 32]).unwrap();
+            fs::write(dir.join("Desktop.ini"), "[.ShellClassInfo]").unwrap();
+        }
+
+        let dest = root.join("markers.P-FontManager");
+        let report = export_pack(&library, &dest, "{}", "2026-11-15T00:00:00Z", &|_| {}).unwrap();
+        assert_eq!(report.files, 1, "包里只该有那一个字体");
+
+        let names = zip_entry_names(&dest);
+        let lower: Vec<String> = names.iter().map(|n| n.to_ascii_lowercase()).collect();
+        assert!(
+            !lower.iter().any(|n| n.contains("desktop.ini")),
+            "desktop.ini 不该进包：{names:?}"
+        );
+        assert!(
+            !lower.iter().any(|n| n.contains(".zfm-folder.ico")),
+            ".zfm-folder.ico 不该进包：{names:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

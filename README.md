@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.2.4-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.2.5-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -47,6 +47,20 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.2.5 — Library folder icon: no more rewrites, no more leftovers**
+
+- **The app no longer rewrites `.zfm-folder.ico` / `desktop.ini` on every launch.** Content is
+  compared first: same bytes → nothing is written, attributes already correct → nothing is re-applied,
+  and Explorer is only notified when something really changed. Your library's mtime stops moving on
+  every start, so OneDrive / backup tools stop treating it as "modified".
+- **A folder icon you set yourself stays yours.** Before applying, the app reads `desktop.ini`; if it
+  does not point at our `.zfm-folder.ico`, it belongs to you (or another tool) and not a byte is touched.
+  Previously the next launch quietly reset it.
+- **Uninstalling cleans up after itself**: library icons are restored from `state.json` before the
+  uninstaller runs — no ghost icon, no orphan files left in your font folder.
+- **Exports never carry those two files**: neither the full library pack (`.P-FontManager`) nor
+  "Export all" includes `.zfm-folder.ico` / `desktop.ini`.
 
 **2.2.2 — One caret everywhere; the panel now explains what upload / GitHub sign-in is for**
 
@@ -887,7 +901,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.2.4-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.2.5-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -915,6 +929,18 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 ---
 
 ## 🆕 最近更新
+
+**2.2.5 —— 库文件夹图标：不再反复重写，也不留痕迹**
+
+- **启动不再重写库里的 `.zfm-folder.ico` / `desktop.ini`**：先比内容，字节相同就不写；属性已经
+  正确就不重设；什么都没变就不惊动资源管理器。库的 mtime 不再每次启动都变，
+  OneDrive / 坚果云 / 备份工具不会再把库当成「一直在被改」。
+- **你自己换过的库图标不会被盖回去**：应用图标前先读 `desktop.ini`，不指向我们的
+  `.zfm-folder.ico` 就认定是你（或别的软件）设的，一个字节都不碰。以前下次启动会悄悄重置。
+- **卸载会自己收干净**：拉起卸载引擎之前先按 `state.json` 把库里的专属图标还原，
+  不留「幽灵图标」，也不在字体库里留两个孤儿文件。
+- **导出不带这两个文件**：字体库整包（`.P-FontManager`）与「全部导出」都不再包含
+  `.zfm-folder.ico` / `desktop.ini`。
 
 **2.2.2 —— 输入光标统一；面板说清「上传 / 登录 GitHub」是干什么的**
 
