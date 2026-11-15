@@ -16,7 +16,7 @@ import { toast } from "../design/primitives/Toast";
 import { FormatBadge } from "./FamilyCard";
 import { buildFaceMenu, exportFace, exportFamily } from "../lib/menus";
 import { openContextMenuAt } from "../design/primitives/ContextMenu";
-import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { classifyLicense, copyrightExpired, familyCopyrightClass, normalizeCopyright } from "../lib/license";
 import { faceKey } from "../lib/snapshotKey";
 import { canSetExpiry, expiryNeedsConfirm, formatTagExpiry } from "../lib/tagExpiry";
@@ -1070,7 +1070,7 @@ function ConflictFileCard({ path }: { path: string }) {
       <button
         className="path-link detail-mono"
         onClick={() =>
-          revealItemInDir(path).catch(() => toast.error(t("toast.couldntOpenFileManager")))
+          void ipc.revealInFolder(path).catch(() => toast.error(t("toast.couldntOpenFileManager")))
         }
         data-hint-text={path}
       >
@@ -1731,7 +1731,9 @@ export function DetailPanel() {
                   <button
                     className="path-link detail-mono"
                     onClick={() =>
-                      revealItemInDir(lead.path).catch(() => toast.error(t("toast.couldntOpenFileManager")))
+                      void ipc
+                        .revealInFolder(lead.path)
+                        .catch(() => toast.error(t("toast.couldntOpenFileManager")))
                     }
                     data-hint-text={lead.path}
                   >

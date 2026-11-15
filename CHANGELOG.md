@@ -4,6 +4,28 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.3] — 2026-11-15
+
+> **系统字体点「位置」不再弹「无法打开文件管理器」**。`C://Windows//Fonts` 是 shell 的虚拟字体
+> 文件夹，`tauri-plugin-opener` 把路径转 shell PIDL 时必失败；这一版换成自实现，转不出来就退化
+> 成「打开所在文件夹」。README 的中英文也并进了同一份，点「简体中文」在仓库首页原地切换。
+
+### 修复
+
+- 详情页「位置」、右键「在文件管理器中显示」对系统字体一律弹「无法打开文件管理器」：
+  `revealItemInDir` 内部 `ILCreateFromPathW("C://Windows//Fonts//xxx.ttf")` 返回 NULL（虚拟字体
+  文件夹），插件抛 `FailedToConvertPathToItemIdList`。新增后端命令 `reveal_in_folder`：PIDL 建得
+  出来就走 `SHOpenFolderAndSelectItems` 选中；建不出、调用失败或路径已过期，退化成打开父目录；
+  只有父目录都不存在才报错。顺带把 `open_folder` / `open_file` 里三份重复的 `ShellExecuteW`
+  收成一个 `shell_open()`。
+- 新增回归测试 `reveal_tests` 三条（系统字体走退化分支、退化目标正确、缺路径报错），
+  `cargo test --lib` 302 项通过。
+
+### 文档
+
+- `README.md` 中英双语合并为一份：顶部「简体中文」改为页内锚点 `#简体中文`，在仓库首页原地
+  切换，不再跳到 `README.zh-CN.md` 的文件页；该文件只留一句指路，老链接依然有效。
+
 ## [2.2.2] — 2026-11-15
 
 > **输入光标统一了：主程序和插件中心面板用同一块会闪的蓝块**。之前面板还是系统细光标，
