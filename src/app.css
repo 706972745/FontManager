@@ -10633,8 +10633,10 @@ body.tour-qb .qb-actions .qb-btn-text {
  * 1. 没配色的标签 `--tc` 落到 `--text-primary`，14% 混出来是一块**深灰底**，比旁边
  *    任何选中行都重；
  * 2. 竖线跟着标签色走，用户期待的是侧栏那条蓝线（「点击图2这里是一样的」）。
- * 现在颜色一律走侧栏那两个变量，只有圆点仍用标签自己的颜色 —— 那是标签的身份，
- * 选中与否都该看得见。
+ *
+ * 2.3.1 补充（同一天用户的新要求）：**配过色的标签**，行名与竖线也跟标签色走，
+ * 见下面 `.tag-row:not(.tag-c-none)` 那段。没配色的标签仍是「灰字 + 蓝竖线」，
+ * 底色两种都不变（否掉的是淡底，不是竖线）。
  */
 .tag-row.sel {
   /* 底色与 `.nav-row.nav-active` 完全同一档：`--ui-hover`。
@@ -10672,6 +10674,32 @@ body.tour-qb .qb-actions .qb-btn-text {
   background: var(--tc, var(--ui-accent));
   border-style: solid;
   border-color: transparent;
+}
+/**
+ * 配了颜色的标签：**行名 + 圆点 + 选中竖线** 一律用标签自己的颜色（2.3.1）。
+ *
+ * 用户 2026-11-16 截图指定：「在标签选择了任意颜色，对应的文字和圆点和旁边的
+ * 点击后的线条都改成那个选择的颜色」。上一版只让圆点跟色、竖线固定蓝，两者都改。
+ *
+ * 边界（照着上一版踩的坑，别再动回去）：
+ *   1. **只对配过色的行生效**（`:not(.tag-c-none)`）。没配色的标签仍保持
+ *      「灰字 + 侧栏蓝竖线」，否则一屏全是彩色文字，反而不知道哪个被选中了 ——
+ *      这是 `.tag-row.sel` 那段注释里 2.3.0 第一版被否掉的原因之一；
+ *   2. **底色不动**，仍是 `--ui-hover` 浅灰。用户否掉的是「标签色 14% 淡底」，
+ *      没否竖线；竖线跟色之后，选中态靠「竖线 + 底色」两件事表达，不靠文字变色；
+ *   3. 特异度：`:not(.tag-c-none)` 与 `.tag-row:hover` / `.tag-row.sel` 同为 (0,2,0)，
+ *      所以这段必须写在那两条**之后**（这就是它没并进上面 `.tag-row.sel` 的原因）。
+ *      伪元素那条 (0,3,1) 天然压过 `.tag-row.sel::before`。
+ *   4. `.tag-row-count` 有显式 `--text-tertiary`，不受影响 —— 数字保持次级，
+ *      彩色只给「标签名」，一列里十几个标签才不会看成调色板。
+ */
+.tag-row:not(.tag-c-none),
+.tag-row:not(.tag-c-none):hover,
+.tag-row:not(.tag-c-none).sel {
+  color: var(--tc);
+}
+.tag-row:not(.tag-c-none).sel::before {
+  background: var(--tc);
 }
 .tag-group-row {
   font-weight: 500;
