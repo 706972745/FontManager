@@ -20,6 +20,7 @@ All notable changes to FontManager are documented here. The format follows
   `CACHE_TAG` 升到 v6，旧的坏缓存自动失效。全库 6470 个字体里 loca 长度不符的 42 个全部覆盖。
 - **插件中心装完插件，设置页清单不刷新**：设置页自己留了一份插件清单，不听 `plugins:changed`
   广播，得关掉设置重开才看得见。现在面板开着时会跟着事件重拉（与右键菜单、搜索建议同一份实现）。
+  同一口径也补到了「拖 zip 进窗口安装」（`plugin_install_zip`）：那条路径原来压根不广播事件。
 
 ### 变更
 
