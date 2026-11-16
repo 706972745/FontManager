@@ -3048,16 +3048,22 @@ fn plugin_probe_zip(path: String) -> Result<serde_json::Value, String> {
 
 /// 从 zip 安装/更新插件（1.4.4）。更新时只覆盖代码，config/secret/state 原样保留。
 #[tauri::command]
-fn plugin_install_zip(path: String) -> Result<serde_json::Value, String> {
+fn plugin_install_zip(app: tauri::AppHandle, path: String) -> Result<serde_json::Value, String> {
     // 插件数据不可信：任何 panic 都换成错误返回，主界面不受影响
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (id, name, version) = crate::plugins::install_zip(std::path::Path::new(&path))?;
         // 关键：更新不能只换文件 —— 正在运行的插件进程还抱着旧代码，
         // 新面板页调新端点会被旧服务回 unknown endpoint。装完立即热重启。
         let restarted = crate::plugins::restart_if_running(&id);
         Ok(serde_json::json!({ "id": id, "name": name, "version": version, "restarted": restarted }))
     }))
-    .unwrap_or_else(|_| Err("安装插件包时出错了（已拦下，软件继续运行）；详情见日志".into()))
+    .unwrap_or_else(|_| Err("安装插件包时出错了（已拦下，软件继续运行）；详情见日志".into()));
+    // 2.3.1 起与插件中心面板同口径：装完广播一条变更事件，设置页/搜索建议立刻重拉清单。
+    // 拖 zip 进来（DropZone）时设置页可能就是开着的，不广播的话那边要关掉重开才看得见。
+    if out.is_ok() {
+        let _ = app.emit("plugins:changed", ());
+    }
+    out
 }
 
 /// 插件运行时状态清单（1.4.11）：内置/系统版本、占用、被哪些插件使用
