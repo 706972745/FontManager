@@ -1,7 +1,8 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Settings, Sparkles, SunMoon, Trash2, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Search, Settings, Sparkles, SunMoon, Trash2, Volume2, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
@@ -16,7 +17,7 @@ import { toast } from "../design/primitives/Toast";
 import { familiesFor, useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
-import { useT, activeLocale } from "../lib/i18n";
+import { useT, activeLocale, type TKey } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { LabelResyncDialog } from "./LabelResyncDialog";
 import { RuntimeManager } from "./RuntimeManager";
@@ -63,6 +64,54 @@ function fmtYmd(ts: number): string {
 
 /** 最多保存几个字体库地址（与后端 store::MAX_LIBRARY_DIRS 一致） */
 const MAX_LIBRARY_DIRS = 3;
+
+/** 设置面板的六个页（左侧导航）。只决定「哪些卡片显示」，不改变任何设置项的含义 */
+type SettingsSection = "general" | "library" | "integrations" | "data" | "appearance" | "update";
+
+const SETTINGS_NAV: {
+  key: SettingsSection;
+  label: TKey;
+  icon: LucideIcon;
+  /** 搜索命中用的额外关键词（中文 + 英文，用户会两种都试） */
+  kw: string;
+}[] = [
+  {
+    key: "general",
+    label: "settings.navGeneral",
+    icon: Settings,
+    kw: "通用 常用 language 语言 系统 system 托盘 tray 开机 autostart 启动 最小化 速览 quickbar 快捷键 hotkey 恢复",
+  },
+  {
+    key: "library",
+    label: "settings.library",
+    icon: FolderSync,
+    kw: "字体库 library 文件夹 folder 目录 监视 watch 自动启用 auto activate 扫描 去重 dedupe",
+  },
+  {
+    key: "integrations",
+    label: "settings.navIntegrations",
+    icon: Puzzle,
+    kw: "插件 plugin 接口 api 亲和 affinity canvas 在线 online 字体浏览器 网络",
+  },
+  {
+    key: "data",
+    label: "settings.libraryData",
+    icon: DatabaseBackup,
+    kw: "数据 data 导出 export 导入 import 备份 backup 标签 tags 分组 collections 备注 notes 版权 copyright",
+  },
+  {
+    key: "appearance",
+    label: "settings.appearance",
+    icon: SunMoon,
+    kw: "外观 appearance 主题 theme 动效 motion 透明 transparency 缩放 scale 声音 sound 音效 自动标签 auto tag",
+  },
+  {
+    key: "update",
+    label: "settings.navUpdate",
+    icon: RefreshCw,
+    kw: "更新 update 版本 version 关于 about 引导 tour",
+  },
+];
 
 /** 保存对话框的默认文件名：ZFonts-2026-11-03.P-FontManager */
 function packFileName(now = new Date()) {
@@ -275,6 +324,17 @@ export function SettingsOverlay() {
    * 记在本机（localStorage）：这是个使用习惯，不是数据 —— 用户决定搬家一次，
    * 之后每次打开设置都还要重新勾一遍会很烦。默认不勾（导出整包要写几 GB，不能默认干）。
    */
+  /**
+   * 设置面板左导航（2.3.0 改版，形态照 AssetManager 的偏好设置：左列导航 + 右侧卡片）。
+   *
+   * 只**换壳**，内容与语义一个字没改：每个分区原来长什么样、写什么文案、改哪些字段，
+   * 全部保持原样 —— 用户明确要求「功能还是按 FontManager 来」。
+   * 分组是按用途归并的，不是新概念：语言/系统归「常用」，字体库两个分区归「字体库」，
+   * 接口/插件/亲和/在线归「插件与集成」，库数据单独一页，外观/声音/自动标签归「外观」，
+   * 更新单独一页。
+   */
+  const [section, setSection] = useState<SettingsSection>("general");
+  const [settingQuery, setSettingQuery] = useState("");
   const [exportFonts, setExportFonts] = useState(() => {
     try {
       return localStorage.getItem(EXPORT_FONTS_KEY) === "1";
@@ -808,6 +868,74 @@ export function SettingsOverlay() {
     await useFontStore.getState().importLibraryFile(src);
   };
 
+  /* 搜索只过滤**左导航**：设置项是近千行内联 JSX（每一行都绑着真实控件与状态），
+     给它们建一份可搜索的索引等于把同一份界面再写一遍，改一处忘一处。
+     过滤导航同样满足「找不到在哪一页」这个真实需求，而且永远不会和界面不同步。 */
+  const needle = settingQuery.trim().toLowerCase();
+  const navShown = needle
+    ? SETTINGS_NAV.filter(
+        (item) => t(item.label).toLowerCase().includes(needle) || item.kw.toLowerCase().includes(needle),
+      )
+    : SETTINGS_NAV;
+  const currentNav = SETTINGS_NAV.find((n) => n.key === section) ?? SETTINGS_NAV[0];
+  /* 搜索命中但没点之前，右侧仍然显示当前页；点一下导航才切页（不做「边打字边跳页」，
+     那会让面板在用户打字时不停重排、滚动位置乱跳）。 */
+  const show = (key: SettingsSection) => section === key;
+
+  /**
+   * 二级搜索（2.3.0，用户要求「搜索框可以模糊搜索设置里面二级菜单内容」）。
+   *
+   * 为什么不建一份索引表：设置项是近千行内联 JSX，索引表等于把界面文案再抄一遍，
+   * 改一处忘一处就会「搜得到、点进去没有」。这里直接扫已渲染的 DOM ——
+   * `.settings-label` 里就是用户眼睛看到的字，天然同步；`data-section` 把命中的行
+   * 归回它所属的那一页（隐藏页的元素仍在 DOM 里，`hidden` 只是 display:none，
+   * 所以一次扫描覆盖全部六页）。
+   */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [rowHits, setRowHits] = useState<{ section: SettingsSection; label: string }[]>([]);
+  useEffect(() => {
+    if (!needle || !openState) {
+      setRowHits([]);
+      return;
+    }
+    const root = bodyRef.current;
+    if (!root) return;
+    const out: { section: SettingsSection; label: string }[] = [];
+    const seen = new Set<string>();
+    for (const group of Array.from(root.querySelectorAll<HTMLElement>(".set-group[data-section]"))) {
+      const key = group.dataset.section as SettingsSection;
+      for (const row of Array.from(group.querySelectorAll<HTMLElement>(".settings-row"))) {
+        const label = (row.querySelector(".settings-label")?.textContent ?? "").trim();
+        if (!label || !label.toLowerCase().includes(needle)) continue;
+        const id = `${key}|${label}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({ section: key, label });
+      }
+    }
+    setRowHits(out.slice(0, 24));
+  }, [needle, openState, section]);
+
+  const jumpToRow = (key: SettingsSection, label: string) => {
+    setSection(key);
+    // 切页是 state 更新：等一帧再量位置，否则滚的是上一页的坐标
+    window.setTimeout(() => {
+      const root = bodyRef.current;
+      if (!root) return;
+      const rows = Array.from(
+        root.querySelectorAll<HTMLElement>(`.set-group[data-section="${key}"] .settings-row`),
+      );
+      const hit = rows.find((r) =>
+        (r.querySelector(".settings-label")?.textContent ?? "").includes(label),
+      );
+      if (!hit) return;
+      hit.scrollIntoView({ block: "center" });
+      // 只闪一下，不当成「选中态」常驻（设置项没有选中这回事）
+      hit.classList.add("set-row-flash");
+      window.setTimeout(() => hit.classList.remove("set-row-flash"), 1100);
+    }, 60);
+  };
+
   return (
     <>
     <AnimatePresence>
@@ -834,18 +962,91 @@ export function SettingsOverlay() {
             role="dialog"
             aria-label={t("settings.title")}
           >
-            <div className="settings-scroll">
-            <header className="compare-head">
-              <h2 className="compare-title">{t("settings.title")}</h2>
-              <button
-                className="detail-close"
-                aria-label={t("settings.close")}
-                onClick={() => setSettingsOpen(false)}
-              >
-                <X size={15} strokeWidth={1.5} />
-              </button>
-            </header>
+            {/* 左导航（常驻，位置不动）+ 右侧卡片区 + 底栏。
+                形态照 AssetManager 的偏好设置；FontManager 的设置项**全部即时生效**，
+                所以底栏没有「应用」按钮 —— 摆一个点了也不保存的按钮比没有更糟。 */}
+            <aside className="set-nav">
+              <div className="set-nav-title">{t("settings.title")}</div>
+              <div className="set-search">
+                <Search size={12} strokeWidth={1.7} className="set-search-icon" aria-hidden />
+                <input
+                  value={settingQuery}
+                  onChange={(e) => setSettingQuery(e.target.value)}
+                  placeholder={t("settings.searchPlaceholder")}
+                  aria-label={t("settings.searchPlaceholder")}
+                  spellCheck={false}
+                />
+                {settingQuery && (
+                  <button
+                    className="set-search-clear"
+                    aria-label={t("settings.searchClear")}
+                    onClick={() => setSettingQuery("")}
+                  >
+                    <X size={10} strokeWidth={1.8} />
+                  </button>
+                )}
+              </div>
+              <div className="set-nav-list">
+                {navShown.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.key}
+                      className={`set-nav-row ${section === item.key && !needle ? "sel" : ""}`}
+                      onClick={() => {
+                        setSettingQuery("");
+                        setSection(item.key);
+                      }}
+                    >
+                      <span className="set-nav-icon">
+                        <Icon size={14} strokeWidth={1.5} />
+                      </span>
+                      <span className="set-nav-label">{t(item.label)}</span>
+                    </button>
+                  );
+                })}
+                {needle && rowHits.length > 0 && (
+                  <div className="set-nav-sub">
+                    <div className="set-nav-subhead">{t("settings.searchItems")}</div>
+                    {rowHits.map((h) => (
+                      <button
+                        key={`${h.section}|${h.label}`}
+                        className="set-nav-subrow"
+                        onClick={() => jumpToRow(h.section, h.label)}
+                      >
+                        <span className="set-nav-subpage">
+                          {t(SETTINGS_NAV.find((n) => n.key === h.section)?.label ?? "settings.title")}
+                        </span>
+                        <span className="set-nav-sublabel">{h.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {navShown.length === 0 && rowHits.length === 0 && (
+                  <div className="set-nav-empty">{t("settings.searchEmpty")}</div>
+                )}
+              </div>
+            </aside>
 
+            <section className="set-main">
+              <header className="set-head">
+                <h2 className="set-head-title">
+                  {needle
+                    ? t("settings.searchHeading", { query: settingQuery.trim() })
+                    : t(currentNav.label)}
+                </h2>
+                <button
+                  className="set-close"
+                  aria-label={t("settings.close")}
+                  title={t("settings.close")}
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  <X size={15} strokeWidth={1.5} />
+                </button>
+              </header>
+
+              <div className="set-body scroll-hot" ref={bodyRef}>
+            <div className="set-group" data-section="general" hidden={!show("general")}>
             <section className="settings-section">
               <div className="detail-heading">{t("settings.language")}</div>
               <div className="settings-row">
@@ -997,6 +1198,8 @@ export function SettingsOverlay() {
               </div>
             </section>
 
+            </div>
+            <div className="set-group" data-section="library" hidden={!show("library")}>
             <section className="settings-section">
               <div className="detail-heading">{t("settings.library")}</div>
 
@@ -1171,6 +1374,8 @@ export function SettingsOverlay() {
               </div>
             </section>
 
+            </div>
+            <div className="set-group" data-section="integrations" hidden={!show("integrations")}>
             <section className="settings-section">
               <div className="detail-heading">
                 {t("settings.api")}
@@ -1626,6 +1831,8 @@ ${t("settings.onlineHosts")}`} />
 
             </section>
 
+            </div>
+            <div className="set-group" data-section="data" hidden={!show("data")}>
             <section className="settings-section">
               <div className="detail-heading">{t("settings.libraryData")}</div>
               <div className="settings-row">
@@ -1727,6 +1934,8 @@ ${t("settings.labelResyncWhy")}`}
               </div>
             </section>
 
+            </div>
+            <div className="set-group" data-section="appearance" hidden={!show("appearance")}>
             <section className="settings-section">
               <div className="detail-heading">{t("settings.appearance")}</div>
               <div className="settings-row">
@@ -1839,7 +2048,8 @@ ${t("settings.labelResyncWhy")}`}
             </section>
 
             <AutoTagSection />
-
+            </div>
+            <div className="set-group" data-section="update" hidden={!show("update")}>
             <UpdateSection />
 
             <footer className="settings-footer tabular">
@@ -1856,6 +2066,18 @@ ${t("settings.labelResyncWhy")}`}
               </button>
             </footer>
             </div>
+
+              </div>
+
+              {/* 底栏：FontManager 的设置**全部即时生效**，所以这里不做「应用 / 保存设置」，
+                  只如实说明状态 + 一个「完成」出口。摆一个点了也不写盘的按钮比没有更糟。 */}
+              <footer className="set-foot">
+                <span className="set-foot-note">{t("settings.instantApply")}</span>
+                <button className="set-btn set-btn-accent" onClick={() => setSettingsOpen(false)}>
+                  {t("settings.done")}
+                </button>
+              </footer>
+            </section>
           </motion.div>
         </motion.div>
       )}

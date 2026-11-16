@@ -1616,9 +1616,165 @@ fn set_tags(store: State<Store>, family: String, tags: Vec<String>) -> Result<()
     store::save(&state)
 }
 
+// ---------------------------------------------------------------------------
+// 标签元数据 / 标签分组（2.3.0，与 AssetManager 0.5.0 同一套语义）
+//
+// 纪律：**自动标签绝不落库**。这一组命令只处理用户亲手打的标签的「颜色 / 分组」，
+// 推导出来的自动标签没有颜色也不进分组（前端用虚线 chip 区分）。
+// 每个命令改完状态只 `save` 一次，返回影响条数供前端做提示。
+// ---------------------------------------------------------------------------
+
 #[tauri::command]
-fn get_collections(store: State<Store>) -> Result<HashMap<String, Vec<String>>, String> {
+fn get_tag_meta(
+    store: State<Store>,
+) -> Result<HashMap<String, store::TagMeta>, String> {
     let state = store.0.lock().map_err(|e| e.to_string())?;
+    Ok(state.tag_meta.clone())
+}
+
+#[tauri::command]
+fn get_tag_groups(store: State<Store>) -> Result<Vec<store::TagGroup>, String> {
+    let state = store.0.lock().map_err(|e| e.to_string())?;
+    Ok(state.tag_groups.clone())
+}
+
+#[tauri::command]
+fn tag_set_color(
+    store: State<Store>,
+    tag: String,
+    color: Option<String>,
+) -> Result<(), String> {
+    store::validate_tag_color(&color)?;
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    match color {
+        None => {
+            if let Some(meta) = state.tag_meta.get_mut(&tag) {
+                meta.color = None;
+            }
+        }
+        Some(c) => {
+            state.tag_meta.entry(tag).or_default().color = Some(c);
+        }
+    }
+    // 清空之后什么都不表达的条目直接丢掉，别让 state.json 长出一堆空对象
+    state
+        .tag_meta
+        .retain(|_, m| m.color.is_some() || m.group.is_some());
+    store::save(&state)
+}
+
+#[tauri::command]
+fn tag_set_group(
+    store: State<Store>,
+    tag: String,
+    group: Option<String>,
+) -> Result<(), String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    match group {
+        None => {
+            if let Some(meta) = state.tag_meta.get_mut(&tag) {
+                meta.group = None;
+            }
+        }
+        Some(raw) => {
+            // 用户「顺手打一个新名字」时不该被拒绝：组不存在就一起建出来
+            let name = store::validate_group_name(&raw)?;
+            if !state.tag_groups.iter().any(|g| g.name == name) {
+                state.tag_groups.push(store::TagGroup {
+                    name: name.clone(),
+                    color: None,
+                });
+            }
+            state.tag_meta.entry(tag).or_default().group = Some(name);
+        }
+    }
+    state
+        .tag_meta
+        .retain(|_, m| m.color.is_some() || m.group.is_some());
+    store::save(&state)
+}
+
+#[tauri::command]
+fn tag_rename(store: State<Store>, old: String, new: String) -> Result<usize, String> {
+    let name = store::validate_tag_name(&new)?;
+    if name == old {
+        return Ok(0);
+    }
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    let moved = store::rename_tag_in_state(&mut state, &old, &name);
+    store::save(&state)?;
+    Ok(moved)
+}
+
+#[tauri::command]
+fn tag_delete(store: State<Store>, tag: String) -> Result<usize, String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    let removed = store::delete_tag_in_state(&mut state, &tag);
+    store::save(&state)?;
+    Ok(removed)
+}
+
+#[tauri::command]
+fn tag_group_new(store: State<Store>, name: String) -> Result<(), String> {
+    let name = store::validate_group_name(&name)?;
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    if state.tag_groups.iter().any(|g| g.name == name) {
+        // 重名直接拒绝，不自动加后缀：加后缀会让用户以为建了两个组
+        return Err(format!("group exists: {name}"));
+    }
+    state.tag_groups.push(store::TagGroup { name, color: None });
+    store::save(&state)
+}
+
+#[tauri::command]
+fn tag_group_rename(store: State<Store>, old: String, new: String) -> Result<(), String> {
+    let name = store::validate_group_name(&new)?;
+    if name == old {
+        return Ok(());
+    }
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    if state.tag_groups.iter().any(|g| g.name == name) {
+        return Err(format!("group exists: {name}"));
+    }
+    let Some(g) = state.tag_groups.iter_mut().find(|g| g.name == old) else {
+        return Err(format!("no such group: {old}"));
+    };
+    g.name = name.clone();
+    for meta in state.tag_meta.values_mut() {
+        if meta.group.as_deref() == Some(old.as_str()) {
+            meta.group = Some(name.clone());
+        }
+    }
+    store::save(&state)
+}
+
+#[tauri::command]
+fn tag_group_set_color(
+    store: State<Store>,
+    name: String,
+    color: Option<String>,
+) -> Result<(), String> {
+    store::validate_tag_color(&color)?;
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    let Some(g) = state.tag_groups.iter_mut().find(|g| g.name == name) else {
+        return Err(format!("no such group: {name}"));
+    };
+    g.color = color;
+    store::save(&state)
+}
+
+/// 解散分组：标签回到「未分组」，一条关联都不动。返回被解散出来的标签数。
+#[tauri::command]
+fn tag_group_delete(store: State<Store>, name: String) -> Result<usize, String> {
+    let mut state = store.0.lock().map_err(|e| e.to_string())?;
+    let freed = store::ungroup_in_state(&mut state, &name);
+    state.tag_groups.retain(|g| g.name != name);
+    store::save(&state)?;
+    Ok(freed)
+}
+
+#[tauri::command]
+fn get_collections(store: State<Store>) -> Result<HashMap<String, Vec<String>>, String> {    let state = store.0.lock().map_err(|e| e.to_string())?;
     Ok(state.collections.clone())
 }
 
@@ -3423,6 +3579,16 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             empty_trash,
             get_tags,
             set_tags,
+            get_tag_meta,
+            get_tag_groups,
+            tag_set_color,
+            tag_set_group,
+            tag_rename,
+            tag_delete,
+            tag_group_new,
+            tag_group_rename,
+            tag_group_set_color,
+            tag_group_delete,
             get_collections,
             set_collection,
             delete_collection,

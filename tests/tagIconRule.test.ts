@@ -73,8 +73,9 @@ test("derivedTags.ts 里每一处 `tag: \"...\"` 都登记进了 AUTO_TAG_IDS", 
  * 谁要是改回「只有自动标签撑起来的才用魔棒」，这里会红 —— 那正是用户报的问题。
  */
 test("三处图标判定都走 isAutoTagId，没有退回 autoOnly", () => {
+  // 2.3.0 起侧栏的标签行搬到 TagDock（可折叠停靠面板），规则不变：按**名字**判定
   for (const file of [
-    "src/components/Sidebar.tsx",
+    "src/components/TagDock.tsx",
     "src/components/TopBar.tsx",
     "src/components/DetailPanel.tsx",
   ]) {

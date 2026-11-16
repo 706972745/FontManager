@@ -60,7 +60,8 @@ test("手工标签 chip 不挂 motion layout（会被入场 scale 干扰成错�
   const block = src.slice(start, src.indexOf("</motion.span>", start));
 
   // 正控：确认切到的是对的那一段
-  assert.match(block, /className="tag-chip tag-chip-iconed"/);
+  // 2.3.0 起 className 带上颜色类（`tag-c-blue` 这类），断言只要前缀一致
+  assert.match(block, /className=[^>]*tag-chip tag-chip-iconed/);
   assert.match(block, /initial=\{\{ opacity: 0, scale: 0\.85 \}\}/);
 
   assert.doesNotMatch(block, /^\s*layout\s*$/m, "chip 上又加了 layout，会重新引入错位");
