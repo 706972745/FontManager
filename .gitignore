@@ -60,6 +60,11 @@ _tauri.e2e.json
 /未完成事项*.md
 /UI待定问题清单*.md
 
+# docs/ 下的内部文档：**给线下同事看的，不进公库**（用户 2026-11-16 明确）
+# 设计统一那份是团队内部约定（色板、间距、组件口径），公库里留着等于把内部规范
+# 公开，也会让外部使用者误以为那是产品文档。本地文件保留，只取消 git 跟踪。
+/docs/FontManager设计统一.md
+
 # 剪贴板截图 / 屏幕截图（QA 留证只在本地 .workbuddy/ 与各临时目录）
 /Clipboard_Screenshot*.png
 /clipboard-*.png

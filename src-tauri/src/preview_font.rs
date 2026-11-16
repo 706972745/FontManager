@@ -25,8 +25,12 @@ use std::path::{Path, PathBuf};
 const CACHE_DIR: &str = "preview-cache";
 /// 缓存上限。老中文字体单个字面几 MB，给到 384 MB 够用又不会把硬盘吃掉
 const CACHE_LIMIT: u64 = 384 * 1024 * 1024;
-/// 修复算法的版本号。改了重建逻辑就加一，老的缓存文件自动失效
-const CACHE_TAG: &str = "v5";
+/// 修复算法的版本号。改了重建逻辑就加一，老的缓存文件自动失效。
+///
+/// v5 → v6（2026-11-16）：`loca` 补齐从「补 0」改成「补最后一项」。
+/// 补 0 会让 loca 非单调，OTS 照样整份拒收 —— 也就是说 v5 缓存在某些字体上
+/// **存的是坏产物**，且生成后不会删除，升级后仍会命中。必须换版本号让它失效。
+const CACHE_TAG: &str = "v6";
 /// 列表子集算法的版本号。子集的「字符闭包 / loca 布局 / cmap 重建」任何一处变了就加一，
 /// 老产物自动失效（缓存 key 里编了它）。
 /// S1 → S2：post 降级成 3.0（丢掉按 gid 排的字形名数组，产物小 60%）。
@@ -636,6 +640,50 @@ fn checksum(data: &[u8]) -> u32 {
     sum
 }
 
+/// 把 `loca` 修正到规范长度 `(numGlyphs + 1) × 2/4`，并保证偏移单调不减。
+///
+/// 两类真实字体：
+///   · 多字节（101PUPS.TTF 多 2 字节）→ 直接截断；
+///   · 少项（经典叠圆体繁 / 经典空叠圆繁，各少 4 字节）→ 补齐。
+///
+/// **补齐绝不能填 0**：后缀补 0 会让 loca 后几项回到 0、落在前一项之前，loca 变成非单调，
+/// OTS 判「offset 倒退」后整份拒收 —— 补了等于没补（2.3.0 就是这个行为，用户看到
+/// 「全部字重无法预览」）。这里复制「最后一项自己的值」，让多出来的字形区间为空；
+/// 空区间（offset 相等）fontTools 与 OTS 都接受。
+///
+/// 也不要拿 `glyf` 表长度去补：glyf 末尾常带 4 字节对齐的填充（这两个字体是 41 字节），
+/// 那几十字节不是一个字形，按 glyf 长度补会被当成字形数据去解析，报 `not enough glyf data`。
+fn fix_loca(raw: &mut Vec<u8>, num_glyphs: u16, loca_long: bool) {
+    let unit = if loca_long { 4 } else { 2 };
+    let expect = (num_glyphs as usize + 1) * unit;
+    if raw.len() > expect {
+        raw.truncate(expect);
+        return;
+    }
+    if raw.len() == expect {
+        return;
+    }
+    let last = if loca_long {
+        raw.chunks_exact(4)
+            .last()
+            .map(|c| u32::from_be_bytes([c[0], c[1], c[2], c[3]]))
+            .unwrap_or(0)
+    } else {
+        raw.chunks_exact(2)
+            .last()
+            .map(|c| u16::from_be_bytes([c[0], c[1]]) as u32 * 2)
+            .unwrap_or(0)
+    };
+    let fill = if loca_long { last } else { (last + 1) & !1 };
+    while raw.len() < expect {
+        if loca_long {
+            raw.extend_from_slice(&fill.to_be_bytes());
+        } else {
+            raw.extend_from_slice(&((fill / 2) as u16).to_be_bytes());
+        }
+    }
+}
+
 /// 用给定的 cmap 重新拼一个单字面的 sfnt。
 ///
 /// `overrides`：按 tag 整表替换（列表子集路线用它换掉 glyf / loca / head）。
@@ -758,16 +806,8 @@ fn rebuild(
             // hhea 的 majorVersion 同样有写成 2 的老字体，OTS 会拒收
             raw[0..2].copy_from_slice(&1u16.to_be_bytes());
         }
-        if tag == b"hhea" && raw.len() >= 36 {
-            // hhea 的 majorVersion 同样有写成 2 的老字体，OTS 会拒收
-            raw[0..2].copy_from_slice(&1u16.to_be_bytes());
-        }
         if tag == b"loca" && num_glyphs > 0 {
-            // OTS 要求 loca 长度恰好是 (numGlyphs+1) × 2/4；多出来的字节会让它整份拒收
-            let expect = (num_glyphs as usize + 1) * if loca_long { 4 } else { 2 };
-            if raw.len() != expect {
-                raw.resize(expect, 0);
-            }
+            fix_loca(raw, num_glyphs, loca_long);
         }
         if tag == b"cvt " && raw.len() % 2 != 0 {
             // OTS 按 u16 读 cvt，奇数长度报错
@@ -2302,5 +2342,51 @@ mod tests {
         assert_eq!(u16_at(&out, 18), Some(5), "留下的 pair left gid");
         assert_eq!(i16_at(&out, 22), Some(10), "留下的 pair 值不变");
         assert_eq!(out.len(), 24, "6(头) + nTables 头 4 + 子表 20");
+    }
+
+    /// loca 少一项时必须补「最后一项自己的值」，不能补 0（补 0 会让偏移倒退）。
+    /// 依据：经典叠圆体繁 / 经典空叠圆繁（2009 年，loca 7968 项，规范要求 7969 项）。
+    #[test]
+    fn fix_loca_short_pads_with_last_offset() {
+        let mut raw: Vec<u8> = [0u32, 10, 20, 30]
+            .iter()
+            .flat_map(|v| v.to_be_bytes())
+            .collect();
+        super::fix_loca(&mut raw, 5, true);
+        assert_eq!(raw.len(), (5 + 1) * 4, "长度必须补齐到 (numGlyphs+1)×4");
+        let offs: Vec<u32> = raw
+            .chunks_exact(4)
+            .map(|c| u32::from_be_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        assert_eq!(offs, vec![0, 10, 20, 30, 30, 30], "补的是最后一项，不是 0");
+        assert!(
+            offs.windows(2).all(|w| w[0] <= w[1]),
+            "loca 必须单调不减，否则 OTS 整份拒收"
+        );
+    }
+
+    #[test]
+    fn fix_loca_long_by_two_truncates() {
+        let mut raw: Vec<u8> = [0u32, 10, 20, 30, 40, 50]
+            .iter()
+            .flat_map(|v| v.to_be_bytes())
+            .collect();
+        super::fix_loca(&mut raw, 4, true);
+        // numGlyphs=4 只需要 5 项（0..=4），第 6 项是多余字节 → 截掉
+        assert_eq!(raw.len(), (4 + 1) * 4);
+        assert_eq!(&raw[raw.len() - 4..], &40u32.to_be_bytes());
+    }
+
+    /// short 格式存的是「字节偏移 / 2」，补齐时也必须写回「/2」后的值。
+    #[test]
+    fn fix_loca_short_format_halves_offset() {
+        let mut raw: Vec<u8> = [0u16, 5, 10, 15]
+            .iter()
+            .flat_map(|v| v.to_be_bytes())
+            .collect();
+        super::fix_loca(&mut raw, 4, false);
+        assert_eq!(raw.len(), (4 + 1) * 2);
+        let last = u16::from_be_bytes([raw[raw.len() - 2], raw[raw.len() - 1]]);
+        assert_eq!(last, 15, "最后一项 15 表示字节偏移 30，补齐应沿用 15");
     }
 }

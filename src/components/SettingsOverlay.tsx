@@ -456,6 +456,36 @@ export function SettingsOverlay() {
     };
   }, [openState]);
 
+  /**
+   * 插件中心面板里装/卸插件时，主程序会广播 `plugins:changed`。
+   *
+   * `App.tsx` 已经听了这条事件（喂右键菜单缓存 + 搜索建议 store），但**设置页自己
+   * 还留着一份 `plugins` 局部状态**，不跟 store 走 —— 于是「面板里刚下完、设置里
+   * 插件清单还是旧的，得关掉设置重开才看得见」（用户 2026-11-16）。这里补一条同样的
+   * 订阅，只在本面板打开时挂着，避免常驻监听白刷 IPC。
+   */
+  useEffect(() => {
+    if (!openState) return;
+    let alive = true;
+    let un: (() => void) | undefined;
+    void listen("plugins:changed", () => {
+      // 走 `refreshPluginList` 而不是直接 `ipc.pluginsList`：一次 IPC 同时更新清单、
+      // 右键菜单缓存与搜索建议 store，与设置页自己的刷新路径是同一份实现。
+      void refreshPluginList().then((next) => {
+        if (alive) setPlugins(next);
+      });
+    })
+      .then((f) => {
+        if (alive) un = f;
+        else void f();
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      un?.();
+    };
+  }, [openState]);
+
   /** 请求的端口被占用、实际换了端口 —— 这时候要明说，别让人以为设置没生效 */
   const portFellBack =
     !!api?.running && (api?.requestedPort ?? 0) > 0 && api?.port !== api?.requestedPort;

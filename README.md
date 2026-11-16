@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.3.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.3.1-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -31,7 +31,6 @@ and MCP when you want your tools to join in.
 **[🐛 Issues](../../issues)** ·
 **[🔌 Plugins](docs/PLUGINS.md)** ·
 **[🎨 UI Spec](docs/UI设计交付规格书.md)** ([HTML](docs/UI设计交付规格书.html)) ·
-**[📐 Design rules](docs/FontManager设计统一.md)** ·
 **[🧩 Icons](docs/图标规范.md)** ·
 **[🤖 MCP](mcp/README.md)**
 
@@ -48,6 +47,18 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.3.1 — Fixes for tag colours, unrepairable previews, stale plugin lists**
+
+- **Tag colour now covers the whole row**: with a colour set, the tag name, its dot and the
+  selection bar on the left all use that colour. Untagged tags keep the neutral grey text and
+  the blue bar, so "which one is selected" is still obvious at a glance.
+- **"All weights cannot be previewed" is fixed** for 29 older Chinese fonts (经典叠圆体繁,
+  经典圆体繁, …) whose `loca` table is one entry short — the browser's OTS rejects the whole
+  file. The repair now pads the table with the last offset instead of zeros. The preview cache
+  is invalidated, so the broken copies are regenerated on next view.
+- **Plugins installed from the Plugin Center show up in Settings immediately** — no need to
+  close and reopen the settings panel.
 
 **2.3.0 — Tags move into a docked panel; Settings gets a left rail**
 
@@ -66,9 +77,8 @@ and MCP when you want your tools to join in.
 - **Library data export fixed**: the file now carries tag colours, tag groups and tag expiry dates, and
   it covers **the current library only** — other libraries and watched folders on the same machine no
   longer leak in. A `scope` block inside the file states exactly what it covers, readable in Notepad.
-- **New: [`docs/FontManager设计统一.md`](docs/FontManager设计统一.md)** — the design rules this app
-  actually follows (type scale, row metrics, selection state, scrollbars, search caret, dock
-  behaviour), each with the code and the reason behind it. Read it before touching the sidebar.
+- **Internal design rules are now written down** (type scale, row metrics, selection state,
+  scrollbars, search caret, dock behaviour), each with the code and the reason behind it.
 
 **2.2.5 — Library folder icon: no more rewrites, no more leftovers**
 
@@ -923,7 +933,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.3.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.3.1-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -935,7 +945,6 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 **[🐛 问题反馈](../../issues)** ·
 **[🔌 插件开发](docs/PLUGINS.md)** ·
 **[🎨 界面规范](docs/UI设计交付规格书.md)** ([HTML](docs/UI设计交付规格书.html)) ·
-**[📐 设计统一](docs/FontManager设计统一.md)** ·
 **[🧩 图标规范](docs/图标规范.md)** ·
 **[🤖 MCP 接入](mcp/README.md)**
 
@@ -953,6 +962,14 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 ## 🆕 最近更新
 
+**2.3.1 —— 标签配色铺满整行；能修的字体不再显示“无法预览”；插件清单即时刷新**
+
+- **标签配了颜色，整行都跟色**：行名、圆点、左边那条选中竖线统一用标签自己的颜色。
+  没配颜色的标签仍是「灰字 + 蓝竖线」，一屏里还能一眼看出选中了谁。
+- **修好「全部字重无法预览」**：经典叠圆体繁、经典圆体繁等 29 个老字体的 `loca` 表少一项，
+  浏览器 OTS 因此整份拒收。现在补齐时写「最后一项自己的偏移」而不是 0，并让旧预览缓存失效。
+- **插件中心装完插件，设置页立刻能看到**，不用关掉设置重开。
+
 **2.3.0 —— 标签住进侧栏停靠面板；设置换成左侧导航**
 
 - **标签现在是侧栏底部的一个停靠面板**，形态与 AssetManager 一致：悬停展开、点击固定，
@@ -966,8 +983,8 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
   搜索框除了过滤页名，还能搜到**页里的具体设置项**，命中结果列在导航下方并标出所属页。
 - **修好库数据导出**：文件里现在带上标签颜色、标签分组、标签到期日，并且**只覆盖当前字体库**——
   同一台机器上的其它库、监视文件夹不会再混进来；文件里的 `scope` 段写明覆盖范围，记事本打开就能核对。
-- **新增 [`docs/FontManager设计统一.md`](docs/FontManager设计统一.md)**：这份软件实际遵守的设计规则
-  （字阶、行规格、选中态、滚动条、搜索光标、面板行为），每条都附代码与理由。动侧栏之前先读它。
+- **把这套界面实际遵守的设计规则写进了内部文档**（字阶、行规格、选中态、滚动条、搜索光标、
+  面板行为），每条都附代码与理由。这份只在团队内部传阅，不进公库。
 
 **2.2.5 —— 库文件夹图标：不再反复重写，也不留痕迹**
 
