@@ -504,6 +504,24 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   emptyTrash: () => invoke<void>("empty_trash"),
   getTags: () => invoke<Record<string, string[]>>("get_tags"),
   setTags: (family: string, tags: string[]) => invoke<void>("set_tags", { family, tags }),
+  /* ---- 标签元数据 / 标签分组（2.3.0，与 AssetManager 同一套语义） ---- */
+  getTagMeta: () => invoke<Record<string, { color?: string; group?: string }>>("get_tag_meta"),
+  getTagGroups: () => invoke<{ name: string; color?: string }[]>("get_tag_groups"),
+  setTagColor: (tag: string, color: string | null) =>
+    invoke<void>("tag_set_color", { tag, color }),
+  setTagGroup: (tag: string, group: string | null) =>
+    invoke<void>("tag_set_group", { tag, group }),
+  /** 改名；撞到已有名字就是合并。返回被合并的关联条数 */
+  renameTag: (old: string, next: string) => invoke<number>("tag_rename", { old, new: next }),
+  /** 从所有字体上删掉一条标签。返回摘掉的关联条数 */
+  deleteTag: (tag: string) => invoke<number>("tag_delete", { tag }),
+  newTagGroup: (name: string) => invoke<void>("tag_group_new", { name }),
+  renameTagGroup: (old: string, next: string) =>
+    invoke<void>("tag_group_rename", { old, new: next }),
+  setTagGroupColor: (name: string, color: string | null) =>
+    invoke<void>("tag_group_set_color", { name, color }),
+  /** 解散分组（标签回到未分组）。返回被解散出来的标签数 */
+  deleteTagGroup: (name: string) => invoke<number>("tag_group_delete", { name }),
   getFavorites: () => invoke<string[]>("get_favorites"),
   getNotes: () => invoke<Record<string, string>>("get_notes"),
   setNote: (family: string, note: string) => invoke<void>("set_note", { family, note }),

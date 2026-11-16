@@ -81,7 +81,12 @@ import {
   curationFile,
   mergeCuration,
   parseCuration,
+  scopeCuration,
   type CurationData,
+  type CurationScope,
+  type TagGroupEntry,
+  type TagMetaEntry,
+  curationSummary,
 } from "../lib/libraryData";
 import { detectJsonKind, fileDescription } from "../lib/fileKinds";
 import {
@@ -346,6 +351,16 @@ interface FontStore {
    * （哪怕是同事发来的同一款）标签还在。用户在 2026-11-14 明确要求这一点。
    */
   tags: Record<string, string[]>;
+  /**
+   * 标签自身的属性（2.3.0）：标签名 → 颜色 / 所属标签分组。
+   *
+   * 与 `tags`（字族 → 标签名）**分开**：`tags` 说「谁带了哪些标签」，这里说「这个标签长什么样」。
+   * 只作用于**手工标签** —— 自动标签是推导出来的事实，没有颜色也不进分组。
+   * 存在 `state.json` 里（不是 prefs、不是 localStorage），跟着库一起走。
+   */
+  tagMeta: Record<string, TagMetaEntry>;
+  /** 标签分组（有序）。**不是**字体分组 —— 那个是 `collections` */
+  tagGroups: TagGroupEntry[];
   /** 自动标签总开关（prefs.autoTagEnabled），默认开 */
   autoTagEnabled: boolean;
   /** 按族的否决名单（prefs.autoTagDenied）：族名 → 用户拒绝过的自动标签 */
@@ -566,6 +581,20 @@ interface FontStore {
   emptyTrash: () => Promise<void>;
   setFamilyTags: (family: string, tags: string[]) => Promise<void>;
   removeTagEverywhere: (tag: string) => Promise<void>;
+  /* ---- 标签元数据 / 标签分组（2.3.0，与 AssetManager 同一套语义） ---- */
+  /** 改标签颜色（`null` = 回到默认灰）。只改显示，不影响任何字体 */
+  setTagColor: (tag: string, color: string | null) => Promise<void>;
+  /** 把标签放进某个分组（组不存在就顺手建；`null` = 回到未分组） */
+  setTagGroup: (tag: string, group: string | null) => Promise<void>;
+  /** 标签改名。撞到已有名字就是**合并**，不报错 */
+  renameTag: (from: string, to: string) => Promise<void>;
+  /** 从所有字体上彻底删掉一条标签（连带颜色/分组元数据） */
+  purgeTag: (tag: string) => Promise<void>;
+  newTagGroup: (name: string) => Promise<void>;
+  renameTagGroup: (from: string, to: string) => Promise<void>;
+  setTagGroupColor: (name: string, color: string | null) => Promise<void>;
+  /** 解散分组：组里的标签回到未分组，关联一条不动 */
+  deleteTagGroup: (name: string) => Promise<void>;
   /** 自动标签总开关：关掉后立刻回到「只有手工标签」的状态，不需要重扫 */
   setAutoTagEnabled: (enabled: boolean) => void;
   /** 「不再建议」：把这个自动标签记进该族否决名单，重启后也不复发 */
@@ -1278,21 +1307,96 @@ function persistPrefs(get: () => FontStore) {
   }, 600);
 }
 
-/** 整理数据的导出内容：单独导 json 与整包内嵌**共用这一份**，格式必须完全一致 */
-function curationPayload(s: FontStore, now: Date) {
-  return curationFile(
-    {
-      tags: s.tags,
-      collections: s.collections,
-      collectionFaces: s.collectionFaces,
-      favorites: s.favorites,
-      notes: s.notes,
-      copyrightStatus: s.copyrightStatus,
-      copyrightExpiry: s.copyrightExpiry,
-      ratings: s.ratings,
+/** 路径归一化：统一分隔符 + 去掉尾部斜杠 + 小写（Windows 上盘符/目录大小写不一致是常态） */
+function normPath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+/**
+ * 当前生效的字体库目录。
+ *
+ * 与后端 `scanner::effective_managed_dir(active_library_dir())` 同一口径：
+ * 用户显式选过库地址且开着用 → 用那个；否则用安装目录下的默认库。
+ */
+async function activeLibraryDir(s: FontStore): Promise<string | null> {
+  const picked = s.settings.libraryDirEnabled ? s.settings.libraryDir : null;
+  if (picked) return picked;
+  try {
+    return await ipc.defaultLibraryDir();
+  } catch {
+    return null;
+  }
+}
+
+/** 当前字体库的作用域：库里真实存在的字族 + 这些字面的 faceKey */
+function libraryScope(s: FontStore, dir: string): CurationScope {
+  const base = normPath(dir);
+  const families = new Set<string>();
+  const faceKeys = new Set<string>();
+  if (!base) return { families, faceKeys };
+  for (const f of s.fonts) {
+    if (!normPath(f.path).startsWith(`${base}/`)) continue;
+    families.add(f.family);
+    faceKeys.add(faceKey(f));
+  }
+  return { families, faceKeys };
+}
+
+/**
+ * 整理数据的导出内容：单独导 json 与整包内嵌**共用这一份**，格式必须完全一致。
+ *
+ * 两件事必须一起成立（用户 2026-11-16 报障后定）：
+ * 1. **齐全**：凡是用户亲手产出的东西都要在文件里 —— 标签、标签颜色与标签分组、
+ *    字体分组（字族级 + 字重级）、收藏、评分、备注、手动版权状态与到期日、标签到期日。
+ *    以后再加“用户产出的数据”时必须同步加进 `CurationData`，否则换台机器就少一块。
+ * 2. **只含当前库**：`state.json` 里的整理数据是全机器共用的，但导出的是**这一个字体库**。
+ *    多个库地址 / 监视文件夹里的族名不能混进来，否则换机导入后会冒出一堆本库没有的幽灵标签。
+ */
+async function curationPayload(s: FontStore, now: Date) {
+  const data: CurationData = {
+    tags: s.tags,
+    collections: s.collections,
+    collectionFaces: s.collectionFaces,
+    favorites: s.favorites,
+    notes: s.notes,
+    copyrightStatus: s.copyrightStatus,
+    copyrightExpiry: s.copyrightExpiry,
+    ratings: s.ratings,
+    tagMeta: s.tagMeta,
+    tagGroups: s.tagGroups,
+    tagExpiry: s.tagExpiry,
+  };
+  const dir = await activeLibraryDir(s);
+  // 字体还没扫出来时不裁剪（否则会把一份空数据当成“本库没有东西”导出去）；
+  // 扫描完成后即使库里真的一个字体都没有，也要按作用域给出空数据 —— 那是事实。
+  const scoped = dir && s.fonts.length > 0 ? scopeCuration(data, libraryScope(s, dir)) : data;
+  const families = scopeFamilyCount(scoped);
+  return {
+    payload: {
+      ...curationFile(scoped, now.toISOString()),
+      // 文件里自带「这份数据覆盖了什么」，用户拿记事本打开就能核对，不用猜
+      scope: {
+        libraryDir: dir ?? null,
+        families,
+        summary: curationSummary(scoped),
+      },
     },
-    now.toISOString(),
-  );
+    families,
+    dir,
+  };
+}
+
+/** 这份整理数据实际覆盖了多少个字体家族（取所有按族记录的键的并集） */
+function scopeFamilyCount(data: CurationData): number {
+  const names = new Set<string>();
+  for (const k of Object.keys(data.tags)) names.add(k);
+  for (const k of Object.keys(data.notes)) names.add(k);
+  for (const k of Object.keys(data.copyrightStatus)) names.add(k);
+  for (const k of Object.keys(data.copyrightExpiry)) names.add(k);
+  for (const k of Object.keys(data.ratings)) names.add(k);
+  for (const f of data.favorites) names.add(f);
+  for (const list of Object.values(data.collections)) for (const m of list) names.add(m);
+  return names.size;
 }
 
 /**
@@ -1316,6 +1420,9 @@ async function applyCurationMerge(
     copyrightStatus: s.copyrightStatus,
     copyrightExpiry: s.copyrightExpiry,
     ratings: s.ratings,
+    tagMeta: s.tagMeta,
+    tagGroups: s.tagGroups,
+    tagExpiry: s.tagExpiry,
   };
   const merged = mergeCuration(local, data);
   if (merged.touched === 0) return 0;
@@ -1341,8 +1448,50 @@ async function applyCurationMerge(
     copyrightStatus: merged.copyrightStatus,
     copyrightExpiry: merged.copyrightExpiry,
     ratings: merged.ratings,
+    tagMeta: merged.tagMeta,
+    tagGroups: merged.tagGroups,
+    tagExpiry: merged.tagExpiry,
   });
   persistPrefs(get);
+
+  // 标签元数据 / 分组落在 state.json（后端命令），逐条补：
+  // 先建组再挂标签，否则标签会指向一个还不存在的组（后端加载时会被规整掉）。
+  for (const name of merged.addedTagGroups) {
+    try {
+      await ipc.newTagGroup(name);
+    } catch {
+      /* 组已存在（大小写/并发）不算失败 */
+    }
+  }
+  for (const g of merged.tagGroups) {
+    const before = s.tagGroups.find((x) => x.name === g.name);
+    if (g.color && before?.color !== g.color) {
+      try {
+        await ipc.setTagGroupColor(g.name, g.color);
+      } catch {
+        /* 颜色补不上不影响其它数据 */
+      }
+    }
+  }
+  for (const tag of merged.adoptedTagMeta) {
+    const meta = merged.tagMeta[tag];
+    if (!meta) continue;
+    const before = s.tagMeta[tag] ?? {};
+    if (meta.color && before.color !== meta.color) {
+      try {
+        await ipc.setTagColor(tag, meta.color);
+      } catch {
+        /* 同上 */
+      }
+    }
+    if (meta.group && before.group !== meta.group) {
+      try {
+        await ipc.setTagGroup(tag, meta.group);
+      } catch {
+        /* 同上 */
+      }
+    }
+  }
   return merged.touched;
 }
 
@@ -1790,6 +1939,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   fullScanDone: false,
   fonts: [],
   tags: {},
+  tagMeta: {},
+  tagGroups: [],
   autoTagEnabled: true,
   autoTagDenied: {},
   collections: {},
@@ -2272,15 +2423,18 @@ export const useFontStore = create<FontStore>((set, get) => ({
 
   hydrateMeta: async () => {
     try {
-      const [tags, collections, snapshots, favorites, notes, trash] = await Promise.all([
-        ipc.getTags(),
-        ipc.getCollections(),
-        ipc.getSnapshots(),
-        ipc.getFavorites(),
-        ipc.getNotes(),
-        ipc.listTrash(),
-      ]);
-      set({ tags, collections, snapshots, favorites, notes, trash });
+      const [tags, tagMeta, tagGroups, collections, snapshots, favorites, notes, trash] =
+        await Promise.all([
+          ipc.getTags(),
+          ipc.getTagMeta(),
+          ipc.getTagGroups(),
+          ipc.getCollections(),
+          ipc.getSnapshots(),
+          ipc.getFavorites(),
+          ipc.getNotes(),
+          ipc.listTrash(),
+        ]);
+      set({ tags, tagMeta, tagGroups, collections, snapshots, favorites, notes, trash });
     } catch {
       // 读不到就等 rescan 收尾那次补齐 —— 元数据缺失不该挡住启动，更不该弹错
     }
@@ -2300,16 +2454,19 @@ export const useFontStore = create<FontStore>((set, get) => ({
     // scrollTop，全量落地时用户看到的几乎就是「原地不动」。清空再填 = 闪一次白屏 + 骨架屏复现。
     set({ phase: "scanning" });
     try {
-      const [fonts, tags, collections, snapshots, favorites, notes, trash] = await Promise.all([
-        ipc.scanFonts(),
-        ipc.getTags(),
-        ipc.getCollections(),
-        ipc.getSnapshots(),
-        ipc.getFavorites(),
-        ipc.getNotes(),
-        ipc.listTrash(),
-      ]);
-      set({ tags, collections, snapshots, favorites, notes, trash });
+      const [fonts, tags, tagMeta, tagGroups, collections, snapshots, favorites, notes, trash] =
+        await Promise.all([
+          ipc.scanFonts(),
+          ipc.getTags(),
+          ipc.getTagMeta(),
+          ipc.getTagGroups(),
+          ipc.getCollections(),
+          ipc.getSnapshots(),
+          ipc.getFavorites(),
+          ipc.getNotes(),
+          ipc.listTrash(),
+        ]);
+      set({ tags, tagMeta, tagGroups, collections, snapshots, favorites, notes, trash });
       // 字体库本身走 applyFullScan：一次 set 落地 + 叠加扫描期间的用户决策
       get().applyFullScan(fonts);
       // 授权文档里写了「哪些渠道能 / 不能商用」的，首次见到就把原话写进备注
@@ -3016,6 +3173,175 @@ export const useFontStore = create<FontStore>((set, get) => ({
       /* 拿不到就以内存状态为准，下次扫描会对齐 */
     }
     toast.error(t("toast.couldntSaveTags"), t("tag.removeEverywhereFailed", { count: failed }));
+  },
+
+  /* ---------------------------------------------------------------------
+   * 标签元数据 / 标签分组（2.3.0）
+   *
+   * 与 AssetManager 同一套语义，落点是 `state.json` 的 `tag_meta` / `tag_groups`
+   * （后端命令，不在 prefs 里 —— 它们属于字体库数据和库一起走）。
+   * 所有写操作都**先乐观更新本地、失败回读后端**：标签面板是高频点击的地方，
+   * 每点一次颜色都等一次 IPC 会让界面「粘手」。
+   * ------------------------------------------------------------------- */
+
+  setTagColor: async (tag, color) => {
+    const prev = get().tagMeta;
+    const cur = { ...(prev[tag] ?? {}) };
+    if (color) cur.color = color;
+    else delete cur.color;
+    const next = { ...prev };
+    if (cur.color || cur.group) next[tag] = cur;
+    else delete next[tag];
+    set({ tagMeta: next });
+    try {
+      await ipc.setTagColor(tag, color);
+    } catch (e) {
+      set({ tagMeta: prev });
+      toast.error(t("toast.couldntSaveTags"), String(e));
+    }
+  },
+
+  setTagGroup: async (tag, group) => {
+    const prevMeta = get().tagMeta;
+    const prevGroups = get().tagGroups;
+    const cur = { ...(prevMeta[tag] ?? {}) };
+    if (group) cur.group = group;
+    else delete cur.group;
+    const nextMeta = { ...prevMeta };
+    if (cur.color || cur.group) nextMeta[tag] = cur;
+    else delete nextMeta[tag];
+    // 组不存在时界面先补一行：用户打完名字就该立刻看见那个组，而不是等下一条 IPC 回来
+    const nextGroups =
+      group && !prevGroups.some((g) => g.name === group)
+        ? [...prevGroups, { name: group }]
+        : prevGroups;
+    set({ tagMeta: nextMeta, tagGroups: nextGroups });
+    try {
+      await ipc.setTagGroup(tag, group);
+    } catch (e) {
+      set({ tagMeta: prevMeta, tagGroups: prevGroups });
+      toast.error(t("toast.couldntSaveTags"), String(e));
+    }
+  },
+
+  renameTag: async (from, to) => {
+    const name = to.trim();
+    if (!name || name === from) return;
+    try {
+      // 改名可能撞到已有名字（后端会合并），返回后统一回读真值，不做本地猜测
+      await ipc.renameTag(from, name);
+      const [tags, tagMeta] = await Promise.all([ipc.getTags(), ipc.getTagMeta()]);
+      const nav = get().nav;
+      const navNext =
+        nav.kind === "tag" && nav.tag === from ? ({ kind: "tag", tag: name } as Nav) : nav;
+      /**
+       * 到期日存在 `prefs.tagExpiry`（本机，不进 state.json），改名不会自动搬。
+       * 不搬的话旧键会变成孤儿：界面上看不到到期小字，重新起个同名标签又会「诈尸」带回旧日期。
+       * 撞名合并时优先保留目标标签自己的日期（那是用户在用的那个）。
+       */
+      const prevExpiry = get().tagExpiry;
+      let expiry = prevExpiry;
+      if (prevExpiry[from] !== undefined) {
+        expiry = { ...prevExpiry };
+        delete expiry[from];
+        if (expiry[name] === undefined) expiry[name] = prevExpiry[from];
+      }
+      set({ tags, tagMeta, nav: navNext, tagExpiry: expiry });
+      if (expiry !== prevExpiry) persistPrefs(get);
+    } catch (e) {
+      toast.error(t("toast.couldntSaveTags"), String(e));
+    }
+  },
+
+  purgeTag: async (tag) => {
+    // 自动标签不落库，删不掉 —— 走否决名单那条路（与「从所有字体移除」同一个入口）
+    if (isAutoTagId(tag)) {
+      await get().removeTagEverywhere(tag);
+      return;
+    }
+    try {
+      await ipc.deleteTag(tag);
+      const [tags, tagMeta, tagGroups] = await Promise.all([
+        ipc.getTags(),
+        ipc.getTagMeta(),
+        ipc.getTagGroups(),
+      ]);
+      const nav = get().nav;
+      // 到期日同样要清：留在 prefs 里就是一条看不见的孤儿记录
+      const prevExpiry = get().tagExpiry;
+      let expiry = prevExpiry;
+      if (prevExpiry[tag] !== undefined) {
+        expiry = { ...prevExpiry };
+        delete expiry[tag];
+      }
+      set({
+        tags,
+        tagMeta,
+        tagGroups,
+        tagExpiry: expiry,
+        nav: nav.kind === "tag" && nav.tag === tag ? { kind: "library" } : nav,
+      });
+      if (expiry !== prevExpiry) persistPrefs(get);
+    } catch (e) {
+      toast.error(t("toast.couldntSaveTags"), String(e));
+    }
+  },
+
+  newTagGroup: async (name) => {
+    const clean = name.trim();
+    if (!clean) return;
+    if (get().tagGroups.some((g) => g.name === clean)) {
+      toast.error(t("toast.tagGroupExists"), t("toast.tagGroupExistsSub", { name: clean }));
+      return;
+    }
+    set({ tagGroups: [...get().tagGroups, { name: clean }] });
+    try {
+      await ipc.newTagGroup(clean);
+    } catch (e) {
+      set({ tagGroups: get().tagGroups.filter((g) => g.name !== clean) });
+      toast.error(t("toast.tagGroupExists"), String(e));
+    }
+  },
+
+  renameTagGroup: async (from, to) => {
+    const name = to.trim();
+    if (!name || name === from) return;
+    try {
+      await ipc.renameTagGroup(from, name);
+      const [tagGroups, tagMeta] = await Promise.all([ipc.getTagGroups(), ipc.getTagMeta()]);
+      set({ tagGroups, tagMeta });
+    } catch (e) {
+      toast.error(t("toast.tagGroupExists"), String(e));
+    }
+  },
+
+  setTagGroupColor: async (name, color) => {
+    const prev = get().tagGroups;
+    set({
+      tagGroups: prev.map((g) => {
+        if (g.name !== name) return g;
+        const next = { ...g };
+        if (color) next.color = color;
+        else delete next.color;
+        return next;
+      }),
+    });
+    try {
+      await ipc.setTagGroupColor(name, color);
+    } catch (e) {
+      set({ tagGroups: prev });
+      toast.error(t("toast.couldntSaveTags"), String(e));
+    }
+  },
+
+  deleteTagGroup: async (name) => {
+    try {
+      await ipc.deleteTagGroup(name);
+      const [tagGroups, tagMeta] = await Promise.all([ipc.getTagGroups(), ipc.getTagMeta()]);
+      set({ tagGroups, tagMeta });
+    } catch (e) {
+      toast.error(t("toast.couldntSaveTags"), String(e));
+    }
   },
 
   createCollection: async (name) => {
@@ -4646,12 +4972,17 @@ export const useFontStore = create<FontStore>((set, get) => ({
   setIncompleteOnly: (incompleteOnly) => set({ incompleteOnly }),
 
   exportLibraryData: async (dest) => {
-    // 导出口径见 lib/libraryData.ts 顶部注释：标签 + 分组（字族级 / 字重级）+ 收藏 + 备注
-    // + 手动版权状态 + 到期日期。**快照不在里面**，它有自己的文件格式与入口。
-    const payload = curationPayload(get(), new Date());
+    // 导出口径见 lib/libraryData.ts 顶部注释：标签（含颜色 / 分组 / 到期日）+ 字体分组
+    // （字族级 / 字重级）+ 收藏 + 评分 + 备注 + 手动版权状态 + 到期日期，
+    // **只含当前字体库的族**。**快照不在里面**，它有自己的文件格式与入口。
     try {
+      const { payload, families, dir } = await curationPayload(get(), new Date());
       await ipc.writeTextFile(dest, JSON.stringify(payload, null, 2));
-      toast.success(t("toast.libraryDataExported"), dest, "install");
+      toast.success(
+        t("toast.libraryDataExported"),
+        dir ? `${dest} · ${t("toast.libraryDataScope", { families })}` : dest,
+        "install",
+      );
     } catch (e) {
       toast.error(t("toast.exportFailed"), String(e));
     }
@@ -4699,9 +5030,10 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const now = new Date();
     set({ packProgress: emptyPackProgress("export") });
     try {
+      const { payload } = await curationPayload(get(), now);
       const report = await ipc.exportLibraryPack(
         dest,
-        JSON.stringify(curationPayload(get(), now), null, 2),
+        JSON.stringify(payload, null, 2),
         now.toISOString(),
       );
       // 让 100% 多停一下再收，否则用户最后一眼看到的是 97%，以为没做完

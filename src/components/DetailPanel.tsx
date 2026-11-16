@@ -9,6 +9,7 @@ import { os2ClassOf } from "../lib/os2Class";
 import { fitPickPanel, PICK_LIST_WANT } from "../lib/pickerFit";
 import { tagLabel } from "../lib/tagLabels";
 import { isAutoTagId } from "../lib/tagVocabulary";
+import { tagColorClass } from "./TagDock";
 import { familiesFor, familyTagCounts, conflictsFor, useFontStore, type Family } from "../state/fontStore";
 import { ipc, type CharsetStats, type FontFace, type VariationAxis } from "../lib/ipc";
 import { createBoundedMap } from "../lib/boundedMap";
@@ -590,6 +591,7 @@ function TagEditor({
   const clearAutoTagDenials = useFontStore((s) => s.clearAutoTagDenials);
   const autoDenied = useFontStore((s) => s.autoTagDenied[family]);
   const autoTagEnabled = useFontStore((s) => s.autoTagEnabled);
+  const tagMeta = useFontStore((s) => s.tagMeta);
   const tagExpiry = useFontStore((s) => s.tagExpiry);
   const setTagExpiry = useFontStore((s) => s.setTagExpiry);
   const [draft, setDraft] = useState("");
@@ -788,7 +790,9 @@ function TagEditor({
           return (
           <motion.span
             key={tag}
-            className="tag-chip tag-chip-iconed"
+            /* 颜色按标签元数据上（2.3.0）：圆点是「这个标签自己挑的颜色」，
+               没有设置时走 `tag-c-none`（默认灰），不会莫名其妙多个色框。 */
+            className={`tag-chip tag-chip-iconed ${tagColorClass(tagMeta[tag]?.color)}`}
             initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.85 }}
@@ -811,7 +815,10 @@ function TagEditor({
             {isAutoTagId(tag) ? (
               <Sparkles size={10} strokeWidth={1.6} className="tag-auto-spark" />
             ) : (
-              <Tag size={10} strokeWidth={1.5} className="tag-manual-icon" />
+              <>
+                <span className="tag-dot tag-dot-chip" aria-hidden />
+                <Tag size={10} strokeWidth={1.5} className="tag-manual-icon" />
+              </>
             )}
             {tagLabel(tag, t)}
             {expirable && tagExpiry[tag] && (

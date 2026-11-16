@@ -229,6 +229,22 @@ body,
   padding-right: 7px;
 }
 
+/**
+ * 侧栏目录树：滚动条**不画出来**（用户 2026-11-16 截图点名）。
+ *
+ * 侧栏只有 236px，一条 8px 的滚动条一直在那儿吃掉文字的显示宽度；而这一段
+ * 大多数时候是装得下的，滚动条却因为 `overflow-y: auto` 在部分机器上常驻。
+ * 仍然可以滚动 —— 只把条本身藏掉，滚轮、触控板、键盘翻页都不受影响。
+ */
+.sidebar-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 .sidebar-section {
   display: flex;
   flex-direction: column;
@@ -2408,12 +2424,12 @@ h2.detail-title.copy-name {
   overflow-wrap: anywhere;
 }
 .trashconfirm-more {
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   color: var(--text-tertiary);
 }
 .trashconfirm-note {
   margin: 0;
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   line-height: 1.55;
   color: var(--text-tertiary);
 }
@@ -2684,6 +2700,11 @@ h2.detail-title.copy-name {
 /* 子面板层级要高于父面板（父 81 / backdrop 80），否则会压在 backdrop 下面点不到 */
 .ctx-submenu-panel {
   z-index: 82;
+  /* 固定最大高度 + 内部滚动：右键 →「标签」的子菜单可能有几十项（用户 2026-11-16），
+     不限高会一路顶到窗口底部。高度参考筛选菜单里那个子菜单。 */
+  max-height: min(300px, 56vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   /* 窄窗口（速览 500px）下必须能和父面板并排：允许压到 .ctx-menu 的 min-width 以下，
      实际宽度由 SubmenuRow 按可用空间内联设置 */
   min-width: 0;
@@ -3613,7 +3634,7 @@ h2.detail-title.copy-name {
 .specimen-name {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -3741,7 +3762,7 @@ h2.detail-title.copy-name {
   color: var(--font-pending);
 }
 .specimen-text-failed {
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   color: var(--font-pending);
 }
 
@@ -4131,7 +4152,7 @@ h2.detail-title.copy-name {
   align-items: center;
   gap: 7px;
   margin-top: 9px;
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
@@ -4510,7 +4531,8 @@ h2.detail-title.copy-name {
 }
 
 .shortcuts-panel {
-  width: min(400px, 100%);
+  /* 两排（两列）：原来单列在 400px 里要滚很久，用户 2026-11-16 要求改成两排 */
+  width: min(760px, 100%);
   max-height: 100%;
   overflow-y: auto;
   border-radius: 10px;
@@ -4525,9 +4547,15 @@ h2.detail-title.copy-name {
   gap: 8px;
 }
 .shortcuts-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  /* 多列而不是 grid：分组高矮差很多，grid 会按行对齐、行内留一大片空白；
+     多列是按内容流自动填满左列再进右列，短面板不会出现「中间一个大洞」。
+     `break-inside: avoid` 保证一个分组（标题 + 快捷键）不会被劈成两半。 */
+  column-count: 2;
+  column-gap: 22px;
+}
+.shortcuts-section {
+  break-inside: avoid;
+  margin-bottom: 16px;
 }
 .shortcuts-heading {
   font-size: var(--fs-10);
@@ -5624,7 +5652,7 @@ h2.detail-title.copy-name {
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid rgba(var(--ink-rgb), 0.12);
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   font-weight: 550;
   color: var(--text-secondary);
   background: var(--e1);
@@ -7737,7 +7765,7 @@ body.ui-fade-out .app-frame {
   border-radius: 8px;
   border: 1px solid rgba(var(--ink-rgb), 0.12);
   background: rgba(var(--ink-rgb), 0.05);
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   color: var(--text-primary);
   letter-spacing: 0.02em;
   outline: none;
@@ -7760,7 +7788,7 @@ body.ui-fade-out .app-frame {
   border-radius: 8px;
   border: 1px solid rgba(var(--ink-rgb), 0.12);
   background: rgba(var(--ink-rgb), 0.05);
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   color: var(--text-secondary);
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -9856,7 +9884,7 @@ body.tour-qb .qb-actions .qb-btn-text {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   cursor: pointer;
 }
 .settings-allow-name {
@@ -10364,4 +10392,917 @@ body.tour-qb .qb-actions .qb-btn-text {
    颜色用强调蓝而不是警告色 —— 旧版能用，只是不是最新，不值得报警。 */
 .settings-rt-update {
   color: var(--accent, #3b82f6);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   标签面板（2.3.0：与 AssetManager 0.5.0 的 TagDock 同一套交互）
+   ─────────────────────────────────────────────────────────────────────
+   为什么要用 order 把头部翻到面板底部：面板夹在「可滚动的目录树」和「底栏」之间，
+   高度一变，容器顶边就跟着上移；头部如果在顶上，悬停展开的瞬间它会从指针底下逃走，
+   用户点下去落到的是刚冒出来的第一行标签 → 误筛选（AssetManager 踩过两次）。
+   把头部钉在底栏上方后：内容块在上面变高、头部一动不动，它才敢当点击目标。
+   ═══════════════════════════════════════════════════════════════════════ */
+.tag-dock {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  /* 收起时正好只有头部那 32px；别用百分比（侧栏是 flex 项、height:auto，解析不出值） */
+  height: 32px;
+  min-height: 0;
+  overflow: hidden;
+  margin-top: 4px;
+  /* 与 .sidebar-footer 同一条线（5%）：这两个面板和「在线 / 回收站」是同一列里的
+     兄弟行，线一深一浅就露馅。展开时再加深一档（见下面 .open）。 */
+  border-top: 1px solid rgba(var(--ink-rgb), 0.05);
+  transition: height 110ms ease;
+}
+/* 展开只认 `.open`：悬停状态由 lib/dockHover.ts 的全局单值驱动。
+   不能用 :hover —— 分组与标签上下相邻，各自 :hover 时从标签移到分组会让
+   标签先收起、把分组整体推走，指针脱靶，分组永远展不开（用户 2026-11-16）。 */
+.tag-dock.open {
+  /* 分组面板（.coll-dock）必须用**同一个值**：两边高度不同的话，从标签移到分组
+     时面板高度一变，指针会被甩出去（用户 2026-11-16）。 */
+  height: min(300px, 42vh);
+  /* 展开时这条边界再深一档：它此刻是「内容区 / 面板」的分界，
+     要和主区与详情面板之间那条线一样一眼看得出。 */
+  border-top-color: rgba(var(--ink-rgb), 0.12);
+}
+/* 样张视图的侧栏只有 62px，放不下面板 */
+.app-shell.shell-specimen .tag-dock {
+  display: none;
+}
+
+.tag-dock-head {
+  order: 2; /* 钉在底栏上方（见上面的说明） */
+  /* 盒模型整段照 .nav-row：32px 高、gap 10、直角、500 字重、图标 15px。
+     它和「在线 / 回收站」是同一列里的兄弟行，差一点都看得出来
+     （用户 2026-11-16：图标 13 vs 15、字重 600 vs 500，视觉上「还是不对」）。 */
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 11px;
+  border-radius: 0;
+  /* 和行同字号（11px），主次靠字重区分 —— 之前 13px 比行大两档，
+     用户 2026-11-16：「标签和分组这个字还是有点大」「字体大小要一致」。 */
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.tag-dock-head:hover {
+  background: var(--ui-hover);
+  color: var(--text-primary);
+}
+.tag-dock-icon {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.tag-dock-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-dock-count {
+  font-size: var(--fs-11);
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+.tag-dock-caret {
+  flex-shrink: 0;
+  display: inline-flex;
+  transform: rotate(90deg);
+  transition: transform 110ms ease;
+  color: var(--text-tertiary);
+}
+.tag-dock-caret.closed {
+  transform: rotate(0deg);
+}
+/* 收起时也要看得见「正在按什么筛」，否则状态被藏起来 */
+.tag-dock-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 110px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: var(--fs-10);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--tc) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tc) 28%, transparent);
+}
+.tag-dock-filter-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-dock-filter-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text-tertiary);
+}
+.tag-dock-filter-x:hover {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+
+.tag-dock-body {
+  order: 1; /* 内容在头部上方长高 */
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  padding-top: 6px;
+  /* 收起时必须整块不画：内容在头部上方，只留 32px（头部高度）的话露出来的是**内容区的顶部**
+     （过滤框 + 按钮），而不是用户要找的那一行「标签」。
+     展开条件与高度过渡写成同一组，避免「展开了但内容不出现」的一半状态。 */
+  display: none;
+}
+.tag-dock.open .tag-dock-body {
+  display: flex;
+}
+.tag-dock-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 6px;
+}
+.tag-dock-search {
+  flex: 1;
+  min-width: 0;
+}
+.tag-dock-search input {
+  width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--ui-line);
+  background: var(--e1);
+  font-size: var(--fs-11);
+  color: var(--text-primary);
+}
+.tag-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.tag-tool-btn:hover {
+  background: var(--e1);
+  color: var(--text-secondary);
+}
+.tag-tool-btn.on {
+  color: var(--text-primary);
+  border-color: var(--ui-line);
+  background: var(--e1);
+}
+.tag-pin-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+}
+.tag-tool-btn.on .tag-pin-dot {
+  background: currentColor;
+}
+.tag-group-add {
+  padding: 0 8px 6px;
+}
+.tag-group-add input {
+  width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--ui-line);
+  background: var(--e1);
+  font-size: var(--fs-11);
+  color: var(--text-primary);
+}
+
+.tag-dock-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 4px 6px;
+  margin-right: -6px;
+  padding-right: 6px;
+}
+
+.tag-row,
+.tag-group-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 25px;
+  padding: 0 7px;
+  border-radius: 5px;
+  /* 与侧栏「在线 / 回收站」那一列**实际**字号一致：.nav-row 基础段写的是 fs-13，
+     但 7913 行有一条覆盖把它压到 11px（那一整段是「2px 蓝竖线 + 2% 底」的侧栏定版）。
+     只按基础段对齐会大一整档 —— 用户 2026-11-16 就是这么发现的。 */
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+}
+.tag-row:hover,
+.tag-group-row:hover {
+  background: var(--ui-hover);
+  color: var(--text-primary);
+}
+/**
+ * 选中行（2.3.1）：与侧栏 `.nav-row.nav-active` **完全同一套**表现 ——
+ * `--ui-hover` 浅灰底 + 2px `--ui-accent` 蓝竖线，圆点变实心。
+ *
+ * 第一版做成了「标签自身颜色 14% 的淡底 + 同色竖条」，实测两个问题（用户 2026-11-16）：
+ * 1. 没配色的标签 `--tc` 落到 `--text-primary`，14% 混出来是一块**深灰底**，比旁边
+ *    任何选中行都重；
+ * 2. 竖线跟着标签色走，用户期待的是侧栏那条蓝线（「点击图2这里是一样的」）。
+ * 现在颜色一律走侧栏那两个变量，只有圆点仍用标签自己的颜色 —— 那是标签的身份，
+ * 选中与否都该看得见。
+ */
+.tag-row.sel {
+  /* 底色与 `.nav-row.nav-active` 完全同一档：`--ui-hover`。
+     AssetManager 那边用的是「标签自身颜色淡版」，但 FontManager 里侧栏选中行是灰底，
+     同一个画面里出现两种选中底色，用户（2026-11-16）直接指出「颜色太深了，应该和
+     点击『已启用』这里是一样的」。软件内统一优先于跨软件对齐。 */
+  background: var(--ui-hover);
+  color: var(--text-primary);
+}
+/* 与 AssetManager 一致：没配色的标签（含全部自动标签）选中时圆点走强调蓝，
+   有颜色的标签仍用自己的颜色 —— 那是标签的身份，不该被选中态盖掉 */
+.tag-row.sel.tag-c-none {
+  --tc: var(--ui-accent);
+}
+.tag-row.sel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ui-accent);
+  z-index: 1;
+}
+.tag-row.sel .tag-dot {
+  background: var(--tc, var(--text-primary));
+  border-color: transparent;
+}
+/* 选中态必须压过 `.tag-row.auto .tag-dot`（空心虚线）。
+   两条规则特异度相同（0,2,1），而 auto 那条写在 10710 行、比这里靠后，
+   结果**选中的自动标签圆点仍是空心虚线**，`--tc: var(--ui-accent)` 也白设。
+   这里显式补一条 0,3,1，放在两者之后。 */
+.tag-row.auto.sel .tag-dot,
+.tag-c-auto.sel .tag-dot {
+  background: var(--tc, var(--ui-accent));
+  border-style: solid;
+  border-color: transparent;
+}
+.tag-group-row {
+  font-weight: 500;
+}
+.tag-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-row-count {
+  /* 与行名**同字号**（11px），主次只靠颜色和字重区分。
+     10px 的中文/数字在缩放后笔画明显发虚，一列里「4」和「1491」看着就像
+     两种粗细（用户 2026-11-16 的「右边标签从粗到细」）。 */
+  font-size: var(--fs-11);
+  font-weight: 400;
+  opacity: 1;
+  color: var(--text-tertiary);
+}
+.tag-row-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity 90ms ease;
+}
+.tag-row:hover .tag-row-more,
+.tag-group-row:hover .tag-row-more,
+.tag-row-more:focus-visible {
+  opacity: 1;
+}
+.tag-row-more:hover {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+/* 圆点：手工标签实色、自动标签空心虚线（一眼分得清「你打的」和「软件猜的」） */
+.tag-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tc, currentColor);
+}
+.tag-row.auto .tag-dot,
+.tag-c-auto .tag-dot {
+  background: transparent;
+  border: 1px dashed currentColor;
+}
+.tag-caret {
+  flex-shrink: 0;
+  display: inline-flex;
+  transform: rotate(90deg);
+  transition: transform 100ms ease;
+  color: var(--text-tertiary);
+}
+.tag-caret.closed {
+  transform: rotate(0deg);
+}
+.tag-subheading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 7px 3px;
+  font-size: var(--fs-9);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.tag-subheading-toggle {
+  cursor: pointer;
+}
+.tag-ns-row {
+  padding: 6px 7px 2px;
+  font-size: var(--fs-9);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.tag-dock-empty {
+  padding: 10px 8px;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+.tag-dock-empty-inline {
+  padding: 2px 7px 4px 21px;
+}
+
+/* ── 语义色：只存键，深浅主题各自映射（绝不存 #RRGGBB） ── */
+.tag-c-none {
+  --tc: var(--text-tertiary);
+}
+.tag-c-gray {
+  --tc: #9ca3af;
+}
+.tag-c-red {
+  --tc: #e5484d;
+}
+.tag-c-orange {
+  --tc: #f76b15;
+}
+.tag-c-amber {
+  --tc: #d9a406;
+}
+.tag-c-green {
+  --tc: #2fa96b;
+}
+.tag-c-teal {
+  --tc: #12a594;
+}
+.tag-c-blue {
+  --tc: #3b82f6;
+}
+.tag-c-indigo {
+  --tc: #6366f1;
+}
+.tag-c-violet {
+  --tc: #8b5cf6;
+}
+.tag-c-pink {
+  --tc: #ec4899;
+}
+
+/* ── 标签 / 分组编辑卡（浮层，改动即时生效，没有「保存」） ── */
+.tag-edit {
+  position: fixed;
+  width: 236px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ui-line);
+  background: var(--e3), var(--canvas);
+  box-shadow: var(--shadow-mass), var(--shadow-ground);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+.tag-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.tag-edit-label {
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+}
+.tag-edit input {
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--ui-line);
+  background: var(--e1);
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+}
+.tag-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag-color-dot {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--tc);
+  border: 1px solid transparent;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.tag-color-dot.on {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tc) 30%, transparent);
+}
+.tag-group-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.tag-group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-line);
+  font-size: var(--fs-10);
+  color: var(--text-secondary);
+}
+.tag-group-chip:hover {
+  background: var(--e1);
+}
+.tag-group-chip.on {
+  background: var(--e2);
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+.tag-edit-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.tag-edit-danger {
+  font-size: var(--fs-10);
+  color: var(--expiry-red);
+  padding: 4px 6px;
+  border-radius: 5px;
+}
+.tag-edit-danger:hover {
+  background: color-mix(in srgb, var(--expiry-red) 12%, transparent);
+}
+.tag-edit-done {
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 5px;
+  font-size: var(--fs-11);
+  color: var(--text-primary);
+  border: 1px solid var(--ui-line);
+  background: var(--e1);
+}
+.tag-edit-done:hover {
+  background: var(--e2);
+}
+
+/* 详情面板里的手工标签 chip：色点 + 淡色底（同 AssetManager 的 chip 形态）。
+   `tag-c-none`（没设颜色的标签）保持原来的中性外观，不多长一个灰框。 */
+.tag-chip .tag-dot {
+  flex-shrink: 0;
+}
+.tag-dot-chip {
+  width: 6px;
+  height: 6px;
+  margin-right: -3px;
+}
+.tag-chip-iconed:not(.tag-c-none):not(.tag-chip-auto) {
+  background: color-mix(in srgb, var(--tc) 9%, var(--e1));
+  border-color: color-mix(in srgb, var(--tc) 30%, var(--ui-line));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   设置面板外壳（2.3.0：左导航 + 右侧卡片 + 底栏，形态照 AssetManager）
+   ─────────────────────────────────────────────────────────────────────
+   只换壳：每个 .settings-section 里的控件、文案、落盘逻辑一个字没改。
+   卡片化只改「行」的外观 —— .settings-row 原来是独立小卡片，现在并进分区卡片里
+   当普通行，用发丝线分隔（一层边框比两层套娃干净）。
+   ═══════════════════════════════════════════════════════════════════════ */
+.settings-panel {
+  width: min(900px, 96vw);
+  /* 固定尺寸（用户 2026-11-16）：之前只有 max-height，内容少的页（通用）比内容多的页
+     （数据 / 外观）矮一大截，切页时整个面板跟着跳一下。现在高度写死，
+     只在内容超过时才在 .set-body 里滚动。 */
+  height: min(760px, 94vh);
+  max-height: min(760px, 94vh);
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.set-nav {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 10px 14px;
+  border-right: 1px solid rgba(var(--ink-rgb), 0.06);
+  min-height: 0;
+}
+.set-nav-title {
+  padding: 0 8px 4px;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.set-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px;
+  padding: 0 8px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-line);
+  background: var(--e1);
+}
+.set-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font-size: var(--fs-11);
+  color: var(--text-primary);
+}
+.set-search input::placeholder {
+  color: var(--text-tertiary);
+}
+.set-search-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.set-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  color: var(--text-tertiary);
+}
+.set-search-clear:hover {
+  background: var(--e2);
+  color: var(--text-primary);
+}
+.set-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.set-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+  text-align: left;
+}
+.set-nav-row:hover {
+  background: var(--e1);
+}
+.set-nav-row.sel {
+  background: var(--e2);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.set-nav-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.set-nav-row.sel .set-nav-icon {
+  color: var(--text-primary);
+}
+.set-nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-nav-empty {
+  padding: 10px 8px;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+
+.set-main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.set-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 6px;
+}
+.set-head-title {
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.set-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+}
+.set-close:hover {
+  background: var(--e1);
+  color: var(--text-primary);
+}
+.set-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.set-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.set-group[hidden] {
+  display: none;
+}
+.set-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 14px;
+  border-top: 1px solid rgba(var(--ink-rgb), 0.06);
+}
+.set-foot-note {
+  flex: 1;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.set-btn {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-line);
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+}
+.set-btn:hover {
+  background: var(--e1);
+  color: var(--text-primary);
+}
+.set-btn-accent {
+  background: var(--e2);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* 分区 → 卡片；行 → 卡片里的普通行（发丝线分隔） */
+.settings-panel .settings-section {
+  gap: 0;
+  padding: 2px 12px 8px;
+  border: 1px solid rgba(var(--ink-rgb), 0.07);
+  border-radius: 10px;
+  background: rgba(var(--scrim-rgb), 0.16);
+}
+.settings-panel .detail-heading {
+  padding: 10px 2px 4px;
+}
+.settings-panel .settings-section > .settings-row:not(.settings-plugins-head) {
+  /* 只命中「分区里的普通设置行」。
+     · `>` 是为了不碰嵌套行（接口页 `settings-row > settings-row`、
+       插件清单头里的 `settings-row-tight`）；
+     · `:not(.settings-plugins-head)` 是为了不碰清单头 —— 它虽然也是
+       `.settings-row`，但自己带 14px 内边距，被这条压成 2px 后整块会贴边。
+     这两处以前都被无差别命中过（2026-11-16 QA 复查发现）。 */
+  border: 0;
+  border-top: 1px solid rgba(var(--ink-rgb), 0.05);
+  border-radius: 0;
+  background: none;
+  padding: 10px 2px;
+}
+.settings-panel .settings-section > .settings-row:first-of-type {
+  border-top: 0;
+}
+
+/* 批量打标签的候选清单：点一下直接套用（同 AssetManager §8.4） */
+.bulktag-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.bulktag-candidate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--tc) 28%, var(--ui-line));
+  background: color-mix(in srgb, var(--tc) 9%, var(--e1));
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+}
+.bulktag-candidate:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--tc) 45%, var(--ui-line));
+}
+.bulktag-candidate-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   分组停靠面板（2.3.0）
+   ─────────────────────────────────────────────────────────────────────
+   与标签面板同一个壳（`.tag-dock` 全套类都复用），只有两处不同：
+   1. 展开高度低一档 —— 两个面板同时展开时，目录树还不能被挤没；
+   2. 行更紧凑：文件夹图标 + 序号 + 名称 + 计数（用户要求「图标和数字保留」）。
+   ═══════════════════════════════════════════════════════════════════════ */
+.coll-dock.open {
+  /* 与 .tag-dock.open 同值 —— 见上面那段注释 */
+  height: min(300px, 42vh);
+}
+.coll-row {
+  gap: 6px;
+}
+.coll-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-tertiary);
+}
+.coll-row:hover .coll-icon,
+.coll-row.sel .coll-icon {
+  color: var(--text-secondary);
+}
+.coll-no {
+  flex: none;
+  min-width: 11px;
+  font-size: var(--fs-11);
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+/* ── 设置搜索：二级结果（具体设置项） ── */
+.set-nav-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(var(--ink-rgb), 0.06);
+}
+.set-nav-subhead {
+  padding: 0 8px 4px;
+  font-size: var(--fs-10);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.set-nav-subrow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+.set-nav-subrow:hover {
+  background: var(--e1);
+}
+.set-nav-subpage {
+  font-size: var(--fs-10);
+  color: var(--text-tertiary);
+}
+.set-nav-sublabel {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+}
+.set-nav-subrow:hover .set-nav-sublabel {
+  color: var(--text-primary);
+}
+/* 跳过去之后闪一下，让眼睛找到那一行；不是选中态，之后自动消失 */
+.set-row-flash {
+  animation: setRowFlash 1.1s ease;
+}
+@keyframes setRowFlash {
+  0%,
+  100% {
+    background: transparent;
+  }
+  18% {
+    background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  }
+}
+
+/**
+ * 面板里的数字统一等宽（2.3.1）。
+ *
+ * `.tabular`（tokens.css）确实声明了 tabular-nums，但它是**靠 className 挂**的 ——
+ * 哪一行忘了写这个类，那一行数字就和同列其它行错开半格宽，用户看到的就是
+ * 「右边这列数字粗细不齐」。这里把属性直接落到数字元素上，不再依赖调用点记性。
+ */
+.tag-row-count,
+.tag-dock-count,
+.coll-no {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/**
+ * 两个停靠面板同时展开时各让一步（用户 2026-11-16 定：各自约 220px）。
+ *
+ * 单开 300px 够看十几行；两个都开就是 600px，先把目录树压到接近零、再把底栏挤出
+ * 可视区（`.app-frame` 是 overflow:hidden，用户看到的就是「底栏不见了」）。
+ * 让步后：两个各 220px，中间目录树还能留两百多像素。
+ *
+ * `.half` 由组件按「对面是否开着」挂上（见 lib/dockOpen.ts）—— 不能用 CSS `:has`：
+ * 两个面板是兄弟节点，靠后的那个没有「后面的兄弟」可选，只能单向生效。
+ */
+.tag-dock.open.half,
+.coll-dock.open.half {
+  height: min(220px, 30vh);
 }

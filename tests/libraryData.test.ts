@@ -6,6 +6,7 @@ import {
   isPackPath,
   mergeCuration,
   parseCuration,
+  scopeCuration,
   type CurationData,
 } from "../src/lib/libraryData.ts";
 import { detectJsonKind } from "../src/lib/fileKinds.ts";
@@ -198,7 +199,8 @@ test("后缀辅助判定：三种后缀大小写都认，.json 与中间出现�
 
 test("导出文件带上评分，读回来原样不变", () => {
   const file = curationFile(data({ favorites: ["Inter"], ratings: { Inter: 5, Lora: 2 } }), "2026-11-05T00:00:00.000Z");
-  assert.equal(file.version, 4);
+  // 2.3.0 起 schema 升到 5（多了 tagMeta / tagGroups / tagExpiry），旧文件仍可导入
+  assert.equal(file.version, 5);
   const parsed = parseCuration(JSON.parse(JSON.stringify(file)));
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
@@ -236,4 +238,67 @@ test("合并评分：本机改过的星级优先，只补本机没有的", () =>
   assert.deepEqual(merged.adoptedRatings, ["Lora"]);
   // 第二次导入同一份文件不应再算「有更新」
   assert.equal(mergeCuration(merged, incoming).touched, 0);
+});
+
+/* ── 2.3.0：导出作用域 + 标签颜色/分组/到期日 ───────────────────────── */
+
+test("导出只保留当前字体库的族：其它库的标签、分组、备注一条都不带", () => {
+  const full = data({
+    tags: { Lora: ["客户稿"], Inter: ["界面"], OtherLib: ["客户稿"] },
+    collections: { 项目A: ["Lora", "OtherLib"], 别的库: ["OtherLib"] },
+    collectionFaces: { 项目A: ["ps:lora-bold", "ps:other-bold"] },
+    favorites: ["Inter", "OtherLib"],
+    notes: { Lora: "本库", OtherLib: "别处" },
+    ratings: { Lora: 4, OtherLib: 5 },
+    tagMeta: { 客户稿: { color: "blue", group: "客户" }, 界面: { color: "teal" } },
+    tagGroups: [{ name: "客户", color: "blue" }, { name: "只属于别处" }],
+    tagExpiry: { 客户稿: "2027-01-01", 界面: "2027-02-02" },
+  });
+  const scoped = scopeCuration(full, {
+    families: new Set(["Lora", "Inter"]),
+    faceKeys: new Set(["ps:lora-bold"]),
+  });
+
+  assert.deepEqual(Object.keys(scoped.tags).sort(), ["Inter", "Lora"]);
+  // 组里只剩本库成员；成员全在别处的组整条消失
+  assert.deepEqual(scoped.collections, { 项目A: ["Lora"] });
+  assert.deepEqual(scoped.collectionFaces, { 项目A: ["ps:lora-bold"] });
+  assert.deepEqual(scoped.favorites, ["Inter"]);
+  assert.deepEqual(scoped.notes, { Lora: "本库" });
+  assert.deepEqual(scoped.ratings, { Lora: 4 });
+  // 标签元数据 / 分组 / 到期日跟着「还在用的标签」走
+  // 「界面」挂在 Inter 上，Inter 在本库里 → 它的颜色要留下；只有全在别处的标签才被裁掉
+  assert.deepEqual(scoped.tagMeta, { 客户稿: { color: "blue", group: "客户" }, 界面: { color: "teal" } });
+  assert.deepEqual(scoped.tagGroups, [{ name: "客户", color: "blue" }]);
+  assert.deepEqual(scoped.tagExpiry, { 客户稿: "2027-01-01", 界面: "2027-02-02" });
+});
+
+test("标签颜色与分组能导出并合并：按字段补空缺，本地已设的不被覆盖", () => {
+  const file = curationFile(
+    data({
+      tags: { Lora: ["客户稿"] },
+      tagMeta: { 客户稿: { color: "blue", group: "客户" } },
+      tagGroups: [{ name: "客户", color: "teal" }],
+      tagExpiry: { 客户稿: "2027-01-01" },
+    }),
+    "2026-11-16T00:00:00.000Z",
+  );
+  const parsed = parseCuration(JSON.parse(JSON.stringify(file)));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.data.tagMeta, { 客户稿: { color: "blue", group: "客户" } });
+  assert.deepEqual(parsed.data.tagGroups, [{ name: "客户", color: "teal" }]);
+  assert.deepEqual(parsed.data.tagExpiry, { 客户稿: "2027-01-01" });
+
+  const local = data({
+    tags: { Lora: ["客户稿"] },
+    tagMeta: { 客户稿: { color: "red" } }, // 本机只设了颜色
+  });
+  const merged = mergeCuration(local, parsed.data);
+  assert.deepEqual(merged.tagMeta["客户稿"], { color: "red", group: "客户" });
+  assert.deepEqual(merged.adoptedTagMeta, ["客户稿"]);
+  assert.deepEqual(merged.addedTagGroups, ["客户"]);
+  assert.deepEqual(merged.adoptedTagExpiry, ["客户稿"]);
+  // 同一份文件再导一次不应再算「有更新」
+  assert.equal(mergeCuration(merged, parsed.data).touched, 0);
 });

@@ -40,6 +40,52 @@ pub struct Snapshot {
     pub entries: Vec<SnapshotEntry>,
 }
 
+/// 标签自身的属性：颜色 + 所属分组。
+///
+/// 与 `tags`（字族 → 标签名）**分开存**，因为两者回答的是不同的问题：
+/// `tags` 说「谁带了哪些标签」，这里说「这个标签长什么样、归哪个组」。
+/// 合成一条结构会让「改名」「合并」「解散分组」三件事互相牵连（见 `rename_tag_in_state`）。
+///
+/// 颜色只存**语义键**（`blue` / `teal` …），不存 `#RRGGBB`：浅色与深色主题要把同一个键
+/// 映射到不同色值，存色值等于把配色钉死在一个主题上。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TagMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+}
+
+/// 标签分组：**只有一层**（组里放标签，组不能嵌套），数组顺序即侧栏顺序。
+///
+/// 允许空组：用户刚建完就看不见会以为没建成，所以不按「组里有没有标签」做清理。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TagGroup {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+/// 标签可选颜色的语义键（与 AssetManager 同一套，用户学一次就够）。
+pub const TAG_COLORS: &[&str] = &[
+    "gray", "red", "orange", "amber", "green", "teal", "blue", "indigo", "violet", "pink",
+];
+
+/// 标签名长度上限（与 AssetManager 一致）
+pub const MAX_TAG_NAME: usize = 32;
+/// 分组名长度上限
+pub const MAX_GROUP_NAME: usize = 24;
+
+/// 自动标签专用前缀：这些命名空间**不开放给手工命名**。
+///
+/// 否则「手动 `cn:song`」和「自动 `cn:song`」会撞成同一条，筛选时分不清该走手工关联
+/// 还是走现算的推导。前端 `lib/tagVocabulary.ts::NAMESPACES` 是同一份口径，改这里要同步。
+pub const AUTO_TAG_NAMESPACES: &[&str] = &[
+    "class", "cn", "vox", "decor", "form", "use", "tech", "style", "weight",
+];
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppState {
@@ -58,6 +104,15 @@ pub struct AppState {
     pub activated: HashSet<String>,
 
     pub tags: HashMap<String, Vec<String>>,
+
+    /// 标签自身的属性（颜色 / 分组）。与 `tags` 实时对齐：
+    /// 改名时两边一起改，删掉最后一个引用时一起删（见 `normalize_tags`）。
+    #[serde(default)]
+    pub tag_meta: HashMap<String, TagMeta>,
+
+    /// 标签分组（有序数组，下标即顺序）。**不是**字体分组 —— 那个是 `collections`。
+    #[serde(default)]
+    pub tag_groups: Vec<TagGroup>,
 
     pub collections: HashMap<String, Vec<String>>,
 
@@ -1127,6 +1182,170 @@ fn fatal_state_dir_error(detail: &str) {
     std::process::exit(1);
 }
 
+// ---------------------------------------------------------------------------
+// 标签元数据 / 分组的校验与维护（2.3.0）
+//
+// 这一组函数都是**纯状态操作**，不碰磁盘：写盘由调用方（lib.rs 的命令层）统一 `save`，
+// 这样一批改动只落一次盘 —— state.json 单次写入 1.7 MB，能省就省。
+// ---------------------------------------------------------------------------
+
+/// 颜色必须是白名单里的语义键。`None` = 清成默认灰。
+pub fn validate_tag_color(color: &Option<String>) -> Result<(), String> {
+    match color.as_deref() {
+        None => Ok(()),
+        Some(c) if TAG_COLORS.contains(&c) => Ok(()),
+        Some(c) => Err(format!("unknown tag color: {c}")),
+    }
+}
+
+/// 标签名校验：非空、不超长、不占自动标签的命名空间。
+pub fn validate_tag_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("tag name is empty".into());
+    }
+    if name.chars().count() > MAX_TAG_NAME {
+        return Err(format!("tag name too long (max {MAX_TAG_NAME})"));
+    }
+    if let Some((ns, _)) = name.split_once(':') {
+        let ns = ns.to_ascii_lowercase();
+        if AUTO_TAG_NAMESPACES.contains(&ns.as_str()) {
+            return Err(format!("`{ns}:` is reserved for automatic tags"));
+        }
+    }
+    Ok(name.to_string())
+}
+
+/// 分组名校验：非空、不超长。
+pub fn validate_group_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("group name is empty".into());
+    }
+    if name.chars().count() > MAX_GROUP_NAME {
+        return Err(format!("group name too long (max {MAX_GROUP_NAME})"));
+    }
+    Ok(name.to_string())
+}
+
+/// 标签改名。**撞到已有名字就是合并**（关联并过去、旧名删掉），不报错：
+/// 用户把「客户」改成「客户稿」而后者已存在时，报错只会逼他去挨个删素材上的旧标签。
+///
+/// 返回被合并的关联条数（含本来就挂在新名字上的不算）。
+pub fn rename_tag_in_state(state: &mut AppState, old: &str, new: &str) -> usize {
+    let mut moved = 0usize;
+    for list in state.tags.values_mut() {
+        let had_old = list.iter().any(|t| t == old);
+        if !had_old {
+            continue;
+        }
+        moved += list.iter().filter(|t| *t == old).count();
+        for t in list.iter_mut() {
+            if t == old {
+                *t = new.to_string();
+            }
+        }
+        let mut seen = HashSet::new();
+        list.retain(|t| seen.insert(t.clone()));
+    }
+    let old_meta = state.tag_meta.remove(old);
+    if let Some(meta) = old_meta {
+        let entry = state.tag_meta.entry(new.to_string()).or_default();
+        if entry.color.is_none() {
+            entry.color = meta.color;
+        }
+        if entry.group.is_none() {
+            entry.group = meta.group;
+        }
+    }
+    moved
+}
+
+/// 从所有字体上移除一条标签，并删掉它的元数据。返回被摘掉的关联条数。
+pub fn delete_tag_in_state(state: &mut AppState, tag: &str) -> usize {
+    let mut removed = 0usize;
+    for list in state.tags.values_mut() {
+        let before = list.len();
+        list.retain(|t| t != tag);
+        removed += before - list.len();
+    }
+    state.tag_meta.remove(tag);
+    removed
+}
+
+/// 解散分组：组里的标签 `group = None` 回到「未分组」，标签与字体一条不少。
+/// 返回被解散出来的标签数。
+pub fn ungroup_in_state(state: &mut AppState, group: &str) -> usize {
+    let mut freed = 0usize;
+    for meta in state.tag_meta.values_mut() {
+        if meta.group.as_deref() == Some(group) {
+            meta.group = None;
+            freed += 1;
+        }
+    }
+    freed
+}
+
+/// 加载时的规整（不做迁移脚本，每次加载顺手清一遍）。
+///
+/// 清掉的东西只有三种「必然无意义」的：
+/// 1. 空名/重名的分组（重名会导致侧栏出现两行一模一样的组）；
+/// 2. 没有任何标签使用的 `tag_meta`（孤儿项，通常是删标签时漏写的残留）；
+/// 3. `tag_meta.group` 指向了不存在的分组（组被手工改掉/老版本残留）。
+///
+/// **空分组要留**：用户刚建完就看不见会以为没建成（与 §6「允许空组」一致）。
+/// 返回是否真的改了状态 —— 改了才值得多落一次盘。
+pub fn normalize_tags(state: &mut AppState) -> bool {
+    let mut changed = false;
+
+    let mut seen: HashSet<String> = HashSet::new();
+    let before_groups = state.tag_groups.len();
+    let mut kept: Vec<TagGroup> = Vec::with_capacity(state.tag_groups.len());
+    for g in state.tag_groups.drain(..) {
+        let name = g.name.trim().to_string();
+        if name.is_empty() || !seen.insert(name.clone()) {
+            changed = true;
+            continue;
+        }
+        if name != g.name {
+            changed = true;
+        }
+        kept.push(TagGroup {
+            name,
+            color: g.color,
+        });
+    }
+    state.tag_groups = kept;
+    if state.tag_groups.len() != before_groups {
+        changed = true;
+    }
+
+    let in_use: HashSet<String> = state.tags.values().flatten().cloned().collect();
+    let group_names: HashSet<String> = state.tag_groups.iter().map(|g| g.name.clone()).collect();
+    let before_meta = state.tag_meta.len();
+    state.tag_meta.retain(|name, _| in_use.contains(name));
+    if state.tag_meta.len() != before_meta {
+        changed = true;
+    }
+    for meta in state.tag_meta.values_mut() {
+        if let Some(g) = meta.group.clone() {
+            if !group_names.contains(&g) {
+                meta.group = None;
+                changed = true;
+            }
+        }
+    }
+    // 颜色 / 分组都为空、且已经什么都不表达的条目直接丢掉
+    let before_empty = state.tag_meta.len();
+    state
+        .tag_meta
+        .retain(|_, meta| meta.color.is_some() || meta.group.is_some());
+    if state.tag_meta.len() != before_empty {
+        changed = true;
+    }
+    changed
+}
+
 pub fn load() -> AppState {
     let mut notes: Vec<String> = Vec::new();
     migrate_legacy_dirs(&mut notes);
@@ -1210,6 +1429,14 @@ pub fn load() -> AppState {
             crate::diag::log(&format!("store: failed to persist legacy library pin: {e}"));
         }
     }
+    // 标签元数据 / 分组的规整（2.3.0）：孤儿 tag_meta、重名分组、指向不存在分组的
+    // group 字段都是「必然无意义」的残留，加载时清掉并落一次盘就够了，不写迁移脚本。
+    if normalize_tags(&mut state) {
+        crate::diag::log("store: normalized tag metadata / groups");
+        if let Err(e) = save(&state) {
+            crate::diag::log(&format!("store: failed to persist tag metadata cleanup: {e}"));
+        }
+    }
     state
 }
 
@@ -1261,6 +1488,118 @@ pub fn save(state: &AppState) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 标签改名撞到已有名字 = **合并**：关联并过去、旧名删掉、元数据补齐，不报错。
+    /// （AssetManager 的同一套语义；报错只会逼用户去挨个删旧标签）
+    #[test]
+    fn rename_tag_merges_into_existing_name() {
+        let mut st = AppState::default();
+        st.tags.insert("A".into(), vec!["客户".into(), "旧名".into()]);
+        st.tags.insert("B".into(), vec!["旧名".into()]);
+        st.tags.insert("C".into(), vec!["客户".into()]);
+        st.tag_meta.insert(
+            "旧名".into(),
+            TagMeta {
+                color: Some("blue".into()),
+                group: Some("客户组".into()),
+            },
+        );
+        st.tag_meta.insert("客户".into(), TagMeta::default());
+
+        let moved = rename_tag_in_state(&mut st, "旧名", "客户");
+        assert_eq!(moved, 2);
+        // 每一族的列表里不许出现重复的「客户」
+        assert_eq!(st.tags["A"], vec!["客户".to_string()]);
+        assert_eq!(st.tags["B"], vec!["客户".to_string()]);
+        assert_eq!(st.tags["C"], vec!["客户".to_string()]);
+        // 旧名的元数据搬到新名字上，一次都不许丢
+        assert!(!st.tag_meta.contains_key("旧名"));
+        assert_eq!(st.tag_meta["客户"].color.as_deref(), Some("blue"));
+        assert_eq!(st.tag_meta["客户"].group.as_deref(), Some("客户组"));
+    }
+
+    /// 解散分组只脱离归属：标签与字体的关联一条都不能动。
+    #[test]
+    fn dissolving_group_keeps_tag_links() {
+        let mut st = AppState::default();
+        st.tags.insert("A".into(), vec!["客户稿".into()]);
+        st.tag_meta.insert(
+            "客户稿".into(),
+            TagMeta {
+                color: None,
+                group: Some("客户".into()),
+            },
+        );
+        st.tag_groups.push(TagGroup {
+            name: "客户".into(),
+            color: Some("teal".into()),
+        });
+
+        let freed = ungroup_in_state(&mut st, "客户");
+        st.tag_groups.retain(|g| g.name != "客户");
+        assert_eq!(freed, 1);
+        assert_eq!(st.tags["A"], vec!["客户稿".to_string()]);
+        assert_eq!(st.tag_meta["客户稿"].group, None);
+        assert!(st.tag_groups.is_empty());
+    }
+
+    /// 加载时的规整：孤儿元数据、重名组、指向不存在分组的 group 字段都要清掉；
+    /// **空分组要留**（用户刚建完看不见会以为没建成）。
+    #[test]
+    fn normalize_drops_orphans_but_keeps_empty_groups() {
+        let mut st = AppState::default();
+        st.tags.insert("A".into(), vec!["在用".into()]);
+        st.tag_meta.insert(
+            "在用".into(),
+            TagMeta {
+                color: Some("red".into()),
+                group: Some("不存在的组".into()),
+            },
+        );
+        st.tag_meta.insert(
+            "没人用".into(),
+            TagMeta {
+                color: Some("blue".into()),
+                group: None,
+            },
+        );
+        st.tag_meta.insert("空壳".into(), TagMeta::default());
+        st.tag_groups.push(TagGroup {
+            name: "客户".into(),
+            color: None,
+        });
+        st.tag_groups.push(TagGroup {
+            name: "客户".into(),
+            color: Some("pink".into()),
+        });
+        st.tag_groups.push(TagGroup {
+            name: "  ".into(),
+            color: None,
+        });
+
+        assert!(normalize_tags(&mut st));
+        assert_eq!(st.tag_groups.len(), 1);
+        assert_eq!(st.tag_groups[0].name, "客户");
+        // 孤儿 / 空壳条目都要走掉，只剩真正在用的那条
+        assert_eq!(st.tag_meta.len(), 1);
+        assert_eq!(st.tag_meta["在用"].color.as_deref(), Some("red"));
+        // 指向不存在的组 → 清成未分组（不是丢掉整条元数据）
+        assert_eq!(st.tag_meta["在用"].group, None);
+        // 再跑一次不应再报「有变化」
+        assert!(!normalize_tags(&mut st));
+    }
+
+    /// 自动标签的命名空间不开放给手工命名（否则手工/自动会撞成同一条）。
+    #[test]
+    fn tag_name_validation_rejects_auto_namespaces() {
+        assert!(validate_tag_name("客户稿").is_ok());
+        assert!(validate_tag_name("cn:song").is_err());
+        assert!(validate_tag_name("class:serif").is_err());
+        assert!(validate_tag_name("  ").is_err());
+        assert!(validate_tag_name(&"字".repeat(33)).is_err());
+        assert!(validate_tag_color(&Some("blue".into())).is_ok());
+        assert!(validate_tag_color(&Some("#ff0000".into())).is_err());
+    }
 
     /// 新版快照：只存可移植标识，序列化后不能出现绝对路径
     #[test]

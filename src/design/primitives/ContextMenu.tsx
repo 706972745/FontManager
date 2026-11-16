@@ -101,6 +101,18 @@ export function isContextMenuOpen(): boolean {
   return st.open || st.closing;
 }
 
+/**
+ * 响应式的「菜单开着吗」—— 给停靠面板用（2.3.0）。
+ *
+ * 侧栏面板靠 `:hover` 展开，右键之后指针要移到菜单上去点条目，那一刻面板已经
+ * 不算 hover 了；不钉住的话面板会在菜单还开着的时候收起来，用户看到的就是
+ * 「右键点下去，菜单闪了一下 / 甚至根本没出来」。这个 hook 让面板在菜单关闭前
+ * 一直保持展开，关闭后自动回到正常收起逻辑。
+ */
+export function useContextMenuOpen(): boolean {
+  return useMenuStore((s) => s.open || s.closing);
+}
+
 export function openContextMenu(e: ReactMouseEvent, items: MenuItem[]) {
   e.preventDefault();
   e.stopPropagation();

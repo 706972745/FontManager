@@ -1,20 +1,20 @@
 import { motion } from "motion/react";
-import { Camera, ChevronDown, Clock, FileUp, FolderOpen, Globe, History, Info, Keyboard, Library, Monitor, Plus, Power, PowerOff, Star, Tag, Trash2, Sparkles } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Clock, FileUp, FolderOpen, Globe, History, Info, Keyboard, Library, Monitor, Plus, Power, PowerOff, Star, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
-import { openContextMenu, type MenuItem } from "../design/primitives/ContextMenu";
+import { openContextMenu, useContextMenuOpen, type MenuItem } from "../design/primitives/ContextMenu";
 import { spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
-import { familiesFor, familyTagCounts, isSystemFamily, useFontStore, type Family, type Nav } from "../state/fontStore";
-import { tagLabel } from "../lib/tagLabels";
-import { isAutoTagId } from "../lib/tagVocabulary";
+import { familiesFor, isSystemFamily, useFontStore, type Nav } from "../state/fontStore";
 import { faceKey } from "../lib/snapshotKey";
 import { sortContainers } from "../lib/faceContainers";
 import { countKnown, navCountText } from "../lib/seedOverrides";
-import { exportFontList, snapshotToggleAction } from "../lib/menus";
+import { snapshotToggleAction } from "../lib/menus";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
+import { DOCK_LEAVE_DELAY, useDockHover } from "../lib/dockHover";
+import { useDockOpen } from "../lib/dockOpen";
 import { t as translate, useT } from "../lib/i18n";
-import { formatTagExpiry } from "../lib/tagExpiry";
+import { TagDock } from "./TagDock";
 
 function navKey(n: Nav): string {
   if (n.kind === "tag") return `tag:${n.tag}`;
@@ -238,6 +238,9 @@ export function Sidebar() {
   const t = useT();
   const intro = useIntro();
   const fonts = useFontStore((s) => s.fonts);
+  // 分组停靠面板自己画行（不再走 NavRow），这两个要在这一层取
+  const nav = useFontStore((s) => s.nav);
+  const setNav = useFontStore((s) => s.setNav);
   /**
    * 侧栏数字的可信度**分两档**，不再是一个开关管全部（用户 2026-11-13 指出第一版太粗）。
    *
@@ -315,6 +318,93 @@ export function Sidebar() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renamingSnapshot, setRenamingSnapshot] = useState<string | null>(null);
 
+  /* ── 分组停靠面板（2.3.0）：与标签面板同一套展开 / 固定 / 搜索逻辑 ──
+     用户原话：「将分组的交互方式也和标签一样，但是图标和数字保留，也加入搜索框和固定」。
+     三种临时钉住与 TagDock 同源：聚焦过滤框、右键按下（菜单关闭后自动解除），
+     外加「正在新建 / 改名」期间必须展开，否则输入框会被收掉。 */
+  const COLL_PIN_KEY = "zfm.collections.pinned";
+  const [collPinned, setCollPinned] = useState(() => {
+    try {
+      return localStorage.getItem(COLL_PIN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [collFocusHold, setCollFocusHold] = useState(false);
+  const [collMenuHold, setCollMenuHold] = useState(false);
+  const [collQ, setCollQ] = useState("");
+  const menuOpen = useContextMenuOpen();
+  useEffect(() => {
+    if (!menuOpen) setCollMenuHold(false);
+  }, [menuOpen]);
+
+  /* 悬停由全局单值驱动（lib/dockHover.ts）：两个面板上下相邻，各自 :hover 会互相推走 */
+  const activeDock = useDockHover((s) => s.active);
+  const setActiveDock = useDockHover((s) => s.setActive);
+  const collLeaveTimer = useRef<number | null>(null);
+
+  const collEnter = () => {
+    if (collLeaveTimer.current !== null) {
+      window.clearTimeout(collLeaveTimer.current);
+      collLeaveTimer.current = null;
+    }
+    setActiveDock("collections");
+  };
+
+  const collLeave = () => {
+    if (collLeaveTimer.current !== null) window.clearTimeout(collLeaveTimer.current);
+    collLeaveTimer.current = window.setTimeout(() => {
+      collLeaveTimer.current = null;
+      if (useDockHover.getState().active === "collections") setActiveDock(null);
+    }, DOCK_LEAVE_DELAY);
+  };
+
+  useEffect(
+    () => () => {
+      if (collLeaveTimer.current !== null) window.clearTimeout(collLeaveTimer.current);
+    },
+    [],
+  );
+  /** 正在看某个分组时面板保持展开，切到别的导航自然解除（用户 2026-11-16，与标签面板一致） */
+  const collSelected = nav.kind === "collection";
+  /** 「已固定」的显示口径：手动固定的，或被选中分组撑开的 */
+  const collShowingPinned = collPinned || collSelected;
+  const collOpen =
+    collShowingPinned ||
+    activeDock === "collections" ||
+    collFocusHold ||
+    collMenuHold ||
+    creating ||
+    renaming !== null;
+
+  // 与标签面板同一口径：收起就清掉过滤词，避免下次展开看到一片「没有匹配」（2026-11-16）
+  useEffect(() => {
+    if (!collOpen) setCollQ((v) => (v === "" ? v : ""));
+  }, [collOpen]);
+
+  // 两个面板同时展开时各让一步（各自降到约 220px），否则目录树会被压没、底栏被挤出可视区
+  const setDockOpen = useDockOpen((s) => s.setOpen);
+  const tagsOpen = useDockOpen((s) => s.tags);
+  useEffect(() => {
+    setDockOpen("collections", collOpen);
+    return () => setDockOpen("collections", false);
+  }, [collOpen, setDockOpen]);
+
+  const toggleCollPin = () => {
+    // 被「选中的分组」撑开时，点头部 = 收起它 → 先取消这个选中，否则点了没反应
+    if (collSelected && !collPinned) {
+      setNav({ kind: "library" });
+      return;
+    }
+    const next = !collPinned;
+    setCollPinned(next);
+    try {
+      localStorage.setItem(COLL_PIN_KEY, next ? "1" : "0");
+    } catch {
+      // 写不进去也不影响本次会话
+    }
+  };
+
   /**
    * 插件中心面板装了没有 —— 入口已搬到标题栏（`Titlebar.tsx` 的
    * `PluginCenterButton`，共用 `useWorkshopInstalled`），这里不再需要。
@@ -344,16 +434,70 @@ export function Sidebar() {
     : null;
   // 与「系统字体」列表用同一个口径（isSystemFamily），否则计数和点进去看到的数量对不上
   const systemCount = seedCountsKnown ? allFamilies.filter(isSystemFamily).length : null;
-  // 标签计数按**当前库里真实存在的族**算，并且把自动标签一起算进来。
-  // 不能再用 `allTags(tags)`：那是 state.json 里的原始记录，删掉的字体、移走的字体库
-  // 留下的标签都还在里面，会数出「侧栏 20 个、点进去 0 个」。
-  const { counts: tagCounts } = familyTagCounts(allFamilies);
+  // 标签计数与面板一起搬到 `TagDock`（它自己按当前库里真实存在的族算，口径不变）
   const collapsed = useFontStore((s) => s.collapsedSections);
   const toggleSection = useFontStore((s) => s.toggleSection);
   // 排序必须与字重行胶囊的序号同源（`sortContainers`），否则「快照 2」会对不上第 2 行
   const collectionNames = sortContainers(Object.keys(collections));
+  const collNeedle = collQ.trim().toLowerCase();
+  const shownCollections = collectionNames.filter(
+    (n) => !collNeedle || n.toLowerCase().includes(collNeedle),
+  );
   const snapshotNames = sortContainers(snapshots.map((sn) => sn.name));
   const snapshotByName = new Map(snapshots.map((sn) => [sn.name, sn] as const));
+
+  /**
+   * 分组右键菜单。从旧的 NavRow 调用点搬出来 —— 分组改由停靠面板自己画行之后，
+   * 行仍然是「分组」这一个东西，菜单项必须一字不差地照旧。
+   *
+   * 分组**不提供**「只导出字体清单（元数据）」：分组是「一批字体」的集合，
+   * 单独把它们的元数据导成一份表会和「导出快照」形成两条互不认识的导出线
+   * （用户 2026-11-16 明确要求：分组只允许通过快照导出数据）。
+   */
+  const collectionMenu = (e: React.MouseEvent, name: string) => {
+    const members = collections[name] ?? [];
+    // 分组内字体直接加进指定快照（用户 2026-10-30）：
+    // 与选择菜单同一个 toggle 逻辑 —— 全在就勾着、再点一次整组移出
+    const snapItems: MenuItem[] = snapshots.map((sn) => {
+      const keys = fonts.filter((f) => members.includes(f.family)).map(faceKey);
+      const entryKeys = new Set(sn.entries.map((en) => en.key));
+      return {
+        kind: "check",
+        label: sn.name,
+        checked: keys.length > 0 && keys.every((k) => entryKeys.has(k)),
+        action: snapshotToggleAction(sn.name, members),
+      };
+    });
+    openContextMenu(e, [
+      { label: translate("menu.rename"), action: () => setRenaming(name) },
+      { kind: "separator" },
+      {
+        label: translate("menu.snapshotFromCollection"),
+        action: () => void createSnapshotFromCollection(name),
+      },
+      {
+        kind: "submenu",
+        label: translate("menu.snapshots"),
+        items:
+          snapItems.length > 0
+            ? snapItems
+            : [
+                {
+                  label: translate("menu.noSnapshots"),
+                  disabled: true,
+                  action: () => {},
+                } satisfies MenuItem,
+              ],
+      },
+      { kind: "separator" },
+      {
+        label: translate("menu.deleteCollection"),
+        danger: true,
+        // DEF-1：非空分组弹确认（组内 N 个字体如何处理），空组直接删
+        action: () => requestDeleteCollection(name),
+      },
+    ]);
+  };
 
   const exportSnapshotFlow = async (name: string) => {
     const now = new Date();
@@ -381,12 +525,6 @@ export function Sidebar() {
     if (src) void importSnapshots(src as string, mode);
   };
 
-  const tagExpiry = useFontStore((s) => s.tagExpiry);
-  const removeTagEverywhere = (tag: string) => {
-    // 交给 store：它按最新状态逐族串行写、失败只报一次（§5 第 36 条）。
-    // 以前在这里遍历渲染期的 tags 快照并发、失败逐族弹 toast，会把期间新加的标签覆盖掉。
-    void useFontStore.getState().removeTagEverywhere(tag);
-  };
 
   let i = 0;
   return (
@@ -467,127 +605,6 @@ export function Sidebar() {
             hint="hint.sideSystem"
             index={i++}
           />
-          </>
-          )}
-        </div>
-
-        <div className={`sidebar-section ${collapsed.includes("collections") ? "sidebar-collapsed" : ""}`}>
-          <div className="sidebar-heading sidebar-heading-row">
-            <button
-              data-hint="hint.collectionsSection"
-              className="sidebar-toggle"
-              onClick={() => toggleSection("collections")}
-              aria-expanded={!collapsed.includes("collections")}
-            >
-              <span className="sidebar-chevron">
-                <ChevronDown size={12} strokeWidth={2} />
-              </span>
-              <span>{t("side.collections")}</span>
-            </button>
-            <motion.button
-              data-hint="hint.newCollection"
-              className="sidebar-add"
-              aria-label={t("side.newCollection")}
-              onClick={() => setCreating(true)}
-              whileTap={{ scale: 0.94, transition: springSnappy }}
-            >
-              <Plus size={13} strokeWidth={2} />
-            </motion.button>
-          </div>
-          {!collapsed.includes("collections") && (
-          <>
-          {creating && (
-            <NewCollectionInput
-              onDone={() => {
-                setCreating(false);
-                useFontStore.setState({ pendingCollectionFor: null, pendingCollectionFace: null });
-              }}
-            />
-          )}
-          {collectionNames.map((name, ci) =>
-            renaming === name ? (
-              <RenameInput
-                key={name}
-                initial={name}
-                onCommit={(next) => {
-                  setRenaming(null);
-                  void renameCollection(name, next);
-                }}
-                onCancel={() => setRenaming(null)}
-              />
-            ) : (
-              <NavRow
-                key={name}
-                nav={{ kind: "collection", name }}
-                icon={<FolderOpen size={15} strokeWidth={1.5} />}
-                no={ci + 1}
-                label={name}
-                count={collectionCount(name)}
-                index={i++}
-                onContextMenu={(e) => {
-                  const members = collections[name] ?? [];
-                  // 分组内字体直接加进指定快照（用户 2026-10-30）：
-                  // 与选择菜单同一个 toggle 逻辑 —— 全在就勾着、再点一次整组移出
-                  const snapItems: MenuItem[] = snapshots.map((sn) => {
-                    const keys = fonts
-                      .filter((f) => members.includes(f.family))
-                      .map(faceKey);
-                    const entryKeys = new Set(sn.entries.map((en) => en.key));
-                    return {
-                      kind: "check",
-                      label: sn.name,
-                      checked: keys.length > 0 && keys.every((k) => entryKeys.has(k)),
-                      action: snapshotToggleAction(sn.name, members),
-                    };
-                  });
-                  openContextMenu(e, [
-                    { label: translate("menu.rename"), action: () => setRenaming(name) },
-                    {
-                      label: translate("menu.exportFontList"),
-                      action: () => {
-                        const map = familiesFor(fonts, tags);
-                        const fams = members
-                          .map((n) => map.get(n))
-                          .filter((f): f is Family => Boolean(f));
-                        void exportFontList(fams, name);
-                      },
-                    },
-                    { kind: "separator" },
-                    {
-                      label: translate("menu.snapshotFromCollection"),
-                      action: () => void createSnapshotFromCollection(name),
-                    },
-                    {
-                      kind: "submenu",
-                      label: translate("menu.snapshots"),
-                      items:
-                        snapItems.length > 0
-                          ? snapItems
-                          : [
-                              {
-                                label: translate("menu.noSnapshots"),
-                                disabled: true,
-                                action: () => {},
-                              } satisfies MenuItem,
-                            ],
-                    },
-                    { kind: "separator" },
-                    {
-                      label: translate("menu.deleteCollection"),
-                      danger: true,
-                      // DEF-1：非空分组弹确认（组内 N 个字体如何处理），空组直接删
-                      action: () => requestDeleteCollection(name),
-                    },
-                  ]);
-                }}
-              />
-            ),
-          )}
-          {collectionNames.length === 0 && !creating && (
-            <button className="sidebar-hint" onClick={() => setCreating(true)}>
-              {t("side.firstCollection")}
-            </button>
-          )}
           </>
           )}
         </div>
@@ -709,65 +726,151 @@ export function Sidebar() {
           )}
         </div>
 
-        {tagCounts.size > 0 && (
-          <div className={`sidebar-section ${collapsed.includes("tags") ? "sidebar-collapsed" : ""}`}>
-            <div className="sidebar-heading sidebar-heading-row">
-              <button
-                data-hint="hint.collapse"
-                className="sidebar-toggle"
-                onClick={() => toggleSection("tags")}
-                aria-expanded={!collapsed.includes("tags")}
-              >
-                <span className="sidebar-chevron">
-                  <ChevronDown size={12} strokeWidth={2} />
-                </span>
-                <span>{t("side.tags")}</span>
-              </button>
-            </div>
-            {!collapsed.includes("tags") &&
-              [...tagCounts.entries()].map(([tag, count]) => (
-              <NavRow
-                key={tag}
-                nav={{ kind: "tag", tag }}
-                // 图标按**名字**判定（`isAutoTagId`），不按「这条标签是手工存的还是运行时推的」：
-                // 软件词表里的名字永远用魔棒，哪怕用户已经把它认可成手工标签、或删掉后又手打了一遍。
-                icon={
-                  isAutoTagId(tag) ? (
-                    <Sparkles size={15} strokeWidth={1.5} />
-                  ) : (
-                    <Tag size={15} strokeWidth={1.5} />
-                  )
-                }
-                label={tagLabel(tag, t)}
-                trailing={
-                  // 自动标签不参与到期（用户 2026-11-14），小字只给手工标签
-                  !isAutoTagId(tag) && tagExpiry[tag] ? (
-                    <span
-                      className="tag-expiry-date"
-                      title={`${translate("tag.expiryDate")}: ${tagExpiry[tag]}`}
-                    >
-                      {formatTagExpiry(tagExpiry[tag])}
-                    </span>
-                  ) : undefined
-                }
-                // 标签覆盖的是「任意带这个标签的族」，它们的字体大多不在种子里，
-                // 只能等全量（见上文 seedCountsKnown / wholeCountsKnown 的分档）
-                count={wholeCountsKnown ? count : null}
-                index={i++}
-                onContextMenu={(e) =>
-                  openContextMenu(e, [
-                    {
-                      label: translate("menu.removeTagEverywhere", { tag }),
-                      danger: true,
-                      action: () => removeTagEverywhere(tag),
-                    },
-                  ])
-                }
-              />
-            ))}
-          </div>
-        )}
+        {/* 标签分区已搬到 `TagDock`（2.3.0）：它必须钉在底栏上方、头部不动，
+            所以不能留在可滚动的 `.sidebar-scroll` 里 —— 见 TagDock.tsx 顶部注释。 */}
       </div>
+
+      {/* 分组面板（2.3.0）：与标签面板同一个壳 —— 头部常驻、悬停展开 / 点击固定、
+          带过滤框和「固定」按钮。图标（文件夹）与行尾数字按用户要求保留。 */}
+      <div
+        className={`tag-dock coll-dock ${collOpen ? "open" : ""} ${collPinned ? "pinned" : ""} ${collOpen && tagsOpen ? "half" : ""}`}
+        onMouseEnter={collEnter}
+        onMouseLeave={collLeave}
+      >
+        <div
+          className="tag-dock-head"
+          role="button"
+          tabIndex={0}
+          aria-expanded={collOpen}
+          aria-label={collShowingPinned ? translate("tag.unpinAria") : translate("tag.pinAria")}
+          title={collShowingPinned ? translate("tag.pinnedHint") : translate("tag.pinHint")}
+          onClick={toggleCollPin}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleCollPin();
+            }
+          }}
+        >
+          <FolderOpen size={15} strokeWidth={1.5} className="tag-dock-icon" />
+          <span className="tag-dock-title">{t("side.collections")}</span>
+          {collectionNames.length > 0 && (
+            <span className="tag-dock-count tabular">{collectionNames.length}</span>
+          )}
+          <span className={`tag-dock-caret ${collOpen ? "" : "closed"}`}>
+            <ChevronRight size={10} strokeWidth={2} />
+          </span>
+        </div>
+
+        <div className="tag-dock-body">
+          <div className="tag-dock-tools">
+            <BlinkCaretInput
+              value={collQ}
+              onChange={(e) => setCollQ(e.target.value)}
+              placeholder={translate("side.collectionSearch")}
+              aria-label={translate("side.collectionSearch")}
+              fieldClassName="tag-dock-search"
+              spellCheck={false}
+              onFocus={() => setCollFocusHold(true)}
+              onBlur={() => setCollFocusHold(false)}
+            />
+            <button
+              className={`tag-tool-btn ${collShowingPinned ? "on" : ""}`}
+              title={collShowingPinned ? translate("tag.pinnedHint") : translate("tag.pinHint")}
+              aria-pressed={collShowingPinned}
+              onClick={toggleCollPin}
+            >
+              <span className="tag-pin-dot" aria-hidden />
+              <span>{collShowingPinned ? translate("tag.pinned") : translate("tag.pin")}</span>
+            </button>
+            <button
+              className="tag-tool-btn"
+              title={t("side.newCollection")}
+              aria-label={t("side.newCollection")}
+              onClick={() => {
+                setCreating(true);
+                setCollQ("");
+              }}
+            >
+              <Plus size={11} strokeWidth={1.8} />
+              <span>{translate("tag.groupShort")}</span>
+            </button>
+          </div>
+
+          <div className="tag-dock-scroll scroll-hot" role="listbox" aria-label={t("side.collections")}>
+            {creating && (
+              <NewCollectionInput
+                onDone={() => {
+                  setCreating(false);
+                  useFontStore.setState({ pendingCollectionFor: null, pendingCollectionFace: null });
+                }}
+              />
+            )}
+            {shownCollections.map((name, ci) =>
+              renaming === name ? (
+                <RenameInput
+                  key={name}
+                  initial={name}
+                  onCommit={(next) => {
+                    setRenaming(null);
+                    void renameCollection(name, next);
+                  }}
+                  onCancel={() => setRenaming(null)}
+                />
+              ) : (
+                <div
+                  key={name}
+                  className={`tag-row coll-row ${
+                    nav.kind === "collection" && nav.name === name ? "sel" : ""
+                  }`}
+                  /* 与标签行同一套无障碍语义：容器是 listbox，行是 option */
+                  role="option"
+                  tabIndex={0}
+                  aria-selected={nav.kind === "collection" && nav.name === name}
+                  onClick={() => setNav({ kind: "collection", name })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setNav({ kind: "collection", name });
+                    } else if (e.key === "F2") {
+                      e.preventDefault();
+                      setRenaming(name);
+                    }
+                  }}
+                  // 右键**按下**就钉住：面板一收，行从渲染树里消失，contextmenu 就收不到了
+                  onMouseDown={(e) => {
+                    if (e.button === 2) setCollMenuHold(true);
+                  }}
+                  onContextMenu={(e) => {
+                    setCollMenuHold(true);
+                    collectionMenu(e, name);
+                  }}
+                  title={name}
+                >
+                  <span className="coll-icon">
+                    <FolderOpen size={13} strokeWidth={1.6} />
+                  </span>
+                  <span className="coll-no tabular">{ci + 1}</span>
+                  <span className="tag-row-name">{name}</span>
+                  <span className="tag-row-count tabular">
+                    {navCountText(collectionCount(name))}
+                  </span>
+                </div>
+              ),
+            )}
+            {shownCollections.length === 0 && (
+              <div className="tag-dock-empty">
+                {collectionNames.length === 0
+                  ? t("side.firstCollection")
+                  : translate("side.noCollectionMatch", { q: collQ.trim() })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 标签面板：钉在底栏上方的一个独立分区（悬停展开 / 点击固定） */}
+      <TagDock />
 
       <div className="sidebar-footer">
         {/* 插件中心入口已挪到标题栏（2026-11-15 用户要求）：侧栏这一行会混在

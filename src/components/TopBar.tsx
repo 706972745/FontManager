@@ -14,6 +14,8 @@ import {
   X,
   Sparkles,
   Tag,
+  FolderOpen,
+  Camera,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { spring, springSnappy, springSoft } from "../design/springs";
@@ -691,7 +693,12 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   }
                   onClick={() => toggleCollectionFilter(name)}
                 >
-                  <span className="filter-sub-name">{name}</span>
+                  {/* 与「标签」那一列同一套写法：没有图标的话文字会左移，
+                      三个子菜单的表面网格对不齐（用户 2026-11-16）。 */}
+                  <span className="filter-sub-name">
+                    <FolderOpen size={11} strokeWidth={1.5} className="filter-sub-manual" />
+                    {name}
+                  </span>
                   {collectionFilter.includes(name) && <Check size={12} strokeWidth={2} />}
                 </button>
               </li>
@@ -705,7 +712,10 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   }
                   onClick={() => toggleSnapshotFilter(snap.name)}
                 >
-                  <span className="filter-sub-name">{snap.name}</span>
+                  <span className="filter-sub-name">
+                    <Camera size={11} strokeWidth={1.5} className="filter-sub-manual" />
+                    {snap.name}
+                  </span>
                   <span className="filter-sub-count tabular">{snap.entries.length}</span>
                   {snapshotFilter.includes(snap.name) && <Check size={12} strokeWidth={2} />}
                 </button>
