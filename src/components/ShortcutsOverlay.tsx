@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Keyboard, X } from "lucide-react";
+import { Keyboard } from "lucide-react";
 import { useEffect } from "react";
 import { scrimFade, springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
@@ -110,11 +110,12 @@ export function ShortcutsOverlay() {
                 <Keyboard size={15} strokeWidth={1.5} /> {t("shortcuts.title")}
               </h2>
               <button
-                className="detail-close"
+                className="kbd sc-esc"
                 aria-label={t("shortcuts.close")}
+                title={t("shortcuts.close")}
                 onClick={() => setHelpOpen(false)}
               >
-                <X size={15} strokeWidth={1.5} />
+                Esc
               </button>
             </header>
             <div className="shortcuts-body">
@@ -123,7 +124,10 @@ export function ShortcutsOverlay() {
                   <h3 className="shortcuts-heading">{t(section)}</h3>
                   <ul className="shortcuts-list">
                     {rows.map(([keys, what]) => (
+                      /* 说明在左、键帽贴右（2026-11-18 照 AssetManager 快捷键面板改）：
+                         原来键帽在左、说明右对齐，一列键帽宽窄不一时说明会跟着抖。 */
                       <li key={what} className="shortcuts-row">
+                        <span className="shortcuts-what">{t(what)}</span>
                         <span className="shortcuts-keys">
                           {keys.map((k) => (
                             <kbd key={k} className={`kbd ${k === "DragTop" ? "kbd-wide" : ""}`}>
@@ -137,7 +141,6 @@ export function ShortcutsOverlay() {
                             </kbd>
                           ))}
                         </span>
-                        <span className="shortcuts-what">{t(what)}</span>
                       </li>
                     ))}
                   </ul>

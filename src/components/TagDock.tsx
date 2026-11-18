@@ -3,6 +3,7 @@ import { ChevronRight, MoreHorizontal, Plus, Tag as TagIcon, X } from "lucide-re
 import { useEffect, useMemo, useRef, useState } from "react";
 import { openContextMenuAt, useContextMenuOpen, type MenuItem } from "../design/primitives/ContextMenu";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
+import { toast } from "../design/primitives/Toast";
 import { DOCK_LEAVE_DELAY, useDockHover } from "../lib/dockHover";
 import { useDockOpen } from "../lib/dockOpen";
 import { spring, springSnappy, springSoft } from "../design/springs";
@@ -97,6 +98,11 @@ export function TagDock() {
   const setNav = useFontStore((s) => s.setNav);
   const purgeTag = useFontStore((s) => s.purgeTag);
   const removeTagEverywhere = useFontStore((s) => s.removeTagEverywhere);
+  // 「+ 标签」要落到具体字体上：标签在数据里是「字族 → 标签」的反向表，
+  // 没有任何字体挂着的标签无处可存（见 state.tags 的类型）。所以先取选中态。
+  const selection = useFontStore((s) => s.selection);
+  const selectedFamily = useFontStore((s) => s.selectedFamily);
+  const setBulkTagFor = useFontStore((s) => s.setBulkTagFor);
   // 自动标签总开关 / 否决名单：只订阅，用来在它们变化时触发重渲染（计数是现算的）
   useFontStore((s) => s.autoTagEnabled);
   useFontStore((s) => s.autoTagDenied);
@@ -278,6 +284,38 @@ export function TagDock() {
     setAdding(false);
     setDraft("");
     if (value) void useFontStore.getState().newTagGroup(value);
+  };
+
+  /**
+   * 「+ 标签」：给当前选中的字族打一个新标签（2.3.2，用户 2026-11-18）。
+   *
+   * 为什么不是「建一个空标签」：`state.tags` 是「字族 → 标签[]」的反向表，
+   * 没有字体挂着的标签没有地方存（后端也不存在空标签），所以这个动作必须落在具体字体上。
+   * 只选了右侧详情那一个族（`selectedFamily`）时也算 —— 那正是用户此刻在看的字体。
+   */
+  const startAddTag = () => {
+    const targets = selection.length > 0 ? selection : selectedFamily ? [selectedFamily] : [];
+    if (targets.length === 0) {
+      toast.info(t("toast.tagNeedFonts"), t("toast.tagNeedFontsSub"));
+      return;
+    }
+    setBulkTagFor(targets);
+  };
+
+  /**
+   * 面板空白处右键。工具栏那个「+」已经按用户要求改回「+ 标签」，
+   * 「新建标签分组」这个低频动作挪到这里，免得再从标签栏里点出一个分组。
+   */
+  const dockMenu = (x: number, y: number) => {
+    openContextMenuAt(x, y, [
+      {
+        label: `${t("tag.newGroup")}…`,
+        action: () => {
+          setAdding(true);
+          setDraft("");
+        },
+      },
+    ]);
   };
 
   const pickTag = (name: string) => {
@@ -518,15 +556,12 @@ export function TagDock() {
           </button>
           <button
             className="tag-tool-btn"
-            title={t("tag.newGroup")}
-            aria-label={t("tag.newGroup")}
-            onClick={() => {
-              setAdding((v) => !v);
-              setDraft("");
-            }}
+            title={t("tag.addAria")}
+            aria-label={t("tag.addAria")}
+            onClick={startAddTag}
           >
             <Plus size={11} strokeWidth={1.8} />
-            <span>{t("tag.groupShort")}</span>
+            <span>{t("side.tags")}</span>
           </button>
         </div>
 
@@ -551,7 +586,20 @@ export function TagDock() {
           </div>
         )}
 
-        <div className="tag-dock-scroll scroll-hot" role="listbox" aria-label={t("side.tags")}>
+        <div
+          className="tag-dock-scroll scroll-hot"
+          role="listbox"
+          aria-label={t("side.tags")}
+          /* 行与分组头都 stopPropagation，所以这里只会接住空白处的右键 */
+          onMouseDown={(e) => {
+            if (e.button === 2) setMenuHold(true);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenuHold(true);
+            dockMenu(e.clientX, e.clientY);
+          }}
+        >
           {groups.map((g) => {
             if (needle && !hit(g.name) && g.items.length === 0) return null;
             const isClosed = !needle && closed.has(g.name);

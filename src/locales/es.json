@@ -1227,6 +1227,8 @@
   "toast.pluginsScanEmpty": "Aún no hay complementos en la carpeta",
   "toast.pluginsScanned": "Escaneados: {count} complementos",
   "toast.prefsSaveFailed": "No se pudo guardar la configuración",
+  "toast.tagNeedFonts": "Selecciona fuentes primero",
+  "toast.tagNeedFontsSub": "Una etiqueta va siempre asociada a fuentes: elige una o varias familias y pulsa «+ Etiqueta».",
   "toast.quickbarFailed": "No se pudo cambiar la vista rápida",
   "toast.redownloadFailed": "No se pudo volver a descargar",
   "toast.removedFromCollection": "Se quitaron {count} de «{name}»",

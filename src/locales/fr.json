@@ -1227,6 +1227,8 @@
   "toast.pluginsScanEmpty": "Aucune extension dans le dossier pour l'instant",
   "toast.pluginsScanned": "Analysé : {count} extensions",
   "toast.prefsSaveFailed": "Échec de l'enregistrement des paramètres",
+  "toast.tagNeedFonts": "Sélectionnez d’abord des polices",
+  "toast.tagNeedFontsSub": "Un tag est porté par des polices : sélectionnez une ou plusieurs familles, puis cliquez sur « + Tag ».",
   "toast.quickbarFailed": "Impossible de basculer l'aperçu rapide",
   "toast.redownloadFailed": "Échec du retéléchargement",
   "toast.removedFromCollection": "{count} retirées de « {name} »",

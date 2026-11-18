@@ -1227,6 +1227,8 @@
   "toast.pluginsScanEmpty": "Ainda não há plugins na pasta",
   "toast.pluginsScanned": "Verificado: {count} plugins",
   "toast.prefsSaveFailed": "Falha ao salvar as configurações",
+  "toast.tagNeedFonts": "Selecione fontes primeiro",
+  "toast.tagNeedFontsSub": "Uma etiqueta fica sempre presa a fontes: escolha uma ou mais famílias e clique em «+ Etiqueta».",
   "toast.quickbarFailed": "Não foi possível alternar a visão rápida",
   "toast.redownloadFailed": "Não foi possível baixar novamente",
   "toast.removedFromCollection": "{count} removidas de «{name}»",

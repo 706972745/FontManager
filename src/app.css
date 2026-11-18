@@ -4584,7 +4584,10 @@ h2.detail-title.copy-name {
 .shortcuts-keys {
   display: flex;
   gap: 4px;
-  min-width: 118px;
+  /* 贴右（2026-11-18 照 AssetManager）：说明占满左侧，键帽右端对齐，
+     不再给键帽固定 118px 宽 —— 那会让两个字的重键和单键之间空一大截。 */
+  margin-left: auto;
+  justify-content: flex-end;
   flex-shrink: 0;
 }
 .kbd {
@@ -4606,9 +4609,25 @@ h2.detail-title.copy-name {
   font-family: var(--font-ui);
   letter-spacing: 0.01em;
 }
+/* 快捷键面板的关闭键：做成 Esc 键帽而不是 ✕ 图标（用户 2026-11-18 要求，与
+   AssetManager 快捷键面板的关闭键同一个形态）。键帽本体复用 `.kbd`，这里只补
+   「它是个按钮」该有的指针与悬停反馈。 */
+.sc-esc {
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: border-color var(--t-quick, 120ms) ease;
+}
+.sc-esc:hover {
+  border-color: rgba(var(--ink-rgb), 0.3);
+}
+.sc-esc:active {
+  box-shadow: none;
+}
 .shortcuts-what {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-13);
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .settings-data-actions {
@@ -11333,4 +11352,68 @@ body.tour-qb .qb-actions .qb-btn-text {
 .tag-dock.open.half,
 .coll-dock.open.half {
   height: min(220px, 30vh);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   设置面板：外壳与层级对齐 AssetManager 的偏好设置（用户 2026-11-18
+   「设置界面的 UI 参考 assetmanager 修改一下」）
+
+   那边是「一张卡片包住同组设置项 + 卡片头 + 行间发丝线」；我们这边
+   `.settings-section` 只是带 gap 的列，行直接漂在页面底上。这里只补外壳，
+   行的规则沿用上面那条（`.settings-row` 已经是发丝线 + 无框）。
+   数值出处：AssetManager `app/src/styles/app.css` 的 `.set-card` /
+   `.set-card-head` / `.set-head` / `.set-close`（照数值重写，不整段搬）。
+   ═══════════════════════════════════════════════════════════════════════ */
+.settings-panel .settings-section {
+  gap: 0;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-panel);
+  overflow: hidden;
+}
+/* 分区标题变「卡片头」：13px 半粗的正文字阶（照参考图里「外观 5」「快捷键 9」的形态），
+   不是原来那套 10px 全大写细灰 —— 设置页的标题是「这一段是什么」，不该比正文还弱。
+   中文不适用 uppercase，显式关掉，否则俄语/英语包里会出现全大写。 */
+.settings-panel .settings-section > .detail-heading {
+  padding: 12px 14px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--ui-line);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-primary);
+}
+/* 卡片内最后一行不再画自己的底边，否则和卡片边框叠成双线 */
+.settings-panel .settings-section > .settings-row:last-child,
+.settings-panel .settings-section > :last-child .settings-row:last-child {
+  border-bottom: 0;
+}
+/* 卡片里不是「一行设置」的块（翻译说明、监视文件夹、插件分组、素材库清单）：
+   卡片把 section 的 gap 收成了 0，这些块得自己留出四周留白，否则文字会顶到卡片边框上。 */
+.settings-panel .settings-section > .settings-translate,
+.settings-panel .settings-section > .settings-folders,
+.settings-panel .settings-section > .settings-plugin-group,
+.settings-panel .settings-section > .settings-library-list {
+  margin: 12px 14px;
+}
+/* 头部：48px 定高 + 发丝线，标题 13px（原来 16px 内距、没有分隔线） */
+.settings-panel .set-head {
+  height: 48px;
+  padding: 0 10px 0 18px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.settings-panel .set-head-title {
+  font-size: var(--fs-13);
+}
+.settings-panel .set-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+}
+.settings-panel .set-close:hover {
+  background: var(--e2);
+}
+.settings-panel .set-body {
+  padding: 16px 18px 22px;
 }
