@@ -4,6 +4,31 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.4.2] — 2026-11-19
+
+### 修复
+
+- **分组行选中后没有左侧蓝竖线**（用户截图）：分组行复用了 `.tag-row` 却没有任何
+  `tag-c-*` 类，于是命中了「标签自身配色」那条 `:not(.tag-c-none)` 的规则；
+  分组行没有 `--tc`，`background: var(--tc)` 解析失败后**退回初始值 transparent**，
+  而且它的特异度 (0,3,1) 压过 `.tag-row.sel::before` (0,2,1) —— 蓝线就这样被盖成透明。
+  现在那条规则显式排除 `.coll-row`，分组行的底色 / 竖线 / 文字色与标签行完全一致。
+
+### 新增
+
+- **分组行与标签行选中时文字轻移 2px**，左侧竖线改为 120ms 从中心竖向展开
+  （原来是硬切）。减弱动效下自动退化为瞬间出现（走 `--t-micro`）。
+- **空态给出「一个真能用的出口」**：搜不到 → 「清除搜索」；被筛选菜单筛没了 →
+  「清除筛选」（新增 `resetFilters`，一次清掉 12 个筛选字段）。
+  其它空态是内容状态，没有安全的默认动作，因此**不摆按钮** —— 点了没反应比没有更差。
+- **快速扫描不再闪进度条**：延迟 150ms 才出线，出线后至少停 320ms。
+  几十个字体的重扫常在 200ms 内结束，原来会在底部闪一下，读起来像出错。
+
+### 变更
+
+- 焦点环几何令牌化：`--focus-ring-w` / `--focus-ring-offset`，17 处 `:focus-visible`
+  规则的 1px / 2px 混用统一。
+
 ## [2.4.1] — 2026-11-19
 
 > 一轮**只改手感、不改功能**的细节优化。判据只有一条：能不能用「用户少一次困惑 /
