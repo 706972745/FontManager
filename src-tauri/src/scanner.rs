@@ -171,7 +171,7 @@ pub fn discover_managed(dir: &std::path::Path, known: &std::collections::HashSet
         .follow_links(false)
         .into_iter()
         // 归置过的重复字体不再收编回来，否则用户挪了等于没挪
-        .filter_entry(|e| !in_dup_dir(e))
+        .filter_entry(|e| !in_dup_dir(e) && !in_scope_dir(e))
         .filter_map(|e| e.ok())
     {
         if !e.file_type().is_file() {
@@ -212,6 +212,18 @@ fn in_dup_dir(e: &walkdir::DirEntry) -> bool {
     e.file_name()
         .to_str()
         .map(|s| s.eq_ignore_ascii_case(DUPLICATE_DIR))
+        .unwrap_or(false)
+}
+
+/// 库内的 `.FontManager/`（2.4.0 起放本库的业务数据）整棵树都不该进扫描。
+///
+/// 现在靠「只认字体扩展名」碰巧扫不到里面的 json，但那是**碰巧**：
+/// 将来里面出现任何字体旁挂文件（预览图、样本）就会被当成库内字体。
+/// 所以显式跳过，别依赖扩展名过滤。
+fn in_scope_dir(e: &walkdir::DirEntry) -> bool {
+    e.file_name()
+        .to_str()
+        .map(|s| s.eq_ignore_ascii_case(crate::library_scope::SCOPE_DIR))
         .unwrap_or(false)
 }
 
@@ -563,7 +575,7 @@ pub fn dedupe_library(library: &Path, dry_run: bool) -> DedupeReport {
         // 同 discover_managed：库内遍历不跟链接，避免把库外文件判成重复字体
         .follow_links(false)
         .into_iter()
-        .filter_entry(|e| !in_dup_dir(e))
+        .filter_entry(|e| !in_dup_dir(e) && !in_scope_dir(e))
         .filter_map(|e| e.ok())
     {
         if !e.file_type().is_file() {
@@ -721,7 +733,7 @@ pub fn scan_all(
             WalkDir::new(dir)
                 .follow_links(true)
                 .into_iter()
-                .filter_entry(|e| !in_dup_dir(e))
+                .filter_entry(|e| !in_dup_dir(e) && !in_scope_dir(e))
                 .filter_map(|e| e.ok())
                 .filter(|e| e.file_type().is_file())
                 .map(move |e| (e.into_path(), source))
