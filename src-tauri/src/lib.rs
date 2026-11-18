@@ -2608,6 +2608,22 @@ fn reveal_select(p: &std::path::Path) -> bool {
     selected
 }
 
+/// 前端把渲染异常 / 未捕获错误写进 `activation.log`（2026-11-19 加）。
+///
+/// 为什么需要：2.4.4 装完卡在启动页，前端其实抛了一个 `TypeError`，但整条链上
+/// 没有一处留下痕迹 —— 只能从 `[splash] 15 秒内主界面没被打开` 反推。
+/// 前端拿不到数据根（也不该自己拼路径，见 R0），所以由这条命令代写日志。
+///
+/// `level` 只用来给日志行加前缀（`[fe:error]` / `[fe]`），不做等级过滤 ——
+/// 日志量很小，过滤只会让排障时少看到东西。多行堆栈会压成一行，
+/// 否则按行统计的工具会把一次异常数成十几条。
+#[tauri::command]
+fn log_frontend(level: String, msg: String) {
+    let tag = if level == "error" { "[fe:error]" } else { "[fe]" };
+    let one_line = msg.replace(['\r', '\n'], " ⏎ ");
+    diag::log(&format!("{tag} {one_line}"));
+}
+
 /// activation.log 的完整路径（2.1.5 起跟着数据根走，默认 `<安装目录>\data\activation.log`；
 /// 装到不可写目录时会落到 `%LOCALAPPDATA%\FontManager\data`，最后才兜底 `%APPDATA%\FontManager`）。
 ///
@@ -3678,6 +3694,7 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             open_folder,
             reveal_in_folder,
             log_file_path,
+            log_frontend,
             open_file,
             apply_library_folder_icon,
             open_url,

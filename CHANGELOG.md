@@ -4,6 +4,29 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.4.6] — 2026-11-19
+
+> 2.4.5 修掉了那次崩溃，但暴露出更根本的问题：**前端出错时软件一声不响** ——
+> 没有 ErrorBoundary，渲染异常直接把整棵树卸载，用户看到的是启动页干等，
+> 我们只能靠 Rust 侧「15 秒内主界面没被打开」反推。这一版补上兜底，并把
+> 前端异常写进 `activation.log`。交互零改动。
+
+### 新增
+
+- **启动兜底页**（`design/primitives/BootErrorBoundary.tsx`）：只用一层边界包住根。
+  渲染异常时 ① 先调 `splash_done` 把启动页收掉（主窗口必须出来，哪怕是一页错误），
+  ② 把异常写进日志，③ 给「重试」和「打开日志目录」两个真能用的出口，
+  并把错误原文（截断 400 字）显示出来方便截图。
+- **`log_frontend` 命令 + window 级兜底**：React 只接渲染期异常，
+  事件回调 / 定时器 / Promise 里的错误冒不到边界，`main.tsx` 里补了
+  `error` 与 `unhandledrejection` 监听（只记日志，不动启动页）。
+  资源加载失败（字体/图标 404）`e.error` 为空，跳过，免得把日志灌满。
+
+### 测试
+
+- 新增 `tests/bootBoundary.test.ts`（3 条）：App 必须被边界包住、边界必须调
+  `splashDone` 且必须写日志、window 级监听不许抢启动页。
+
 ## [2.4.5] — 2026-11-19
 
 > **2.4.4 装完打不开：一直卡在启动页。** 根因是 2.4.4 给底栏套进出动画时，把

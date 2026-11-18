@@ -1315,5 +1315,9 @@
   "toast.pluginCenterPanelUninstalled": "插件中心面板已卸载",
   "toast.pluginCenterPanelFailed": "插件中心面板安装失败",
   "toast.pluginCenterOpenFailed": "打不开插件中心面板",
-  "toast.pluginCenterUpdated": "插件中心已更新到 {version}"
+  "toast.pluginCenterUpdated": "插件中心已更新到 {version}",
+  "boot.error.title": "界面出了一点问题",
+  "boot.error.body": "错误已经写进日志了。先点「重试」；如果反复出现，请把日志发给我们。",
+  "boot.error.retry": "重试",
+  "boot.error.openLogs": "打开日志目录"
 }

@@ -1324,5 +1324,9 @@
   "toast.pluginCenterPanelUninstalled": "Plugin Center panel uninstalled",
   "toast.pluginCenterPanelFailed": "Couldn't install the Plugin Center panel",
   "toast.pluginCenterOpenFailed": "Couldn't open the Plugin Center panel",
-  "toast.pluginCenterUpdated": "Plugin Center updated to {version}"
+  "toast.pluginCenterUpdated": "Plugin Center updated to {version}",
+  "boot.error.title": "The interface hit an error",
+  "boot.error.body": "The error has been written to the log. Try Reload first; if it keeps happening, please send us the log.",
+  "boot.error.retry": "Reload",
+  "boot.error.openLogs": "Open log folder"
 }

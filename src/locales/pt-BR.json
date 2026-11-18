@@ -1341,5 +1341,9 @@
   "warm.readyMs": "O {app} está pronto — cerca de {ms} ms",
   "warm.working": "Preparando o {app} ({percent}%)",
   "waterfall.emptyBody": "Escolha uma fonte na visualização em grade ou lista e volte para a cascata.",
-  "waterfall.emptyTitle": "Nada para exibir em cascata"
+  "waterfall.emptyTitle": "Nada para exibir em cascata",
+  "boot.error.title": "A interface encontrou um erro",
+  "boot.error.body": "O erro foi gravado no log. Tente “Recarregar”; se continuar, envie o log para nós.",
+  "boot.error.retry": "Recarregar",
+  "boot.error.openLogs": "Abrir pasta de logs"
 }

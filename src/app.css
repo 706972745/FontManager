@@ -11566,3 +11566,69 @@ body.tour-qb .qb-actions .qb-btn-text {
 .settings-panel .set-body {
   padding: 16px 18px 22px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   启动兜底页（BootErrorBoundary，2026-11-19）
+   ─────────────────────────────────────────────────────────────────────
+   只在渲染树抛异常、整棵树被卸载时出现。所以它**不许复用** `.btn` / `.card`
+   之类的组件类 —— 出问题的很可能正是那一片样式所在的组件；这里只用全局令牌。
+   2.4.4 的事故里，用户看到的是一片空白 + 启动页干等，这一页就是那次之后补的。
+   ═══════════════════════════════════════════════════════════════════════ */
+.boot-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 560px;
+  margin: 14vh auto 0;
+  padding: 24px 26px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-panel);
+  color: var(--text-primary);
+}
+.boot-error-title {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+.boot-error-body {
+  margin: 0;
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+/* 错误原文：等宽、可选中 —— 用户截图或复制过来都能直接定位 */
+.boot-error-msg {
+  max-width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--e1);
+  font-family: "JetBrains Mono Variable", Consolas, monospace;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.boot-error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.boot-error-btn {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 6px;
+  background: var(--e1);
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: background-color var(--t-micro) var(--ease-std);
+}
+.boot-error-btn:hover {
+  background: var(--e2);
+}

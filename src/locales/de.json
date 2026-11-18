@@ -1324,5 +1324,9 @@
   "warm.readyMs": "{app} ist bereit – etwa {ms} ms",
   "warm.working": "{app} wird vorbereitet ({percent} %)",
   "waterfall.emptyBody": "Wähl eine Schrift in der Raster- oder Listenansicht und komm dann zum Wasserfall zurück.",
-  "waterfall.emptyTitle": "Nichts zum Staffeln"
+  "waterfall.emptyTitle": "Nichts zum Staffeln",
+  "boot.error.title": "Die Oberfläche ist auf einen Fehler gestoßen",
+  "boot.error.body": "Der Fehler wurde ins Protokoll geschrieben. Bitte zuerst „Neu laden“ versuchen; wenn es wieder passiert, schick uns das Protokoll.",
+  "boot.error.retry": "Neu laden",
+  "boot.error.openLogs": "Protokollordner öffnen"
 }

@@ -783,6 +783,15 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
    * 它不该为了一个类型去 import 整个 ipc 模块 —— 两份定义留着早晚漂移。
    */
   splashDone: () => invoke<void>("splash_done"),
+
+  /**
+   * 把前端异常写进 `activation.log`（2026-11-19 加）。
+   *
+   * 用途只有排障：渲染异常 / 未捕获 rejection 都在这里留一行，出问题时
+   * 不用再靠「启动页 15 秒超时」这种间接信号猜。**失败可以接受**（日志写不进去
+   * 不该反过来把界面搞崩），所以调用方一律 `.catch(() => {})`。
+   */
+  logFrontend: (level: "error", msg: string) => invoke<void>("log_frontend", { level, msg }),
 };
 
 /** `check_update` 的结果 */

@@ -1307,5 +1307,9 @@
   "warm.readyMs": "{app} 已就緒，首次約 {ms} ms",
   "warm.working": "{app} 預熱中（{percent}%）",
   "waterfall.emptyBody": "先在格狀或清單檢視中選擇一個字型，再回到瀑布檢視。",
-  "waterfall.emptyTitle": "沒有可展示的字型"
+  "waterfall.emptyTitle": "沒有可展示的字型",
+  "boot.error.title": "介面出了一點問題",
+  "boot.error.body": "錯誤已經寫進日誌了。先點「重試」；如果反覆出現，請把日誌傳給我們。",
+  "boot.error.retry": "重試",
+  "boot.error.openLogs": "開啟日誌資料夾"
 }

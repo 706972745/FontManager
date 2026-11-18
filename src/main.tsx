@@ -7,7 +7,20 @@ import "./app.css";
 // 块状闪烁光标与主程序/插件中心面板共用一份（面板是独立 vite 入口，不会加载 app.css）
 import "./design/primitives/blinkCaret.css";
 import App from "./App";
+import { BootErrorBoundary, reportBootError } from "./design/primitives/BootErrorBoundary";
 import { installMomentumScroll } from "./lib/momentumScroll";
+
+// 渲染期异常由 BootErrorBoundary 接（React 只认那一层）；事件回调、定时器、
+// Promise 里的异常不会冒到它，这里补一层 window 级兜底 —— 只记日志，
+// 不动启动页（那类错误大多不影响界面继续跑）。
+window.addEventListener("error", (e) => {
+  // 资源加载失败（字体、图标 404）也会触发 error 事件，但 `e.error` 是空的：
+  // 那些不影响使用，记下来只会把日志灌满。
+  if (e.error) reportBootError(e.error, "window.error");
+});
+window.addEventListener("unhandledrejection", (e) => {
+  reportBootError(e.reason, "unhandledrejection");
+});
 
 // 惯性滚动（2026-11-11 用户要求）：Windows 上的 WebView2 滚轮没有惯性，
 // 松手就停；这里统一接管成「继续滑行 + 指数减速」。整套逻辑自带边界
@@ -31,6 +44,9 @@ document.addEventListener(
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    {/* 兜底只包一层：渲染树炸了也要把启动页收掉，别让用户对着启动页干等（2.4.4 事故） */}
+    <BootErrorBoundary>
+      <App />
+    </BootErrorBoundary>
   </React.StrictMode>,
 );
