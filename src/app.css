@@ -297,12 +297,22 @@ body,
   position: absolute;
   inset: 0;
   border-radius: 5px;
+  /* 选中胶囊出现动画（2026-11-19）：侧栏是最频繁的选中操作，以前每换一行
+     胶囊都是"啪"地整块糊上。淡入 + 从 96% 微缩到 100%，读起来是"落上去"。
+     keyframes 只写 from：to 用元素自身的最终状态，不重复声明。 */
+  animation: nav-pill-in var(--t-quick) var(--ease-out);
   background: var(--e2);
   border: 1px solid rgba(var(--ink-rgb), 0.06);
   box-shadow:
     inset 0 1px 0 var(--glass-top-highlight),
     0 0 16px var(--accent-glow-soft),
     var(--shadow-ground);
+}
+@keyframes nav-pill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 .nav-icon,
 .nav-label,
@@ -10495,7 +10505,12 @@ body.tour-qb .qb-actions .qb-btn-text {
   /* 与 .sidebar-footer 同一条线（5%）：这两个面板和「在线 / 回收站」是同一列里的
      兄弟行，线一深一浅就露馅。展开时再加深一档（见下面 .open）。 */
   border-top: 1px solid rgba(var(--ink-rgb), 0.05);
-  transition: height var(--t-micro) var(--ease-std);
+  /* 高度用 --t-quick（180ms）：收起只有 32px、展开 268px，100ms 的 --t-micro
+     对这种幅度太急，看起来像"弹开"。边界线的深浅（.open 时加深一档）
+     也放进同一条 transition —— 以前只有高度在动，线是硬切的。 */
+  transition:
+    height var(--t-quick) var(--ease-out),
+    border-top-color var(--t-quick) var(--ease-std);
 }
 /* 展开只认 `.open`：悬停状态由 lib/dockHover.ts 的全局单值驱动。
    不能用 :hover —— 分组与标签上下相邻，各自 :hover 时从标签移到分组会让
@@ -10854,6 +10869,11 @@ body.tour-qb .qb-actions .qb-btn-text {
   height: 6px;
   border-radius: 50%;
   background: var(--tc, currentColor);
+  /* 选中时圆点从空心/灰变实心强调色，给标签换色时也是瞬变 —— 都收进
+     120ms 的颜色过渡里。位置/尺寸不参与过渡（那是布局属性）。 */
+  transition:
+    background-color var(--t-micro) var(--ease-std),
+    border-color var(--t-micro) var(--ease-std);
 }
 .tag-row.auto .tag-dot,
 .tag-c-auto .tag-dot {
@@ -11343,9 +11363,16 @@ body.tour-qb .qb-actions .qb-btn-text {
   align-items: center;
   color: var(--text-tertiary);
 }
-.coll-row:hover .coll-icon,
-.coll-row.sel .coll-icon {
+.coll-row:hover .coll-icon {
   color: var(--text-secondary);
+}
+/* 选中时锚点点亮（用户 2026-11-19 第二次反馈「分组和标签的效果不一样」）：
+   标签行选中时圆点会变成实心强调色（.tag-row.sel .tag-dot → --tc），
+   分组行对应的「锚点」就是这个文件夹图标 —— 原来它只从三级灰变成二级灰，
+   摆在一起就是「标签有反应、分组没反应」。序号与标签的计数同语言，
+   保持次级灰不跟着亮，一列里只有当前行的图标是蓝的。 */
+.coll-row.sel .coll-icon {
+  color: var(--ui-accent);
 }
 .coll-no {
   flex: none;
