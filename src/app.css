@@ -10495,7 +10495,12 @@ body.tour-qb .qb-actions .qb-btn-text {
   /* 与 .sidebar-footer 同一条线（5%）：这两个面板和「在线 / 回收站」是同一列里的
      兄弟行，线一深一浅就露馅。展开时再加深一档（见下面 .open）。 */
   border-top: 1px solid rgba(var(--ink-rgb), 0.05);
-  transition: height var(--t-micro) var(--ease-std);
+  /* 收起 32px ↔ 展开 268px：100ms 对这种幅度像「弹开」，180ms 才读成「长出来」。
+     展开时边界线会加深一档（见 .open），原来只有高度在动、线是硬切 ——
+     两条一起进过渡，否则线到得比面板早，看着像先画了条线再填内容。 */
+  transition:
+    height var(--t-quick) var(--ease-out),
+    border-top-color var(--t-quick) var(--ease-std);
 }
 /* 展开只认 `.open`：悬停状态由 lib/dockHover.ts 的全局单值驱动。
    不能用 :hover —— 分组与标签上下相邻，各自 :hover 时从标签移到分组会让
@@ -10531,6 +10536,10 @@ body.tour-qb .qb-actions .qb-btn-text {
   color: var(--text-secondary);
   cursor: pointer;
   user-select: none;
+  /* 与行同一档 hover 过渡（它本身就是「这一列里的一行」） */
+  transition:
+    background-color var(--t-micro) var(--ease-std),
+    color var(--t-micro) var(--ease-std);
 }
 .tag-dock-head:hover {
   background: var(--ui-hover);
@@ -10700,6 +10709,12 @@ body.tour-qb .qb-actions .qb-btn-text {
   color: var(--text-secondary);
   cursor: pointer;
   position: relative;
+  /* hover / 选中都是同一块底色在换，硬切会让密集的一列看起来在「闪」。
+     100ms 是这里的上限：再长，指针快速划过多行时会拖出一条尾巴。
+     只过渡颜色，不过渡布局属性（行高、内边距不参与）。 */
+  transition:
+    background-color var(--t-micro) var(--ease-std),
+    color var(--t-micro) var(--ease-std);
 }
 .tag-row:hover,
 .tag-group-row:hover {
@@ -10726,6 +10741,20 @@ body.tour-qb .qb-actions .qb-btn-text {
      点击『已启用』这里是一样的」。软件内统一优先于跨软件对齐。 */
   background: var(--ui-hover);
   color: var(--text-primary);
+}
+/**
+ * 按压反馈（2026-11-19）：按下到选中态出现之间有一段「什么都没发生」的空档，
+ * 点起来像没被听见。按下时底色再深一档，抬起即落回 hover / 选中那一档。
+ *
+ * 为什么用 color-mix 而不是写死的色值：深色主题要「更亮」、浅色主题要「更暗」，
+ * 同一个语义在两边方向相反。混 `--text-primary`（深色是亮色、浅色是暗色）
+ * 就能让一条规则在两种主题里都朝「更深」走。
+ * 为什么不用 scale：行是 grid 布局，缩放会让 11px 的文字在按下瞬间次像素发虚。
+ *
+ * 特异度与 `.tag-row.sel` 相同（0,2,0），所以必须写在它之后才有机会覆盖。
+ */
+.tag-row:active {
+  background: color-mix(in srgb, var(--text-primary) 8%, var(--ui-hover));
 }
 /* 与 AssetManager 一致：没配色的标签（含全部自动标签）选中时圆点走强调蓝，
    有颜色的标签仍用自己的颜色 —— 那是标签的身份，不该被选中态盖掉 */
@@ -10854,6 +10883,12 @@ body.tour-qb .qb-actions .qb-btn-text {
   height: 6px;
   border-radius: 50%;
   background: var(--tc, currentColor);
+  /* 选中时圆点从灰变实心强调色（自动标签从空心虚线变实心），换色是「身份变化」
+     的一部分，不该是硬切。与分组行的文件夹图标用同一条曲线、同一个时长 ——
+     两列并排看的时候，锚点必须是同一个节奏（2026-11-19 用户：要一模一样）。 */
+  transition:
+    background-color var(--t-micro) var(--ease-std),
+    border-color var(--t-micro) var(--ease-std);
 }
 .tag-row.auto .tag-dot,
 .tag-c-auto .tag-dot {
@@ -11342,10 +11377,26 @@ body.tour-qb .qb-actions .qb-btn-text {
   display: inline-flex;
   align-items: center;
   color: var(--text-tertiary);
+  /* 与 `.tag-dot` 同一条曲线、同一个时长：分组行和标签行是同一列里的两种行，
+     锚点换色必须同一个节奏，否则并排看就是「一个动、一个跳」。 */
+  transition: color var(--t-micro) var(--ease-std);
 }
-.coll-row:hover .coll-icon,
-.coll-row.sel .coll-icon {
+.coll-row:hover .coll-icon {
   color: var(--text-secondary);
+}
+/**
+ * 选中时锚点点亮（2026-11-19，用户第三次提「分组和标签效果不一样」）：
+ * 标签行选中时圆点会变成实心强调色（`.tag-row.sel .tag-dot` → `--tc`，
+ * 没配色的标签 `--tc` 落到 `--ui-accent`）；分组行对应的「锚点」就是这个文件夹图标，
+ * 它原来只从三级灰挪到二级灰 —— 摆在一起就是「标签有反应、分组基本没反应」。
+ *
+ * 到此两种行的选中态是同一套五件事，逐条对齐，缺一条用户都能看出来：
+ *   底色 --ui-hover / 左侧 2px 竖线 scaleY 展开 / 行名右移 2px /
+ *   行名转 --text-primary / 锚点点亮。
+ * 序号（`.coll-no`）保持次级灰 —— 它是编号不是锚点，跟标签的计数同语言。
+ */
+.coll-row.sel .coll-icon {
+  color: var(--ui-accent);
 }
 .coll-no {
   flex: none;
