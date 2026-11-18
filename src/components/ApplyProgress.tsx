@@ -1,6 +1,5 @@
 import { useT } from "../lib/i18n";
 import { useFontStore } from "../state/fontStore";
-import { BottomBar } from "../design/primitives/BottomBar";
 
 /**
  * 快照应用的底部状态条，两种形态：
@@ -12,8 +11,6 @@ import { BottomBar } from "../design/primitives/BottomBar";
  * 让它一直待着，点到为止。
  *
  * 样式复用 `LoadProgress` 的 `.load-progress`，不新造 UI。
- * 进出动画也复用 `BottomBar`：以前两个分支各 return 一个裸 <div>，出现/消失
- * 都是瞬间 —— 点「取消」后整条底栏"啪"地弹出来，收掉时又"啪"地没了。
  */
 export function ApplyProgress({ compact = false }: { compact?: boolean }) {
   const t = useT();
@@ -24,78 +21,49 @@ export function ApplyProgress({ compact = false }: { compact?: boolean }) {
   const dismissApplyNotice = useFontStore((s) => s.dismissApplyNotice);
   const cancelled = useFontStore((s) => s.applyCancelled);
 
-  const show = Boolean(apply || notice);
+  if (!apply && !notice) return null;
+
   const className = `load-progress ${compact ? "load-progress-compact" : ""}`;
 
+  if (!apply) {
+    return (
+      <div className={className} role="status" aria-live="polite">
+        <span className="load-text">
+          {t("snap.cancelled")} · {t("snap.cancelledDetail", { done: notice!.done, total: notice!.total })}
+        </span>
+        <button className="load-cancel" onClick={undoLastApply} data-hint-text={t("snap.cancelUndoTip")}>
+          {t("snap.cancelUndo")}
+        </button>
+        <button className="load-cancel" onClick={dismissApplyNotice} data-hint-text={t("snap.noticeClose")}>
+          {t("snap.noticeClose")}
+        </button>
+      </div>
+    );
+  }
+
+  const { done, total, undo } = apply;
+  const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : null;
+
   return (
-    <BottomBar show={show} className={className}>
-      {!apply ? (
-        <>
-          <span className="load-text">
-            {t("snap.cancelled")} ·{" "}
-            {t("snap.cancelledDetail", { done: notice!.done, total: notice!.total })}
-          </span>
-          <button
-            className="load-cancel"
-            onClick={undoLastApply}
-            data-hint-text={t("snap.cancelUndoTip")}
-          >
-            {t("snap.cancelUndo")}
-          </button>
-          <button
-            className="load-cancel"
-            onClick={dismissApplyNotice}
-            data-hint-text={t("snap.noticeClose")}
-          >
-            {t("snap.noticeClose")}
-          </button>
-        </>
-      ) : (
-        <>
-          <div className="load-track" aria-hidden="true">
-            {apply.total > 0 ? (
-              <div
-                className="load-fill"
-                style={{
-                  width: `${Math.max(
-                    0,
-                    Math.min(100, Math.round((apply.done / apply.total) * 100)),
-                  )}%`,
-                }}
-              />
-            ) : (
-              <div className="load-fill load-fill-indeterminate" />
-            )}
-          </div>
-          <span className="load-text tabular">
-            {apply.undo
-              ? t("snap.undoing", {
-                  done: apply.done,
-                  total: apply.total,
-                  percent: apply.total > 0
-                    ? Math.max(0, Math.min(100, Math.round((apply.done / apply.total) * 100)))
-                    : 0,
-                })
-              : t("load.applying", {
-                  done: apply.done,
-                  total: apply.total,
-                  percent: apply.total > 0
-                    ? Math.max(0, Math.min(100, Math.round((apply.done / apply.total) * 100)))
-                    : 0,
-                })}
-          </span>
-          {/* 撤销本身是一次「回到原状」的动作，中途停下来的话又会卡在第三个中间态，所以不给再取消 */}
-          {!cancelled && !apply.undo && (
-            <button
-              className="load-cancel"
-              onClick={cancelApply}
-              data-hint-text={t("snap.cancelTip")}
-            >
-              {t("snap.cancel")}
-            </button>
-          )}
-        </>
+    <div className={className} role="status" aria-live="polite">
+      <div className="load-track" aria-hidden="true">
+        {percent == null ? (
+          <div className="load-fill load-fill-indeterminate" />
+        ) : (
+          <div className="load-fill" style={{ width: `${percent}%` }} />
+        )}
+      </div>
+      <span className="load-text tabular">
+        {undo
+          ? t("snap.undoing", { done, total, percent: percent ?? 0 })
+          : t("load.applying", { done, total, percent: percent ?? 0 })}
+      </span>
+      {/* 撤销本身是一次「回到原状」的动作，中途停下来的话又会卡在第三个中间态，所以不给再取消 */}
+      {!cancelled && !undo && (
+        <button className="load-cancel" onClick={cancelApply} data-hint-text={t("snap.cancelTip")}>
+          {t("snap.cancel")}
+        </button>
       )}
-    </BottomBar>
+    </div>
   );
 }
