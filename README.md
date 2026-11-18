@@ -36,7 +36,7 @@ and MCP when you want your tools to join in.
 
 <br>
 
-<img src="main.png?v=2.2.2" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
+<img src="main.png?v=2.4.6" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -236,7 +236,7 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.2.2)
+![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.4.6)
 
 **Find your way first: the window has five regions**
 
@@ -966,7 +966,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 <br>
 
-<img src="main.png?v=2.2.2" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
+<img src="main.png?v=2.4.6" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
 
 <sub>字体库：每个字族都以自己的字形实时渲染，离任何应用的字体菜单都只差一个开关。</sub>
 
@@ -1145,7 +1145,7 @@ FontManager 在这个起点上加了什么：
 
 ### 2. 认识主界面
 
-![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.2.2)
+![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.4.6)
 
 **先认路：主界面分五个区**
 
