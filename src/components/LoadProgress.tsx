@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../lib/i18n";
 import { useFontStore } from "../state/fontStore";
-import { BottomBar } from "../design/primitives/BottomBar";
 
 /**
  * 「闪现抑制」：短于 delay 的操作根本不出这条线；一旦出线就至少停留 minMs。
@@ -101,10 +100,9 @@ export function LoadProgress({ compact = false }: { compact?: boolean }) {
    * 不给错误弹窗 —— 用户此刻最需要的是「还能接着用」和一次重试（R-15）。
    */
   const degraded = phase === "error" && seeded;
-  /** 闸门：扫描太快时根本不出线，出线后至少停 320ms（见 useFlashGuard）。
-   *  注意这里**不能** `if (!shown) return null` —— 那会连 AnimatePresence 一起卸载，
-   *  BottomBar 的退出动画就没了；show=false 时由 BottomBar 自己决定不渲染。 */
+  /** 闸门：扫描太快时根本不出线，出线后至少停 320ms（见 useFlashGuard） */
   const shown = useFlashGuard(reading || justReady || degraded);
+  if (!shown) return null;
 
   const { done, total } = scan;
   // 还没数出总数（正在遍历目录）时给个「不确定」态：只有文案、没有百分比
@@ -128,12 +126,13 @@ export function LoadProgress({ compact = false }: { compact?: boolean }) {
           : t("load.reading", { done, total, percent });
 
   return (
-    <BottomBar
-      show={shown}
+    <div
       className={`load-progress ${compact ? "load-progress-compact" : ""}`}
+      role="status"
+      aria-live="polite"
       /* 用户 2026-10-31 问「这里为什么是 5000 多」：分母是**字体文件数**（含系统目录与链接字体），
          和侧栏按字族统计的数字不是一回事，悬停解释一句 */
-      hint="hint.loadProgress"
+      data-hint="hint.loadProgress"
     >
       <div className="load-track" aria-hidden="true">
         {percent == null ? (
@@ -156,6 +155,6 @@ export function LoadProgress({ compact = false }: { compact?: boolean }) {
           {t("load.retry")}
         </button>
       )}
-    </BottomBar>
+    </div>
   );
 }

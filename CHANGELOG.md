@@ -4,25 +4,6 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [2.4.3] — 2026-11-19
-
-### 修复
-
-- **分组行选中后锚点不点亮**（用户第二次反馈「和标签不一样」）：2.4.2 修好了蓝竖线，
-  但标签行选中时**圆点会变实心强调色**，分组行的文件夹图标只从三级灰变二级灰 ——
-  摆在一起还是「标签有反应、分组没反应」。现在 `.coll-row.sel .coll-icon` 跟
-  `.tag-row.sel .tag-dot` 同一套语言：图标点亮成 `--ui-accent`，序号保持次级灰。
-
-### 新增（动效补齐，全部走既有令牌，减弱动效下自动退化）
-
-- **底部状态条统一进出**（新原语 `design/primitives/BottomBar.tsx`）：
-  LoadProgress / ApplyProgress 原来是条件渲染 + return null，出现与消失都是瞬间；
-  现在统一 0.18s 从下 8px 浮起、退出原路返回。
-- **侧栏选中胶囊** `.nav-pill`：180ms 淡入 + 从 96% 落到 100%，不再"啪"地整块糊上。
-- **分组 / 标签面板开合**：高度从 100ms 提到 180ms（268px 的幅度 100ms 太急），
-  边界线深浅一起过渡（原来只有高度在动、线是硬切）。
-- **标签圆点**：换色 / 点亮收进 120ms 颜色过渡，不再瞬变。
-
 ## [2.4.2] — 2026-11-19
 
 ### 修复
