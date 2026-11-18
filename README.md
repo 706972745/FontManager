@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.4.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.4.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -47,6 +47,8 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.4.6 — A crash now shows a readable error page and lands in the log, instead of a stuck splash**
 
 **2.4.5 — Fixes 2.4.4 refusing to start (blank main window stuck behind the splash)**
 
@@ -947,7 +949,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.4.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.4.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -975,6 +977,8 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 ---
 
 ## 🆕 最近更新
+
+**2.4.6 —— 界面出错不再无声白屏：给出可读的错误页并写进日志，启动页也不会再干等**
 
 **2.4.5 —— 修复 2.4.4 装完打不开（主窗口被启动页挡死）；只修这一处，不动任何交互**
 

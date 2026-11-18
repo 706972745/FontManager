@@ -1341,5 +1341,9 @@
   "warm.readyMs": "{app} está listo: unos {ms} ms",
   "warm.working": "Preparando {app} ({percent} %)",
   "waterfall.emptyBody": "Elige una fuente en la vista de cuadrícula o lista y vuelve luego a la cascada.",
-  "waterfall.emptyTitle": "Nada que mostrar en cascada"
+  "waterfall.emptyTitle": "Nada que mostrar en cascada",
+  "boot.error.title": "La interfaz encontró un error",
+  "boot.error.body": "El error se ha guardado en el registro. Prueba con «Recargar»; si se repite, envíanos el registro.",
+  "boot.error.retry": "Recargar",
+  "boot.error.openLogs": "Abrir carpeta de registros"
 }

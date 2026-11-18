@@ -1341,5 +1341,9 @@
   "warm.readyMs": "{app} est prêt — environ {ms} ms",
   "warm.working": "Préparation de {app} ({percent} %)",
   "waterfall.emptyBody": "Choisissez une police en vue grille ou liste, puis revenez à la cascade.",
-  "waterfall.emptyTitle": "Rien à faire cascader"
+  "waterfall.emptyTitle": "Rien à faire cascader",
+  "boot.error.title": "L’interface a rencontré une erreur",
+  "boot.error.body": "L’erreur a été écrite dans le journal. Essayez « Recharger » ; si cela se reproduit, envoyez-nous le journal.",
+  "boot.error.retry": "Recharger",
+  "boot.error.openLogs": "Ouvrir le dossier des journaux"
 }

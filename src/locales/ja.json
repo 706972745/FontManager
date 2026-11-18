@@ -1307,5 +1307,9 @@
   "warm.readyMs": "{app} は準備完了 — 初回およそ {ms} ms",
   "warm.working": "{app} を準備中（{percent}%）",
   "waterfall.emptyBody": "グリッドまたはリスト表示でフォントを選んでから、ウォーターフォールに戻ってください。",
-  "waterfall.emptyTitle": "表示するフォントがありません"
+  "waterfall.emptyTitle": "表示するフォントがありません",
+  "boot.error.title": "画面でエラーが発生しました",
+  "boot.error.body": "エラーはログに記録しました。まず「再読み込み」を試してください。繰り返す場合はログをお送りください。",
+  "boot.error.retry": "再読み込み",
+  "boot.error.openLogs": "ログフォルダーを開く"
 }
