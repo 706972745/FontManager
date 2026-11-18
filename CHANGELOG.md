@@ -4,6 +4,42 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.4.1] — 2026-11-19
+
+> 一轮**只改手感、不改功能**的细节优化。判据只有一条：能不能用「用户少一次困惑 /
+> 少一次多余等待」解释；解释不出来的一律不做。完整诊断见 `docs/交互细节优化-2.4.1.md`。
+
+### 修复
+
+- **4 处焦点环一直是空的**：`.copy-name` / `.copyright-status-row` / `.license-file-link` /
+  `.license-file-search` 写的是 `outline: 2px solid var(--accent)`，而 `--accent`
+  **根本不存在** —— `var()` 解析失败会让整条声明失效、计算值回落 `none`。
+  现在立了显式令牌 `--focus-ring`（深/浅色各一条），这 4 处 + 设置页提示图标一起修好。
+- **减弱动效在 12 处失效**：那些过渡写死了 90–200ms，不读 `--t-*` 令牌，
+  所以「把所有令牌压成 1ms」的减弱动效对它们完全无效。现全部归到
+  `--t-micro` / `--t-quick`（`linear` 保留：进度条这类匀速推进的元素套缓动反而不诚实）。
+- **设置页提示图标 Tab 到没有焦点**：`.settings-hint` 是 `<span tabIndex={0}>`，
+  却被统一写了 `outline: none`。
+
+### 新增
+
+- **提示气泡 skip delay**：第一次悬停仍等 1 秒（确认「不是路过」），上一条关掉后
+  2 秒内看下一个按钮只等 120ms。原来恒等 1 秒，在工具栏上挨个认按钮要十几秒。
+  逻辑抽到 `src/lib/hintTiming.ts` 并配 5 条单测。
+- **缓动令牌** `--ease-out` / `--ease-in` / `--ease-std`：之前只有时长令牌、
+  缓动各写各的（`ease` / `linear` / 不写）。
+- **列表行按压反馈**：按下时背景再深一档（`--e2`），选中行用亮度压一档，
+  不再「点下去没有任何回应」。刻意不用 `scale()` —— grid 行缩放会让文字在按下那一帧发虚。
+- **主列表滚动链隔离**：`.list-scroll` 补 `overscroll-behavior: contain`，
+  与另外 10 个滚动容器对齐，滚到底不再把整页带着弹一下。
+
+### 刻意没做（详见文档 §3 P2）
+
+自绘 `::selection`（我们的强调色是中性灰，自绘比系统蓝更难看清）、
+列表行 `cursor: pointer`（Windows 资源管理器也是箭头）、
+方向键导航加动效（高频操作加动画 = 每次慢半拍）、hover 上浮（密集列表会抖）。
+空态「主行动」按钮待下一轮。
+
 ## [2.4.0] — 2026-11-19
 
 > 一轮**结构变更**：标签 / 分组 / 快照 / 收藏 / 备注 / 入库时间不再存在应用账本里，而是存进
