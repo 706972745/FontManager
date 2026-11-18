@@ -738,6 +738,18 @@ interface FontStore {
   setRating: (family: string, stars: number) => void;
   setRatingFilter: (n: number) => void;
   setSearch: (s: string) => void;
+  /**
+   * 一次清空「筛选菜单」里的全部条件（2026-11-19，空态加「清除筛选」用）。
+   *
+   * 为什么要一个专门的 action：筛选条件散在 12 个字段里（剧本 / 格式 / 特性 / 来源 /
+   * 字符 / 变量 / 可切换 / 不完整 / 授权 / 版权状态 / 评分 / 只收藏），
+   * 每加一个筛选项都要记得来这里补一行 —— 这正是「空态一键清除」最容易被漏成
+   * 「点了没反应」的地方。新增筛选项时请一并加到下面。
+   *
+   * 注意**不清导航类筛选**（标签 / 分组 / 快照）：那几项由 `nav` 表达，
+   * 清掉它们等于把用户从当前分组踢回字体库，不是「清除筛选」该干的事。
+   */
+  resetFilters: () => void;
   toggleScriptFilter: (s: string) => void;
   setVariableOnly: (on: boolean) => void;
   setToggleableOnly: (on: boolean) => void;
@@ -4775,6 +4787,24 @@ export const useFontStore = create<FontStore>((set, get) => ({
     persistPrefs(get);
   },
   setSearch: (search) => set({ search }),
+  resetFilters: () =>
+    set({
+      scriptFilter: [],
+      formatFilter: [],
+      featureFilter: [],
+      sourceFilter: "all",
+      charFilter: "",
+      // 字符匹配结果是「上一次字符筛选的产物」，一起清掉，否则列表会短暂按旧结果显示
+      charMatches: null,
+      charSearching: false,
+      variableOnly: false,
+      toggleableOnly: false,
+      incompleteOnly: false,
+      licenseFilter: [],
+      copyrightStatus: {},
+      favoriteOnly: false,
+      ratingFilter: 0,
+    }),
   toggleScriptFilter: (s) => {
     const cur = get().scriptFilter;
     set({ scriptFilter: cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s] });

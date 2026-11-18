@@ -214,6 +214,8 @@
   "drop.moveTitleDefault": "Copy to system folder",
   "drop.sub": "Font files, folders, or .zip archives",
   "drop.title": "Drop to install",
+  "empty.action.clearFilters": "Clear filters",
+  "empty.action.clearSearch": "Clear search",
   "empty.activated.body": "Activate a font and it will show up here.",
   "empty.activated.title": "Nothing activated yet",
   "empty.collection.body": "Right-click any font → Collections → “{name}” to add it here.",

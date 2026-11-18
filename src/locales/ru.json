@@ -194,6 +194,8 @@
   "drop.moveTitleDefault": "Скопировать в системную папку",
   "drop.sub": "Файлы шрифтов, папки или .zip-архивы",
   "drop.title": "Отпустите, чтобы установить",
+  "empty.action.clearFilters": "Сбросить фильтры",
+  "empty.action.clearSearch": "Очистить поиск",
   "empty.activated.body": "Активируйте шрифт, и он появится здесь.",
   "empty.activated.title": "Пока ничего не активировано",
   "empty.collection.body": "Правый клик по шрифту → Коллекции → «{name}», чтобы добавить его сюда.",

@@ -188,6 +188,8 @@
   "drop.moveTitleDefault": "In den Systemordner kopieren",
   "drop.sub": "Schriftdateien, Ordner oder .zip-Archive",
   "drop.title": "Loslassen zum Installieren",
+  "empty.action.clearFilters": "Filter zurücksetzen",
+  "empty.action.clearSearch": "Suche zurücksetzen",
   "empty.activated.body": "Aktiviere eine Schrift und sie taucht hier auf.",
   "empty.activated.title": "Noch nichts aktiviert",
   "empty.collection.body": "Rechtsklick auf eine Schrift → Sammlungen → „{name}“, um sie hinzuzufügen.",

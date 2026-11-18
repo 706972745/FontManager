@@ -191,6 +191,8 @@
   "drop.moveTitleDefault": "Copiar para a pasta do sistema",
   "drop.sub": "Arquivos de fonte, pastas ou arquivos .zip",
   "drop.title": "Solte para instalar",
+  "empty.action.clearFilters": "Limpar os filtros",
+  "empty.action.clearSearch": "Limpar a busca",
   "empty.activated.body": "Ative uma fonte e ela aparecerá aqui.",
   "empty.activated.title": "Nada ativado ainda",
   "empty.collection.body": "Clique com o botão direito em uma fonte → Coleções → “{name}” para adicioná-la aqui.",

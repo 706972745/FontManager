@@ -1640,15 +1640,15 @@ h2.detail-title.copy-name {
   background: rgba(var(--ink-rgb), 0.1);
 }
 .copy-name:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 /* 版权状态 radiogroup 容器：roving tabindex 的落点。已设 paid 的族没有一枚
    chip 是 tabIndex=0，Tab 必须能落进容器（QA Round 3 a11y 回归），方向键
    在 onKeyDown 里把焦点交给对应 chip。给键盘用户一个可见焦点框。 */
 .copyright-status-row:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
   border-radius: 6px;
 }
 .detail-path {
@@ -1688,8 +1688,8 @@ h2.detail-title.copy-name {
   border-bottom-color: rgba(var(--ink-rgb), 0.3);
 }
 .license-file-link:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
   border-radius: 3px;
 }
 .license-file-missing {
@@ -1727,8 +1727,8 @@ h2.detail-title.copy-name {
   cursor: default;
 }
 .license-file-search:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .tag-editor {
@@ -1883,6 +1883,42 @@ h2.detail-title.copy-name {
   color: var(--text-secondary);
   max-width: 380px;
   line-height: 1.5;
+}
+/**
+ * 空态的主行动（2026-11-19，交互细节 2.4.1 的遗留项）。
+ *
+ * 只在「按下去真能结束这个空态」时才渲染（判定在 App.tsx 的 menuFiltered）：
+ * 搜不到 → 清除搜索；被筛选菜单筛没了 → 清除筛选。其它空态是内容状态，
+ * 没有安全的默认动作，就给说明不给按钮 —— 摆了点了没用的按钮比没有更差。
+ *
+ * 视觉上刻意比正文重一档、但不做成主色实心：空态页面里它是「出口」，
+ * 不是「主 CTA」，实心按钮会把「这个分组是空的」这句话压掉。
+ */
+.empty-action {
+  margin-top: 14px;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  border-radius: 6px;
+  background: var(--ui-panel);
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--t-micro) var(--ease-std),
+    border-color var(--t-micro) var(--ease-std);
+}
+.empty-action:hover {
+  background: var(--ui-hover);
+  border-color: rgba(var(--ink-rgb), 0.2);
+}
+.empty-action:active {
+  transform: scale(0.98);
+}
+.empty-action:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .trash-view {
@@ -4164,8 +4200,8 @@ h2.detail-title.copy-name {
    等于「焦点丢了」。归到和别的控件同一条口径：2px 强调色 + 2px 偏移。
    圆角 4px：和设置页卡片头一致，不会看起来像贴了个方框。 */
 .settings-hint:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
   border-radius: 4px;
 }
 
@@ -5480,7 +5516,7 @@ h2.detail-title.copy-name {
 }
 .online-card:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent-a) 70%, transparent);
-  outline-offset: 2px;
+  outline-offset: var(--focus-ring-offset);
 }
 .online-card-meta {
   display: flex;
@@ -8757,7 +8793,7 @@ body.ui-fade-out .app-frame {
 /* 聚焦不靠光晕，改用一圈 2px 的间隙环 —— 键盘用户必须看得出焦点在哪 */
 .topbar-size input[type="range"]:focus-visible::-webkit-slider-thumb {
   outline: 2px solid color-mix(in srgb, var(--ui-accent) 45%, transparent);
-  outline-offset: 2px;
+  outline-offset: var(--focus-ring-offset);
 }
 /* 视图切换：当前项 2% 底，不套蓝框 */
 .view-toggle > * {
@@ -10696,15 +10732,27 @@ body.tour-qb .qb-actions .qb-btn-text {
 .tag-row.sel.tag-c-none {
   --tc: var(--ui-accent);
 }
-.tag-row.sel::before {
+/* 竖线底座（2026-11-19，用户截图：分组行点击后**没有**左侧蓝竖线）。
+   原来只有 `.tag-row.sel::before` 一条，选中时竖线是「啪」地整条出现。
+   现在所有行都有一条透明底座，选中时用 scaleY 从中心展开 —— 这是「文字动一下」
+   之外的第二半：竖线自己也有 120ms 的生长，而不是硬切。
+   减弱动效下 --t-micro 被压到 1ms，自动退化成瞬间出现，不需要另写规则。 */
+.tag-row::before {
   content: "";
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--ui-accent);
+  background: transparent;
+  transform: scaleY(0.35);
+  transition: transform var(--t-micro) var(--ease-out),
+    background var(--t-micro) var(--ease-std);
   z-index: 1;
+}
+.tag-row.sel::before {
+  background: var(--ui-accent);
+  transform: scaleY(1);
 }
 .tag-row.sel .tag-dot {
   background: var(--tc, var(--text-primary));
@@ -10738,12 +10786,19 @@ body.tour-qb .qb-actions .qb-btn-text {
  *   4. `.tag-row-count` 有显式 `--text-tertiary`，不受影响 —— 数字保持次级，
  *      彩色只给「标签名」，一列里十几个标签才不会看成调色板。
  */
-.tag-row:not(.tag-c-none),
-.tag-row:not(.tag-c-none):hover,
-.tag-row:not(.tag-c-none).sel {
+/* ⚠️ 这三条必须排除 `.coll-row`（分组行）。
+   分组行复用了 `.tag-row` 却**没有**任何 `tag-c-*` 类，所以它天然命中
+   `:not(.tag-c-none)`；而分组行没有 `--tc`，`background: var(--tc)` 解析失败后
+   不是「回退成蓝线」而是**退回初始值 transparent** —— 于是分组行选中时
+   蓝竖线被这条更高特异度的规则盖成了透明，用户看到的正是「分组点击没效果」
+   （2026-11-19 截图）。文字色同理：`color: var(--tc)` 失效后落到继承值，
+   分组行名也不是预期的次级灰。 */
+.tag-row:not(.tag-c-none):not(.coll-row),
+.tag-row:not(.tag-c-none):not(.coll-row):hover,
+.tag-row:not(.tag-c-none):not(.coll-row).sel {
   color: var(--tc);
 }
-.tag-row:not(.tag-c-none).sel::before {
+.tag-row:not(.tag-c-none):not(.coll-row).sel::before {
   background: var(--tc);
 }
 .tag-group-row {
@@ -10755,6 +10810,13 @@ body.tour-qb .qb-actions .qb-btn-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 选中时文字轻移 2px（用户 2026-11-19：「有文字动一下」）。
+     2px 是刻意的小：再多就成了「这一行在跳」，而它只是个选中态。
+     只动行名、不动右侧计数 —— 计数是 flex-end 对齐的，跟着动会脱离右边界。 */
+  transition: transform var(--t-micro) var(--ease-out);
+}
+.tag-row.sel > .tag-row-name {
+  transform: translateX(2px);
 }
 .tag-row-count {
   /* 与行名**同字号**（11px），主次只靠颜色和字重区分。

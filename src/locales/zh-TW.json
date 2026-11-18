@@ -185,6 +185,8 @@
   "drop.moveTitleDefault": "複製到系統資料夾",
   "drop.sub": "字型檔、資料夾或 .zip 壓縮檔",
   "drop.title": "放開以安裝",
+  "empty.action.clearFilters": "清除篩選",
+  "empty.action.clearSearch": "清除搜尋",
   "empty.activated.body": "啟用某個字型後，它會顯示在這裡。",
   "empty.activated.title": "尚未啟用任何字型",
   "empty.collection.body": "在任一字型上按右鍵 → 分組 → 「{name}」，即可把它加進來。",

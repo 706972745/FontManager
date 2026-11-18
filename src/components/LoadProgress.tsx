@@ -3,6 +3,57 @@ import { useT } from "../lib/i18n";
 import { useFontStore } from "../state/fontStore";
 
 /**
+ * 「闪现抑制」：短于 delay 的操作根本不出这条线；一旦出线就至少停留 minMs。
+ *
+ * 为什么需要（2026-11-19，交互细节 2.4.1 遗留项）：
+ * 库里只有几十个字体时，一次重扫常在 200ms 内结束。原来的实现是「一进入
+ * scanning 就挂上进度条」，于是它出现、滑动、消失全在几帧里完成 —— 用户看到的是
+ * 「底部闪了一下」，读起来像出错，比什么都不显示更糟。感知性能的通行做法是
+ * 延迟 150~300ms 再显示，且显示后至少撑 300~500ms，避免「闪一下」。
+ *
+ * 已就绪 / 降级这两种态也走同一个闸门：150ms 的延迟感知不到，但能保证
+ * 「扫描很快时不会先闪一条读取中、再闪一条已就绪」。
+ */
+function useFlashGuard(active: boolean, delay = 150, minMs = 320) {
+  const [shown, setShown] = useState(false);
+  const shownAt = useRef(0);
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const clear = () => {
+      if (timer.current !== undefined) {
+        window.clearTimeout(timer.current);
+        timer.current = undefined;
+      }
+    };
+    clear();
+
+    if (active) {
+      // 已经在显示：active 反复抖动时不要重新排队，否则会闪
+      if (shown) return;
+      timer.current = window.setTimeout(() => {
+        shownAt.current = Date.now();
+        setShown(true);
+      }, delay);
+      return clear;
+    }
+
+    if (!shown) return clear;
+
+    // 来源已经结束，但可能还没停够最短时长；补足再收
+    const left = minMs - (Date.now() - shownAt.current);
+    if (left <= 0) {
+      setShown(false);
+      return clear;
+    }
+    timer.current = window.setTimeout(() => setShown(false), left);
+    return clear;
+  }, [active, shown, delay, minMs]);
+
+  return shown;
+}
+
+/**
  * 字库读取进度条。
  *
  * 字体库动辄几千个文件，冷启动（尤其是第一次 / 换了大目录之后）要挨个解析，
@@ -49,7 +100,9 @@ export function LoadProgress({ compact = false }: { compact?: boolean }) {
    * 不给错误弹窗 —— 用户此刻最需要的是「还能接着用」和一次重试（R-15）。
    */
   const degraded = phase === "error" && seeded;
-  if (!reading && !justReady && !degraded) return null;
+  /** 闸门：扫描太快时根本不出线，出线后至少停 320ms（见 useFlashGuard） */
+  const shown = useFlashGuard(reading || justReady || degraded);
+  if (!shown) return null;
 
   const { done, total } = scan;
   // 还没数出总数（正在遍历目录）时给个「不确定」态：只有文案、没有百分比

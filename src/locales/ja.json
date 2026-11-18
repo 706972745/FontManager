@@ -185,6 +185,8 @@
   "drop.moveTitleDefault": "システムフォルダにコピー",
   "drop.sub": "フォントファイル・フォルダ・.zip アーカイブ",
   "drop.title": "ドロップしてインストール",
+  "empty.action.clearFilters": "フィルターをクリア",
+  "empty.action.clearSearch": "検索をクリア",
   "empty.activated.body": "フォントを有効にすると、ここに表示されます。",
   "empty.activated.title": "まだ何も有効になっていません",
   "empty.collection.body": "フォントを右クリック → コレクション → 「{name}」で追加できます。",
