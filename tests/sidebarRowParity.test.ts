@@ -82,3 +82,24 @@ test("按压反馈在深浅两套主题里都朝「更深」走（混 --text-pri
   assert.match(press, /background:\s*color-mix\(in srgb, var\(--text-primary\)/);
   assert.match(press, /var\(--ui-hover\)\)/);
 });
+
+/**
+ * 按压的**动效**在 JS 里，不在 CSS 里：标签行是 `motion.div` + `whileTap` 弹簧，
+ * 分组行如果只是普通 `div`，按下去就完全没有反应 —— CSS 那套选中态再怎么对齐，
+ * 手感依然是一个"压一下弹回来"、一个"硬切"（用户 2026-11-19 的原话）。
+ * 所以这条守的是「两行用的是同一组 motion 参数」，改一边必须同步另一边。
+ */
+test("分组行与标签行是同一组 motion 按压参数（不是普通 div）", () => {
+  const tagDock = readFileSync("src/components/TagDock.tsx", "utf8");
+  const sidebar = readFileSync("src/components/Sidebar.tsx", "utf8");
+  const press = /whileTap=\{\{\s*scale:\s*0\.985,\s*transition:\s*springSnappy\s*\}\}/;
+
+  assert.match(tagDock, press, "标签行的 whileTap 参数变了 —— 分组行必须同步");
+  assert.match(sidebar, press, "分组行缺少与标签行相同的 whileTap：按下去会像硬切");
+
+  // whileTap 只有 motion 组件认；普通 div 写了也无效，所以元素类型也要守
+  const at = sidebar.indexOf("tag-row coll-row");
+  assert.ok(at > 0, "Sidebar.tsx 里找不到分组行的 className");
+  const tag = sidebar.slice(Math.max(0, at - 300), at);
+  assert.match(tag, /<motion\.div/, "分组行不是 motion.div —— whileTap 不会生效");
+});

@@ -818,11 +818,18 @@ export function Sidebar() {
                   onCancel={() => setRenaming(null)}
                 />
               ) : (
-                <div
+                <motion.div
                   key={name}
                   className={`tag-row coll-row ${
                     nav.kind === "collection" && nav.name === name ? "sel" : ""
                   }`}
+                  /* 按压动效必须和标签行**逐字一致**（2026-11-19 用户第三次反馈）：
+                     上一轮只对齐了 CSS 的选中态（底色/竖线/行名位移/锚点），但标签行是
+                     `motion.div` + `whileTap` 弹簧，分组行是普通 div —— 按下去一个会「压一下再
+                     弹回来」，另一个毫无反应，用户的原话是「标签的动画会慢一点，分组是硬切」。
+                     这里直接抄 TagDock 那一行的 motion 参数，CSS 里不再重复实现按压。 */
+                  whileTap={{ scale: 0.985, transition: springSnappy }}
+                  transition={spring}
                   /* 与标签行同一套无障碍语义：容器是 listbox，行是 option */
                   role="option"
                   tabIndex={0}
@@ -855,7 +862,7 @@ export function Sidebar() {
                   <span className="tag-row-count tabular">
                     {navCountText(collectionCount(name))}
                   </span>
-                </div>
+                </motion.div>
               ),
             )}
             {shownCollections.length === 0 && (
