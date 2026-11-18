@@ -1195,6 +1195,8 @@
   "toast.pluginsScanEmpty": "プラグインフォルダーにプラグインがありません",
   "toast.pluginsScanned": "スキャン完了：{count} 個",
   "toast.prefsSaveFailed": "設定の保存に失敗しました",
+  "toast.tagNeedFonts": "先にフォントを選択してください",
+  "toast.tagNeedFontsSub": "タグはフォントに付くものなので、書体を 1 つ以上選んでから「+ タグ」を押してください",
   "toast.quickbarFailed": "クイック表示を切り替えられませんでした",
   "toast.redownloadFailed": "再ダウンロードに失敗しました",
   "toast.removedFromCollection": "「{name}」から {count} 件を外しました",

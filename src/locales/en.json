@@ -852,6 +852,8 @@
   "toast.copied": "{what} copied",
   "toast.copyrightFailed": "Couldn't update the licence",
   "toast.prefsSaveFailed": "Failed to save settings",
+  "toast.tagNeedFonts": "Select fonts first",
+  "toast.tagNeedFontsSub": "A tag lives on fonts — pick one or more families, then click “+ Tag”.",
   "toast.copyrightFailedSub": "The folder could not be renamed (usually because a font file is in use, e.g. by Photoshop). Nothing was moved — close the apps using these fonts and try again.",
   "toast.copyrightReactivateSub": "These fonts could not be re-enabled after renaming; turn them on manually in the library: {list}",
   "toast.copyrightRenamed": "Updated the licence suffix on {count} folder(s)",

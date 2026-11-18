@@ -1195,6 +1195,8 @@
   "toast.pluginsScanEmpty": "外掛目錄裡還沒有外掛",
   "toast.pluginsScanned": "已掃描：{count} 個外掛",
   "toast.prefsSaveFailed": "設定儲存失敗",
+  "toast.tagNeedFonts": "先在右側選取字型",
+  "toast.tagNeedFontsSub": "標籤要掛在具體字型上：選取一個或多個字族，再點「+ 標籤」",
   "toast.quickbarFailed": "無法切換速覽介面",
   "toast.redownloadFailed": "重新下載失敗",
   "toast.removedFromCollection": "已從「{name}」移除 {count} 項",

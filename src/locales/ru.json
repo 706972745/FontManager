@@ -1243,6 +1243,8 @@
   "toast.pluginsScanEmpty": "В папке плагинов пока ничего нет",
   "toast.pluginsScanned": "Просканировано: {count}",
   "toast.prefsSaveFailed": "Не удалось сохранить настройки",
+  "toast.tagNeedFonts": "Сначала выберите шрифты",
+  "toast.tagNeedFontsSub": "Тег ставится на шрифты: выберите одно или несколько семейств и нажмите «+ Тег».",
   "toast.quickbarFailed": "Не удалось переключить быстрый просмотр",
   "toast.redownloadFailed": "Не удалось скачать заново",
   "toast.removedFromCollection": "Убрано {count} из «{name}»",

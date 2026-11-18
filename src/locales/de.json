@@ -1211,6 +1211,8 @@
   "toast.pluginsScanEmpty": "Noch keine Plugins im Plugin-Ordner",
   "toast.pluginsScanned": "Gescannt: {count} Plugins",
   "toast.prefsSaveFailed": "Einstellungen konnten nicht gespeichert werden",
+  "toast.tagNeedFonts": "Zuerst Schriften auswählen",
+  "toast.tagNeedFontsSub": "Ein Tag hängt immer an Schriften – wähle eine oder mehrere Familien und klicke dann auf „+ Tag“.",
   "toast.quickbarFailed": "Schnellansicht konnte nicht umgeschaltet werden",
   "toast.redownloadFailed": "Erneut herunterladen fehlgeschlagen",
   "toast.removedFromCollection": "{count} aus „{name}“ entfernt",
