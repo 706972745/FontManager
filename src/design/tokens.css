@@ -106,6 +106,12 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 焦点环的几何也令牌化（2026-11-19）：17 处 :focus-visible 规则里 offset 混着
+     1px / 2px，同一屏里 Tab 过去粗细一致、距离不一致，看起来像没对齐。
+     宽度和偏移各一条，以后加规则只引令牌，不再手写像素。 */
+  --focus-ring-w: 2px;
+  --focus-ring-offset: 2px;
 }
 
 :root[data-theme="light"] {

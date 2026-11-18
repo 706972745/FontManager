@@ -191,6 +191,8 @@
   "drop.moveTitleDefault": "Copiar a la carpeta del sistema",
   "drop.sub": "Archivos de fuente, carpetas o archivos .zip",
   "drop.title": "Suelta para instalar",
+  "empty.action.clearFilters": "Borrar los filtros",
+  "empty.action.clearSearch": "Borrar la búsqueda",
   "empty.activated.body": "Activa una fuente y aparecerá aquí.",
   "empty.activated.title": "Nada activado todavía",
   "empty.collection.body": "Haz clic derecho en una fuente → Colecciones → «{name}» para añadirla aquí.",

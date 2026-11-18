@@ -164,6 +164,39 @@ function EmptyLibrary({
     : filtered
       ? "filtered"
       : `${nav.kind}:${"name" in nav && nav.name ? nav.name : ""}`;
+  /**
+   * 空态的主行动（2026-11-19，交互细节 2.4.1 的遗留项）。
+   *
+   * 判据很硬：**按钮只在「按下去真的会结束这个空态」时出现**。
+   * 所以「被筛没了」只有一种情况给按钮 —— 命中的是筛选菜单里的条件（可一键清），
+   * 而不是标签 / 分组 / 快照这类导航（清掉它们等于把用户踢回字体库，不是清除筛选）。
+   * 其它「空」是内容状态（收藏夹还空着、这个标签下还没加字体），没有安全的默认动作，
+   * 就只留说明，不硬塞一个按钮 —— 摆个点了没用的按钮比没有更差。
+   */
+  const menuFiltered = useFontStore(
+    (s) =>
+      s.scriptFilter.length > 0 ||
+      s.formatFilter.length > 0 ||
+      s.featureFilter.length > 0 ||
+      s.sourceFilter !== "all" ||
+      s.charFilter.length > 0 ||
+      s.variableOnly ||
+      s.toggleableOnly ||
+      s.incompleteOnly ||
+      s.licenseFilter.length > 0 ||
+      Object.keys(s.copyrightStatus).length > 0,
+  );
+  const action = searching
+    ? {
+        label: t("empty.action.clearSearch"),
+        run: () => useFontStore.getState().setSearch(""),
+      }
+    : menuFiltered
+      ? {
+          label: t("empty.action.clearFilters"),
+          run: () => useFontStore.getState().resetFilters(),
+        }
+      : null;
   return (
     <motion.div
       className="empty-state"
@@ -182,6 +215,11 @@ function EmptyLibrary({
         <span className="empty-tile">{icon}</span>
         <h2>{title}</h2>
         <p>{hint}</p>
+        {action && (
+          <button className="empty-action" onClick={action.run}>
+            {action.label}
+          </button>
+        )}
       </motion.div>
     </motion.div>
   );

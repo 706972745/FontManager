@@ -191,6 +191,8 @@
   "drop.moveTitleDefault": "Copier dans le dossier système",
   "drop.sub": "Fichiers de police, dossiers ou archives .zip",
   "drop.title": "Déposez pour installer",
+  "empty.action.clearFilters": "Effacer les filtres",
+  "empty.action.clearSearch": "Effacer la recherche",
   "empty.activated.body": "Activez une police et elle apparaîtra ici.",
   "empty.activated.title": "Rien d’activé pour l’instant",
   "empty.collection.body": "Clic droit sur une police → Collections → « {name} » pour l’ajouter ici.",
