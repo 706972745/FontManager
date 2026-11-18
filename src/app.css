@@ -1469,6 +1469,16 @@ body,
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  /* 详情面板不画滚动条（用户 2026-11-19：「详细面板的滚动条不需要」）。
+     内容照旧能滚（滚轮 / 触控板 / 键盘 / 拖拽边缘），只是不显示那条发丝线：
+     面板本身只有一屏多一点，常驻一条 1px 竖线在右侧更像瑕疵。
+     Chromium 里声明 scrollbar-width 会整体禁用 ::-webkit-scrollbar 系列，
+     所以下面那条只是给老内核兜底，两处都留着才不会在某个版本上又冒出来。 */
+  scrollbar-width: none;
+}
+.detail-inner::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 /* 定高容器里 flex 子项默认会被压扁，一块一块禁掉 */
 .detail-inner > * {

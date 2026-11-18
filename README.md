@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.4.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.4.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -47,6 +47,8 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.4.4 — Group rows press with the same spring as tags; the bottom status bar slides in and out**
 
 **2.4.3 — Group rows now select exactly like tags (anchor lights up); sidebar rows get press feedback**
 
@@ -943,7 +945,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.4.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.4.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -971,6 +973,8 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 ---
 
 ## 🆕 最近更新
+
+**2.4.4 —— 分组行的按压动效与标签行完全相同（同一组弹簧参数）；底栏状态条补上进出动画**
 
 **2.4.3 —— 分组行的选中态与标签行完全同构（文件夹图标点亮成强调色）；侧栏行补按压反馈**
 

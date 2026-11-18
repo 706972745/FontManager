@@ -4,6 +4,39 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.4.4] — 2026-11-19
+
+> 2.4.3 只对齐了两种行**选中之后**长什么样，没对齐**按下去那一下**：标签行是
+> `motion.div` + `whileTap` 弹簧，分组行是普通 `div` —— 按下去一个会「压一下再弹回来」，
+> 另一个毫无反应，用户的原话是「标签的动画会慢一点，分组是硬切」。这一轮把按压动效
+> 也并到同一组参数上，并给底部状态条补上进出动画。
+
+### 修复
+
+- **分组行按下去没有按压动效**：`Sidebar.tsx` 的分组行从 `div` 换成 `motion.div`，
+  参数与标签行逐字一致（`whileTap={{ scale: 0.985 }}` + `springSnappy`）。
+  CSS 那套选中态本来就同构，缺的一直是这一层 JS 动效。
+
+### 新增
+
+- **底部状态条进出动画**（新原语 `design/primitives/BottomBar.tsx`）：
+  读取进度条 / 应用进度条 / 撤销条以前都是「条件渲染 + `return null`」，
+  出现与消失都是瞬间 —— 1.88MB 账本读完时整条「啪」地没了，点撤销又「啪」地弹出来。
+  现在统一 0.18s 从下 8px 浮起 + 淡入，退出原路返回；开「减弱动态效果」时自动只留淡入淡出。
+  **调用方不许再 `if (!show) return null`** —— 那会把 `AnimatePresence` 连同退出动画一起卸载。
+
+### 变更
+
+- **详情面板不再画滚动条**：`.detail-inner` 声明 `scrollbar-width: none`（+ 老内核兜底的
+  `::-webkit-scrollbar` 归零）。内容照旧能滚，只是不显示那条 1px 发丝线 ——
+  面板本来只有一屏多一点，常驻一条细线在右侧更像瑕疵。
+  代价是可视内容宽了 10px，长串文字会重新折行一次（不是位移，只是折行点变了）。
+
+### 测试
+
+- `tests/sidebarRowParity.test.ts` 增一条：分组行必须是 `motion.div` 且 `whileTap` 参数
+  与标签行完全相同。上一轮守住了 CSS，这一轮补上 JS 那一半 —— 只改一边会红。
+
 ## [2.4.3] — 2026-11-19
 
 > 收尾「分组和标签的点击效果要一模一样」这一句。2.4.2 修好了竖线，但两种行的**锚点**还差
