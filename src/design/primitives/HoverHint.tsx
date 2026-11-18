@@ -4,6 +4,7 @@ import { overlayOpen } from "../../lib/overlayRegistry";
 import { t, type TKey } from "../../lib/i18n";
 import { useFontStore } from "../../state/fontStore";
 import { isContextMenuOpen } from "./ContextMenu";
+import { hintDelay } from "../../lib/hintTiming";
 
 /**
  * 按钮悬停 1 秒后出现的用途说明。
@@ -19,8 +20,12 @@ import { isContextMenuOpen } from "./ContextMenu";
  * 「这个按钮有什么用」不合格；显式 `data-hint` 才能为两种用途分别措辞。
  */
 
-/** 需求：悬停 1 秒 */
-const DELAY = 1000;
+/**
+ * 等待时长见 `lib/hintTiming.ts`：首次 1 秒（确认「不是路过」），
+ * 刚看完一条之后的 2 秒内只等 120ms（skip delay，业界的默认做法）。
+ * 原来只有一个恒定的 1 秒，在工具栏上挨个认按钮要十几秒。
+ */
+
 /** 与按钮的间距（逻辑像素） */
 const GAP = 8;
 /** 距屏幕/窗口边缘的最小留白 */
@@ -120,6 +125,12 @@ export function HoverHintHost() {
     let timer: number | undefined;
     let pending: HTMLElement | null = null;
     let shownEl: HTMLElement | null = null;
+    /**
+     * 上一条气泡是「指针移走」关掉的时刻。
+     * 只有这种关法才算「用户正在挨个看按钮」；滚动 / 按键 / 失焦关掉的不算
+     * —— 那时候用户已经不在看提示了，下一次该老老实实等满 1 秒。
+     */
+    let lastClosedAt: number | null = null;
 
     const cancelTimer = () => {
       if (timer !== undefined) {
@@ -129,13 +140,18 @@ export function HoverHintHost() {
       pending = null;
     };
 
-    const hide = () => {
+    /** warm=true：这条是「指针移走」关的，可以给下一条走快速通道 */
+    const close = (warm: boolean) => {
       cancelTimer();
       if (!shownRef.current) return; // 没显示就不 setState，避免划过时狂重渲染
       shownEl = null;
       shownRef.current = null;
       setShown(null);
+      if (warm) lastClosedAt = Date.now();
     };
+    /** 无参版：直接给 pointerdown / keydown / scroll / blur 当监听器用
+     *  （带布尔的版本会被事件对象当成 true，一滚动就误判成「在挨个看」） */
+    const hide = () => close(false);
 
     const fire = () => {
       timer = undefined;
@@ -175,12 +191,15 @@ export function HoverHintHost() {
       if (el === shownEl || el === pending) return;
       cancelTimer();
       if (shownRef.current) {
+        // 从「正在显示的那个按钮」直接挪到另一个按钮：这就是最典型的挨个看，
+        // 记下时刻，让下一个走快速通道（否则又要等满 1 秒）
         shownEl = null;
         shownRef.current = null;
         setShown(null);
+        lastClosedAt = Date.now();
       }
       pending = el;
-      timer = window.setTimeout(fire, DELAY);
+      timer = window.setTimeout(fire, hintDelay(lastClosedAt, Date.now()));
     };
 
     const onOut = (e: PointerEvent) => {
@@ -190,7 +209,8 @@ export function HoverHintHost() {
         ((pending && to.closest?.(HINT_SELECTOR) === pending) ||
           (shownEl && to.closest?.(HINT_SELECTOR) === shownEl));
       if (keep) return;
-      hide();
+      // 指针移走关掉的：算「刚看完一条」，下一条可以快
+      close(true);
     };
 
     document.addEventListener("pointerover", onOver, true);
