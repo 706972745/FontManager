@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.4.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.4.1-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -47,6 +47,8 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.4.1 — Interaction detail pass: tooltip skip-delay, real focus rings, motion tokens**
 
 **2.4.0 — Per-library data: tags, groups and snapshots now live inside each font library**
 
@@ -937,7 +939,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.4.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.4.1-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -965,6 +967,8 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 ---
 
 ## 🆕 最近更新
+
+**2.4.1 —— 交互细节：提示气泡不再每次等满一秒、焦点环真的画出来、缓动收成三条曲线**
 
 **2.4.0 —— 数据跟着字体库走：标签 / 分组 / 快照存进每个库自己的 `.FontManager`**
 
