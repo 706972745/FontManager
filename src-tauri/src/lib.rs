@@ -23,6 +23,7 @@ mod fontcache;
 mod installer;
 mod library_pack;
 mod library_marker;
+mod library_scope;
 mod net;
 mod online;
 mod parser;
@@ -2379,6 +2380,13 @@ fn set_settings(
         state.extra_dirs = settings.extra_dirs.clone();
         state.watch_enabled = settings.watch_enabled;
         state.auto_activate_imports = settings.auto_activate_imports;
+        // 换库前先把旧库的业务数据写回它自己的 `<库>/.FontManager/`（2.4.0）——
+        // 不写就等于「切走即丢」。写失败只记日志：库只读不该让「改设置」整条失败。
+        if before_change != library_dir {
+            if let Err(e) = crate::library_scope::save_for_state(&state) {
+                crate::diag::log(&format!("[store] 换库前旧库数据落盘失败：{e}"));
+            }
+        }
         state.library_dir = library_dir.clone();
         state.library_dirs = library_dirs;
         state.library_dir_enabled = settings.library_dir_enabled;
@@ -2406,6 +2414,11 @@ fn set_settings(
             if let Err(e) = library_marker::retire(&old_managed.to_string_lossy()) {
                 crate::diag::log(&format!("[store] 旧库图标复原失败：{e}"));
             }
+            // 切到新库：先把业务字段清空，再从新库自己的 `.FontManager/` 读回来。
+            // 新库没有 library.json 时写入空集 —— 绝不沿用上一个库的标签（2.4.0）。
+            crate::library_scope::clear(&mut state);
+            let outcome = crate::library_scope::load_for_state(&mut state);
+            crate::diag::log(&format!("[store] 换库数据切换 -> {outcome:?}"));
         }
         store::save(&state)?;
     }

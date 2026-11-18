@@ -1416,6 +1416,15 @@ pub fn load() -> AppState {
         }
     }
     // 1.2.6：默认库从「Windows 用户字体目录」搬到了安装目录。
+    // 业务数据按库存储（2.4.0）：账本里读到的只是「机器级」那一半，
+    // 标签 / 分组 / 快照 / 收藏 / 备注 / 入库时间要按当前库从 `<库根>/.FontManager/library.json`
+    // 灌进来。必须发生在 pin_legacy_library **之前** —— 那条逻辑要看 `added` 判断老用户，
+    // 而 `added` 现在属于库数据。
+    // 默认库也算库（见 library_scope::effective_library_dir），所以这里不判断有没有自定义库
+    let scope_outcome = crate::library_scope::load_for_state(&mut state);
+    if !matches!(scope_outcome, crate::library_scope::LoadOutcome::Skipped) {
+        crate::diag::log(&format!("store: library scope -> {scope_outcome:?}"));
+    }
     // 老用户（没开自定义文件夹、但确实往旧默认库导入过字体）必须把地址**钉死在旧目录**上：
     // 否则升级后库一下子变空，几千个字体全变成「用户字体」，停用也停不掉。
     let pinned_before = state.library_dir.clone();
@@ -1481,6 +1490,18 @@ pub fn save(state: &AppState) -> Result<(), String> {
     // 不能读到一个几周前的旧偏好。写失败只记日志，主文件已经落盘了。
     if let Err(e) = save_prefs(state) {
         crate::diag::log(&format!("store: prefs.json 同步失败（不影响 state.json）：{e}"));
+    }
+    // 业务数据那一半写回当前库（2.4.0）。库不可写时会降级到
+    // `data_root()/library-scope/` 并返回 Degraded —— 这里只记日志：
+    // 业务改动已经落进 global 账本，不该因为库是只读的就把整次操作判失败。
+    match crate::library_scope::save_for_state(state) {
+        Ok(crate::library_scope::SavePlace::Library) => {}
+        Ok(crate::library_scope::SavePlace::Degraded(p)) => {
+            crate::diag::log(&format!("store: 库数据降级落盘到 {}", p.display()));
+        }
+        Err(e) => {
+            crate::diag::log(&format!("store: 库数据落盘失败：{e}"));
+        }
     }
     Ok(())
 }
