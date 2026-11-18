@@ -32,6 +32,12 @@
   --accent-gradient: linear-gradient(135deg, #d4d4d8, #a1a1aa);
   --accent-glow: rgba(212, 212, 216, 0.45);
   --accent-glow-soft: rgba(212, 212, 216, 0.22);
+  /* 键盘焦点环（2026-11-19，细节优化 2.4.1）：
+     之前 4 处 `outline: 2px solid var(--accent)` 引用的是**根本不存在的** --accent，
+     var() 解析失败会让整条 outline 声明失效 → 计算值回落到 none，
+     也就是说那几处焦点环一直是**没有**的。立一条显式令牌，别再靠运气。
+     取值用强调色（中性灰）：深色 #d4d4d8 对近黑底约 11:1，浅色 #3f3f46 对白底约 9:1。 */
+  --focus-ring: var(--accent-a);
 
   --success: #d4d4d8;
   --warning: #d4d4d8;
@@ -82,6 +88,24 @@
   --t-state: 260ms;
   --t-layout: 400ms;
   --t-scene: 600ms;
+
+  /* ─── 缓动：三条曲线覆盖全部 UI 动效（2026-11-19，细节优化 2.4.1） ─────────
+     在这之前只有「时长」令牌、没有「缓动」令牌，136 处过渡里混着 ease / linear /
+     ease-out / 不写曲线（默认 ease）。用户说不出「这条曲线叫什么」，但能感觉到
+     「这软件有些地方顺、有些地方钝」。
+
+     为什么是这三条：
+     - out ＝ 进场与响应。快起慢收，界面像是「立刻听见了」，尾巴自己收干净。
+     - in  ＝ 退场。慢起快收，不做停留，用户已经决定走了。
+     - std ＝ 位置 / 颜色 / 边框变化。对称，看不出偏向，适合不表达方向的过渡。
+
+     为什么只立三条：第四条开始就会出现「这条为什么和那条不一样」的争论，
+     而用户根本分辨不出来 —— 一致性本身就是手感。
+     ⚠️ 不要把它们塞进下面的减弱动效覆盖块：减弱动效压的是**时长**，
+        曲线在 1ms 里已经不存在了，改它没有意义还会误导后来人。 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :root[data-theme="light"] {
@@ -115,6 +139,7 @@
   --accent-gradient: linear-gradient(135deg, #52525b, #3f3f46);
   --accent-glow: rgba(63, 63, 70, 0.38);
   --accent-glow-soft: rgba(63, 63, 70, 0.16);
+  --focus-ring: var(--accent-a);
 
   --success: #3f3f46;
   --warning: #3f3f46;

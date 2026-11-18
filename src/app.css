@@ -483,7 +483,7 @@ body,
   height: 100%;
   border-radius: inherit;
   background: var(--accent-a);
-  transition: width 160ms linear;
+  transition: width var(--t-quick) linear;
 }
 /* 还没数出总文件数时的「不确定」态：一小段来回滑动 */
 .load-fill-indeterminate {
@@ -1274,6 +1274,10 @@ body,
   height: 100%;
   min-height: 0;
   overflow-y: auto;
+  /* 主列表是全软件最常滚的地方，却是唯一没写这条的滚动容器（另外 10 个都写了）。
+     少了它，滚到底继续滚会把滚动「传染」给外层，整页跟着弹一下
+     （细节优化 2.4.1）。 */
+  overscroll-behavior: contain;
 }
 .list-row {
   display: grid;
@@ -1291,6 +1295,18 @@ body,
 }
 .list-row:hover {
   background: var(--e1);
+}
+/* 按压反馈（细节优化 2.4.1）：以前按下时行内**没有任何变化**，点击像是"没被听见"，
+   要等选中态出现才知道点上了。这里在按下瞬间再深一档（hover 是 --e1）。
+   为什么不跟网页卡片一样 scale(.98)：这是 grid 布局的行，缩放会让文字在按下那一帧
+   次像素重排、看起来发虚；换背景色是同帧到位、不产生重排的。 */
+.list-row:active:not(.row-selected) {
+  background: var(--e2);
+}
+/* 已选中的行有自己的强调底，不能拿 --e2 盖掉它（盖了会"取消选中"的错觉）；
+   用亮度压一档，选中语义仍在、按下也有回应。 */
+.list-row.row-selected:active {
+  filter: brightness(0.97);
 }
 .row-selected {
   background: color-mix(in srgb, var(--accent-a) 9%, var(--e2));
@@ -1624,14 +1640,14 @@ h2.detail-title.copy-name {
   background: rgba(var(--ink-rgb), 0.1);
 }
 .copy-name:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 /* 版权状态 radiogroup 容器：roving tabindex 的落点。已设 paid 的族没有一枚
    chip 是 tabIndex=0，Tab 必须能落进容器（QA Round 3 a11y 回归），方向键
    在 onKeyDown 里把焦点交给对应 chip。给键盘用户一个可见焦点框。 */
 .copyright-status-row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -1672,7 +1688,7 @@ h2.detail-title.copy-name {
   border-bottom-color: rgba(var(--ink-rgb), 0.3);
 }
 .license-file-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -1711,7 +1727,7 @@ h2.detail-title.copy-name {
   cursor: default;
 }
 .license-file-search:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -3587,7 +3603,7 @@ h2.detail-title.copy-name {
   color: var(--accent-a);
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.2s linear;
+  transition: opacity var(--t-quick) linear;
 }
 .specimen-copied.is-shown {
   opacity: 1;
@@ -4136,13 +4152,21 @@ h2.detail-title.copy-name {
   opacity: 0.55;
   border-radius: 50%;
   cursor: help;
-  transition: opacity 0.15s ease, color 0.15s ease;
+  transition: opacity var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
 }
 .settings-hint:hover,
 .settings-hint:focus-visible {
   opacity: 1;
   color: var(--text-secondary);
-  outline: none;
+}
+/* 提示图标是 <span tabIndex={0} role="img">，**可以 Tab 到** —— 原来这里统一写了
+   `outline: none`，键盘用户停在它上面时屏幕上没有任何可辨认的变化（只淡了一点），
+   等于「焦点丢了」。归到和别的控件同一条口径：2px 强调色 + 2px 偏移。
+   圆角 4px：和设置页卡片头一致，不会看起来像贴了个方框。 */
+.settings-hint:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* 设置里的小勾选项（目前只有「导出时连字体一起打包」）：
@@ -4193,7 +4217,8 @@ h2.detail-title.copy-name {
   font-size: var(--fs-11);
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+  transition: border-color var(--t-micro) var(--ease-std), color var(--t-micro) var(--ease-std),
+    background var(--t-micro) var(--ease-std);
 }
 .hotkey-field:hover {
   border-color: rgba(var(--ink-rgb), 0.22);
@@ -6062,7 +6087,8 @@ h2.detail-title.copy-name {
   background: var(--e1);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std);
 }
 .copyright-status-btn:hover {
   color: var(--text-primary);
@@ -7109,7 +7135,7 @@ body.ui-fade-out .app-frame {
   font-weight: 400;
   color: var(--qb-accent);
   opacity: 0;
-  transition: opacity 0.2s linear;
+  transition: opacity var(--t-quick) linear;
 }
 .qb-copied.is-shown {
   opacity: 1;
@@ -7343,7 +7369,7 @@ body.ui-fade-out .app-frame {
   /* 整条都能点 = 复制字重名（2026-11-12）：光标要跟着说明这件事。
      行内按钮各自还有 `cursor: pointer`，不冲突。 */
   cursor: pointer;
-  transition: background 120ms ease, box-shadow 120ms ease;
+  transition: background var(--t-micro) var(--ease-std), box-shadow var(--t-micro) var(--ease-std);
 }
 /* 悬停就有左侧竖条 + 底色：完整界面和速览共用这一套（0.9.3-5 起两处完全一致） */
 .face-line:hover {
@@ -9737,7 +9763,7 @@ body.tour-qb .qb-actions .qb-btn-text {
   display: block;
   height: 100%;
   background: var(--ui-accent);
-  transition: width 0.2s linear;
+  transition: width var(--t-quick) linear;
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -10433,7 +10459,7 @@ body.tour-qb .qb-actions .qb-btn-text {
   /* 与 .sidebar-footer 同一条线（5%）：这两个面板和「在线 / 回收站」是同一列里的
      兄弟行，线一深一浅就露馅。展开时再加深一档（见下面 .open）。 */
   border-top: 1px solid rgba(var(--ink-rgb), 0.05);
-  transition: height 110ms ease;
+  transition: height var(--t-micro) var(--ease-std);
 }
 /* 展开只认 `.open`：悬停状态由 lib/dockHover.ts 的全局单值驱动。
    不能用 :hover —— 分组与标签上下相邻，各自 :hover 时从标签移到分组会让
@@ -10494,7 +10520,7 @@ body.tour-qb .qb-actions .qb-btn-text {
   flex-shrink: 0;
   display: inline-flex;
   transform: rotate(90deg);
-  transition: transform 110ms ease;
+  transition: transform var(--t-micro) var(--ease-std);
   color: var(--text-tertiary);
 }
 .tag-dock-caret.closed {
@@ -10748,7 +10774,7 @@ body.tour-qb .qb-actions .qb-btn-text {
   border-radius: 4px;
   color: var(--text-tertiary);
   opacity: 0;
-  transition: opacity 90ms ease;
+  transition: opacity var(--t-micro) var(--ease-std);
 }
 .tag-row:hover .tag-row-more,
 .tag-group-row:hover .tag-row-more,
@@ -10776,7 +10802,7 @@ body.tour-qb .qb-actions .qb-btn-text {
   flex-shrink: 0;
   display: inline-flex;
   transform: rotate(90deg);
-  transition: transform 100ms ease;
+  transition: transform var(--t-micro) var(--ease-std);
   color: var(--text-tertiary);
 }
 .tag-caret.closed {
