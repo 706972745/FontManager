@@ -4,6 +4,29 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.4.5] — 2026-11-19
+
+> **2.4.4 装完打不开：一直卡在启动页。** 根因是 2.4.4 给底栏套进出动画时，把
+> `ApplyProgress` 里的 `if (!apply && !notice) return null` 删掉了 —— 冷启动时这两个值
+> 都是 `null`，而 JSX 子节点每次渲染都会求值，`{!apply ? notice!.done : …}` 当场抛
+> `TypeError: Cannot read properties of null`。项目没有 ErrorBoundary，整个 React 树被
+> 卸载 → 主窗口永远不调 `splash_done` → 启动页停在「正在读取上次启用的字体…」。
+> 这一版只修这一个问题，不改任何交互。
+
+### 修复
+
+- **启动即卡死（2.4.4 引入）**：`ApplyProgress` 的三条分支都改用**已收敛成非空**的局部
+  变量（`row` / `note`），不再出现任何 `!` 断言，并补上「两者都为空 → 渲染 null」的兜底。
+  退出动画期间用最后一帧内容撑着（`useRef` 快照），不会闪一条空壳。
+- 同一轮把 `BottomBar` 的两个调用方的注释写清了为什么**不许**再 `if (!show) return null`。
+
+### 测试
+
+- 新增 `tests/bottomBarContract.test.ts`（2 条）：扫源码钉住
+  ① `ApplyProgress` 里不许出现 `x!.` 非空断言、必须有 `) : null}` 兜底、`notice` 必须先收敛；
+  ② 两个底栏调用方都不许提前 `return null`。这类 bug 一旦复发就是「软件打不开」，
+  值得用测试挡在提交前。
+
 ## [2.4.4] — 2026-11-19
 
 > 2.4.3 只对齐了两种行**选中之后**长什么样，没对齐**按下去那一下**：标签行是
