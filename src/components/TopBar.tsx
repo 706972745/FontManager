@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import { spring, springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
+import { useToasterSafeTop } from "../lib/useToasterSafeTop";
 import { familiesFor, familyTagCounts, MIN_PREVIEW_SIZE_INDEX, SIZES, useFontStore, type SortMode } from "../state/fontStore";
 import { tagLabel } from "../lib/tagLabels";
 import { isAutoTagId } from "../lib/tagVocabulary";
@@ -766,6 +767,9 @@ function CompareButton() {
 
 export function TopBar() {
   const t = useT();
+  /** 提示条要避开顶栏（2026-11-19）：高度由这里量出来写进 CSS 变量 */
+  const barRef = useRef<HTMLElement>(null);
+  useToasterSafeTop(barRef);
   const sampleText = useFontStore((s) => s.sampleText);
   /**
    * 顶栏这个「Hello」框用真实字体渲染。
@@ -899,6 +903,7 @@ export function TopBar() {
 
   return (
     <motion.header
+      ref={barRef}
       className="topbar"
       initial={intro ? { y: -32, opacity: 0 } : false}
       animate={{ y: 0, opacity: 1 }}

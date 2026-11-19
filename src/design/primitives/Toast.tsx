@@ -135,7 +135,14 @@ export const toast = {
     useToastStore.getState().push("info", title, detail),
 };
 
-export function Toaster() {
+/**
+ * 提示条容器。
+ *
+ * `className` 只用来区分**两种宿主窗口**（2026-11-19）：完整界面传 `toaster-main`，
+ * 让提示从工具栏下面开始排（见 `useToasterSafeTop` / app.css 同名段）；速览窗口
+ * 不传，沿用原位置。别拿它挂别的样式 —— 位置这件事只由这两个类决定。
+ */
+export function Toaster({ className }: { className?: string } = {}) {
   const { toasts, dismiss, pause, resume } = useToastStore();
   /**
    * 卸载前把暂停中的提示恢复计时。
@@ -145,7 +152,7 @@ export function Toaster() {
    */
   useEffect(() => () => useToastStore.getState().resumePaused(), []);
   return (
-    <div className="toaster">
+    <div className={className ? `toaster ${className}` : "toaster"}>
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.div

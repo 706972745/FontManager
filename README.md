@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.5.1-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.5.2-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -36,7 +36,7 @@ and MCP when you want your tools to join in.
 
 <br>
 
-<img src="main.png?v=2.5.1" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
+<img src="main.png?v=2.5.2" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -48,11 +48,11 @@ and MCP when you want your tools to join in.
 
 ## 🆕 What's new
 
+**2.5.2 — Toasts no longer cover the toolbar; the font-sync plugin stops nagging on app start**
+
 **2.5.1 — The plugin centre now opens inside the main window (same size as Settings), keeps one instance, and hosts plugin settings pages too**
 
 **2.4.5 — Fixes 2.4.4 refusing to start (blank main window stuck behind the splash)**
-
-**2.4.4 — Group rows press with the same spring as tags; the bottom status bar slides in and out**
 
 **2.4.3 — Group rows now select exactly like tags (anchor lights up); sidebar rows get press feedback**
 
@@ -236,7 +236,7 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.5.1)
+![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.5.2)
 
 **Find your way first: the window has five regions**
 
@@ -949,7 +949,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.5.1-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.5.2-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -966,7 +966,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 <br>
 
-<img src="main.png?v=2.5.1" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
+<img src="main.png?v=2.5.2" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
 
 <sub>字体库：每个字族都以自己的字形实时渲染，离任何应用的字体菜单都只差一个开关。</sub>
 
@@ -978,11 +978,11 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 ## 🆕 最近更新
 
+**2.5.2 —— 提示条不再压住顶栏按钮；字体同步插件不再「一开软件就弹提示」**
+
 **2.5.1 —— 插件中心改为在主窗口里打开（与设置面板同尺寸），点多次只有一个；同一遮罩层也承载插件自己的设置界面**
 
 **2.4.5 —— 修复 2.4.4 装完打不开（主窗口被启动页挡死）；只修这一处，不动任何交互**
-
-**2.4.4 —— 分组行的按压动效与标签行完全相同（同一组弹簧参数）；底栏状态条补上进出动画**
 
 **2.4.3 —— 分组行的选中态与标签行完全同构（文件夹图标点亮成强调色）；侧栏行补按压反馈**
 
@@ -1145,7 +1145,7 @@ FontManager 在这个起点上加了什么：
 
 ### 2. 认识主界面
 
-![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.5.1)
+![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.5.2)
 
 **先认路：主界面分五个区**
 
