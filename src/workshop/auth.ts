@@ -26,7 +26,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { panelApi, type GithubDevicePoll, type GithubDeviceStart } from "./api.ts";
+import { PanelError, panelApi, type GithubDevicePoll, type GithubDeviceStart } from "./api.ts";
 
 /** 文案函数：面板用自己那份 9 语言词典，key 与 upload* 同前缀 */
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
@@ -223,11 +223,18 @@ export function useGithubAuth(t: TFn): GithubAuth {
       schedulePoll(pollDelayMs(d.interval));
     } catch (e) {
       if (!alive.current) return;
+      // 面板与主程序是**两个可以独立更新的产物**：用户可能先更新了面板、
+      // 软件还停在 2.4.x（那时没有 /api/github/*）。这时候说「连不上 GitHub」
+      // 会让人以为是网络问题，其实是要更新软件 —— 必须给一句准话。
+      const code = e instanceof PanelError ? e.status : 0;
       setState((p) => ({
         ...p,
         status: "idle",
         device: null,
-        error: `${t("uploadDeviceFailed")} (${String((e as Error).message)})`,
+        error:
+          code === 404 || code === 405
+            ? t("uploadNeedAppUpdate")
+            : `${t("uploadDeviceFailed")} (${String((e as Error).message)})`,
       }));
     }
   }, [schedulePoll, stopPolling, t]);
