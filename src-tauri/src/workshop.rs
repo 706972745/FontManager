@@ -986,11 +986,11 @@ fn ensure_panel_server(app: AppHandle, dir: PathBuf) -> Result<PanelServerInfo, 
         .route("/api/uninstall", post(api_uninstall))
         .route("/api/open-url", post(api_open_url))
         .route("/api/tour-done", post(api_tour_done))
-        .route(
-            "/api/upload-token",
-            get(api_upload_token).post(api_upload_token_set),
-        )
-        .route("/api/upload-token/clear", post(api_upload_token_clear))
+        .route("/api/upload-token", get(api_upload_token))
+        .route("/api/github/session", get(api_github_session))
+        .route("/api/github/device/start", post(api_github_device_start))
+        .route("/api/github/device/poll", post(api_github_device_poll))
+        .route("/api/github/logout", post(api_github_logout))
         .route("/api/blur-guard", post(api_blur_guard))
         .route(
             "/api/index-cache",
@@ -1363,7 +1363,10 @@ fn write_upload_token(token: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 取回上传令牌（没有就是 null）。
+/// 取回**当前登录用户**的令牌（没有就是 null）。
+///
+/// 令牌只有一个来源：用户在面板里走完一次 GitHub 设备码登录（见上面那一段）。
+/// 面板不能自己收令牌，也不内置任何令牌 —— 2026-11-19 用户口径。
 ///
 /// 这里**把明文回给面板页面**是没办法的事：调 GitHub API 的是页面里的 JS
 /// （Rust 侧代调等于再写一遍 fork/PR 那套逻辑）。能读到它的前提是拿到
@@ -1375,40 +1378,362 @@ async fn api_upload_token(State(st): State<Arc<PanelState>>, headers: axum::http
     json_ok(json!({ "token": read_upload_token() }))
 }
 
-#[derive(serde::Deserialize)]
-struct UploadTokenBody {
-    #[serde(default)]
-    token: String,
+// ── GitHub 账号（Device Flow）────────────────────────────────────────────
+//
+// **面板不接收、也不内置任何令牌**（2026-11-19 用户口径）：上传能力只来自
+// 「用户自己在本机登录一次 GitHub」。流程全部在 Rust 侧完成，页面只看得到
+// 8 位设备码、登录名和进度 —— 令牌本身不经过页面 JS。
+//
+// 为什么不能像 api.github.com 那样直接由页面 fetch：
+// `github.com/login/device/code` 与 `/login/oauth/access_token` **不发 CORS 头**
+// （只有 api.github.com 发 `Access-Control-Allow-Origin: *`），
+// webview 里 fetch 会被浏览器直接拦掉，所以这两步必须由主程序代做。
+
+/// GitHub OAuth App 的 `client_id`（Device Flow 没有 client_secret，可安全内置）。
+///
+/// **留空 = 未配置**：面板会显示「软件还没有配置 OAuth App」并给出配置步骤，
+/// 而不是让用户对着一个 400 猜。申请方式：GitHub → Settings → Developer settings
+/// → OAuth Apps → New OAuth App，勾上 **Enable Device Flow**，然后把 client_id
+/// 填到这里（`Iv1.` 或 `Ov23li...` 开头，不是 client_secret）。
+pub const GITHUB_CLIENT_ID: &str = "Ov23lirUWCuWuZ2B8MGY";
+
+const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
+const GITHUB_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+const GITHUB_USER_URL: &str = "https://api.github.com/user";
+/// fork 自己的仓库 + 开 PR 需要写权限：`public_repo` 够用，且碰不到私有仓
+const GITHUB_SCOPE: &str = "public_repo";
+const GITHUB_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// 一轮设备码登录的中间状态。**只存 device_code，不存令牌** ——
+/// 令牌只在拿到那一刻写进 DPAPI 文件，之后连进程内都不保留副本。
+struct PendingDevice {
+    device_code: String,
+    /// 轮询间隔（秒）。GitHub 回 `slow_down` 时要往上加，见 [`apply_slow_down`]。
+    interval: u64,
+    expires_at: std::time::Instant,
 }
 
-async fn api_upload_token_set(
+static PENDING_DEVICE: OnceLock<Mutex<Option<PendingDevice>>> = OnceLock::new();
+/// 当前登录名缓存：面板每次打开都会问一次会话，缓存住就不必每次都打 GitHub。
+static SESSION_LOGIN: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn pending_device() -> &'static Mutex<Option<PendingDevice>> {
+    PENDING_DEVICE.get_or_init(|| Mutex::new(None))
+}
+
+fn session_login() -> &'static Mutex<Option<String>> {
+    SESSION_LOGIN.get_or_init(|| Mutex::new(None))
+}
+
+/// 认证专用客户端：**不复用** [`client`]，因为后者的重定向白名单是为下载资产定的
+/// （没有 api.github.com），拿它调 `/user` 会直接被自己的策略拒掉。
+fn github_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(crate::net::USER_AGENT)
+        .timeout(GITHUB_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+/// `application/x-www-form-urlencoded` 的一条键值对。
+///
+/// 没有用 `reqwest` 的 `.form()`：那个方法要开 `form` feature，而我们为省体积
+/// 关掉了默认特性。这里手写编码比为一个方法多拖一个 feature 划算 ——
+/// 只按 RFC 3986 的 unreserved 集合放行，其余一律 `%XX`（`:` `/` 都在其中，
+/// `grant_type` 的值正好需要）。
+/// RFC 3986 percent-encoding（只放行 unreserved 集合）。表单与查询串共用一份。
+fn pct(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        let keep = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~');
+        if keep {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+fn form_encode(pairs: &[(&str, &str)]) -> String {
+    pairs
+        .iter()
+        .map(|(k, v)| format!("{}={}", pct(k), pct(v)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// 一次轮询的结果。抽成纯函数是为了能单测 —— 这里每个分支都对应一句要给用户看的话。
+#[derive(Debug, PartialEq)]
+enum PollOutcome {
+    Token(String),
+    Pending,
+    SlowDown,
+    Expired,
+    Denied,
+    Failed(String),
+}
+
+fn parse_poll(v: &Value) -> PollOutcome {
+    if let Some(tok) = v.get("access_token").and_then(Value::as_str) {
+        if !tok.trim().is_empty() {
+            return PollOutcome::Token(tok.trim().to_string());
+        }
+    }
+    match v.get("error").and_then(Value::as_str).unwrap_or("") {
+        "authorization_pending" => PollOutcome::Pending,
+        "slow_down" => PollOutcome::SlowDown,
+        "expired_token" => PollOutcome::Expired,
+        "access_denied" => PollOutcome::Denied,
+        // 剩下这些是配置问题，不是用户操作问题：原样带出去，别让用户以为再试一次就好
+        "device_flow_disabled" => {
+            PollOutcome::Failed("这个 OAuth App 没启用 Device Flow（GitHub 应用设置里勾上）".into())
+        }
+        "unauthorized_client" | "incorrect_client_credentials" => {
+            PollOutcome::Failed("client_id 不对：填的是 OAuth App 的 client_id，不是 client_secret".into())
+        }
+        "" => PollOutcome::Failed(format!("GitHub 返回了看不懂的响应：{v}")),
+        other => PollOutcome::Failed(
+            v.get("error_description")
+                .and_then(Value::as_str)
+                .filter(|d| !d.is_empty())
+                .map(|d| format!("{other}：{d}"))
+                .unwrap_or_else(|| other.to_string()),
+        ),
+    }
+}
+
+/// `slow_down` 之后 GitHub 要求至少多等 5 秒。夹一个 60 秒上限，
+/// 免得某个实现一直回 slow_down 把面板的轮询周期拖到分钟级。
+fn apply_slow_down(interval: u64) -> u64 {
+    (interval + 5).min(60)
+}
+
+fn clear_pending() {
+    if let Ok(mut g) = pending_device().lock() {
+        *g = None;
+    }
+}
+
+async fn github_whoami(token: &str) -> Result<String, String> {
+    let res = github_client()?
+        .get(GITHUB_USER_URL)
+        .bearer_auth(token)
+        .header(header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status().as_u16()));
+    }
+    let v: Value = res.json().await.map_err(|e| e.to_string())?;
+    v.get("login")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "GitHub 没有返回登录名".to_string())
+}
+
+/// 当前会话：`configured=false` 表示软件还没配 client_id（不是用户没登录）。
+async fn api_github_session(
     State(st): State<Arc<PanelState>>,
     headers: axum::http::HeaderMap,
-    Json(body): Json<UploadTokenBody>,
 ) -> Response {
     if !key_ok(&st, &headers) {
         return json_err(StatusCode::UNAUTHORIZED, "面板会话已失效，请重新打开插件中心");
     }
-    let token = body.token.trim();
-    if token.is_empty() {
-        return json_err(StatusCode::BAD_REQUEST, "令牌是空的");
+    if GITHUB_CLIENT_ID.is_empty() {
+        return json_ok(json!({ "configured": false, "login": null }));
     }
-    // 只做形状校验：真假要调 GitHub 才知道，那一步在前端（顺便把登录名一起拿回来）
-    if token.len() < 20 || token.contains(char::is_whitespace) {
-        return json_err(StatusCode::BAD_REQUEST, "这看起来不像一个 GitHub 令牌");
+    if let Some(login) = session_login().lock().ok().and_then(|g| g.clone()) {
+        return json_ok(json!({ "configured": true, "login": login }));
     }
-    match write_upload_token(token) {
-        Ok(()) => json_ok(json!({ "ok": true })),
-        Err(e) => json_err(StatusCode::INTERNAL_SERVER_ERROR, e),
+    let Some(token) = read_upload_token() else {
+        return json_ok(json!({ "configured": true, "login": null }));
+    };
+    // 网络抖动不该把用户踢下线：只报「没登录」，不删令牌
+    match github_whoami(&token).await {
+        Ok(login) => {
+            if let Ok(mut g) = session_login().lock() {
+                *g = Some(login.clone());
+            }
+            json_ok(json!({ "configured": true, "login": login }))
+        }
+        Err(_) => json_ok(json!({ "configured": true, "login": null })),
     }
 }
 
-async fn api_upload_token_clear(
+async fn api_github_device_start(
     State(st): State<Arc<PanelState>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     if !key_ok(&st, &headers) {
         return json_err(StatusCode::UNAUTHORIZED, "面板会话已失效，请重新打开插件中心");
+    }
+    if GITHUB_CLIENT_ID.is_empty() {
+        return json_err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "软件还没有配置 OAuth App 的 client_id，暂时无法登录 GitHub",
+        );
+    }
+    let res = match github_client() {
+        Ok(c) => c,
+        Err(e) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
+    .post(GITHUB_DEVICE_CODE_URL)
+    .header(header::ACCEPT, "application/json")
+    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+    .body(form_encode(&[
+        ("client_id", GITHUB_CLIENT_ID),
+        ("scope", GITHUB_SCOPE),
+    ]))
+    .send()
+    .await;
+    let res = match res {
+        Ok(r) => r,
+        Err(e) => return json_err(StatusCode::BAD_GATEWAY, format!("连不上 GitHub：{e}")),
+    };
+    if !res.status().is_success() {
+        return json_err(
+            StatusCode::BAD_GATEWAY,
+            format!("GitHub 拒绝发起登录（HTTP {}）", res.status().as_u16()),
+        );
+    }
+    let v: Value = match res.json().await {
+        Ok(v) => v,
+        Err(e) => return json_err(StatusCode::BAD_GATEWAY, format!("GitHub 回了非 JSON：{e}")),
+    };
+    let (Some(code), Some(user_code), Some(uri)) = (
+        v.get("device_code").and_then(Value::as_str),
+        v.get("user_code").and_then(Value::as_str),
+        v.get("verification_uri").and_then(Value::as_str),
+    ) else {
+        return json_err(
+            StatusCode::BAD_GATEWAY,
+            "GitHub 的响应里缺 device_code / user_code / verification_uri",
+        );
+    };
+    let expires_in = v.get("expires_in").and_then(Value::as_u64).unwrap_or(900);
+    let interval = v.get("interval").and_then(Value::as_u64).unwrap_or(5).max(1);
+    if let Ok(mut g) = pending_device().lock() {
+        *g = Some(PendingDevice {
+            device_code: code.to_string(),
+            interval,
+            expires_at: std::time::Instant::now() + Duration::from_secs(expires_in),
+        });
+    }
+    // 「一按就进」的完整地址：把设备码带在查询串里，浏览器打开时 GitHub 会直接
+    // 把它填好（`gh` CLI 就是这么干的）。不这么做的话，用户要在浏览器里手抄
+    // 8 位码 —— 那一步是把「能用」变成「不想用」的地方（2026-11-19 用户反馈：
+    // 「小白都能用」）。手抄的退路仍然留着：面板上照样把码显示出来。
+    let uri_complete = format!("{uri}?user_code={}", pct(user_code));
+    json_ok(json!({
+        "userCode": user_code,
+        "verificationUri": uri,
+        "verificationUriComplete": uri_complete,
+        "expiresIn": expires_in,
+        "interval": interval,
+    }))
+}
+
+/// 轮询一次。**由面板控制节奏**（每 interval 秒问一次），主程序不自己起后台轮询 ——
+/// 用户关掉面板就该立刻停，后台线程反而容易忘记停。
+async fn api_github_device_poll(
+    State(st): State<Arc<PanelState>>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if !key_ok(&st, &headers) {
+        return json_err(StatusCode::UNAUTHORIZED, "面板会话已失效，请重新打开插件中心");
+    }
+    let Some((code, interval, expired)) = pending_device().lock().ok().and_then(|g| {
+        g.as_ref().map(|p| {
+            (
+                p.device_code.clone(),
+                p.interval,
+                std::time::Instant::now() >= p.expires_at,
+            )
+        })
+    }) else {
+        return json_ok(json!({ "status": "none" }));
+    };
+    if expired {
+        clear_pending();
+        return json_ok(json!({ "status": "expired" }));
+    }
+    let res = match github_client() {
+        Ok(c) => c,
+        Err(e) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
+    .post(GITHUB_TOKEN_URL)
+    .header(header::ACCEPT, "application/json")
+    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+    .body(form_encode(&[
+        ("client_id", GITHUB_CLIENT_ID),
+        ("device_code", code.as_str()),
+        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+    ]))
+    .send()
+    .await;
+    let v: Value = match res {
+        Ok(r) => match r.json().await {
+            Ok(v) => v,
+            Err(e) => return json_err(StatusCode::BAD_GATEWAY, format!("GitHub 回了非 JSON：{e}")),
+        },
+        Err(e) => return json_err(StatusCode::BAD_GATEWAY, format!("连不上 GitHub：{e}")),
+    };
+    match parse_poll(&v) {
+        PollOutcome::Token(token) => {
+            clear_pending();
+            if let Err(e) = write_upload_token(&token) {
+                return json_err(StatusCode::INTERNAL_SERVER_ERROR, e);
+            }
+            match github_whoami(&token).await {
+                Ok(login) => {
+                    if let Ok(mut g) = session_login().lock() {
+                        *g = Some(login.clone());
+                    }
+                    json_ok(json!({ "status": "ok", "login": login }))
+                }
+                // 拿到了令牌却读不到登录名：令牌已经落盘，下一次问会话时还能救回来
+                Err(e) => json_ok(json!({ "status": "ok", "login": null, "warn": e })),
+            }
+        }
+        PollOutcome::Pending => json_ok(json!({ "status": "pending", "interval": interval })),
+        PollOutcome::SlowDown => {
+            let next = apply_slow_down(interval);
+            if let Ok(mut g) = pending_device().lock() {
+                if let Some(p) = g.as_mut() {
+                    p.interval = next;
+                }
+            }
+            json_ok(json!({ "status": "slow_down", "interval": next }))
+        }
+        PollOutcome::Expired => {
+            clear_pending();
+            json_ok(json!({ "status": "expired" }))
+        }
+        PollOutcome::Denied => {
+            clear_pending();
+            json_ok(json!({ "status": "denied" }))
+        }
+        PollOutcome::Failed(msg) => {
+            clear_pending();
+            json_ok(json!({ "status": "error", "message": msg }))
+        }
+    }
+}
+
+/// 退出登录：删掉本机的令牌文件 + 清掉会话缓存。
+async fn api_github_logout(
+    State(st): State<Arc<PanelState>>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if !key_ok(&st, &headers) {
+        return json_err(StatusCode::UNAUTHORIZED, "面板会话已失效，请重新打开插件中心");
+    }
+    clear_pending();
+    if let Ok(mut g) = session_login().lock() {
+        *g = None;
     }
     match std::fs::remove_file(upload_token_path()) {
         Ok(()) => json_ok(json!({ "ok": true })),
@@ -2040,5 +2365,59 @@ mod tests {
         // 白名单外的仍然拒
         assert!(check_host("https://evil.example/x").is_err());
         assert!(check_host("http://raw.githubusercontent.com/x").is_err());
+    }
+
+    // ── GitHub 设备码登录 ────────────────────────────────────────────────
+    //
+    // 这几条守的是「每个分支对应一句人话」：设备码登录最烦的失败模式不是报错，
+    // 而是**一直转圈**（pending 永远 pending）或把配置问题说成「再试一次」。
+
+    #[test]
+    fn poll_reads_access_token_first() {
+        let v = json!({ "access_token": "gho_abc", "token_type": "bearer", "scope": "public_repo" });
+        assert_eq!(parse_poll(&v), PollOutcome::Token("gho_abc".into()));
+    }
+
+    #[test]
+    fn poll_maps_user_waiting_states() {
+        assert_eq!(
+            parse_poll(&json!({ "error": "authorization_pending" })),
+            PollOutcome::Pending,
+            "用户还没在浏览器里确认：面板要继续等，不能报错"
+        );
+        assert_eq!(
+            parse_poll(&json!({ "error": "slow_down" })),
+            PollOutcome::SlowDown
+        );
+        assert_eq!(
+            parse_poll(&json!({ "error": "expired_token" })),
+            PollOutcome::Expired
+        );
+        assert_eq!(
+            parse_poll(&json!({ "error": "access_denied" })),
+            PollOutcome::Denied
+        );
+    }
+
+    #[test]
+    fn poll_separates_config_errors_from_user_errors() {
+        // 配置问题必须**说清是配置问题**：这三个都不是「再点一次就好」
+        let disabled = parse_poll(&json!({ "error": "device_flow_disabled" }));
+        assert!(matches!(disabled, PollOutcome::Failed(ref m) if m.contains("Device Flow")));
+        let bad = parse_poll(&json!({ "error": "incorrect_client_credentials" }));
+        assert!(matches!(bad, PollOutcome::Failed(ref m) if m.contains("client_id")));
+        // 空响应 / 未知错误：带上原文，别吞
+        assert!(matches!(parse_poll(&json!({})), PollOutcome::Failed(_)));
+        assert!(
+            matches!(parse_poll(&json!({"error":"boom","error_description":"炸了"})),
+                PollOutcome::Failed(ref m) if m.contains("boom") && m.contains("炸了"))
+        );
+    }
+
+    #[test]
+    fn slow_down_never_runs_away() {
+        assert_eq!(apply_slow_down(5), 10);
+        assert_eq!(apply_slow_down(60), 60, "上限 60 秒：再慢也不能把面板拖到分钟级");
+        assert_eq!(apply_slow_down(58), 60);
     }
 }

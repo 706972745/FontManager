@@ -1,32 +1,31 @@
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
+import { scrimFade, springSoft } from "../design/springs.ts";
 import {
   AlertTriangle,
   Check,
+  Copy,
   ExternalLink,
   FolderOpen,
   LoaderCircle,
+  LogIn,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput.tsx";
 import { holdBlurGuard, panelApi } from "./api.ts";
+import { useGithubAuth } from "./auth.ts";
 import {
   ALLOWED_EXTS,
-  anonymousAuthorFor,
   deletePlugins,
   GhError,
-  MAINTAINER,
   PERMS,
   pickedFromApp,
   readManifest,
-  TOKEN_CLASSIC_URL,
-  TOKEN_NEW_URL,
   uploadPlugins,
   UploadMessage,
   validatePlugin,
-  verifyToken,
   type PickedFile,
   type PluginForm,
   type UploadItem,
@@ -84,18 +83,22 @@ export function UploadDialog({
   entries: WorkshopEntry[];
   onClose: () => void;
 }) {
-  const [token, setToken] = useState<string | null>(null);
-  const [login, setLogin] = useState<string | null>(null);
-  const [tokenInput, setTokenInput] = useState("");
-  const [tokenBusy, setTokenBusy] = useState(false);
-  const [tokenError, setTokenError] = useState<string | null>(null);
-  const [showSteps, setShowSteps] = useState(false);
+  /**
+   * 账号：**只认 GitHub 设备码登录**（2026-11-19 用户口径）。
+   *
+   * 面板不再收粘贴进来的令牌、也不内置令牌 —— 令牌由主程序在登录成功那一刻
+   * 直接写进 DPAPI 文件，面板要用时才通过一次性会话 key 取一次。
+   */
+  const auth = useGithubAuth(t);
+  const token = auth.state.token;
+  const login = auth.state.login;
+  const [copied, setCopied] = useState(false);
+  /** 账号区的即时提示（比如「还没连账号就点了提交」） */
+  const [accountError, setAccountError] = useState<string | null>(null);
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
-  /** 匿名上传：只有维护者的令牌能用（CI 的作者归属校验会拦别人，见 upload.ts） */
-  const [anon, setAnon] = useState(false);
 
   const [phase, setPhase] = useState<UploadPhase | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -108,19 +111,19 @@ export function UploadDialog({
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
 
   /**
-   * 「我上传的插件」：署名 = 我的登录名，或由登录名派生的匿名署名。
+   * 「我上传的插件」= 目录名后半段等于**当前登录名**的社区件。
    *
-   * 关键在于**不依赖本机任何状态** —— 匿名署名是 `anonymous-<hash(login)>`，
-   * 换电脑、重装软件、换浏览器都算得一样，所以删除/覆盖更新跟着 GitHub 账号走。
+   * 归属按署名认、不按机器：目录名是 `plugins/<id>__<登录名>`，所以在任何一台
+   * 电脑上登录同一个账号都能看到自己的插件（覆盖更新与下架都走同一条路）。
+   * 匿名代传（`anonymous-xxxx`）2026-11-19 起已取消，这里不再兼容那个前缀。
    */
   const mine = useMemo(() => {
     if (!login) return [];
-    const authors = new Set([login, anonymousAuthorFor(login)]);
     return entries.filter((e) => {
       if (e.official || !e.dir) return false;
       const cut = e.dir.lastIndexOf("__");
       if (cut < 0) return false;
-      return authors.has(e.dir.slice(cut + 2)) && !deleted.includes(e.dir);
+      return e.dir.slice(cut + 2) === login && !deleted.includes(e.dir);
     });
   }, [entries, login, deleted]);
 
@@ -149,42 +152,8 @@ export function UploadDialog({
     [login, t, token],
   );
 
-  // 打开时取回上次存的令牌，并验证一次（验证失败就当没连上，但不清令牌）
-  useEffect(() => {
-    let alive = true;
-    void panelApi
-      .getUploadToken()
-      .then(async (r) => {
-        if (!alive || !r.token) return;
-        setToken(r.token);
-        try {
-          const me = await verifyToken(r.token);
-          if (alive) setLogin(me.login);
-        } catch {
-          if (alive) setTokenError(t("uploadTokenInvalid"));
-        }
-      })
-      .catch(() => {
-        /* 主程序还没起完：当成没登录 */
-      });
-    return () => {
-      alive = false;
-    };
-  }, [t]);
-
-  const author = anon && login === MAINTAINER ? anonymousAuthorFor(login ?? "") : (login ?? "");
-
-  /**
-   * 匿名勾选框为什么点不动 —— **必须给一句话**。
-   * 之前只有灰掉的框 + 一段讲"维护者代传"的说明，用户完全看不出
-   * 是因为「还没连账号」还是「这个账号不够格」（2026-11-15 实测反馈）。
-   * `null` = 可以勾。
-   */
-  const anonBlockedReason = !login
-    ? t("uploadAnonNeedAccount")
-    : login !== MAINTAINER
-      ? t("uploadAnonMaintainerOnly")
-      : null;
+  /** 上传时的署名就是登录名（不再有匿名分支） */
+  const author = login ?? "";
 
   /** 每个草稿各自的校验结果 */
   const issuesByKey = useMemo(() => {
@@ -217,28 +186,6 @@ export function UploadDialog({
   const busy = phase !== null;
   const active = drafts.find((d) => d.key === activeKey) ?? null;
   const ready = drafts.length > 0 && errorCount === 0 && dupKeys.size === 0;
-
-  const saveToken = useCallback(async () => {
-    const value = tokenInput.trim();
-    if (!value) return;
-    setTokenBusy(true);
-    setTokenError(null);
-    try {
-      const me = await verifyToken(value);
-      await panelApi.setUploadToken(value);
-      setToken(value);
-      setLogin(me.login);
-      setTokenInput("");
-    } catch (e) {
-      setTokenError(
-        e instanceof GhError && e.status === 401
-          ? t("uploadTokenInvalid")
-          : `${t("uploadTokenInvalid")} (${String((e as Error).message)})`,
-      );
-    } finally {
-      setTokenBusy(false);
-    }
-  }, [t, tokenInput]);
 
   const onPick = useCallback(async () => {
     // 系统对话框会让面板失焦（面板是失焦即藏）→ 先置守位
@@ -312,9 +259,10 @@ export function UploadDialog({
 
   const submit = useCallback(async () => {
     if (!token || !login) {
-      setTokenError(t("uploadNeedAccount"));
+      setAccountError(t("uploadNeedAccount"));
       return;
     }
+    setAccountError(null);
     if (!agreed || !ready) return;
     setError(null);
     setResult(null);
@@ -374,6 +322,7 @@ export function UploadDialog({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      transition={scrimFade}
       onClick={() => !busy && onClose()}
     >
       <motion.div
@@ -384,6 +333,7 @@ export function UploadDialog({
         initial={{ opacity: 0, y: 24, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 16, scale: 0.98 }}
+        transition={springSoft}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="ws-upload-head">
@@ -397,88 +347,92 @@ export function UploadDialog({
         <div className="ws-upload-body">
           <p className="ws-upload-intro">{t("uploadIntro")}</p>
 
-          {/* ① 账号 */}
+          {/* ① 账号 —— 只走 GitHub 设备码登录（面板不收令牌、也不内置令牌） */}
           <section className="ws-up-sec">
             <h3 className="ws-up-sec-title">{t("uploadAccountTitle")}</h3>
             {login ? (
               <div className="ws-up-account">
-                <span className="ws-up-login">@{login}</span>
+                <span className="ws-up-login">
+                  <Check size={12} strokeWidth={2.4} />@{login}
+                </span>
                 <button
                   className="ws-linkbtn"
-                  onClick={() => {
-                    void panelApi.clearUploadToken();
-                    setToken(null);
-                    setLogin(null);
-                  }}
+                  onClick={() => void auth.signOut()}
                   disabled={busy}
                 >
-                  {t("uploadTokenChange")}
+                  {t("uploadSignOut")}
+                </button>
+              </div>
+            ) : !auth.state.configured ? (
+              // 软件还没配 OAuth App：这不是用户能自己解决的问题，必须说清找谁
+              <p className="ws-up-hint ws-up-hint-warn">{t("uploadNotConfigured")}</p>
+            ) : auth.state.device ? (
+              <div className="ws-up-device">
+                <p className="ws-up-hint">{t("uploadDeviceHint")}</p>
+                <div className="ws-up-device-row">
+                  <code className="ws-up-code">{auth.state.device.userCode}</code>
+                  <button
+                    className="ws-iconbtn"
+                    aria-label={t("uploadDeviceCopy")}
+                    title={t("uploadDeviceCopy")}
+                    onClick={() => {
+                      void auth.copyCode().then((ok) => {
+                        if (!ok) return;
+                        setCopied(true);
+                        window.setTimeout(() => setCopied(false), 1600);
+                      });
+                    }}
+                  >
+                    {copied ? (
+                      <Check size={13} strokeWidth={2.2} />
+                    ) : (
+                      <Copy size={13} strokeWidth={1.8} />
+                    )}
+                  </button>
+                  <button
+                    className="ws-cta"
+                    onClick={() =>
+                      void panelApi.openUrl(auth.state.device!.verificationUri).catch(() => {})
+                    }
+                  >
+                    <ExternalLink size={12} strokeWidth={1.8} />
+                    {t("uploadDeviceOpen")}
+                  </button>
+                </div>
+                <p className="ws-up-hint ws-up-device-wait">
+                  <LoaderCircle size={12} className="ws-spin" />
+                  {t("uploadDeviceWaiting")}
+                </p>
+                <button className="ws-linkbtn" onClick={auth.cancel}>
+                  {t("uploadDeviceCancel")}
                 </button>
               </div>
             ) : (
               <>
-                <div className="ws-up-token-row">
-                  <input
-                    className="ws-input"
-                    type="password"
-                    value={tokenInput}
-                    placeholder={t("uploadTokenPlaceholder")}
-                    onChange={(e) => setTokenInput(e.target.value)}
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
-                  <button
-                    className="ws-cta"
-                    onClick={() => void saveToken()}
-                    disabled={tokenBusy || !tokenInput.trim()}
-                  >
-                    {tokenBusy ? <LoaderCircle size={13} className="ws-spin" /> : <Check size={13} />}
-                    {t("uploadTokenSave")}
-                  </button>
-                </div>
-                {/* 粘令牌这一步正是「为什么要登录」的疑问点：与面板页脚复用同一条说明 */}
-                <p className="ws-up-hint">{t("uploadTokenHint")}</p>
-                <p className="ws-up-hint">{t("uploadPurpose")}</p>
-                <button className="ws-linkbtn" onClick={() => setShowSteps((v) => !v)}>
-                  {t("uploadTokenSteps")}
-                </button>
-                <AnimatePresence>
-                  {showSteps && (
-                    <motion.ol
-                      className="ws-up-steps"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                    >
-                      <li>
-                        {t("uploadTokenStep1")}{" "}
-                        <a href={TOKEN_NEW_URL} target="_blank" rel="noreferrer">
-                          {TOKEN_NEW_URL.replace(/^https:\/\//, "")}
-                          <ExternalLink size={10} strokeWidth={1.8} />
-                        </a>
-                      </li>
-                      <li>{t("uploadTokenStep2")}</li>
-                      <li>{t("uploadTokenStep3")}</li>
-                      <li>{t("uploadTokenStep4")}</li>
-                      <li>
-                        {t("uploadTokenStepClassic")}{" "}
-                        <a href={TOKEN_CLASSIC_URL} target="_blank" rel="noreferrer">
-                          {TOKEN_CLASSIC_URL.replace(/^https:\/\//, "")}
-                          <ExternalLink size={10} strokeWidth={1.8} />
-                        </a>
-                      </li>
-                    </motion.ol>
+                <button
+                  className="ws-cta"
+                  onClick={() => void auth.start()}
+                  disabled={auth.state.status === "starting"}
+                >
+                  {auth.state.status === "starting" ? (
+                    <LoaderCircle size={13} className="ws-spin" />
+                  ) : (
+                    <LogIn size={13} strokeWidth={1.8} />
                   )}
-                </AnimatePresence>
-                {tokenError && <p className="ws-up-error">{tokenError}</p>}
+                  {t("uploadSignIn")}
+                </button>
+                <p className="ws-up-hint">{t("uploadSignInHint")}</p>
+                <p className="ws-up-hint">{t("uploadPurpose")}</p>
               </>
+            )}
+            {(accountError ?? auth.state.error) && (
+              <p className="ws-up-error">{accountError ?? auth.state.error}</p>
             )}
           </section>
 
           {/* ①b 我上传过的插件：下架入口。
-              归属按**署名**认，不按"这台电脑"：匿名上传的署名是 `anonymous-<hash(login)>`，
-              由 GitHub 登录名稳定派生 —— 所以换任何一台电脑登录同一账号，
-              既能覆盖更新，也能在这里下架（2026-11-15 用户要求）。 */}
+              归属按**署名**认，不按"这台电脑"：目录名是 `plugins/<id>__<登录名>`，
+              所以换任何一台电脑登录同一个账号，既能覆盖更新，也能在这里下架。 */}
           {login && mine.length > 0 && (
             <section className="ws-up-sec">
               <h3 className="ws-up-sec-title">{t("uploadMineTitle")}</h3>
@@ -720,32 +674,8 @@ export function UploadDialog({
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
               <span>{t("uploadAgree")}</span>
             </label>
-            {/* 匿名只对维护者开放：CI 的归属校验要求目录名以 `__<PR 作者>` 结尾，
-                普通用户勾了也过不了，所以干脆不给勾（不是藏着，是明说）。
-                **勾不动时必须说清为什么**（2026-11-15 用户：「匿名上传还是不能点」——
-                实际原因是还没连账号，但界面只把框灰掉，一句话都没给）。 */}
-            <label
-              className={login === MAINTAINER ? "ws-up-agree" : "ws-up-agree ws-up-agree-off"}
-              title={anonBlockedReason ?? t("uploadAnonNote")}
-            >
-              <input
-                type="checkbox"
-                checked={anon && login === MAINTAINER}
-                disabled={login !== MAINTAINER}
-                onChange={(e) => setAnon(e.target.checked)}
-              />
-              <span>
-                {t("uploadAnon")}
-                {/* 署名是固定标识（anonymous-xxxx），换个语言也不翻译 —— 用 · 分隔，
-                    别再写中文全角括号（英文界面里会显得很怪） */}
-                {login === MAINTAINER && anon
-                  ? ` · ${t("uploadAnonBadge", { author: anonymousAuthorFor(login) })}`
-                  : ""}
-              </span>
-            </label>
-            <p className={anonBlockedReason ? "ws-up-hint ws-up-hint-warn" : "ws-up-hint"}>
-              {anonBlockedReason ?? t("uploadAnonNote")}
-            </p>
+            {/* 匿名代传 2026-11-19 起取消：上传一律按登录名署名，
+                这样「谁传的」在 GitHub 上就是可追溯的（PR 作者 = 目录名后缀）。 */}
           </section>
 
           {error && <p className="ws-up-error">{error}</p>}

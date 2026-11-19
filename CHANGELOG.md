@@ -4,6 +4,39 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] — 2026-11-19
+
+> 插件中心的上传改了身份口径（用户 2026-11-19）：**面板不再自带令牌、也不收粘贴的令牌**，
+> 上传一律由用户在本机登录自己的 GitHub 完成。匿名代传通道一并取消。
+> 同时把面板里零散的过渡时长收成一套动效令牌，与主窗口同一套数值。
+
+### 变更（不兼容）
+
+- **上传必须登录 GitHub**：面板里的令牌输入框、匿名上传勾选框全部移除。
+  登录走设备码流程（面板显示 8 位码 → 浏览器输入一次），令牌只在主程序侧
+  用 DPAPI 落盘，**不经过面板页面**。
+  - 新增 Rust 端点：`/api/github/session`、`/api/github/device/start`、
+    `/api/github/device/poll`、`/api/github/logout`；
+    `POST /api/upload-token` 与 `/api/upload-token/clear` 删除（只保留只读 GET）。
+  - 为什么由主程序代做：`github.com` 的 OAuth 端点不发 CORS 头，面板里 fetch 必被拦。
+  - 需在 `workshop.rs` 的 `GITHUB_CLIENT_ID` 填 OAuth App 的 client_id（勾 Enable Device Flow）。
+    留空时面板显示「这个版本还没有配置 GitHub 登录」，不是静默失败。
+- **匿名上传取消**：`anonymous-<hash(login)>` 署名不再产生；下架与覆盖更新只认目录名后缀
+  `__<登录名>`。历史目录不删。
+
+### 体验
+
+- 面板动效收口：新增 `--ws-t-micro/quick/state` 与三条缓动令牌（数值与主包
+  `src/design/tokens.css` 逐条相同），替换掉 4 处写死的 `120ms ease`；
+  按钮与筛选 chip 补按压反馈（只压颜色，不缩放 —— 文字密集处缩放会发虚）；
+  `prefers-reduced-motion` 下时长压到 1ms。
+
+### 测试
+
+- `tests/workshopAuth.test.ts`（6 条）：轮询节奏/终态判断、九语文案齐全、
+  已删文案真的没了、面板与主程序两侧的「不许存在手动令牌入口」契约。
+- Rust 侧新增 4 条：`parse_poll` 各分支、`slow_down` 上限。
+
 ## [2.4.6] — 2026-11-19
 
 > 2.4.5 修掉了那次崩溃，但暴露出更根本的问题：**前端出错时软件一声不响** ——
