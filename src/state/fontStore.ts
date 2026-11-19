@@ -1793,7 +1793,12 @@ async function undoAppliedBatches(applied: ApplyBatch[]): Promise<void> {
  * 字族级和字重级应用走的是同一套后端命令，结果文案也要一致，
  * 所以抽出来共用（label 是被应用的那个字体名：字族名或「字族 字重」）。
  */
-function reportApplyOutcome(outcome: string, family: string, app: AdobeApp) {
+function reportApplyOutcome(
+  outcome: string,
+  family: string,
+  app: AdobeApp,
+  hasPostScriptName = true,
+) {
   const appName = t(`adobe.${app}`);
       if (outcome.startsWith("applied:")) {
   const count = Number(outcome.slice("applied:".length)) || 1;
@@ -1823,6 +1828,15 @@ function reportApplyOutcome(outcome: string, family: string, app: AdobeApp) {
       } else if (outcome === "no-document") {
   toast.error(t("toast.noDocumentInApp", { app: appName }), t("toast.noDocumentInAppSub"));
       } else if (outcome === "font-not-found") {
+  /*
+   * 2.5.4：字体文件里没有 PostScript 名时，后端只能拿族名 / 本地化名去试；
+   * PS 与 AI 按 PostScript 名登记字体，族名经常认不出来。这时把原因说清楚，
+   * 而不是让用户对着一句「暂时看不到这个字体」去重启软件。
+   */
+  if (!hasPostScriptName) {
+    toast.error(t("toast.noPostScriptName"), t("toast.noPostScriptNameSub", { app: appName }));
+    return;
+  }
   toast.error(
     t("toast.fontUnknownToApp", { app: appName, family }),
     t("toast.fontUnknownToAppSub"),
@@ -4279,10 +4293,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const fam = familiesFor(get().fonts, get().tags).get(family);
     if (!fam) return;
     const lead = fam.faces.find((f) => f.style === "Regular") ?? fam.faces[0];
-    if (!lead.postscriptName) {
-      toast.error(t("toast.noPostScriptName"), t("toast.noPostScriptNameSub", { app: appName }));
-      return;
-    }
+    // 2.5.4：没有 PostScript 名不再直接拦下 —— 后端会用族名 / 本地化名兜底试一遍，
+    // 真套不上时 reportApplyOutcome 会解释「这个字体没有 PostScript 名」。
 
     // 应用前先说清楚「这个字重里没有汉字」，免得用户对着没变化的文档猜
     await warnIfNoCjk(lead, family);
@@ -4296,12 +4308,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
     try {
       const outcome = await ipc.applyFontInApp(
         app,
-        lead.postscriptName,
+        lead.postscriptName ?? "",
         family,
         family,
         localizedAliases(lead),
       );
-      reportApplyOutcome(outcome, family, app);
+      reportApplyOutcome(outcome, family, app, !!lead.postscriptName);
     } catch (e) {
       toast.error(t("toast.couldntApplyIn", { app: appName }), String(e));
     }
@@ -4318,10 +4330,7 @@ export const useFontStore = create<FontStore>((set, get) => ({
     const face = fam?.faces.find((f) => f.id === faceId);
     if (!fam || !face) return;
     const label = `${family} ${face.style}`.trim();
-    if (!face.postscriptName) {
-      toast.error(t("toast.noPostScriptName"), t("toast.noPostScriptNameSub", { app: appName }));
-      return;
-    }
+    // 2.5.4：同 applyFamilyInApp —— 缺 PostScript 名也让后端用族名试，失败再解释原因。
     // 字重里没有汉字时先提醒（仍然会应用，只是让用户知道中文不会变）
     await warnIfNoCjk(face, label);
 
@@ -4334,12 +4343,12 @@ export const useFontStore = create<FontStore>((set, get) => ({
     try {
       const outcome = await ipc.applyFontInApp(
         app,
-        face.postscriptName,
+        face.postscriptName ?? "",
         label,
         family,
         localizedAliases(face),
       );
-      reportApplyOutcome(outcome, label, app);
+      reportApplyOutcome(outcome, label, app, !!face.postscriptName);
     } catch (e) {
       toast.error(t("toast.couldntApplyIn", { app: appName }), String(e));
     }

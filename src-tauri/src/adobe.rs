@@ -155,6 +155,17 @@ fn photoshop_script(postscript: &str, label: &str, family_name: &str, aliases: &
 
   var unknown = false;
   var sawText = false;
+  /**
+   * 用户**主动**选中的非文字图层（照片、形状……）。
+   *
+   * 为什么要单独记：Photoshop 新建文档后会自动选中背景层，`targetLayers` 因此永远非空。
+   * 原来直接用「有没有选中」判断「用户是不是选了一个非文字图层」，于是
+   * 「什么都没选 → 新建一行写着字体名的文字」那条分支在 PS 里**永远走不到**：
+   * 用户打开 PS 点「在 Photoshop 中应用」只会得到 no-text-selected，画布上什么都没有
+   * （2026-11 客户报「PS 无法应用字体」，AI / CDR 因为能直接新建所以正常）。
+   * 背景层是 PS 自己选的，不算用户的选择；只有背景层之外的非文字图层才算。
+   */
+  var sawOtherLayer = false;
 
   /**
    * 在一个图层上换字体。用户点的是「换掉选中文字的字体」，所以：
@@ -171,7 +182,11 @@ fn photoshop_script(postscript: &str, label: &str, family_name: &str, aliases: &
       for (i = 0; i < layer.layerSets.length; i++) {{ var b = applyTo(layer.layerSets[i]); if (b > 0) n += b; }}
       return n;
     }}
-    if (layer.kind !== LayerKind.TEXT) {{ return 0; }}
+    // 背景层是 PS 自动选中的，不算「用户主动选中的非文字图层」（见 sawOtherLayer）
+    if (layer.kind !== LayerKind.TEXT) {{
+      try {{ if (layer.isBackgroundLayer !== true) {{ sawOtherLayer = true; }} }} catch (e) {{ sawOtherLayer = true; }}
+      return 0;
+    }}
     sawText = true;
     try {{ layer.textItem.font = font; }} catch (e) {{
       try {{ layer.textItem.font = family; }} catch (e2) {{ unknown = true; return 0; }}
@@ -197,8 +212,9 @@ fn photoshop_script(postscript: &str, label: &str, family_name: &str, aliases: &
   }}
   if (applied > 0) {{ return "applied:" + applied; }}
   if (unknown) {{ return "font-not-found"; }}
-  // 有选中但里面（含组内）没有文字图层：不要悄悄新建，明确告诉用户先去选中文字
-  if (hadSelection) {{ return "no-text-selected"; }}
+  // 用户主动选中的是照片 / 形状这类非文字图层：不要悄悄新建，明确告诉用户先去选中文字。
+  // 只选中背景层时**继续往下走**去新建文字 —— 那是 PS 新建文档的默认状态，不是用户的选择。
+  if (hadSelection && sawOtherLayer) {{ return "no-text-selected"; }}
   if (doc.mode === DocumentMode.BITMAP || doc.mode === DocumentMode.INDEXEDCOLOR) {{ return "apply-failed"; }}
 
   var prevUnits = app.preferences.rulerUnits;
@@ -1077,6 +1093,33 @@ mod tests {
             ps.contains("!sameName(layer.textItem.font, font)"),
             "新建图层那条分支的校验也要归一化"
         );
+    }
+
+    /// 缺陷 2-D 的护栏：PS 的「新建文字」分支必须真的可达。
+    ///
+    /// 症状（2026-11 客户）：在 Photoshop 里点「在 Photoshop 中应用」，画布上什么都不出现，
+    /// 只弹一条「未选中文字图层」；同样的字在 Illustrator / CorelDRAW 里能正常新建。
+    ///
+    /// 根因：PS 新建文档后会自动选中背景层，所以 `selectedIndices()` 永远非空。
+    /// 老代码用「有没有选中」直接判定「用户选的是非文字图层」，
+    /// 于是 `if (hadSelection) return "no-text-selected"` 把新建分支彻底堵死。
+    /// 现在只把「背景层之外的非文字图层」算作用户的选择。
+    #[test]
+    fn ps_script_creates_text_when_only_background_selected() {
+        let ps = photoshop_script("X-Regular", "X Regular", "X", &[]);
+        assert!(ps.contains("var sawOtherLayer = false;"), "要单独记「用户主动选中的非文字图层」");
+        assert!(ps.contains("isBackgroundLayer"), "必须区分背景层与用户选中的照片/形状图层");
+        assert!(
+            ps.contains(r#"if (hadSelection && sawOtherLayer)"#),
+            "no-text-selected 只能在用户主动选中非文字图层时返回"
+        );
+        assert!(
+            !ps.contains(r#"if (hadSelection) { return "no-text-selected"; }"#),
+            "回到「只要有选中就不新建」就等于把 PS 的新建分支重新堵死"
+        );
+        // 新建分支本身还在（内容 = label、48pt）
+        assert!(ps.contains("layer.textItem.contents = label;"));
+        assert!(ps.contains("return \"created\";"));
     }
 
     /// 真机调试用：把 PS / AI 的 JSX 落到 rust-target/scripts/，
