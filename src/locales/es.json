@@ -842,6 +842,7 @@
   "settings.updateInstalling": "Instalando: la aplicación se reiniciará automáticamente…",
   "settings.updateLatest": "Tienes la última versión",
   "settings.updateManualHint": "Esta versión no tiene un instalador que podamos ejecutar automáticamente (o esta copia es una instalación MSI del sistema). Usa «Abrir página de descarga» para instalar a mano.",
+  "settings.updateManualHintOffline": "No se pudo contactar con la API de GitHub (límite de peticiones o bloqueo de red): solo llegó el número de versión, sin URL del instalador. Usa «Abrir página de descarga» para instalar a mano; cuando vuelva la red, vuelve a comprobar y se actualizará en un clic.",
   "settings.updateManualHintNoAsset": "Esta versión no incluye un setup.exe ejecutable (o no trae suma de comprobación). Usa «Abrir página de descarga» para instalar a mano.",
   "settings.updateManualHintPortable": "Esta copia se ejecuta directamente desde una carpeta, así que Windows no tiene registro de instalación. Una instalación automática crearía una segunda copia. Instala una vez la versión setup.exe desde la página de publicación y las actualizaciones automáticas funcionarán a partir de entonces.",
   "settings.updateManualHintSystem": "Esta copia está en Program Files (instalación MSI del sistema), así que una actualización silenciosa crearía una segunda copia. Instala una vez la versión setup.exe desde la página de publicación y las actualizaciones automáticas funcionarán a partir de entonces.",

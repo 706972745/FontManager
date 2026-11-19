@@ -4,6 +4,26 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.3] — 2026-11-19
+
+> 客户在 2.3.1 点「下载并安装」，被提示「这一版发布里没有可直接安装的 setup.exe」
+> —— 以为是漏打包，实际是**他那台机器连不上 GitHub 的接口**（限流 / 网络拦截），
+> `check()` 走了 raw / jsDelivr 兜底源，兜底源只有版本号。提示文案把「连不上」
+> 说成了「没打包」，这类误报必须拆开。
+
+### 修复
+
+- **「装不了」的提示按真实原因分开说**：兜底路径的 `auto_install_blocked` 由
+  `no-asset` 改为新的 `offline`，前端给独立文案（九语言）：连不上接口、只查到
+  版本号，请点「打开发布页」手动下载，网络恢复后再点一次「检查更新」即可一键升级。
+  `no-asset` 只保留给「API 通了、release 里真没有 setup.exe（或没带校验值）」。
+  MSI 系统级 / 便携副本两类提示不变 —— 那两道闸仍在（防止静默装出第二份）。
+
+### 测试
+
+- `tests/updateOfflineHint.test.ts`（3 条）：兜底函数必须报 `offline` 且不许再写
+  `no-asset`、前端 `BLOCKED_HINT` 有 offline 映射、九语言两条文案齐全且不相同。
+
 ## [2.5.2] — 2026-11-19
 
 > 用户截图报的两件小事一起收：**应用内提示条压在顶栏按钮上**，
