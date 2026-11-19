@@ -4,6 +4,33 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.4] — 2026-11-19
+
+> 客户报「在 Photoshop 里点『在 Photoshop 中应用』没反应，AI / CDR 正常」。
+> 根因不在字体本身：Photoshop 新建文档后**会自动选中背景层**，而脚本把「有选中」
+> 直接当成「用户选了一个非文字图层」，于是「没选中文字 → 自动新建一行文字」那条分支
+> 在 PS 里**永远走不到**，只会回 `no-text-selected`，画布上什么都不出现。
+> 顺带修掉另一条同类的「点了没反应」：缺 PostScript 名的字体（字库里约 1.6%，多为
+> 国产老字体）在字重菜单里被禁用，而禁用态与可用态没有任何视觉差异。
+
+### 修复
+
+- **Photoshop 里没选中文字也能应用**：只有「背景层之外的非文字图层」才算用户主动选中
+  （选了照片 / 形状仍按原样提示先选文字）；只选中背景层时与 Illustrator / CorelDRAW
+  一致，在画布上新建一行写着字体名的文字。判定收在 `photoshop_script` 的 `sawOtherLayer`，
+  单测 `ps_script_creates_text_when_only_background_selected` 钉住这条分支真的可达。
+- **缺 PostScript 名的字体不再被前端拦死**：字重菜单里那三项不再 `disabled`
+  （禁用态看不出差别，点了像「功能坏了」，而后端一次都没被调用），改为把空名交给后端
+  用族名 / 本地化名兜底试；真套不上时明说「此字体没有 PostScript 名称」，
+  不再混在「重启软件试试」里。
+
+### 变更
+
+- 「应用字体」每次调用都在 `activation.log` 留一行
+  `[apply] <app> ps=<PostScript 名> -> <结果码>`：下次客户说「用不了」时能分清是
+  没运行 / 没选中文字 / 目标软件不认这个字体 —— 三种的补救办法完全不同。
+  日志只写软件名、字体名与结果码，不含文档内容。
+
 ## [2.5.3] — 2026-11-19
 
 > 客户在 2.3.1 点「下载并安装」，被提示「这一版发布里没有可直接安装的 setup.exe」

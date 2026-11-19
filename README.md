@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.5.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.5.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -36,7 +36,7 @@ and MCP when you want your tools to join in.
 
 <br>
 
-<img src="main.png?v=2.5.3" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
+<img src="main.png?v=2.5.4" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -48,7 +48,7 @@ and MCP when you want your tools to join in.
 
 ## 🆕 What's new
 
-**2.5.3 — The "can't auto-install" message now tells a network problem apart from a missing installer**
+**2.5.4 — Photoshop now gets the font even when no text layer is selected**
 
 **2.5.2 — Toasts no longer cover the toolbar; the splash screen no longer flashes both themes; plugins with a new version get an Update button**
 
@@ -238,7 +238,7 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.5.3)
+![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.5.4)
 
 **Find your way first: the window has five regions**
 
@@ -951,7 +951,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.5.3-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.5.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -968,7 +968,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 <br>
 
-<img src="main.png?v=2.5.3" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
+<img src="main.png?v=2.5.4" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
 
 <sub>字体库：每个字族都以自己的字形实时渲染，离任何应用的字体菜单都只差一个开关。</sub>
 
@@ -980,7 +980,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 ## 🆕 最近更新
 
-**2.5.3 —— 「无法自动安装」的提示会分清是连不上网，还是真的没打包**
+**2.5.4 —— 修复「在 Photoshop 里应用字体没反应」：没选中文字时也会新建一行**
 
 **2.5.2 —— 提示条不再压住顶栏按钮；启动页不再先深后浅；插件有新版时卡片上直接给「更新」按钮**
 
@@ -1149,7 +1149,7 @@ FontManager 在这个起点上加了什么：
 
 ### 2. 认识主界面
 
-![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.5.3)
+![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.5.4)
 
 **先认路：主界面分五个区**
 
