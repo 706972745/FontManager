@@ -17,6 +17,10 @@ import { APP_VERSION } from "../lib/version";
 const BLOCKED_HINT: Record<string, TKey> = {
   system: "settings.updateManualHintSystem",
   portable: "settings.updateManualHintPortable",
+  // 2026-11-19：兜底源（API 不通时只有版本号）单独一类。以前它和「发布里真没包」
+  // 共用 no-asset 的文案，客户看到「这一版没有可直接安装的 setup.exe」会以为是我们
+  // 漏打包，实际是他那边连不上 api.github.com。两类原因必须分开说。
+  offline: "settings.updateManualHintOffline",
   "no-asset": "settings.updateManualHintNoAsset",
   "no-digest": "settings.updateManualHintNoAsset",
 };

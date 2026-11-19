@@ -842,6 +842,7 @@
   "settings.updateInstalling": "Installation — l’application va redémarrer automatiquement…",
   "settings.updateLatest": "Vous avez la dernière version",
   "settings.updateManualHint": "Cette version n’a pas d’installateur exécutable automatiquement (ou cette copie est une installation MSI système). Utilisez « Ouvrir la page de téléchargement » pour installer manuellement.",
+  "settings.updateManualHintOffline": "Impossible de joindre l'API de GitHub (limite de requêtes ou blocage réseau) : seul le numéro de version est revenu, sans URL d'installateur. Utilisez « Ouvrir la page de téléchargement » pour installer manuellement ; dès que le réseau revient, relancez la vérification et la mise à jour se fera en un clic.",
   "settings.updateManualHintNoAsset": "Cette version ne contient pas de setup.exe exécutable (ou pas de somme de contrôle). Utilisez « Ouvrir la page de téléchargement » pour installer manuellement.",
   "settings.updateManualHintPortable": "Cette copie est lancée directement depuis un dossier, Windows n’a donc aucune trace d’installation. Une installation automatique créerait une seconde copie. Installez une fois la version setup.exe depuis la page de publication — les mises à jour automatiques fonctionneront ensuite.",
   "settings.updateManualHintSystem": "Cette copie se trouve dans Program Files (installation MSI système) ; une mise à jour silencieuse créerait une seconde copie. Installez une fois la version setup.exe depuis la page de publication — les mises à jour automatiques fonctionneront ensuite.",

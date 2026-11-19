@@ -832,6 +832,7 @@
   "settings.updateInstalling": "Wird installiert — die App startet gleich automatisch neu…",
   "settings.updateLatest": "Du hast die neueste Version",
   "settings.updateManualHint": "Für dieses Release gibt es keinen Installer, den wir automatisch ausführen können (oder diese Kopie ist eine systemweite MSI-Installation). Nutze „Downloadseite öffnen“ und installiere von Hand.",
+  "settings.updateManualHintOffline": "GitHubs API war nicht erreichbar (Limit oder Netzwerkblockade) — es kam nur die Versionsnummer zurück, ohne Installer-Adresse. Nutze „Downloadseite öffnen“ und installiere von Hand; sobald das Netz wieder da ist, klappt das Ein-Klick-Update.",
   "settings.updateManualHintNoAsset": "Dieses Release enthält keine ausführbare setup.exe (oder keine Prüfsumme). Nutze „Downloadseite öffnen“ und installiere von Hand.",
   "settings.updateManualHintPortable": "Diese Kopie wird direkt aus einem Ordner gestartet, Windows hat also keinen Installationseintrag dafür. Eine automatische Installation würde eine zweite Kopie anlegen. Installiere einmal die setup.exe von der Release-Seite — danach funktionieren automatische Updates.",
   "settings.updateManualHintSystem": "Diese Kopie liegt in Program Files (systemweite MSI-Installation). Ein stilles Update würde eine zweite Kopie anlegen. Installiere einmal die setup.exe von der Release-Seite — danach funktionieren automatische Updates.",

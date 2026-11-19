@@ -538,14 +538,19 @@ async fn from_package_json(url: &str) -> Result<UpdateInfo, String> {
         notes: String::new(),
         published_at: String::new(),
         source: if url.contains("jsdelivr") { "cdn" } else { "raw" }.into(),
-        // 兜底源只有版本号，没有资产信息：一律不给一键安装
+        // 兜底源只有版本号，没有资产信息：一律不给一键安装。
+        // **这里必须是 offline，不能是 no-asset**（2026-11-19 用户报的真实案例）：
+        // 客户点「下载并安装」被提示「这一版发布里没有可直接安装的 setup.exe」，
+        // 看着像我们漏打包了，实际是他那边请求 api.github.com 失败（限流/网络），
+        // 走了这个兜底源。文案把网络问题说成发布缺陷，用户只会来质问我们。
+        // no-asset 只留给「API 通了、release 里真没有 setup.exe」这一种情况。
         setup_url: String::new(),
         setup_name: String::new(),
         sha256: String::new(),
         setup_asset_id: 0,
         can_auto_install: false,
         install_kind: install_kind().as_str().into(),
-        auto_install_blocked: "no-asset".into(),
+        auto_install_blocked: "offline".into(),
     })
 }
 

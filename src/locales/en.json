@@ -1032,6 +1032,7 @@
   "settings.updateManualHint": "This release has no installer we can run automatically (or this copy is a system-wide MSI install). Use “Open download page” to install manually.",
   "settings.updateManualHintSystem": "This copy lives in Program Files (a system-wide MSI install), so a silent upgrade would create a second copy. Install the setup.exe build from the release page once — automatic updates work from then on.",
   "settings.updateManualHintPortable": "This copy was run straight from a folder, so Windows has no install record for it and an automatic install would create a second copy. Install the setup.exe build from the release page once — automatic updates work from then on.",
+  "settings.updateManualHintOffline": "Couldn't reach GitHub's API (rate-limited or blocked by the network) — only the version number came back, with no installer URL. Use “Open download page” to install manually; once the network recovers, check again and it will upgrade in one click.",
   "settings.updateManualHintNoAsset": "This release has no setup.exe we can run (or it carries no checksum). Use “Open download page” to install manually.",
   "settings.updateCantAuto": "This release can't be installed automatically",
   "settings.updateSkip": "Skip this version",

@@ -822,6 +822,7 @@
   "settings.updateInstalling": "インストール中です。まもなく自動で再起動します…",
   "settings.updateLatest": "最新バージョンです",
   "settings.updateManualHint": "このリリースには自動実行できるインストーラーがありません（またはシステム全体にインストールした MSI 版です）。「ダウンロードページを開く」から手動でインストールしてください。",
+  "settings.updateManualHintOffline": "GitHub の API に接続できませんでした（レート制限またはネットワーク遮断）。バージョン番号だけ取得でき、インストーラーの URL は取れていません。「ダウンロードページを開く」から手動でインストールしてください。ネットワークが回復したら再度「アップデートを確認」を押せばワンクリックで更新できます。",
   "settings.updateManualHintNoAsset": "このリリースには実行できる setup.exe がありません（またはチェックサムが付いていません）。「ダウンロードページを開く」から手動でインストールしてください。",
   "settings.updateManualHintPortable": "このコピーはフォルダーから直接実行されているため、Windows にインストール記録がありません。自動インストールすると 2 つ目のコピーができます。リリースページから setup.exe 版を一度インストールしてください。以後は自動更新が使えます。",
   "settings.updateManualHintSystem": "このコピーは Program Files にあります（システム全体の MSI 版）。サイレント更新すると 2 つ目のコピーができます。リリースページから setup.exe 版を一度インストールしてください。以後は自動更新が使えます。",
