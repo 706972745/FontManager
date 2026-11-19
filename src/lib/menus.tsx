@@ -466,7 +466,13 @@ export function buildFaceMenu(family: Family, face: FontFace): MenuItem[] {
         (app): MenuItem => ({
           label: t("menu.applyInApp", { app: t(`adobe.${app}`) }),
           icon: <AppBadge app={app} />,
-          disabled: !face.postscriptName,
+          /*
+           * 2.5.4：这里原来 `disabled: !face.postscriptName`。
+           * 字体库里约 1.6% 的字面（多半是国产老字体）没有 PostScript 名，菜单项于是被禁用，
+           * 而禁用态没有任何视觉差异 —— 用户点一下什么都没发生，判定「PS 用不了」。
+           * 后端本来就能用族名 / 本地化名兜底（`adobe::font_candidates`），不该在这一层拦掉；
+           * 真正套不上时后端会回 font-not-found，前端再解释「这个字体没有 PostScript 名」。
+           */
           action: () => void s.applyFaceInApp(family.name, face.id, app),
         }),
       ),

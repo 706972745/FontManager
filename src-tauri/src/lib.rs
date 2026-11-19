@@ -3167,11 +3167,20 @@ async fn apply_font_in_app(
     };
     // family_name 是 PostScript 名认不出时的回退名（真正的字族名）；
     // label 只用于提示文案（字重级时是「族名 字重」）。
+    let logged_ps = postscript_name.clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         adobe::apply(target, &postscript_name, &label, &family_name, &aliases)
     })
     .await
     .map_err(|e| e.to_string())??;
+    /*
+     * 每次应用都留一行日志（2.5.4）。
+     *
+     * 为什么值得记：客户报「PS 用不了」时，我们能看到的只有他口头描述，
+     * 分不清是没运行、没选中文字、还是目标软件不认这个字体 —— 这三种的补救办法完全不同。
+     * 日志只写软件名 + 字体 PostScript 名 + 结果码，不含任何文档内容。
+     */
+    crate::diag::log(&format!("[apply] {app} ps={logged_ps} -> {outcome}"));
     // 成功应用之后让预热心跳安静一会儿：否则它紧接着去探测，很容易和应用时的
     // COM 调用撞在一起超时，底部那条预热状态就「刷新」一下甚至变红。
     if let Some(id) = warm_id {
