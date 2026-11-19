@@ -250,18 +250,57 @@ export const panelApi = {
       body: JSON.stringify({ entries, fetchedAt }),
     }),
   /**
-   * 上传令牌（M3）：主程序用 DPAPI 加密存在本机，面板窗口每次重开都来取回。
-   * **不能放 localStorage** —— 面板每次打开的端口都不同，origin 一变就换一份。
+   * 当前登录用户的令牌（M3）：主程序用 DPAPI 加密存在本机。
+   *
+   * 令牌**只有一个来源**：用户在本机走完一次 GitHub 设备码登录。面板不再接收
+   * 粘贴进来的令牌、也不内置任何令牌（2026-11-19 用户口径）。
+   * 不能放 localStorage —— 面板每次打开的端口都不同，origin 一变就换一份。
    */
   getUploadToken: () => panelFetch<{ token: string | null }>("/api/upload-token"),
-  setUploadToken: (token: string) =>
-    panelFetch<{ ok: boolean }>("/api/upload-token", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
-  clearUploadToken: () =>
-    panelFetch<{ ok: boolean }>("/api/upload-token/clear", { method: "POST", body: "{}" }),
+  /** 当前 GitHub 会话：`configured=false` = 软件还没配 OAuth App，不是用户没登录 */
+  githubSession: () => panelFetch<GithubSession>("/api/github/session"),
+  /** 发起一次设备码登录：返回 8 位码 + 浏览器地址 */
+  githubDeviceStart: () =>
+    panelFetch<GithubDeviceStart>("/api/github/device/start", { method: "POST", body: "{}" }),
+  /** 轮询一次（节奏由面板控制，用户关窗就停） */
+  githubDevicePoll: () =>
+    panelFetch<GithubDevicePoll>("/api/github/device/poll", { method: "POST", body: "{}" }),
+  /** 退出登录：删掉本机令牌 + 清会话缓存 */
+  githubLogout: () =>
+    panelFetch<{ ok: boolean }>("/api/github/logout", { method: "POST", body: "{}" }),
 };
+
+/** 见 `panelApi.githubSession` */
+export interface GithubSession {
+  configured: boolean;
+  login: string | null;
+}
+
+export interface GithubDeviceStart {
+  userCode: string;
+  verificationUri: string;
+  /**
+   * 带 `?user_code=` 的完整地址：浏览器打开时 GitHub 会**自动填好码**。
+   * 老版本主程序没有这个字段（返回 undefined），此时回落到 `verificationUri` + 手抄。
+   */
+  verificationUriComplete?: string;
+  expiresIn: number;
+  interval: number;
+}
+
+/**
+ * 轮询结果。`status` 的每个取值都对应界面上一句确定的话：
+ * - `none`：没有正在进行的登录（面板重开过）
+ * - `pending` / `slow_down`：继续等，后者要把间隔调大
+ * - `ok`：拿到令牌，`login` 可能为 null（读登录名失败，但令牌已落盘）
+ * - `expired` / `denied` / `error`：这条登录结束，要说清是什么原因
+ */
+export interface GithubDevicePoll {
+  status: "none" | "pending" | "slow_down" | "ok" | "expired" | "denied" | "error";
+  login?: string | null;
+  interval?: number;
+  message?: string;
+}
 
 /** 官方件 / 社区件的安装请求怎么拼（两种口径不同，但出口一样） */
 export function installRequestFor(entry: WorkshopEntry): InstallRequest {

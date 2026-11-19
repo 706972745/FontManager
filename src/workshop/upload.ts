@@ -251,12 +251,6 @@ export interface WhoAmI {
   login: string;
 }
 
-/** 令牌有效性 + 登录名。令牌无效时抛 GhError(401) */
-export async function verifyToken(token: string): Promise<WhoAmI> {
-  const me = await gh<{ login: string }>(token, "/user");
-  return { login: me.login };
-}
-
 function toBase64(bytes: Uint8Array): string {
   let bin = "";
   const CHUNK = 0x8000;
@@ -445,22 +439,20 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
 /**
  * 下架（删除）自己上传过的插件 —— 走「以删除方式建一个 PR」。
  *
- * 归属判定与现实口径（2026-11-15 用户要求「换电脑也能管自己的插件」）：
- * 匿名上传的署名是 `anonymous-<hash(login)>`，**由 GitHub 登录名稳定派生**，
- * 不落本机、不是随机串 —— 所以在任何一台电脑上登录同一个账号，算出来的作者名一样，
- * 既能覆盖更新（同一个目录），也能删除（同一个目录）。不需要「记住这台电脑」。
+ * 归属**只看目录名后缀是不是当前登录名**（`plugins/<id>__<login>`）：
+ * 换任何一台电脑登录同一个账号，后缀一样，所以既能覆盖更新、也能在这里下架。
+ * 不需要「记住这台电脑」，也不需要本机记录 —— 账号就是身份。
  *
- * 客户端先按 `__<login>` / `__<anonymousAuthorFor(login)>` 判一次归属，
- * 只是为了让「不是你的」有个清楚的中文报错；真正的闸门仍在 CI 与人工合并。
+ * 客户端判一次只是为了给「不是你的」一句清楚的话；真正的闸门仍在 CI 的作者
+ * 校验与人工合并。
  */
 export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
   const { token, login, dirs, onPhase } = args;
   if (dirs.length === 0) throw new UploadMessage("uploadErrEmpty");
-  const mine = new Set([login, anonymousAuthorFor(login)]);
   for (const d of dirs) {
     const cut = d.lastIndexOf("__");
     const owner = cut >= 0 ? d.slice(cut + 2) : "";
-    if (!mine.has(owner)) throw new UploadMessage("uploadErrNotOwner");
+    if (owner !== login) throw new UploadMessage("uploadErrNotOwner");
   }
   const branch = `remove/${dirs[0].replace(/__.*/, "")}-${Date.now()}`;
 
@@ -619,34 +611,3 @@ function buildPrBody(items: UploadItem[], login: string): string {
   return lines.join("\n");
 }
 
-/** 「填 GitHub 令牌」的帮助链接 */
-export const TOKEN_NEW_URL =
-  "https://github.com/settings/personal-access-tokens/new";
-export const TOKEN_CLASSIC_URL =
-  "https://github.com/settings/tokens/new";
-
-/**
- * registry 的维护者登录名。
- *
- * **只有维护者的令牌能走匿名上传**：CI 的作者归属校验要求「目录名以 `__<PR 作者>` 结尾」，
- * 维护者在白名单里会被跳过，所以 `plugins/<id>__anonymous-xxxx` 这种目录只有维护者提得上去。
- * 普通用户勾了匿名 → PR 必被 CI 拦下，与其让人白等，不如界面上直接不给勾。
- */
-export const MAINTAINER = "706972745";
-
-/**
- * 匿名署名：**从登录名稳定派生**，不是每次随机。
- *
- * 随机的后果是「同一个插件的第二次上传落到另一个目录」，覆盖更新直接失效
- * （中心会同时出现 anonymous-a1b2 和 anonymous-9z8y 两份）。派生保证同一个人
- * 永远同一个马甲 —— 取 4 位 36 进制是 registry 的 `anonymous-[0-9a-z]{4,16}` 口径。
- */
-export function anonymousAuthorFor(login: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < login.length; i++) {
-    h ^= login.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  const s = (h % 1679616).toString(36).padStart(4, "0");
-  return `anonymous-${s}`;
-}

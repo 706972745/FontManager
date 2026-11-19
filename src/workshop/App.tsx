@@ -25,6 +25,7 @@ import {
 import { isPanelLocale, panelT, type PanelLocale } from "./i18n.ts";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
+import { STAGGER_CAP, STAGGER_STEP, scrimFade, springSoft } from "../design/springs.ts";
 
 /**
  * 插件中心面板（M1，v3）。
@@ -402,7 +403,12 @@ export function WorkshopPanel() {
   // 错误态 / 加载态 / 正常态（与在线页同一骨架，不白屏）
   if (error && !entries) {
     return (
-      <motion.div className="ws-empty" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+      <motion.div
+        className="ws-empty"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={scrimFade}
+      >
         <span className="ws-empty-tile"><Puzzle size={26} strokeWidth={1.5} /></span>
         <h2>{t("errorTitle")}</h2>
         <p className="ws-mono">{error}</p>
@@ -415,7 +421,12 @@ export function WorkshopPanel() {
 
   if (loading && !entries) {
     return (
-      <motion.div className="ws-empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <motion.div
+        className="ws-empty"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={scrimFade}
+      >
         <span className="ws-empty-tile"><Puzzle size={26} strokeWidth={1.5} /></span>
         <h2>{t("loadingTitle")}</h2>
         <p>{t("loadingBody")}</p>
@@ -559,6 +570,7 @@ export function WorkshopPanel() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={scrimFade}
             onClick={() => !busyId && setDetailId(null)}
           >
             <motion.div
@@ -569,6 +581,7 @@ export function WorkshopPanel() {
               initial={{ opacity: 0, y: 24, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 16, scale: 0.98 }}
+              transition={springSoft}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="ws-detail-head">
@@ -714,6 +727,7 @@ export function WorkshopPanel() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={scrimFade}
           >
             <motion.div
               className="ws-tour"
@@ -723,6 +737,7 @@ export function WorkshopPanel() {
               initial={{ opacity: 0, y: 18, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={springSoft}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="ws-tour-head">
@@ -786,7 +801,7 @@ function WsCard({
       aria-label={entry.name}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index, 24) * 0.04 }}
+      transition={{ ...springSoft, delay: Math.min(index, STAGGER_CAP) * STAGGER_STEP }}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {

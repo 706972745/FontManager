@@ -29,6 +29,22 @@
   --ws-radius-ctl: 4px;
   --ws-radius-pop: 8px;
   --ws-radius-panel: 12px;
+
+  /* ─── 动效令牌（2026-11-19 统一）───────────────────────────────────────
+     面板是**独立产物**，不引主包的 tokens.css，但数值必须与它逐条相同 ——
+     否则同一个软件里「主窗口顺、插件中心钝」，用户会说「这不是一个东西」。
+
+     主包 src/design/tokens.css：--t-micro 100 / --t-quick 180 / --t-state 260，
+     缓动三条（out 进场、in 退场、std 位置与颜色）。这里只搬这三个时长：
+     面板没有布局级动画（400ms / 600ms 那两档用不上），搬过来就是死变量。
+
+     ⚠️ 不要在这里写死 120ms / ease：那是统一之前留下的写法，见下面几处替换。 */
+  --ws-t-micro: 100ms;
+  --ws-t-quick: 180ms;
+  --ws-t-state: 260ms;
+  --ws-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ws-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ws-ease-std: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :root[data-theme="dark"] {
@@ -111,8 +127,8 @@ body {
   border-radius: var(--ws-radius-ctl);
   cursor: pointer;
   transition:
-    color 120ms ease,
-    background-color 120ms ease;
+    color var(--ws-t-micro) var(--ws-ease-std),
+    background-color var(--ws-t-micro) var(--ws-ease-std);
 }
 
 .ws-head-help:hover {
@@ -198,7 +214,8 @@ body {
      （用户 2026-11-15：胶囊看着像标签，筛选按钮应该像输入框那一类控件） */
   border-radius: var(--ws-radius-ctl);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition: background var(--ws-t-micro) var(--ws-ease-std), color var(--ws-t-micro) var(--ws-ease-std),
+    border-color var(--ws-t-micro) var(--ws-ease-std);
 }
 
 .ws-chip:hover {
@@ -325,7 +342,7 @@ body {
   border: 1px solid var(--ws-line);
   border-radius: var(--ws-radius);
   cursor: pointer;
-  transition: border-color 120ms ease, transform 120ms ease;
+  transition: border-color var(--ws-t-micro) var(--ws-ease-std), background var(--ws-t-micro) var(--ws-ease-std);
 }
 
 .ws-card:hover {
@@ -809,6 +826,14 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 减弱动效：时长压到 1ms（与主包同一手法）。
+     **别写 `* { transition: none }`** —— 那会把载入提示的 opacity 一起干掉，
+     界面看起来像卡死（主包 tokens.css 里也有这条注释，两处口径要一致）。 */
+  :root {
+    --ws-t-micro: 1ms;
+    --ws-t-quick: 1ms;
+    --ws-t-state: 1ms;
+  }
   .ws-spin {
     animation: none;
   }
@@ -831,7 +856,7 @@ body {
   border: 1px solid var(--ws-accent);
   border-radius: var(--ws-radius-ctl);
   cursor: pointer;
-  transition: opacity 120ms ease;
+  transition: opacity var(--ws-t-micro) var(--ws-ease-std);
 }
 
 .ws-upload-btn:hover {
@@ -966,9 +991,93 @@ body {
 }
 
 .ws-up-login {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: var(--ws-fs-11);
   font-weight: 600;
   color: var(--ws-ok);
+}
+
+/* ── 设备码登录（2026-11-19）────────────────────────────────────────────
+   面板不再收令牌：点「连接 GitHub」→ 这里显示 8 位码 → 用户在浏览器授权。
+   码要**能被一眼抄下来**：等宽、带字距、可选、虚线框（虚线表示「不是输入框」，
+   它确实不是 —— 抄到 GitHub 上用的）。 */
+.ws-up-device {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 账号区的主按钮不铺满整节：它是这一节里的一个动作（连接 / 重新登录），
+   不是整个弹窗的提交键 —— 铺满会让它看起来像一条横幅（360px 窄窗下尤其明显）。 */
+.ws-up-sec > .ws-cta {
+  align-self: flex-start;
+}
+
+.ws-up-device-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-up-code {
+  flex: 1;
+  padding: 8px 10px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: var(--ws-fs-13);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: var(--ws-text);
+  background: var(--ws-bg);
+  border: 1px dashed var(--ws-line);
+  border-radius: var(--ws-radius-ctl);
+  user-select: all;
+}
+
+.ws-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--ws-text-2);
+  background: var(--ws-hover);
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+  transition: background var(--ws-t-micro) var(--ws-ease-std),
+    color var(--ws-t-micro) var(--ws-ease-std);
+}
+
+.ws-iconbtn:hover {
+  color: var(--ws-text);
+  background: var(--ws-panel);
+}
+
+.ws-up-device-wait {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 按压反馈：只压颜色、不缩放 —— 面板文字密集，缩放会让整行重绘、字发虚
+   （主窗口侧栏行当初也是这个结论，两边保持同一套手感）。 */
+.ws-cta {
+  transition: background-color var(--ws-t-micro) var(--ws-ease-std);
+}
+
+.ws-cta:active:not(:disabled) {
+  background: color-mix(in srgb, var(--ws-accent) 86%, #000);
+}
+
+.ws-chip:active {
+  background: color-mix(in srgb, var(--ws-text) 8%, transparent);
+}
+
+.ws-upload-btn:active {
+  opacity: 0.75;
 }
 
 .ws-linkbtn {
