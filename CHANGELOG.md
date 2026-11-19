@@ -4,6 +4,35 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.1] — 2026-11-19
+
+> 插件中心改成**主窗口里的遮罩层**（用户 2026-11-19）：不再新开窗口，尺寸与位置
+> 与设置面板完全一致；点多次只唤出一个；同一套遮罩层开放给插件做自己的设置界面。
+> 同时取消「失焦即消失」。
+
+### 变更
+
+- **插件中心不再开新窗口**：新增命令 `workshop_panel_url`（只返回带一次性 key 的
+  地址，不建窗），主窗口用 iframe 在 `.settings-panel` 同款壳里渲染 —— 尺寸与位置
+  全部复用设置面板的 `min(900px, 96vw) × min(760px, 94vh)`，改一处两个面板一起跟。
+- **取消失焦隐藏**：`workshop_open_panel` 的 `close_on_blur` 由 `true` 改 `false`。
+  以前点主窗口任何地方这个窗口就消失，对照着主界面挑插件时非常难用。
+- **单例**：同一插件只有一个设置界面（按 `plugin.json` 的 id 判定）；插件中心点多次
+  只唤出，不重建 iframe；不同插件请求是**替换**当前内容，不叠第二层遮罩。
+- **插件设置界面开放**：插件侧协议零改动（照旧 stdout `open-url`），主程序改为转发
+  `plugin-panel:open` 事件给前端内嵌。规范见 `docs/插件市场方案.md` §8.5。
+- **独立窗口保留为兜底**：`emit` 失败（主窗口已销毁等）才退回开窗；窗口 label 改为
+  按插件 id 派生（`plugin-panel-<slug>-<hash>`），修掉「打开第二个插件的设置打不开」。
+- 主窗口 CSP 新增 `frame-src http://127.0.0.1:* http://localhost:*`（漏了这条，
+  内嵌会被静默拦掉）。
+
+### 测试
+
+- `tests/panelHost.test.ts`（6 条）：遮罩共用 `.settings-panel` 且不许写死尺寸、
+  两处单例判断、事件驱动、两个入口都不再开窗、CSP 放行、`close_on_blur === false`。
+- `plugins::tests::plugin_panel_label_is_per_plugin_and_path_safe`：label 按插件派生、
+  同一插件稳定、路径安全、归一/截断不撞名。
+
 ## [2.5.0] — 2026-11-19
 
 > 插件中心的上传改了身份口径（用户 2026-11-19）：**面板不再自带令牌、也不收粘贴的令牌**，

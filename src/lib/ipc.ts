@@ -734,6 +734,14 @@ export const ipc = {  getSettings: () => invoke<AppSettings>("get_settings"),
   workshopPanelAutoupdate: () => invoke<PanelUpdateOutcome>("workshop_panel_autoupdate"),
   /** 打开插件中心面板窗口（主程序起回环服务 + 一次性 key） */
   workshopOpenPanel: (lang: string) => invoke<void>("workshop_open_panel", { lang }),
+  /**
+   * 取插件中心面板地址（**不建窗口**）。
+   *
+   * 主窗口用 `<iframe src=…>` 在设置同款遮罩层里内嵌它 —— 面板里的请求全是
+   * `/api/*` 相对路径，在 iframe 里同源，不需要任何桥接。每次打开都重新取：
+   * key 是进程级的，服务重启后端口和 key 都会变。
+   */
+  workshopPanelUrl: (lang: string) => invoke<string>("workshop_panel_url", { lang }),
 
   /** 插件运行时状态（1.4.11）：内置/系统版本、占用、被哪些插件使用 */
   runtimesStatus: () =>

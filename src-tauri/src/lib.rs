@@ -3684,6 +3684,7 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             // 这个命令连查都不查 —— 见 `workshop_panel_autoupdate` 里的第 ② 条闸门）
             workshop::workshop_panel_autoupdate,
             workshop::workshop_open_panel,
+            workshop::workshop_panel_url,
             runtimes_status,
             plugins::runtimes_remote_versions,
             runtime_delete,

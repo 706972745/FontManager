@@ -5,11 +5,10 @@ import { useFontStore } from "../state/fontStore";
 import { motion, useReducedMotion } from "motion/react";
 import { springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
-import { activeLocale, useT } from "../lib/i18n";
+import { useT } from "../lib/i18n";
 import { useState } from "react";
-import { ipc } from "../lib/ipc";
-import { toast } from "../design/primitives/Toast";
 import { useWorkshopInstalled } from "../lib/useWorkshopPanel";
+import { OPEN_WORKSHOP_EVENT } from "./PanelHost";
 
 function SettingsGlyph({ size = 15 }: { size?: number }) {
   return (
@@ -172,9 +171,10 @@ function PluginCenterButton() {
       data-hint="side.pluginCenter"
       aria-label={t("side.pluginCenter")}
       onClick={() => {
-        void ipc
-          .workshopOpenPanel(activeLocale())
-          .catch((err) => toast.error(t("toast.pluginCenterOpenFailed"), String(err)));
+        // 2026-11-19：插件中心改为在主窗口里以遮罩层打开（不再新开窗口）。
+        // 这里**只发事件** —— 真正取地址、建 iframe、做单例去重都在 `PanelHost`，
+        // 这样设置页里的同一个入口也走一条路径，不会出现两种打开行为。
+        window.dispatchEvent(new CustomEvent(OPEN_WORKSHOP_EVENT));
       }}
       whileTap={{ scale: 0.94, transition: springSnappy }}
     >

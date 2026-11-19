@@ -1978,15 +1978,23 @@ async fn api_pick_folders(
 }
 
 /// 打开插件中心面板窗口：起本地服务 → 拼一次性 URL → 开窗（复用插件面板机制）
+///
+/// **2026-11-19 起这不是主路径**：用户要求「直接在软件窗口里打开」（与设置面板
+/// 同尺寸同位置），前端改用 `workshop_panel_url` + iframe 内嵌。这个命令留着，
+/// 一是给「内嵌加载失败」保底（将来可以一键降级成独立窗口），二是老版本面板/脚本
+/// 还可能调它。改行为前先确认没有回退路径。
 #[tauri::command]
 pub fn workshop_open_panel(app: AppHandle, lang: String) -> Result<(), String> {
     let status = panel_status();
     if !status.installed {
         return Err("插件中心面板还没安装（设置 → 插件 → 插件中心）".into());
     }
-    // 面板是「失焦就藏起来」的（见 plugins.rs 的 close_on_blur）→ 用户点按钮时
-    // 窗口对象通常还在，只是不可见。这种情况**直接让它重新出现**，不要再建一个
-    // 同名窗口（会撞 label already exists，表现为「点了没反应」）。
+    // 单例：插件中心**永远只有一个窗口**。用户多次点入口时，这里必须只把已有窗口
+    // 唤到前台（显示 / 取消最小化 / 聚焦），不能再建一个 —— 同名 label 会直接
+    // 建窗失败，表现为「点了没反应」。
+    //
+    // 三种状态都要覆盖：可见但在别的窗口后面（set_focus）、被最小化（unminimize）、
+    // 以及历史上失焦隐藏留下的 hide 状态（show）。第三种是兼容旧行为，不是主路径。
     use tauri::Manager;
     if let Some(win) = app.get_webview_window(PANEL_LABEL) {
         if win.is_visible().unwrap_or(true) {
@@ -2000,13 +2008,7 @@ pub fn workshop_open_panel(app: AppHandle, lang: String) -> Result<(), String> {
         return Ok(());
     }
     let info = ensure_panel_server(app.clone(), panel_dir())?;
-    let theme = crate::plugins::panel_theme()
-        .map(|t| match t {
-            tauri::Theme::Light => "light",
-            tauri::Theme::Dark => "dark",
-            _ => "system",
-        })
-        .unwrap_or("system");
+    let theme = panel_theme_str();
     let url = format!(
         "http://127.0.0.1:{}/workshop.html?k={}&lang={}&theme={}",
         info.port,
@@ -2029,13 +2031,52 @@ pub fn workshop_open_panel(app: AppHandle, lang: String) -> Result<(), String> {
         PANEL_LABEL,
         &url,
         panel_window_title(&lang),
-        true,
+        // 2026-11-19 用户改口径：**不再失焦即藏**。以前点主窗口任何地方这个窗口就消失，
+        // 用户想对照着主界面里的字体挑插件时非常难用。现在它是一个普通窗口：
+        // 只有点 X 才会关；点别处只是失去焦点，窗口留着。
+        false,
     );
     match &opened {
         Ok(()) => crate::diag::log("[workshop] 面板窗口创建请求已提交（结果见 [panel/workshop-panel] 那条）"),
         Err(e) => crate::diag::log(&format!("[workshop] 面板窗口创建请求提交失败：{e}")),
     }
     opened
+}
+
+/// 面板要用的主题串（与面板前端的约定：`light` / `dark` / `system`）。
+///
+/// 抽出来是因为现在有两个入口用同一份：内嵌（iframe）与保底的独立窗口。
+/// 两处各写一套 match 就会漂 —— 曾经踩过「窗口深色、面板浅色」的错配。
+fn panel_theme_str() -> &'static str {
+    match crate::plugins::panel_theme() {
+        Some(tauri::Theme::Light) => "light",
+        Some(tauri::Theme::Dark) => "dark",
+        _ => "system",
+    }
+}
+
+/// 取插件中心面板的地址（**不建窗口**）：起 / 复用回环服务，拼上一次性会话 key。
+///
+/// 主窗口用 `<iframe src=…>` 内嵌它 —— 面板里的请求全是 `/api/*` 相对路径，
+/// 在 iframe 里同源，不需要 postMessage 转发任何东西（也就不必给面板加一套
+/// 「宿主桥」，面板仍是可独立更新的产物）。
+///
+/// **每次打开都要重新取**：key 是进程级的，服务重启后端口和 key 都会变，
+/// 缓存下来的旧地址会 401。
+#[tauri::command]
+pub fn workshop_panel_url(app: AppHandle, lang: String) -> Result<String, String> {
+    let status = panel_status();
+    if !status.installed {
+        return Err("插件中心面板还没安装（设置 → 插件 → 插件中心）".into());
+    }
+    let info = ensure_panel_server(app, panel_dir())?;
+    Ok(format!(
+        "http://127.0.0.1:{}/workshop.html?k={}&lang={}&theme={}",
+        info.port,
+        urlencoding(&info.key),
+        urlencoding(&lang),
+        panel_theme_str()
+    ))
 }
 
 /// 面板窗口标题（按界面语言）。**照抄面板 i18n 的 `title` 词条**，

@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.5.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.5.1-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -48,7 +48,7 @@ and MCP when you want your tools to join in.
 
 ## 🆕 What's new
 
-**2.5.0 — Plugin uploads now require your own GitHub sign-in (device code); the panel no longer carries any token**
+**2.5.1 — The plugin centre now opens inside the main window (same size as Settings), keeps one instance, and hosts plugin settings pages too**
 
 **2.4.5 — Fixes 2.4.4 refusing to start (blank main window stuck behind the splash)**
 
@@ -949,7 +949,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.5.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.5.1-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -978,7 +978,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 ## 🆕 最近更新
 
-**2.5.0 —— 插件上传改为登录自己的 GitHub（设备码）：面板不再自带令牌，匿名代传取消**
+**2.5.1 —— 插件中心改为在主窗口里打开（与设置面板同尺寸），点多次只有一个；同一遮罩层也承载插件自己的设置界面**
 
 **2.4.5 —— 修复 2.4.4 装完打不开（主窗口被启动页挡死）；只修这一处，不动任何交互**
 
