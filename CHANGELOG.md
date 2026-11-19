@@ -4,6 +4,33 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.2] — 2026-11-19
+
+> 用户截图报的两件小事一起收：**应用内提示条压在顶栏按钮上**，
+> 以及**首次打开软件就弹一条「还没设置 GitHub 库」**（字体同步插件）。
+> 只改提示的位置与时机，不动任何功能。
+
+### 修复
+
+- **提示条不再挡住顶栏**：`.toaster` 原来固定 `top: 54px`，正好落在顶栏右侧
+  那排按钮（视图切换 / 筛选 / 排序）上，提示存在期间那排按钮点不动。
+  现在完整界面的提示条带 `.toaster-main`，位置读 `--toast-safe-top`
+  —— 由 `TopBar` 挂的 `useToasterSafeTop` 现场量底边（+8px）写入，
+  顶栏换行变高（56 → 100）时也跟着下移；兜底 112px。速览窗口的提示条不带类，
+  位置沿用原值不变。
+- **同步插件不再「开机就弹」**：`font-sync` 的 `self_check()` 跑在插件进程 init 时，
+  主程序启动为了挂右键菜单会拉起所有插件，于是每次开软件都弹一条
+  「还没设置 GitHub 库」。改为只写日志，引导留到**用户自己点开插件**时看
+  （设置面板头部状态胶囊显示「还没配置」，第 1 张卡就是建令牌的步骤）。
+  插件版本 0.9.4 → 0.9.5。
+
+### 测试
+
+- `tests/toasterPlacement.test.ts`（5 条）：`.toaster-main` 必须消费
+  `--toast-safe-top` 而不是写死位置、兜底值存在、`TopBar` 真的把 ref 交给
+  `useToasterSafeTop`、hook 里量的是真实底边且会清理变量、`Toaster` 支持 className
+  且速览那份不带类。
+
 ## [2.5.1] — 2026-11-19
 
 > 插件中心改成**主窗口里的遮罩层**（用户 2026-11-19）：不再新开窗口，尺寸与位置

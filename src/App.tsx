@@ -1029,7 +1029,9 @@ export default function App() {
       <TrashConfirmDialog />
       <ResumeBatchDialog />
       <DestructiveConfirmDialog />
-      <Toaster />
+      {/* 完整界面的提示条要让开顶栏（2026-11-19）：位置由 --toast-safe-top 决定，
+          速览窗口那个不带类，保持原位。 */}
+      <Toaster className="toaster-main" />
       <ResizeGrips />
       <HoverHintHost />
       {DIAG_HUD && <DiagHud />}
