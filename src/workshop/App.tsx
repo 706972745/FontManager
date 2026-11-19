@@ -1,8 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Check, CircleHelp, Download, Puzzle, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowUpCircle, Check, CircleHelp, Download, Puzzle, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyWorkshopFilters,
+  hasUpdate,
   humanBytes,
   meetsMinAppVersion,
   parseWorkshopIndexStrict,
@@ -158,6 +159,23 @@ export function WorkshopPanel() {
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const installedIds = useMemo(() => new Set(installed.map((p) => p.id)), [installed]);
+  /**
+   * 本机**已装版本**（2026-11-19 用户要求「有更新就给个按钮」）。
+   *
+   * 判据只看清单版本 vs 这里：`hasUpdate` 为 true 才出「更新」。
+   * 不用 id 是否存在来判断 —— 已装但同版本不该显示「更新」，
+   * 那是让用户白点一次（下载 + 重装 + 丢运行状态）。
+   */
+  const installedVersions = useMemo(
+    () => new Map(installed.map((p) => [p.id, p.version])),
+    [installed],
+  );
+  /** 这个条目能不能更新；返回清单版本（给按钮显示「更新到 vX」），不能更新返回 null */
+  const updateTarget = useCallback(
+    (entry: WorkshopEntry): string | null =>
+      hasUpdate(entry.version, installedVersions.get(entry.id)) ? entry.version ?? null : null,
+    [installedVersions],
+  );
 
   /**
    * 拉清单：普通进来用 1 分钟缓存，刷新强拉。
@@ -209,12 +227,13 @@ export function WorkshopPanel() {
    * ——细节是排障信息，翻译不了就保留原文，但不能让它顶在前面。
    */
   const describeError = useCallback(
-    (err: unknown, action: "install" | "uninstall" | "query"): string => {
+    (err: unknown, action: "install" | "update" | "uninstall" | "query"): string => {
       if (err instanceof PanelSessionExpired) return t("sessionExpired");
       // 清单的目录字段不合法：给一句准话，别把路径糊到界面上
       if (err instanceof BadRegistryDirError) return t("badDir");
       const detail = err instanceof Error ? err.message : String(err);
       if (action === "install") return `${t("installFailed")}: ${detail}`;
+      if (action === "update") return `${t("updateFailed")}: ${detail}`;
       if (action === "uninstall") return `${t("uninstallFailed")}: ${detail}`;
       return detail;
     },
@@ -301,6 +320,11 @@ export function WorkshopPanel() {
     () => entries?.find((e) => e.id === detailId) ?? null,
     [entries, detailId],
   );
+  /** 详情里这个插件能不能更新（能则新版号，不能则 null） */
+  const detailUpdate = useMemo(
+    () => (detail ? updateTarget(detail) : null),
+    [detail, updateTarget],
+  );
 
   // 首次温馨提醒：localStorage 记忆已读（方案 §7.3 第 1 条）
   const [bannerSeen, setBannerSeen] = useState(() => {
@@ -348,20 +372,30 @@ export function WorkshopPanel() {
     return detail.includes("sha256 校验失败");
   };
 
-  const onInstall = async (entry: WorkshopEntry) => {
+  /**
+   * 安装 / 更新走同一条路（后端就是「把包解到插件目录」），只有两处不同：
+   * 提示语（已安装 / 已更新）和错误前缀。**更新不清旧目录里的用户数据** ——
+   * 解包只覆盖包内文件，插件的 config/state 不受影响，这是「更新」而不是「卸载重装」
+   * 的意义（用户 2026-11-19 要的就是这一点）。
+   */
+  const onInstall = async (entry: WorkshopEntry, mode: "install" | "update" = "install") => {
     setBusyId(entry.id);
     setNotice(null);
     const done = async (e: WorkshopEntry) => {
       await panelApi.install(installRequestFor(e));
       await refreshInstalled();
-      // 装完 ≠ 能用：插件默认是关的；本地 API 若也关着，插件连数据都读不到。
+      // 更新不需要再教「去设置里开启」（它本来就是开着的那个）；
+      // 新装才要说清「装完 ≠ 能用」：插件默认关，本地 API 若也关着连数据都读不到。
       // 两条都如实说清楚，但**只提示、不替用户开**（开关在设置页，是用户的决定）。
       setNotice(
-        `${t("installedToast", { name: e.name, version: e.version })} ${
-          apiEnabled ? t("installHint") : t("apiOff")
-        }`,
+        mode === "update"
+          ? t("updatedToast", { name: e.name, version: e.version })
+          : `${t("installedToast", { name: e.name, version: e.version })} ${
+              apiEnabled ? t("installHint") : t("apiOff")
+            }`,
       );
     };
+    const failAction = mode === "update" ? "update" : "install";
     try {
       await done(entry);
     } catch (err) {
@@ -375,11 +409,11 @@ export function WorkshopPanel() {
           await done(fresh);
         } catch (retryErr) {
           setNotice(
-            isShaMismatch(retryErr) ? t("staleRegistry") : describeError(retryErr, "install"),
+            isShaMismatch(retryErr) ? t("staleRegistry") : describeError(retryErr, failAction),
           );
         }
       } else {
-        setNotice(describeError(err, "install"));
+        setNotice(describeError(err, failAction));
       }
     } finally {
       setBusyId(null);
@@ -551,8 +585,11 @@ export function WorkshopPanel() {
               entry={entry}
               index={i}
               installed={installedIds.has(entry.id)}
+              updateTo={updateTarget(entry)}
+              busy={busyId === entry.id}
               t={t}
               onOpen={() => setDetailId(entry.id)}
+              onUpdate={() => void onInstall(entry, "update")}
             />
           ))}
         </div>
@@ -667,7 +704,7 @@ export function WorkshopPanel() {
                     : t("sourceCommunity", { author: workshopAuthorLabel(detail) })}
                 </span>
                 <div className="ws-actions">
-                  {installedIds.has(detail.id) ? (
+                  {installedIds.has(detail.id) && (
                     <button
                       className="ws-btn ws-btn-ghost"
                       onClick={() => void onUninstall(detail)}
@@ -680,10 +717,15 @@ export function WorkshopPanel() {
                       )}
                       {t("uninstall")}
                     </button>
-                  ) : (
+                  )}
+                  {/* 没装 → 安装；装了但清单更新 → 更新（覆盖安装，插件自己的
+                      config/state 不动）；已是最新 → 不给按钮，免得白点一次。 */}
+                  {(!installedIds.has(detail.id) || detailUpdate) && (
                     <button
                       className="ws-btn ws-btn-primary"
-                      onClick={() => void onInstall(detail)}
+                      onClick={() =>
+                        void onInstall(detail, installedIds.has(detail.id) ? "update" : "install")
+                      }
                       disabled={!!busyId}
                     >
                       {busyId === detail.id ? (
@@ -693,8 +735,12 @@ export function WorkshopPanel() {
                         </>
                       ) : (
                         <>
-                          <Download size={14} strokeWidth={1.5} />
-                          {t("install")}
+                          {detailUpdate ? (
+                            <ArrowUpCircle size={14} strokeWidth={1.5} />
+                          ) : (
+                            <Download size={14} strokeWidth={1.5} />
+                          )}
+                          {detailUpdate ? t("updateTo", { version: detailUpdate }) : t("install")}
                         </>
                       )}
                     </button>
@@ -782,14 +828,21 @@ function WsCard({
   entry,
   index,
   installed,
+  updateTo,
+  busy,
   t,
   onOpen,
+  onUpdate,
 }: {
   entry: WorkshopEntry;
   index: number;
   installed: boolean;
+  /** 可更新的目标版本；null = 不需要更新（没装 / 已是最新 / 判不了） */
+  updateTo: string | null;
+  busy: boolean;
   t: (key: string, vars?: Record<string, string | number>) => string;
   onOpen: () => void;
+  onUpdate: () => void;
 }) {
   const author = workshopAuthorLabel(entry);
   const sizeText = humanBytes(entry.size);
@@ -821,9 +874,15 @@ function WsCard({
             {author}
           </span>
         )}
-        {installed && (
+        {installed && !updateTo && (
           <span className="ws-installed">
             <Check size={10} strokeWidth={2.5} /> {t("installedBadge")}
+          </span>
+        )}
+        {/* 有新版本：徽章换成「可更新」，卡片底部同时给按钮（用户 2026-11-19 要求） */}
+        {updateTo && (
+          <span className="ws-installed ws-installed-update" title={t("updateTo", { version: updateTo })}>
+            <ArrowUpCircle size={10} strokeWidth={2.5} /> {t("updateBadge")}
           </span>
         )}
       </div>
@@ -842,6 +901,28 @@ function WsCard({
             <AlertTriangle size={9} strokeWidth={2} />
             {t("libWarnBadge")}
           </span>
+        )}
+        {/* 更新按钮：卡片本身就是按钮（点开详情），这里的点击必须拦住冒泡。
+            键盘 Enter 也一样 —— 否则按回车会既更新又打开详情。 */}
+        {updateTo && (
+          <button
+            type="button"
+            className="ws-card-update"
+            disabled={busy}
+            title={t("updateTo", { version: updateTo })}
+            onClick={(e) => {
+              e.stopPropagation();
+              onUpdate();
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {busy ? (
+              <RefreshCw size={11} strokeWidth={2} className="ws-spin" />
+            ) : (
+              <ArrowUpCircle size={11} strokeWidth={2} />
+            )}
+            {t("update")}
+          </button>
         )}
       </div>
     </motion.article>

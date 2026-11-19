@@ -308,6 +308,30 @@ export function meetsMinAppVersion(current: string, min: string | null): boolean
 }
 
 /**
+ * 清单里的版本是否**比本机装的更新** —— 插件中心「更新」按钮的唯一判据。
+ *
+ * 2026-11-19 用户要求：插件有新版本时，中心里对应的插件要直接给一个更新按钮，
+ * 不要让用户先卸载再装（那会把设置/状态一起丢掉，还要重新找一遍）。
+ *
+ * 三种情况都返回 false，且都不该出现「更新」按钮：
+ * - 本机没装（那是「安装」）；
+ * - 清单没写版本（判不了，不能猜）；
+ * - 两边一样或本机更新（开发中的本地版本不该被降级）。
+ * 版本串带 `v` 前缀要能认（社区件的 plugin.json 有人这么写）。
+ */
+export function hasUpdate(
+  remoteVersion: string | null | undefined,
+  installedVersion: string | null | undefined,
+): boolean {
+  const norm = (s: string | null | undefined): string =>
+    String(s ?? "").trim().replace(/^[vV]/, "");
+  const remote = norm(remoteVersion);
+  const local = norm(installedVersion);
+  if (!remote || !local) return false;
+  return compareVersions(remote, local) > 0;
+}
+
+/**
  * 会改动**字体库文件夹本身**的权限。
  *
  * 2026-11-15 用户要求：凡是有这类能力的插件，中心面板一律要在下载前提示 ——

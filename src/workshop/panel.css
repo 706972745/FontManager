@@ -1471,3 +1471,43 @@ body {
   flex: 0 0 auto;
   width: 100%;
 }
+
+/* ─── 卡片上的「更新」按钮（2026-11-19 用户要求） ──────────────────────
+   插件有新版本时，卡片底部右侧给一个真按钮，点一下就地更新 ——
+   不用先进详情、更不用「卸载再装」（那会丢插件自己的 config/state，
+   还得重新找一遍插件）。卡片本身是 role=button，JS 里已 stopPropagation。
+   颜色用 accent 而不是 ok 绿：「可更新」是待办事项，不是完成状态。 */
+.ws-installed-update {
+  color: var(--ws-accent);
+  background: color-mix(in srgb, var(--ws-accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ws-accent) 34%, transparent);
+}
+
+.ws-card-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  /* 靠右：它是卡片上唯一可点的动作，别混在元信息里 */
+  margin-left: auto;
+  height: 20px;
+  padding: 0 8px;
+  font-size: var(--ws-fs-10);
+  font-weight: 500;
+  color: var(--ws-accent);
+  background: var(--ws-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--ws-accent) 34%, transparent);
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+  transition: background var(--ws-t-quick), border-color var(--ws-t-quick);
+}
+.ws-card-update:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ws-accent) 20%, transparent);
+  border-color: color-mix(in srgb, var(--ws-accent) 50%, transparent);
+}
+.ws-card-update:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.ws-card-update:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

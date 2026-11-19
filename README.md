@@ -48,7 +48,7 @@ and MCP when you want your tools to join in.
 
 ## 🆕 What's new
 
-**2.5.2 — Toasts no longer cover the toolbar; the font-sync plugin stops nagging on app start**
+**2.5.2 — Toasts no longer cover the toolbar; the splash screen no longer flashes both themes; plugins with a new version get an Update button**
 
 **2.5.1 — The plugin centre now opens inside the main window (same size as Settings), keeps one instance, and hosts plugin settings pages too**
 
@@ -978,7 +978,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 ## 🆕 最近更新
 
-**2.5.2 —— 提示条不再压住顶栏按钮；字体同步插件不再「一开软件就弹提示」**
+**2.5.2 —— 提示条不再压住顶栏按钮；启动页不再先深后浅；插件有新版时卡片上直接给「更新」按钮**
 
 **2.5.1 —— 插件中心改为在主窗口里打开（与设置面板同尺寸），点多次只有一个；同一遮罩层也承载插件自己的设置界面**
 

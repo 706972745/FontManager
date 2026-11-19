@@ -8,7 +8,8 @@ All notable changes to FontManager are documented here. The format follows
 
 > 用户截图报的两件小事一起收：**应用内提示条压在顶栏按钮上**，
 > 以及**首次打开软件就弹一条「还没设置 GitHub 库」**（字体同步插件）。
-> 只改提示的位置与时机，不动任何功能。
+> 检修时又补了三条：**启动页深浅色闪两次**、**插件有新版只有一个更新按钮**、
+> **官方插件版本号长期对不上实装**。
 
 ### 修复
 
@@ -23,6 +24,27 @@ All notable changes to FontManager are documented here. The format follows
   「还没设置 GitHub 库」。改为只写日志，引导留到**用户自己点开插件**时看
   （设置面板头部状态胶囊显示「还没配置」，第 1 张卡就是建令牌的步骤）。
   插件版本 0.9.4 → 0.9.5。
+- **启动页不再先深后浅**：`splash.html` 的首帧只跟 `prefers-color-scheme`（Windows），
+  用户把软件设成浅色而系统是深色（或反过来）时，先画系统那套、等 `get_prefs`
+  回来再跳成另一套 —— 看上去就是「两个主题各闪一次」。现在建窗时就把
+  `prefs.themePref` 翻成窗口主题（与插件面板同一个 `panel_theme()`），
+  WebView2 据此决定 `prefers-color-scheme`，首帧即正确；`system` 仍交回系统。
+  日志新增 `[splash] 窗口主题：light|dark|system` 一行备查。
+
+### 变更
+
+- **插件有新版 → 卡片上直接一个「更新」按钮**（插件中心面板 1.2.3，独立发布）：
+  清单版本高于本机实装时，卡片徽章变「可更新」、底部出「更新」按钮；详情页主按钮
+  变「更新到 vX」，卸载按钮保留。更新走**覆盖安装**（不卸载），插件自己的
+  `config.json` / 状态不受影响 —— 这正是「卸载再装」做不到的。
+  判据收在 `hasUpdate()`（`src/lib/workshop.ts`），本机没装 / 清单没版本 /
+  本机版本更高三种情况一律不出按钮，避免白点一次或把开发中的本地版本降级。
+
+### 数据
+
+- 插件市场 `official.json`：`font-sync` 0.9.5；顺带把 `font-stats` / `specimen-export` /
+  `font-apply` / `template-hello` 的 `version` 从长期没动的 1.0.0 对齐到实际包
+  （1.1.2 / 1.2.2 / 1.1.2 / 1.0.1）—— 版本写低会让「更新」永远算不出来。
 
 ### 测试
 
@@ -30,6 +52,8 @@ All notable changes to FontManager are documented here. The format follows
   `--toast-safe-top` 而不是写死位置、兜底值存在、`TopBar` 真的把 ref 交给
   `useToasterSafeTop`、hook 里量的是真实底边且会清理变量、`Toaster` 支持 className
   且速览那份不带类。
+- `tests/workshopUpdate.test.ts`（6 条）：`hasUpdate` 的三种 false 边角、`v` 前缀、
+  与 `compareVersions` 同口径、面板确实用了它、卡片更新按钮拦冒泡、九语言词条齐全。
 
 ## [2.5.1] — 2026-11-19
 

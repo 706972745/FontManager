@@ -3417,6 +3417,16 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
                         None
                     }
                 };
+                // 启动页的首帧也要按**软件设置的主题**来（2026-11-19 用户报：
+                // 深浅色「会出现两个」）。以前只有 splash.html 的
+                // `@media (prefers-color-scheme)` 在起作用，它跟的是 Windows；
+                // 用户把软件设成深色而系统是浅色（或反过来）时，首帧先按系统画一套，
+                // 等 `get_prefs` 回来写 `data-theme` 再跳成另一套 —— 看上去就是
+                // 「两个主题闪了一下」。窗口级主题与插件面板同一套口径
+                // （`panel_theme`）：WebView2 据此决定 prefers-color-scheme，
+                // splash.html 一行 CSS 都不用改，首帧即正确。
+                // `system`（或 prefs 还没读出来）返回 None = 交回系统，行为不变。
+                let splash_theme = crate::plugins::panel_theme();
                 let mut builder = tauri::WebviewWindowBuilder::new(
                     app,
                     "splash",
@@ -3451,6 +3461,20 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
                 if let Some(dir) = splash_data_dir {
                     builder = builder.data_directory(dir);
                 }
+                // 主题必须在建窗时给：晚一步（页面已加载）就来不及，闪一下正是要修的东西
+                if let Some(theme) = splash_theme {
+                    builder = builder.theme(Some(theme));
+                }
+                // 留一行证据：启动页主题现在由「软件设置」决定（用户 2026-11-19 报
+                // 深浅色各出现一次）。没有这条日志时，只能靠肉眼判断到底生效了没有。
+                diag::log(&format!(
+                    "[splash] 窗口主题：{}（prefs.themePref 决定，system = 跟系统）",
+                    match splash_theme {
+                        Some(tauri::Theme::Light) => "light",
+                        Some(tauri::Theme::Dark) => "dark",
+                        _ => "system",
+                    }
+                ));
                 match builder.build() {
                     Ok(splash) => {
                         let _ = splash.show();
