@@ -8,6 +8,7 @@ import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { LoaderCircle } from "lucide-react";
 import { ArtIcon } from "./ArtIcon";
+import { OPEN_WORKSHOP_EVENT } from "./PanelHost";
 import { PillToggle } from "../design/primitives/PillToggle";
 import { scrimFade, springSoft } from "../design/springs";
 import { ipc, type PluginInfo, type WorkshopPanelStatus } from "../lib/ipc";
@@ -17,7 +18,7 @@ import { toast } from "../design/primitives/Toast";
 import { familiesFor, useFontStore } from "../state/fontStore";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
-import { useT, activeLocale, type TKey } from "../lib/i18n";
+import { useT, type TKey } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
 import { LabelResyncDialog } from "./LabelResyncDialog";
 import { RuntimeManager } from "./RuntimeManager";
@@ -405,11 +406,9 @@ export function SettingsOverlay() {
   };
 
   const openWorkshopPanel = async () => {
-    try {
-      await ipc.workshopOpenPanel(activeLocale());
-    } catch (err) {
-      toast.error(t("toast.pluginCenterOpenFailed"), String(err));
-    }
+    // 2026-11-19：不再新开窗口，改为在主窗口内以遮罩层打开（与设置面板同尺寸同位置）。
+    // 遮罩层与单例去重在 `PanelHost`；两个入口（标题栏 / 这里）共用同一个事件。
+    window.dispatchEvent(new CustomEvent(OPEN_WORKSHOP_EVENT));
   };
 
   useEffect(() => {

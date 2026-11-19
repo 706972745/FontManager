@@ -11632,3 +11632,44 @@ body.tour-qb .qb-actions .qb-btn-text {
 .boot-error-btn:hover {
   background: var(--e2);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   面板宿主（PanelHost，2026-11-19）
+   ─────────────────────────────────────────────────────────────────────
+   插件中心 / 插件设置界面都塞进「设置面板同款遮罩 + 同尺寸同位置」的壳里：
+   尺寸与位置**不在这里另写一套**，全靠 `.settings-panel`（900×760 / 96vw·94vh），
+   这里只把它的两列 grid 改成「标题条 + iframe」两行。
+   改尺寸时只改 `.settings-panel`，两个面板一起跟 —— 这是用户要的「一样」。
+   ═══════════════════════════════════════════════════════════════════════ */
+.panel-embed {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr);
+  padding: 0;
+}
+.panel-embed-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 6px 0 16px;
+  border-bottom: 1px solid rgba(var(--ink-rgb), 0.06);
+}
+.panel-embed-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-embed-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  /* 面板自己有底色：透明会在加载前透出遮罩的模糊层，看起来像「没加载完」 */
+  background: var(--ui-panel);
+}

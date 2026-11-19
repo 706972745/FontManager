@@ -22,6 +22,7 @@ import { CollectionBar } from "./components/CollectionBar";
 import { CompareOverlay } from "./components/CompareOverlay";
 import { SelectionBar } from "./components/SelectionBar";
 import { SettingsOverlay } from "./components/SettingsOverlay";
+import { PanelHost } from "./components/PanelHost";
 import { ShortcutsOverlay } from "./components/ShortcutsOverlay";
 import { CommandPalette } from "./components/CommandPalette";
 import { QuickBar } from "./components/QuickBar";
@@ -1017,6 +1018,8 @@ export default function App() {
       <SelectionBar />
       <CompareOverlay />
       <SettingsOverlay />
+      {/* 插件中心 / 插件设置界面：都在这一个遮罩层里（2026-11-19 用户要求）。 */}
+      <PanelHost />
       <ShortcutsOverlay />
       <CommandPalette />
       <BulkTagPrompt />

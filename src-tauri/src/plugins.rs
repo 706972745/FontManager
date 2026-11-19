@@ -213,11 +213,13 @@ fn mask_panel_url(url: &str) -> String {
 /// 面板页面的数据仍来自 127.0.0.1 回环服务，这个目录只是 WebView2 的浏览器数据
 /// （cookie / 缓存 / 无障碍树）。
 fn panel_webview_dir_name(label: &str) -> String {
-    // 目录名要拼进文件系统路径 → 把取值范围**钉死**：将来若有人改成用插件名之类
-    // 的外部输入来命名，这里会当场炸掉（而不是变成一条路径穿越入口）。
+    // 目录名要拼进文件系统路径 → 取值范围**钉死**：只允许「两个固定 label」或
+    // 「插件面板的按插件 id 派生 label」（前缀 + 白名单字符）。将来若有人改成
+    // 直接用插件名之类的原始外部输入来命名，这里会当场炸掉（而不是变成一条
+    // 路径穿越入口）。
     debug_assert!(
-        matches!(label, "plugin-panel" | "workshop-panel"),
-        "面板窗口 label 只允许这两个常量：{label:?}"
+        matches!(label, "plugin-panel" | "workshop-panel") || label.starts_with("plugin-panel-"),
+        "面板窗口 label 只允许固定常量或 plugin-panel-* ：{label:?}"
     );
     debug_assert!(
         label
@@ -226,6 +228,42 @@ fn panel_webview_dir_name(label: &str) -> String {
         "label 含非法字符：{label:?}"
     );
     format!("{label}-webview")
+}
+
+/// 插件设置面板的窗口 label：**一个插件一个**（`plugin-panel-<slug>-<hash>`）。
+///
+/// 为什么不再共用一个 `plugin-panel`：共用 label 时第二个插件的面板会撞
+/// `label already exists`，表现是「点 B 插件的设置，A 的面板跳出来（或干脆没反应）」。
+/// 按插件派生 label 之后，同一插件重复点只有**一个**窗口（幂等唤出），
+/// 不同插件各有各的窗口。
+///
+/// 派生规则：只留 `[a-z0-9]`、其余压成单个 `-`，截断 40 字符，再补 8 位 FNV 哈希。
+/// slug 是为了日志里一眼看出是哪个插件；哈希是为了「不同 id 归一后撞名」
+/// （例如 `a.b` 与 `a-b`）以及超长 id 截断后撞名。label 会拼进 WebView2 的
+/// 数据目录名，所以**绝不能**让原始 id 直接进来。
+fn panel_label_for_plugin(pid: &str) -> String {
+    let mut slug = String::with_capacity(pid.len());
+    for ch in pid.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug = slug.trim_matches('-');
+    let head: String = slug.chars().take(40).collect();
+    // FNV-1a：稳定、无依赖，同一 pid 每次算出来一样（跨启动、跨机器）。
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in pid.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x1000_0000_01b3);
+    }
+    let tag = format!("{:08x}", (h >> 32) as u32);
+    if head.is_empty() {
+        format!("plugin-panel-{tag}")
+    } else {
+        format!("plugin-panel-{head}-{tag}")
+    }
 }
 
 /// 插件发 `open-url` 时创建应用内面板窗口。
@@ -246,17 +284,19 @@ fn panel_webview_dir_name(label: &str) -> String {
 /// - <https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl#createcorewebview2environmentwithoptions>
 /// - wry 0.57.0 `src/webview2/mod.rs:300-366`：每次创建 webview 都把
 ///   `additional_browser_args` 传进 `CreateCoreWebView2EnvironmentWithOptions`。
-fn open_panel_window(app: &AppHandle, url: &str, title: &str) -> Result<(), String> {
-    open_panel_window_with_label(app, "plugin-panel", url, title, false)
+fn open_panel_window(app: &AppHandle, pid: &str, url: &str, title: &str) -> Result<(), String> {
+    // 每个插件一个 label → 同一插件只有一个设置窗口（见 `panel_label_for_plugin`）。
+    open_panel_window_with_label(app, &panel_label_for_plugin(pid), url, title, false)
 }
 
-/// 同上，但**窗口标签可指定**：插件面板用 `plugin-panel`，
-/// 插件中心面板用 `workshop-panel`。
+/// 同上，但**窗口标签可指定**：插件面板用 `plugin-panel-<slug>-<hash>`（按插件派生，
+/// 见 `panel_label_for_plugin`），插件中心面板用 `workshop-panel`。
 ///
-/// `close_on_blur`：**失焦即关**。插件中心面板用 true（2026-11-15 用户要求：
-/// 点主窗口任何地方，面板就消失，要再看得重新点标题栏的插件中心按钮）；
-/// 插件自己的面板保持 false —— 那是插件的工作界面，用户可能要在主窗口里
-/// 挑字体、再回面板里确认，失焦就关会把它变成不可用。
+/// `close_on_blur`：**失焦即隐藏**。这个机制**当前没有调用方启用**（2026-11-19）：
+/// 插件中心原来用 true，用户反馈「想对照主界面挑插件时窗口老消失」，已改为 false；
+/// 插件自己的面板从一开始就是 false（那是工作界面，失焦就关会把它变成不可用）。
+/// 机制本身留着 —— 它含有「拖标题栏不算离开」「软件自己引发的失焦不算离开」这些
+/// 打磨过的判定，将来若有需要（比如做成可配置项）不必重写。
 pub(crate) fn open_panel_window_with_label(
     app: &AppHandle,
     label: &str,
@@ -294,6 +334,29 @@ pub(crate) fn open_panel_window_with_label(
             if let Err(p) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let app_for_task = app_for_post.clone();
                 let scheduled = app_for_post.run_on_main_thread(move || {
+                    // ── 幂等：已有窗口就只唤出，绝不重建 ──
+                    //
+                    // 建窗是**异步 post** 到主线程的：用户快速连点两次插件中心按钮、
+                    // 或连点某插件的「设置」，命令层会连续提交多个建窗任务。
+                    // 第一个建成功之后，后面的任务再 build 会撞 `label already exists`
+                    // —— 轻则「点了没反应」，重则走进失败重试分支**把刚建好的窗口
+                    // close 掉再重建**（闪一下、页面状态全丢）。
+                    //
+                    // 必须放在这里（而不是命令层，也不能放进下面的 catch_unwind 闭包）：
+                    // - 命令层的检查发生在提交前，挡不住已经排在队列里的任务；
+                    // - catch_unwind 闭包的返回类型是 `Result<WebviewWindow, _>`，
+                    //   在那里早退得造一个窗口出来，不现实。
+                    if let Some(win) = tauri::Manager::get_webview_window(&app_for_task, &label) {
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                        if panel_diag_enabled() {
+                            crate::diag::log(&format!(
+                                "[panel/{label}] 窗口已存在，唤出并聚焦（不重建）"
+                            ));
+                        }
+                        return;
+                    }
                     // build 本身返回 Result；再包一层 catch_unwind —— 任何意外都只记日志，
                     // 绝不能带崩主进程（与 api_server 的 catch_unwind 同一模式）。
                     // 配置读取与窗口构建都放在同一个 catch 边界内，语义与修复前一致。
@@ -484,11 +547,12 @@ pub(crate) fn open_panel_window_with_label(
                             }
                         };
 
-                        // 插件中心面板：**失焦就藏起来**（2026-11-15 用户要求：
-                        // 点主窗口任何地方，这个界面就消失；要再看得重新点标题栏
-                        // 的插件中心按钮）。
+                        // 失焦隐藏（`close_on_blur`）：**当前没有调用方启用**。
+                        // 插件中心原本用它（2026-11-15 的口径：点主窗口就消失），
+                        // 2026-11-19 用户改成「普通窗口，点别处不消失」，于是传了 false；
+                        // 插件自己的面板一直是 false。这段留着是为了保住那些判定细节：
                         //
-                        // 为什么 hide 而不是 close：
+                        // 为什么是 hide 而不是 close：
                         // ① close 是异步销毁，用户「点别处 → 再点按钮」时旧窗口可能
                         //    还没销毁完，新窗口会撞 `label already exists`，表现为
                         //    「点了按钮没反应」；hide 没有这个窗口期。
@@ -2500,14 +2564,44 @@ pub fn enable(id: &str) -> Result<PluginInfo, String> {
                                         "[plugin:{pid}] open-url 被忽略（应用句柄未就绪，插件应自行降级开窗）"
                                     )),
                                     Some(app) => match classify_open_url(&url) {
-                                        UrlTarget::Panel => match open_panel_window(app, &url, &title) {
-                                            Ok(()) => crate::diag::log(&format!(
-                                                "[plugin:{pid}] 已请求主程序打开面板窗口"
-                                            )),
-                                            Err(e) => crate::diag::log(&format!(
-                                                "[plugin:{pid}] open-url 被拒绝：{e}"
-                                            )),
-                                        },
+                                        UrlTarget::Panel => {
+                                            // 2026-11-19：优先让**主窗口内嵌**打开（用户要求：
+                                            // 插件设置界面直接在软件窗口里以同款遮罩层出现，
+                                            // 不再新开原生窗口）。前端 `PanelHost` 接住这个事件后
+                                            // 用 iframe 承载 —— 插件侧协议零改动，照旧发 open-url。
+                                            //
+                                            // 一个插件只有一个设置界面：前端按 pid 去重（同一 pid
+                                            // 重复请求只唤出已有遮罩，不重建 iframe）。
+                                            //
+                                            // `emit` 成功 ≠ 前端真的接了（没有监听者也算成功）。
+                                            // 但前端与主程序同包发布，不存版本错配；只有主窗口被
+                                            // 销毁这类异常才可能没人接 —— 那时 emit 会报错，才退回
+                                            // 开独立窗口，保证插件的设置界面不会彻底打不开。
+                                            use tauri::Emitter;
+                                            let payload = json!({
+                                                "pid": pid,
+                                                "url": url,
+                                                "title": title,
+                                            });
+                                            match app.emit("plugin-panel:open", payload) {
+                                                Ok(()) => crate::diag::log(&format!(
+                                                    "[plugin:{pid}] 已请求主窗口内嵌打开设置面板：{title}"
+                                                )),
+                                                Err(e) => {
+                                                    crate::diag::log(&format!(
+                                                        "[plugin:{pid}] 内嵌打开失败（{e}），退回独立窗口"
+                                                    ));
+                                                    match open_panel_window(app, &pid, &url, &title) {
+                                                        Ok(()) => crate::diag::log(&format!(
+                                                            "[plugin:{pid}] 已在独立窗口打开面板"
+                                                        )),
+                                                        Err(e2) => crate::diag::log(&format!(
+                                                            "[plugin:{pid}] open-url 被拒绝：{e2}"
+                                                        )),
+                                                    }
+                                                }
+                                            }
+                                        }
                                         UrlTarget::Browser => {
                                             // 插件页里的外链（GitHub 令牌页、教程链接等）：
                                             // webview 里点不动，交给系统默认浏览器
@@ -3383,6 +3477,51 @@ mod tests {
             panel_webview_dir_name("workshop-panel"),
             "两个面板窗口不能共用同一个 WebView2 数据目录"
         );
+    }
+
+    /// 插件设置面板的 label 必须**按插件派生**且**路径安全**。
+    ///
+    /// 这条守的是 2026-11-19 用户口径：「一个插件只能有一个设置窗口」。
+    /// 反过来说，不同插件也不能共用一个窗口 —— 共用 label 时第二个插件的设置
+    /// 会撞 `label already exists`（表现为「点了没反应」或「跳出别人的面板」）。
+    #[test]
+    fn plugin_panel_label_is_per_plugin_and_path_safe() {
+        let a = panel_label_for_plugin("com.fontmanager.font-sync");
+        let b = panel_label_for_plugin("com.fontmanager.font-apply");
+        assert_ne!(a, b, "不同插件必须拿到不同 label");
+        assert_eq!(
+            a,
+            panel_label_for_plugin("com.fontmanager.font-sync"),
+            "同一插件必须稳定 —— 幂等唤出的根基"
+        );
+        assert!(a.starts_with("plugin-panel-"));
+        assert!(a.contains("font-sync"), "slug 要能在日志里认出是哪个插件：{a}");
+
+        // label 会拼进 WebView2 数据目录名 → 只许 [a-z0-9-]
+        for l in [
+            &a,
+            &b,
+            &panel_label_for_plugin("批量重命名"),
+            &panel_label_for_plugin("a.b/c:d\\e"),
+            &panel_label_for_plugin("---"),
+        ] {
+            assert!(
+                l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+                "label 含非法字符：{l}"
+            );
+            assert!(l.starts_with("plugin-panel-"), "前缀丢了：{l}");
+            assert!(!l.contains(".."), "不能出现 ..：{l}");
+            assert_ne!(l, "plugin-panel-", "退化后会与固定常量撞名：{l}");
+        }
+
+        // 归一后 slug 相同、靠哈希区分
+        assert_ne!(panel_label_for_plugin("a.b"), panel_label_for_plugin("a-b"));
+        // 超长 id 截断后仍唯一
+        let long1 = format!("{}-one", "x".repeat(80));
+        let long2 = format!("{}-two", "x".repeat(80));
+        assert_ne!(panel_label_for_plugin(&long1), panel_label_for_plugin(&long2));
+        // 与插件中心窗口的数据目录必须隔离（tauri#8196）
+        assert_ne!(panel_webview_dir_name(&a), panel_webview_dir_name("workshop-panel"));
     }
 
     /// 运行时下载的重定向：**落点必须逐跳复检 host**。    ///
