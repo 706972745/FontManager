@@ -1,6 +1,6 @@
 """把设计给的 5 个 Illustrator SVG 渲染成 FontManager 全套图标（PNG + 七帧 ICO）。
 
-职责：一条命令从 `--src` 目录下的 `资源 2、3、4、5、13.svg` 重跑出仓库里所有图标产物 ——
+职责：一条命令从 `--src` 目录下的 `资源 2、3、4、5、16.svg` 重跑出仓库里所有图标产物 ——
 `docs/icons/`（五套母版 + 两张预览）、`src-tauri/icons/`、`src-tauri/assets/`、
 `public/`。换设计稿时只重跑本脚本，不要手改产物。
 
@@ -81,7 +81,7 @@ class Design:
 
 DESIGNS: tuple[Design, ...] = (
     # 应用图标：exe / 任务栏 / 安装器 / 关于页。自带白色圆角底板，满版。
-    Design(key="main", source="资源 13.svg", label="软件图标", full_bleed=True),
+    Design(key="main", source="资源 16.svg", label="软件图标", full_bleed=True),
     # 快照导出 .S-FontManager
     Design(key="snapshot", source="资源 3.svg", label="快照导出 .S"),
     # 导出包 · 含字体 .P-FontManager
@@ -473,7 +473,7 @@ def verify_icos() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="从设计稿 SVG 重跑 FontManager 全套图标")
-    ap.add_argument("--src", type=Path, default=DEFAULT_SRC, help="设计稿目录（含 资源 2、3、4、5、13.svg）")
+    ap.add_argument("--src", type=Path, default=DEFAULT_SRC, help="设计稿目录（含 资源 2、3、4、5、16.svg）")
     ap.add_argument("--sheet", action="store_true", help="顺带重出 docs/icons 的两张预览图")
     ap.add_argument("--only", default="", help="只跑某几枚（逗号分隔的 key）")
     ap.add_argument("--jobs", type=int, default=4, help="并发渲染数")
