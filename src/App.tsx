@@ -22,7 +22,7 @@ import { CollectionBar } from "./components/CollectionBar";
 import { CompareOverlay } from "./components/CompareOverlay";
 import { SelectionBar } from "./components/SelectionBar";
 import { SettingsOverlay } from "./components/SettingsOverlay";
-import { PanelHost } from "./components/PanelHost";
+import { PanelHost, OPEN_WORKSHOP_EVENT } from "./components/PanelHost";
 import { ShortcutsOverlay } from "./components/ShortcutsOverlay";
 import { CommandPalette } from "./components/CommandPalette";
 import { QuickBar } from "./components/QuickBar";
@@ -49,6 +49,7 @@ import { INTRO_OFF, useIntro } from "./lib/useIntro";
 import { expandQuickbarPanel } from "./lib/useQuickbarDock";
 import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
 import { useT, t as translate } from "./lib/i18n";
+import type { LocalePref } from "./lib/i18n";
 import { DiagHud } from "./components/DiagHud";
 import { experiment } from "./lib/experiment";
 import { ensureThumbIndex } from "./lib/thumb";
@@ -574,7 +575,7 @@ export default function App() {
       // 窗口由原生侧打开（`splash_done`）：种子就绪那一刻它才 show，
       // 所以这里**不再** show —— 那条旧路径会让主界面在黑屏上先亮起来，
       // 启动页的存在就没意义了。
-      // 双击 .S-/.P-/.L-FontManager 启动时，后端把路径暂存在这里；
+      // 双击 .S-/.P-/.D-FontManager 启动时，后端把路径暂存在这里；
       // init 完成再导入，扫描流程不会被插队
       void ipc
         .takePendingOpenFile()
@@ -641,7 +642,7 @@ export default function App() {
     };
   }, []);
 
-  // 软件已经开着时双击 .S-/.P-/.L-FontManager：第二个进程把路径写到请求文件后退出，
+  // 软件已经开着时双击 .S-/.P-/.D-FontManager：第二个进程把路径写到请求文件后退出，
   // 首实例在这里收到路径，统一走「内容嗅探 → 分发导入」。
   useEffect(() => {
     let un: (() => void) | undefined;
@@ -722,6 +723,60 @@ export default function App() {
       un?.();
     };
   }, [t]);
+
+  // 托盘自绘菜单的动作回执（Rust 侧先 show_main 再 emit，见 lib.rs 的三个命令）：
+  // - tray://open → 切到设置面板 / 打开插件中心（插件中心真正的取地址与单例去重
+  //   都在 PanelHost，这里只转发窗口内部事件，与标题栏按钮同一条路径）；
+  // - tray://locale → 热切语言（不重启窗口）：setLocalePref 自带持久化与即时生效；
+  // - tray://library-changed → 托盘里切了字体库：重拉设置 + 重扫列表。
+  useEffect(() => {
+    let dead = false;
+    const offs: Array<Promise<() => void>> = [
+      listen<{ target: string }>("tray://open", async (e) => {
+        const st = useFontStore.getState();
+        // 主窗口可能停在速览细线上：先还原完整界面再开面板（与 app://activate 同一套）
+        if (st.quickbar) await st.setQuickbar(false);
+        if (e.payload?.target === "settings") {
+          st.setSettingsOpen(true);
+        } else if (e.payload?.target === "pluginCenter") {
+          // 没装面板时 PanelHost 会用现成的 pluginCenterOpenFailed 词条报错，
+          // 这里不必再包一层（本轮不加主窗口新文案）
+          window.dispatchEvent(new CustomEvent(OPEN_WORKSHOP_EVENT));
+        }
+      }),
+      listen<{ code: string }>("tray://locale", (e) => {
+        const code = e.payload?.code;
+        if (!code) return;
+        const st = useFontStore.getState();
+        if (st.localePref !== code) st.setLocalePref(code as LocalePref);
+      }),
+      listen("tray://library-changed", async () => {
+        const st = useFontStore.getState();
+        try {
+          // 设置页的库清单要跟后端对齐（托盘侧已经写盘）
+          useFontStore.setState({ settings: await ipc.getSettings() });
+        } catch {
+        }
+        // 托盘切库后列表必须跟着换：rescan 自带 single-flight，重复触发无副作用
+        void st.rescan();
+      }),
+    ];
+    void Promise.all(offs)
+      .then((fns) => {
+        if (dead) {
+          for (const off of fns) off();
+          return;
+        }
+        return;
+      })
+      .catch((e) => console.warn("[tray-menu] 监听托盘菜单事件失败", e));
+    return () => {
+      dead = true;
+      void Promise.all(offs).then((fns) => {
+        for (const off of fns) off();
+      });
+    };
+  }, []);
 
   // 插件中心面板是独立窗口，装/卸插件后主程序广播 `plugins:changed`：
   // 这里重拉一次清单（同时喂右键菜单缓存与搜索建议 store）。

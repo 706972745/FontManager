@@ -1,13 +1,16 @@
 #![cfg(target_os = "windows")]
 //! 三种导出文件的 Windows 关联（1.2.4）。
 //!
-//! `.S-FontManager` 快照 / `.P-FontManager` 字体库整包 / `.L-FontManager` 整理数据：
-//! - 每个扩展名各注册一枚黑白灰拼贴纸片风图标（S / P / L，见 assets/*-icon.ico）；
+//! `.S-FontManager` 快照 / `.P-FontManager` 字体库整包 / `.D-FontManager` 整理数据：
+//! - 每个扩展名各注册一枚纸片风图标（S / P / D，见 assets/*-icon.ico）；
 //! - 每个扩展名都写 `shell\open\command`，双击就把路径交给本程序导入。
 //!   导入端按**文件内容**分辨类型（file_kind.rs），所以后缀被改过也不影响。
 //!
 //! 约束：
 //! - 只写 HKCU，不需要管理员权限，也不动系统级 HKCR；
+//! - `.L-FontManager` 是「整理数据」的旧后缀（2.5.4 及以前），注册表里留一份
+//!   兼容关联（见 `LEGACY_EXTS`），但**只做兼容读**：不许再往导出文件名、文件
+//!   对话框过滤器、界面文案里出现，那些地方只出现 `.D-FontManager`；
 //! - 图标文件优先落在 exe 同目录（卸载时随安装目录一起消失），
 //!   那里不可写（例如装到 Program Files 的 MSI 版）才退回 `%APPDATA%\FontManager`；
 //! - 值没变就不重写、不通知资源管理器刷新，避免每次启动都逼 Explorer 重建图标缓存。
@@ -40,11 +43,25 @@ const ASSOCS: [Assoc; 3] = [
         icon_bytes: include_bytes!("../assets/pack-icon.ico"),
     },
     Assoc {
-        ext: "L-FontManager",
+        ext: "D-FontManager",
         icon_name: "data-icon.ico",
         icon_bytes: include_bytes!("../assets/data-icon.ico"),
     },
 ];
+
+/// 只做兼容读的旧后缀。`.L-FontManager` 是「整理数据」在 2.5.4 及以前的扩展名，
+/// 用户手上可能还存着这种文件：改名后如果不再注册这个键，那些文件在资源管理器里
+/// 就既没有图标、双击也没反应 —— 等于把已经能用的东西改坏。
+///
+/// 所以这里单独列一份，注册时与 `ASSOCS` 一起写注册表，指向同一枚 `data-icon.ico`
+/// 和同一条 `shell\open\command`。**故意不混进 `ASSOCS`**：
+/// - `ASSOCS` 的语义是「当前在用的三种导出物，各一枚七帧图标」，掺进 legacy 会让
+///   `three_icons_have_full_frames` 那条单测变得名不副实；
+/// - 混进去也容易让后续代码把 legacy 当成一个可以导出的类型。
+///
+/// 硬约束：`.L-FontManager` 只出现在这里和注释/legacy 测试里，不许出现在导出文件名、
+/// 文件对话框过滤器或任何界面文案（前端对应 `lib/fileKinds.ts` 的 `LEGACY_EXTENSIONS`）。
+const LEGACY_EXTS: [&str; 1] = ["L-FontManager"];
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -157,7 +174,7 @@ pub fn ensure_associations() -> Result<bool, String> {
     for a in &ASSOCS {
         let icon_path = dir.join(a.icon_name);
         // 图标文件内容换了（注册表里的路径没变）：也要让 Explorer 重读一遍，
-        // 否则资源管理器继续拿缓存里的旧图标画 .S/.P/.L —— 1.7.3 换整set 图标
+        // 否则资源管理器继续拿缓存里的旧图标画 .S/.P/.D —— 1.7.3 换整set 图标
         // 时就是这样，文件明明已经替换，双击列表里看到的还是上一版。
         if write_if_changed(&icon_path, a.icon_bytes)
             .map_err(|e| format!("couldn't write {}: {e}", icon_path.display()))?
@@ -172,6 +189,26 @@ pub fn ensure_associations() -> Result<bool, String> {
         )?;
         set_if_changed(
             &format!(r"Software\Classes\.{}\shell\open\command", a.ext),
+            &open_command,
+            &mut changed,
+        )?;
+    }
+    // 旧后缀与「仅数据」共用同一枚图标、同一条双击命令；图标文件本身已经在上面
+    // 那个循环里落过盘，这里只补注册表值。
+    let data_icon_name = ASSOCS
+        .iter()
+        .find(|a| a.ext == "D-FontManager")
+        .map(|a| a.icon_name)
+        .ok_or_else(|| "the data association is missing from ASSOCS".to_string())?;
+    let legacy_icon_value = format!("{},0", dir.join(data_icon_name).display());
+    for ext in LEGACY_EXTS {
+        set_if_changed(
+            &format!(r"Software\Classes\.{}\DefaultIcon", ext),
+            &legacy_icon_value,
+            &mut changed,
+        )?;
+        set_if_changed(
+            &format!(r"Software\Classes\.{}\shell\open\command", ext),
             &open_command,
             &mut changed,
         )?;
@@ -223,6 +260,23 @@ mod tests {
     #[test]
     fn extensions_are_the_three_agreed_suffixes() {
         let exts: Vec<&str> = ASSOCS.iter().map(|a| a.ext).collect();
-        assert_eq!(exts, vec!["S-FontManager", "P-FontManager", "L-FontManager"]);
+        assert_eq!(exts, vec!["S-FontManager", "P-FontManager", "D-FontManager"]);
+    }
+
+    #[test]
+    fn legacy_suffix_is_read_compat_only() {
+        // 旧后缀只走 LEGACY_EXTS；混进 ASSOCS 会让「三枚各七帧」的单测名不副实，
+        // 也会让导出侧跟着冒出 .L
+        assert_eq!(LEGACY_EXTS, ["L-FontManager"]);
+        assert!(
+            ASSOCS.iter().all(|a| a.ext != "L-FontManager"),
+            "L-FontManager 不该出现在 ASSOCS 里"
+        );
+        // 兼容关联必须复用「仅数据」那枚图标，别再单独维护一个文件
+        let data = ASSOCS
+            .iter()
+            .find(|a| a.ext == "D-FontManager")
+            .expect("ASSOCS 必须有 D-FontManager");
+        assert_eq!(data.icon_name, "data-icon.ico");
     }
 }

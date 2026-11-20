@@ -34,6 +34,10 @@ export default defineConfig(async () => ({
         // 下载 / 校验 / 安装它，再通过本机回环打开面板窗口。产物打成
         // workshop-panel.zip（tools/build-workshop-panel.mjs）。
         workshop: resolve(root, "workshop.html"),
+        // 托盘自绘菜单（右键托盘图标弹出）：**独立入口**，与 splash 同一路数 ——
+        // 绝不能加载 index.html（React 应用 + 字体 store 跑两遍 = 双份事件监听）。
+        // 窗口由 Rust 侧按需创建（lib.rs build_tray_menu_window）。
+        tray: resolve(root, "tray.html"),
       },
     },
   },

@@ -28,7 +28,7 @@ test("导出文件带自描述头（用途 / 导入方式 / 推荐后缀），�
   );
   // 文件自己要能说清「我是什么、怎么导回去」——即使后缀被用户改掉
   assert.equal(file.kind, "curation");
-  assert.equal(file.suffix, ".L-FontManager");
+  assert.equal(file.suffix, ".D-FontManager");
   assert.equal(file.label, "字体整理数据");
   assert.ok((file.purpose ?? "").includes("整理成果"));
   assert.ok((file.howTo ?? "").includes("导入"));
@@ -188,6 +188,8 @@ test("后缀辅助判定：三种后缀大小写都认，.json 与中间出现�
   assert.equal(isPackPath("D://备份//ZFonts-2026-11-03.P-FontManager"), true);
   assert.equal(isPackPath("D://备份//ZFonts-2026-11-03.p-fontmanager"), true);
   assert.equal(isPackPath("D://备份//backup.S-FontManager"), true);
+  assert.equal(isPackPath("/home/u/2026-11-03.D-FontManager"), true);
+  // 旧后缀（.L）也要认：改名前导出的文件还得能挑出来、双击得上
   assert.equal(isPackPath("/home/u/2026-11-03.L-FontManager"), true);
   assert.equal(isPackPath("D://备份//fontmanager-library.json"), false);
   assert.equal(isPackPath("D://备份//FontManager"), false);

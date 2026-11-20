@@ -130,7 +130,7 @@ mod tests {
     fn json_kinds_by_content_not_by_name() {
         // 文件名随便起，甚至故意互相串，都按内容认
         assert_eq!(detect(&write("curation.P-FontManager", br#"{"kind":"curation","tags":{}}"#)), KIND_CURATION);
-        assert_eq!(detect(&write("snapshot.L-FontManager", br#"{"kind":"snapshots","snapshots":[]}"#)), KIND_SNAPSHOTS);
+        assert_eq!(detect(&write("snapshot.D-FontManager", br#"{"kind":"snapshots","snapshots":[]}"#)), KIND_SNAPSHOTS);
         assert_eq!(detect(&write("whatever.dat", br#"{"tags":{"Inter":["ui"]},"favorites":[]}"#)), KIND_CURATION);
         assert_eq!(detect(&write("old-backup.json", br#"{"version":1,"collections":{},"notes":{}}"#)), KIND_CURATION);
         assert_eq!(detect(&write("random.json", br#"{"hello":"world"}"#)), KIND_UNKNOWN);

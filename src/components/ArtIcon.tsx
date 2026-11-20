@@ -16,7 +16,7 @@ export const ART_ICONS = {
   snapshot: `${BASE}icons/icon-snapshot.png`,
   /** 导出字体：整包 .FontManager（P） */
   exportPack: `${BASE}icons/icon-export-pack.png`,
-  /** 不导出字体：仅整理数据 json（L） */
+  /** 不导出字体：仅整理数据 json（D） */
   exportData: `${BASE}icons/icon-export-data.png`,
   /** 选择文件库地址 / 文件夹（F） */
   folder: `${BASE}icons/icon-folder.png`,

@@ -855,20 +855,20 @@ export function SettingsOverlay() {
 
   const exportData = async () => {
     // 勾了「连字体一起」就走整包（.P-FontManager，超 2GB 自动分卷），
-    // 否则只出整理数据（.L-FontManager）。文件里自带用途说明，见 lib/fileKinds.ts
+    // 否则只出整理数据（.D-FontManager）。文件里自带用途说明，见 lib/fileKinds.ts
     const dest = await save({
       title: exportFonts ? t("settings.exportPackTitle") : t("settings.exportDataTitle"),
-      defaultPath: exportFonts ? packFileName() : "fontmanager-library.L-FontManager",
+      defaultPath: exportFonts ? packFileName() : "fontmanager-library.D-FontManager",
       filters: exportFonts
         ? [{ name: "FontManager", extensions: ["P-FontManager"] }]
-        : [{ name: "FontManager", extensions: ["L-FontManager"] }],
+        : [{ name: "FontManager", extensions: ["D-FontManager"] }],
     });
     if (!dest) return;
     // 整包要写很久，进度条在窗口底部：设置面板留着会把它盖住
     if (exportFonts) setSettingsOpen(false);
     if (exportFonts) await useFontStore.getState().exportLibraryPack(dest);
     else await useFontStore.getState().exportLibraryData(dest);
-    // 只有「连字体一起导出」才记时间：纯整理数据（L 包）几秒钟就完，记它没有参考价值
+    // 只有「连字体一起导出」才记时间：纯整理数据（D 包）几秒钟就完，记它没有参考价值
     if (exportFonts) {
       const at = Date.now();
       setLastPackAt(at);
@@ -885,8 +885,14 @@ export function SettingsOverlay() {
       title: t("settings.importDataTitle"),
       multiple: false,
       filters: [
-        // 三种导出文件都收：S 快照 / P 整包 / L 整理数据；json 是老备份
-        { name: "FontManager", extensions: ["P-FontManager", "S-FontManager", "L-FontManager"] },
+        // 三种导出文件都收：S 快照 / P 整包 / D 整理数据；json 是老备份。
+        // 列里还留着旧的 .L-FontManager —— 用户在这一版之前导出的文件就是这个名字，
+        // 不放行的话他们在对话框里根本挑不到自己的旧文件（导入端按内容判类型，
+        // 后缀只是过滤器，所以放行旧的不会认错）。
+        {
+          name: "FontManager",
+          extensions: ["P-FontManager", "S-FontManager", "D-FontManager", "L-FontManager"],
+        },
         { name: "JSON", extensions: ["json"] },
       ],
     });
