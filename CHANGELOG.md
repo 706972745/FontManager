@@ -23,6 +23,9 @@ All notable changes to FontManager are documented here. The format follows
   （`SF` / `PF` / `DF` / `Font`）+ 页脚手写体小字」。**原「黑白灰」配色作废**。
   图标文件内容变了之后程序会自己发 `SHCNE_ASSOCCHANGED`，资源管理器重读一遍即可，
   不用手动清图标缓存。映射关系与重新生成方法见 `docs/图标规范.md`。
+  **应用图标按设计定稿 SVG（`资源 16.svg`）重出**：主视觉改为「Type」大字标叠排 +
+  手写「Font Manager」，白色圆角底板保留；小尺寸 16/24/32 仍走原生栅格化，`make-icons.py`
+  的主图标源已同步指向新稿。
 - **「仅数据」的导出后缀 `.L-FontManager` → `.D-FontManager`**：D 取 Data，与新图标上的
   **DF** 对齐。界面文案、导出默认文件名（`fontmanager-library.D-FontManager`）和保存
   对话框的过滤器**只出现 `.D`**。
