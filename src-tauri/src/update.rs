@@ -1110,10 +1110,13 @@ pub fn install_setup(app: &AppHandle, path: &str, want_sha: &str, want_version: 
         log.display()
     ));
 
-    // 留一点时间让前端把「正在安装」画完、把 IPC 收掉，然后自己退出
+    // 留一点时间让前端把「正在安装」画完、把 IPC 收掉，然后自己退出。
+    // 退出前先收托盘图标（防 Explorer 幽灵图标，Bug④）—— 安装完新版本会
+    // 重新启动，旧进程的托盘图标若挂着会和新实例的叠在一起。
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(1200));
+        crate::prepare_exit(&app);
         app.exit(0);
     });
     Ok(())

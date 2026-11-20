@@ -4,10 +4,15 @@ import { listen } from "@tauri-apps/api/event";
 /**
  * 托盘自绘菜单的逻辑（tray.html 的脚本，独立 vite 入口）。
  *
- * 职责边界：这里**只渲染 + invoke**。窗口的创建 / 定位 / 显示 / 失焦隐藏全在
- * Rust 侧（lib.rs 的 open_tray_menu / build_tray_menu_window）；每次显示 Rust 会
- * emit `tray://show`，本页收到后重新拉一次 `tray_menu_data`（库列表 / 当前语言
- * 可能已经变了）并重放入场动画。
+ * 职责边界：这里**只渲染 + invoke**。窗口的创建 / 定位 / 显示 / 失焦隐藏、以及
+ * **二级面板开合的几何**（加宽、主卡片锚定、方向判定）全在 Rust 侧
+ * （lib.rs 的 open_tray_menu / build_tray_menu_window / tray_menu_sub）；
+ * 每次显示 Rust 会 emit `tray://show`，本页收到后重置为干净的主菜单态、
+ * 重新拉一次 `tray_menu_data` 并重放入场动画。
+ *
+ * 二级交互口径（主理人定）：悬停父项 200ms 或点击开/关二级面板；面板开在
+ * 主卡片左侧（Rust 按屏幕边距判定，返回 left/right）；指针离开主卡与面板
+ * 两者 ≥250ms 收面板；点任何子项执行动作（Rust 侧命令会整菜单收起）。
  *
  * 为什么不进 i18n 体系：独立页不加载 React 应用、不参与 i18n:check，九语文案
  * 就维护在下面的 L10N 常量（tray.html 文件头注释有指引）。其中**插件中心 /
@@ -44,6 +49,9 @@ interface UpdateBrief {
   latest: string;
   has_update: boolean;
 }
+
+/** 二级面板标识：与 Rust `tray_menu_sub` 的 panel 参数同一份字面 */
+type SubPanel = "libs" | "lang";
 
 /** 九种界面语言（与 src/lib/i18n.ts 的 LOCALES 同一份口径，顺序一致） */
 const LOCALE_CODES = [
@@ -258,27 +266,24 @@ function fill(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (whole, key: string) => vars[key] ?? whole);
 }
 
-/** 菜单用的 16px 线性图标（lucide 的几何，独立页引不了包，内联最小 SVG） */
-const ICONS: Record<string, string> = {
-  main: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
-  puzzle:
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 7V5a2 2 0 1 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-3h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2h-3z"/></svg>',
-  gear: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-  globe:
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></svg>',
-  refresh:
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>',
-  power:
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>',
-};
-
 // ───────────────── 渲染 ─────────────────
 
-let root: HTMLElement | null = null;
+/** #trm 透明壳（含主卡与二级面板两张卡） */
+let shell: HTMLElement | null = null;
+let mainCard: HTMLElement | null = null;
+let subCard: HTMLElement | null = null;
 /** 检查更新进行中：防重入，且 tray://show 的重渲染要避开这一项 */
 let updateBusy = false;
 /** 最近一次渲染的数据（重渲染时复用；preview 模式下就是模拟数据） */
 let lastData: TrayMenuData | null = null;
+/** 当前展开的二级面板（null = 收起）；窗口几何由 Rust 命令 tray_menu_sub 驱动 */
+let openSub: SubPanel | null = null;
+/** 父项悬停计时器（200ms 开面板） */
+let hoverTimer = 0;
+/** 指针离开壳后的收面板计时器（250ms） */
+let leaveTimer = 0;
+const SUB_HOVER_OPEN_MS = 200;
+const SUB_LEAVE_CLOSE_MS = 250;
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -291,45 +296,73 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** 一行普通菜单项（图标 + 文案 + 动作）。动作由 Rust 命令完成，本页只 invoke。 */
-function actionRow(
-  icon: string,
-  label: string,
-  onClick: () => void,
-): HTMLButtonElement {
+/** 一行普通菜单项（纯文字，参考图口径 —— 不带图标）。动作由 Rust 命令完成。
+ *
+ *  Bug⑤（2026-11-20 真机）：二级面板开着时，指针悬停到主菜单**任何非父项行**
+ *  都要立即收面板（不留 250ms 宽限——宽限只负责「父项与面板之间斜穿」的场景，
+ *  那个场景指针已离开行区，由壳上的 mouseleave 计时器负责）。父项行不挂这条
+ *  （挂了会「面板开着、指针回到父项闪关」），换组走 parentRow 自己的悬停逻辑。
+ */
+function actionRow(label: string, onClick: () => void): HTMLButtonElement {
   const row = el("button", "trm-item");
   row.type = "button";
-  const ico = el("span", "trm-ico");
-  ico.innerHTML = icon;
-  row.appendChild(ico);
   row.appendChild(el("span", "trm-label", label));
+  row.addEventListener("pointerenter", () => {
+    if (openSub) void closeSubPanel();
+  });
   row.addEventListener("click", onClick);
   return row;
 }
 
-/** 一行子选项（库目录 / 语言名），选中态 = 底色 + 左侧 2px 竖线 + 文字色 */
-function optionRow(
+/** 二级父项：文字右侧画淡色 ▸；悬停 200ms 或点击开/关面板 */
+function parentRow(label: string, panel: SubPanel): HTMLButtonElement {
+  const row = el("button", "trm-item");
+  row.type = "button";
+  row.appendChild(el("span", "trm-label", label));
+  row.appendChild(el("span", "trm-arrow", "▸"));
+  row.addEventListener("mouseenter", () => {
+    window.clearTimeout(leaveTimer);
+    if (openSub === panel) return;
+    window.clearTimeout(hoverTimer);
+    hoverTimer = window.setTimeout(() => void openSubPanel(panel), SUB_HOVER_OPEN_MS);
+  });
+  row.addEventListener("mouseleave", () => window.clearTimeout(hoverTimer));
+  row.addEventListener("click", () => {
+    window.clearTimeout(hoverTimer);
+    // 点击 = 直接切开关（触屏 / 快速点击兜底）；已开着同一组就是收起
+    if (openSub === panel) {
+      void closeSubPanel();
+    } else {
+      void openSubPanel(panel);
+    }
+  });
+  return row;
+}
+
+/** 二级面板里的一行（纯文字 + 行首 ✓/空位，与主菜单同一套对齐口径） */
+function subRow(
   label: string,
   hint: string | null,
   selected: boolean,
   onClick: () => void,
 ): HTMLButtonElement {
-  const row = el("button", "trm-opt" + (selected ? " sel" : ""));
+  const row = el("button", "trm-opt");
   row.type = "button";
+  row.appendChild(el("span", "trm-check", selected ? "✓" : ""));
   row.appendChild(el("span", "trm-name", label));
   // 库行在名字右侧带一个弱化的目录尾段（多个库同名时靠它分辨）
   if (hint) row.appendChild(el("span", "trm-dir", hint));
-  row.addEventListener("click", onClick);
+  row.addEventListener("click", () => {
+    // 点任何子项 = 执行动作并整菜单收起（Rust 命令内部 hide 菜单并复位几何状态）
+    resetSubDom();
+    onClick();
+  });
   return row;
-}
-
-function groupLabel(text: string): HTMLElement {
-  return el("div", "trm-group", text);
 }
 
 /** 检查更新项：点击后文字在原地变状态，3 秒后恢复（不弹设置页、不下载安装） */
 function updateRow(label: string): HTMLButtonElement {
-  const row = actionRow(ICONS.refresh, label, () => void runUpdateCheck(row));
+  const row = actionRow(label, () => void runUpdateCheck(row));
   row.dataset.label = label;
   return row;
 }
@@ -339,10 +372,10 @@ async function runUpdateCheck(row: HTMLButtonElement): Promise<void> {
   const copy = L10N[resolveLocale(lastData?.langPref ?? "system")];
   updateBusy = true;
   row.disabled = true;
-  row.classList.add("trm-update-state", "trm-update-busy");
+  row.classList.add("trm-update-busy");
   row.querySelector(".trm-label")!.textContent = copy.checking;
   const restore = (): void => {
-    row.classList.remove("trm-update-state", "trm-update-busy", "trm-update-found", "trm-update-failed");
+    row.classList.remove("trm-update-busy", "trm-update-found", "trm-update-failed");
     row.querySelector(".trm-label")!.textContent = row.dataset.label ?? "";
     row.disabled = false;
     updateBusy = false;
@@ -371,34 +404,47 @@ async function runUpdateCheck(row: HTMLButtonElement): Promise<void> {
   }
 }
 
-/** 按数据整棵重建菜单内容（每次显示都重建一次，几十个节点的开销可以忽略） */
+/** 按数据整棵重建主菜单（每次显示都重建一次，几十个节点的开销可以忽略） */
 function render(data: TrayMenuData): void {
-  if (!root) return;
+  if (!mainCard) return;
   lastData = data;
   const locale = resolveLocale(data.langPref);
   const copy = L10N[locale];
-  root.replaceChildren();
+  mainCard.replaceChildren();
 
-  // 排序（主理人定）：打开主界面 → 插件中心 → 设置 → 字体库切换（条件）→
-  // 切换语言 → 检查更新 → 分隔线 → 退出软件
-  root.appendChild(
-    actionRow(ICONS.main, copy.openMain, () => void invoke("tray_open_main", { target: "main" })),
+  // 排序（主理人定，二级菜单版）：打开主界面 → 插件中心 → 设置 →
+  // 切换字体库 ▸（条件）→ 切换语言 ▸ → 检查更新 → 分隔线 → 退出软件。
+  // 分组标题行已删（二级面板本身就是分组）；分隔线**只有这一条**。
+  mainCard.appendChild(
+    actionRow(copy.openMain, () => void invoke("tray_open_main", { target: "main" })),
   );
-  root.appendChild(
-    actionRow(ICONS.puzzle, copy.pluginCenter, () =>
+  mainCard.appendChild(
+    actionRow(copy.pluginCenter, () =>
       void invoke("tray_open_main", { target: "pluginCenter" }),
     ),
   );
-  root.appendChild(
-    actionRow(ICONS.gear, copy.settings, () => void invoke("tray_open_main", { target: "settings" })),
+  mainCard.appendChild(
+    actionRow(copy.settings, () => void invoke("tray_open_main", { target: "settings" })),
   );
-
-  // 「切换字体库」只在多库时渲染（判定在数据侧：libs.len() <= 1 整组不渲染）
+  // 「切换字体库」父项只在多库时渲染（判定在数据侧：libs.len() <= 1 整项不渲染）
   if (data.libs.length > 1) {
-    root.appendChild(groupLabel(copy.libs));
-    for (const lib of data.libs) {
-      root.appendChild(
-        optionRow(
+    mainCard.appendChild(parentRow(copy.libs, "libs"));
+  }
+  mainCard.appendChild(parentRow(copy.langs, "lang"));
+  mainCard.appendChild(updateRow(copy.checkUpdate));
+  mainCard.appendChild(el("div", "trm-sep"));
+  mainCard.appendChild(actionRow(copy.quit, () => void invoke("tray_quit")));
+}
+
+/** 重建二级面板内容（主理人口径：行 = 纯文字 + ✓，无分组标题，行高同 40） */
+function renderSub(panel: SubPanel): void {
+  if (!subCard || !lastData) return;
+  const locale = resolveLocale(lastData.langPref);
+  subCard.replaceChildren();
+  if (panel === "libs") {
+    for (const lib of lastData.libs) {
+      subCard.appendChild(
+        subRow(
           lib.name,
           lib.name === baseName(lib.dir) ? null : tailOf(lib.dir),
           lib.active,
@@ -406,22 +452,15 @@ function render(data: TrayMenuData): void {
         ),
       );
     }
+  } else {
+    for (const code of LOCALE_CODES) {
+      subCard.appendChild(
+        subRow(LOCALE_NAMES[code], null, code === locale, () =>
+          void invoke("tray_set_locale", { code }),
+        ),
+      );
+    }
   }
-
-  root.appendChild(groupLabel(copy.langs));
-  for (const code of LOCALE_CODES) {
-    root.appendChild(
-      optionRow(LOCALE_NAMES[code], null, code === locale, () =>
-        void invoke("tray_set_locale", { code }),
-      ),
-    );
-  }
-
-  root.appendChild(updateRow(copy.checkUpdate));
-  root.appendChild(el("div", "trm-sep"));
-  root.appendChild(
-    actionRow(ICONS.power, copy.quit, () => void invoke("tray_quit")),
-  );
 }
 
 /** 目录末段（弱化提示），路径分隔符兼容两种写法 */
@@ -436,13 +475,51 @@ function baseName(dir: string): string {
   return tailOf(dir);
 }
 
-/** 重放入场动画（窗口复用，页面不重载，动画要手动放） */
+/**
+ * 打开二级面板：Rust 先改几何（加宽窗口、主卡片锚定、判定方向并返回），
+ * JS 再挂方向类 + 填内容 —— 顺序反了会闪一帧错位。
+ * Rust 侧已开着一组时再次调用 = 换内容（几何只调高度），方向类沿用返回值。
+ */
+async function openSubPanel(panel: SubPanel): Promise<void> {
+  if (!shell || openSub === panel) return;
+  try {
+    const side = await invoke<string>("tray_menu_sub", { panel, open: true });
+    openSub = panel;
+    shell.classList.remove("sub-left", "sub-right");
+    shell.classList.add(side === "right" ? "sub-right" : "sub-left");
+    renderSub(panel);
+  } catch {
+    // 几何调不动（极端时序）：面板不出，主菜单保持可用
+  }
+}
+
+/** 收起二级面板：几何复原（Rust）+ DOM 复位（本页） */
+async function closeSubPanel(): Promise<void> {
+  if (!openSub) return;
+  openSub = null;
+  shell?.classList.remove("sub-left", "sub-right");
+  if (subCard) subCard.replaceChildren();
+  try {
+    await invoke("tray_menu_sub", { panel: "", open: false });
+  } catch {
+    // 几何复原失败不致命：下次 tray://show 时 Rust 会按主菜单尺寸重设
+  }
+}
+
+/** 只复位 DOM 状态（点子项后 Rust 会整菜单收起，几何走 hide 路径，不必再调命令） */
+function resetSubDom(): void {
+  openSub = null;
+  shell?.classList.remove("sub-left", "sub-right");
+  if (subCard) subCard.replaceChildren();
+}
+
+/** 重放入场动画（窗口复用，页面不重载，动画要手动放；两张卡一起放） */
 function replayEntrance(): void {
-  if (!root) return;
-  root.classList.remove("in");
+  for (const card of [mainCard, subCard]) card?.classList.remove("in");
   // 强制回流才能让同一个动画重放
-  void root.offsetWidth;
-  root.classList.add("in");
+  if (mainCard) void mainCard.offsetWidth;
+  if (subCard) void subCard.offsetWidth;
+  for (const card of [mainCard, subCard]) card?.classList.add("in");
 }
 
 // ───────────────── 启动 ─────────────────
@@ -466,20 +543,37 @@ function previewData(): TrayMenuData | null {
   };
 }
 
+/** 建壳与两张卡（只做一次；后续 render / renderSub 只换内容） */
+function buildShell(): void {
+  if (!shell) return;
+  shell.replaceChildren();
+  mainCard = el("div", "trm-card trm-main");
+  subCard = el("div", "trm-card trm-sub");
+  shell.appendChild(subCard);
+  shell.appendChild(mainCard);
+}
+
 async function main(): Promise<void> {
-  root = document.getElementById("trm");
-  if (!root) return;
+  shell = document.getElementById("trm");
+  if (!shell) return;
+  buildShell();
 
   const preview = previewData();
   if (preview) {
     // 预览模式：主题同样走「强制属性 > @media」，并给页面一个中性底色，
-    // 否则无头截图落到透明通道上看不清
+    // 否则无头截图落到透明通道上看不清；?sub=libs|lang 把二级面板钉在展开态
     if (preview.theme === "light" || preview.theme === "dark") {
       document.documentElement.dataset.theme = preview.theme;
     }
     document.body.style.background = preview.theme === "light" ? "#e7eaf0" : "#2a2a30";
     render(preview);
-    root.classList.add("in");
+    const sub = new URLSearchParams(location.search).get("sub");
+    if (sub === "libs" || sub === "lang") {
+      shell.classList.add("sub-left");
+      openSub = sub;
+      renderSub(sub);
+    }
+    replayEntrance();
     return;
   }
 
@@ -503,15 +597,32 @@ async function main(): Promise<void> {
   };
   await refresh();
 
-  // Rust 侧每次 show 菜单都会发这个事件：重拉数据 + 重放动画。
-  // 检查更新进行中不重建（会把「检查中…」的结果态冲掉），只重放动画。
+  // Rust 侧每次 show 菜单都会发这个事件：复位二级态（下次 show 必须是干净的
+  // 主菜单态）+ 重拉数据 + 重放动画。检查更新进行中不重建主菜单
+  //（会把「检查中…」的结果态冲掉），只重放动画。
   // 页面与窗口同寿命（失焦只是 hide），无需解绑。
   void listen("tray://show", () => {
+    resetSubDom();
     void refresh();
     replayEntrance();
   }).catch(() => {});
 
-  // Esc 收起（点别处由 Rust 侧失焦 hide 兜底）
+  // 指针离开主卡与二级面板两者 ≥250ms → 收面板（主菜单保持）。
+  // 两张卡都是壳的子节点，监听壳的 mouseleave 就等于「两者都离开」。
+  shell.addEventListener("mouseleave", () => {
+    if (!openSub) return;
+    window.clearTimeout(leaveTimer);
+    leaveTimer = window.setTimeout(() => {
+      window.clearTimeout(hoverTimer);
+      if (openSub) void closeSubPanel();
+    }, SUB_LEAVE_CLOSE_MS);
+  });
+  shell.addEventListener("mouseenter", () => {
+    window.clearTimeout(leaveTimer);
+    window.clearTimeout(hoverTimer);
+  });
+
+  // Esc 收起整个菜单（点别处由 Rust 侧失焦 hide + 前台轮询兜底）
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") void invoke("tray_menu_hide");
   });
