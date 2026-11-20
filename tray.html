@@ -12,12 +12,32 @@
 
       ⚠️ 这页**绝不**加载 index.html / 主 React 应用：那会把整个字体 store 再跑一遍，
       双份事件监听 + 双份扫描。同理，本页只 invoke 命令、监听 `tray://show` 一个事件，
-      其余一切（窗口显示 / 定位 / 隐藏）都由 Rust 完成。
+      其余一切（窗口显示 / 定位 / 隐藏 / 二级开合的几何）都由 Rust 完成。
+
+      ── 结构（二级菜单改版，2026-11-20）──
+      #trm 是**透明壳**（inset 0，无底色），里面两张同款卡片：
+      - .trm-main 主卡片：8 行收敛菜单（打开主界面 / 插件中心 / 设置 /
+        切换字体库 ▸ / 切换语言 ▸ / 检查更新 / 分隔线 / 退出软件），
+        两个父项右侧画淡色 ▸，悬停 200ms 或点击开二级面板；
+      - .trm-sub 二级面板：同款卡片风格的小面板（纯文字行 + ✓ 前缀），
+        默认 display:none，开在主卡片左侧（主卡片贴屏幕左缘时开右侧，
+        由 Rust 的 tray_menu_sub 判定并返回方向，JS 据此给 #trm 挂
+        sub-left / sub-right 类）。
+
+      ── 视觉基调（参考图：有道式托盘菜单）──
+      白/深色不透明实底卡片、圆角 10px、四周 10px 透明圈、轻落影；
+      行是**纯文字**、行高 40、文字距卡缘 20px、字号 14；hover 是淡灰**圆角短条**
+      （左右 inset 8px、圆角 6px）；选中态 = 行首 **✓ 前缀**（未选中行留等宽
+      空位对齐）；二级面板没有分组标题行（面板本身就是分组）；主菜单唯一一条
+      分隔线在「退出软件」之前。
 
       ── 尺寸与 lib.rs 的常量一一对应（改哪边都要同步另一边）──
-      窗口宽 = TRAY_MENU_W = 264；行高：普通行 36 / 分组标题 26 / 子选项 32 / 分隔线 9；
-      上下 padding 合计 12（6px × 2）。窗口高度由 Rust 按行数算（tray_menu_height），
-      这里 CSS 改了行高而那边没改，菜单就会被裁掉一截或底部留一块挡点击的透明死区。
+      窗口宽 = TRAY_MENU_W = 292（= 一个半区：卡片 272 + 两侧透明圈 10×2）；
+      二级展开时窗口加宽一个半区（292 → 584，几何全部由 Rust 物理像素直设）。
+      行高：普通行/子选项/二级行 40；分隔线 11（1px + 上下 5px）；
+      窗口上下透明圈合计 20（10px × 2）。主菜单高度由 Rust 按行数算
+      （tray_menu_height），二级高度按 tray_menu_sub_height 算 —— 这里 CSS 改了
+      行高而那边没改，菜单就会被裁掉一截或底部留一块挡点击的透明死区。
 
       ── 主题 ── 窗口级 theme（panel_theme）决定 prefers-color-scheme，与 splash 同法；
       四段按「系统 → 用户强制」的顺序叠。颜色数值**照 tokens.css 抄**（深浅两套），
@@ -29,26 +49,23 @@
       检查更新各状态」的译名**照抄** locales JSON 的对应 key（来源写在表旁边），
       别在两边各造一套译名。
 
-      ── 离线预览 ── 带 `?preview=1&libs=N&lang=xx&theme=light|dark` 打开时，
-      不 invoke、用 URL 参数模拟数据（见 src/tray.ts 的 preview 分支），供
-      无头浏览器截图核对两种数据形态（多库 / 单库）与两套主题。
+      ── 离线预览 ── 带 `?preview=1&libs=N&lang=xx&theme=light|dark&sub=libs|lang`
+      打开时，不 invoke、用 URL 参数模拟数据并把二级面板钉在展开态，供无头
+      浏览器截图核对主菜单 / 二级展开两种形态与两套主题。
     -->
     <style>
       /* ── 深色（默认）：:root 上就是深色值，跟 tokens.css 的 :root 段逐条对应 ── */
       :root {
         color-scheme: dark;
         --ink-rgb: 255, 255, 255;
-        --scrim-rgb: 14, 14, 14;
         --text-primary: #e8e8e8;
         --text-secondary: rgba(232, 232, 232, 0.6);
         --text-tertiary: rgba(232, 232, 232, 0.4);
         --e2: rgba(255, 255, 255, 0.07);
-        --e3: rgba(255, 255, 255, 0.1);
-        --glass-border: rgba(255, 255, 255, 0.08);
-        --glass-top-highlight-strong: rgba(255, 255, 255, 0.16);
-        --accent-a: #d4d4d8;
         --shadow-ambient: 0 24px 48px rgba(0, 0, 0, 0.25);
         --shadow-mass: 0 6px 12px rgba(0, 0, 0, 0.3);
+        /* 菜单实底（Bug①）：tokens.css --tooltip-bg 同源的不透明面板色 */
+        --trm-surface: #1b1b1b;
       }
 
       /* ── 跟系统：与 src/lib/theme.ts 的 `system` 同一条判据（prefers-color-scheme） ── */
@@ -56,17 +73,14 @@
         :root {
           color-scheme: light;
           --ink-rgb: 22, 22, 32;
-          --scrim-rgb: 40, 40, 40;
           --text-primary: #1c1c24;
           --text-secondary: rgba(28, 28, 38, 0.62);
           --text-tertiary: rgba(28, 28, 38, 0.44);
           --e2: rgba(22, 22, 32, 0.07);
-          --e3: rgba(253, 253, 255, 0.66);
-          --glass-border: rgba(0, 0, 0, 0.1);
-          --glass-top-highlight-strong: rgba(255, 255, 255, 0.9);
-          --accent-a: #3f3f46;
           --shadow-ambient: 0 24px 48px rgba(30, 30, 55, 0.08);
           --shadow-mass: 0 6px 12px rgba(30, 30, 55, 0.08);
+          /* 菜单实底（Bug①）：tokens.css --tooltip-bg 同源的不透明面板色 */
+          --trm-surface: #ffffff;
         }
       }
 
@@ -74,33 +88,27 @@
       :root[data-theme="dark"] {
         color-scheme: dark;
         --ink-rgb: 255, 255, 255;
-        --scrim-rgb: 14, 14, 14;
         --text-primary: #e8e8e8;
         --text-secondary: rgba(232, 232, 232, 0.6);
         --text-tertiary: rgba(232, 232, 232, 0.4);
         --e2: rgba(255, 255, 255, 0.07);
-        --e3: rgba(255, 255, 255, 0.1);
-        --glass-border: rgba(255, 255, 255, 0.08);
-        --glass-top-highlight-strong: rgba(255, 255, 255, 0.16);
-        --accent-a: #d4d4d8;
         --shadow-ambient: 0 24px 48px rgba(0, 0, 0, 0.25);
         --shadow-mass: 0 6px 12px rgba(0, 0, 0, 0.3);
+        /* 菜单实底（Bug①）：tokens.css --tooltip-bg 同源的不透明面板色 */
+        --trm-surface: #1b1b1b;
       }
 
       :root[data-theme="light"] {
         color-scheme: light;
         --ink-rgb: 22, 22, 32;
-        --scrim-rgb: 40, 40, 40;
         --text-primary: #1c1c24;
         --text-secondary: rgba(28, 28, 38, 0.62);
         --text-tertiary: rgba(28, 28, 38, 0.44);
         --e2: rgba(22, 22, 32, 0.07);
-        --e3: rgba(253, 253, 255, 0.66);
-        --glass-border: rgba(0, 0, 0, 0.1);
-        --glass-top-highlight-strong: rgba(255, 255, 255, 0.9);
-        --accent-a: #3f3f46;
         --shadow-ambient: 0 24px 48px rgba(30, 30, 55, 0.08);
         --shadow-mass: 0 6px 12px rgba(30, 30, 55, 0.08);
+        /* 菜单实底（Bug①）：tokens.css --tooltip-bg 同源的不透明面板色 */
+        --trm-surface: #ffffff;
       }
 
       /* 动效令牌：照 tokens.css 抄（--t-micro 100ms / --t-quick 180ms /
@@ -118,7 +126,7 @@
         padding: 0;
         width: 100%;
         height: 100%;
-        /* 窗口本身是 transparent:true：背景必须留空，圆角才不会被黑底吃掉 */
+        /* 窗口本身是 transparent:true：背景必须留空，透明圈/圆角才不会被黑底吃掉 */
         background: transparent;
         overflow: hidden;
         cursor: default;
@@ -135,33 +143,69 @@
         box-sizing: border-box;
       }
 
-      /* 菜单表面：数值照 app.css 的 .ctx-menu + .glass-e3 抄 —— 背景 = scrim 压一层
-         --e3、圆角 6（app.css 实际值，规格书 R7 的「菜单 8」没落地，以代码为准）、
-         内衬高光 + 落影。R0：不新增任何落盘，纯显示层。 */
-      .trm {
+      /* #trm 只是**透明壳**（参考图改版 + 二级菜单）：无底色无事件样式，
+         两张卡片绝对定位在其中；指针离开壳 = 离开主卡与子面板两者。 */
+      #trm {
         position: absolute;
         inset: 0;
+      }
+
+      /* 卡片（Bug① 实底 + 参考图改版）：
+         - **不透明实底** var(--trm-surface)（深 #1b1b1b / 浅 #ffffff）—— 托盘窗是
+           transparent(true)，玻璃/backdrop-filter 配方在透明窗口里没有东西可 blur，
+           整卡会看穿，所以这里必须是实色（tokens.css --tooltip-bg 同源）；
+         - 距窗口边缘 10px（透明圈；上下计入窗口高度 = TRAY_MENU_PAD_V）；
+         - 圆角 10px、轻落影。
+         宽度：收起态 = 半区卡（窗口宽 - 20）；二级展开态窗口加宽一倍，
+         两张卡各占一个半区（50% - 20px）——几何由 Rust 物理像素直设，CSS 只跟随。
+         （R0：不新增任何落盘，纯显示层。） */
+      .trm-card {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        width: calc(100% - 20px);
         display: flex;
         flex-direction: column;
-        padding: 6px 0;
-        border-radius: 6px;
+        border-radius: 10px;
         overflow: hidden;
-        background:
-          linear-gradient(rgba(var(--scrim-rgb), 0.3), rgba(var(--scrim-rgb), 0.3)),
-          var(--e3);
-        backdrop-filter: blur(24px) saturate(140%) brightness(1.05);
-        -webkit-backdrop-filter: blur(24px) saturate(140%) brightness(1.05);
-        border: 1px solid var(--glass-border);
+        background: var(--trm-surface);
         box-shadow:
-          inset 0 1px 0 var(--glass-top-highlight-strong),
           var(--shadow-mass),
           var(--shadow-ambient);
       }
 
+      /* 二级展开：窗口加宽一倍，两卡各占一半；面板在左（sub-left）时主卡靠右 */
+      #trm.sub-left .trm-card,
+      #trm.sub-right .trm-card {
+        width: calc(50% - 20px);
+      }
+
+      #trm.sub-left .trm-main {
+        left: auto;
+        right: 10px;
+      }
+
+      /* 二级面板默认藏起；方向类决定它贴哪一侧 */
+      .trm-sub {
+        display: none;
+      }
+
+      #trm.sub-left .trm-sub {
+        display: flex;
+        left: 10px;
+        right: auto;
+      }
+
+      #trm.sub-right .trm-sub {
+        display: flex;
+        left: auto;
+        right: 10px;
+      }
+
       /* 弹层入场（§12.4）：--t-quick(180ms) + --ease-out，从下方 8px 浮起淡入；
-         窗口是复用的，动画由 tray.ts 在每次 tray://show 时重放。
+         窗口是复用的，动画由 tray.ts 在每次 tray://show 时重放（两张卡一起放）。
          退出即时 hide，不做退场动画。 */
-      .trm.in {
+      .trm-card.in {
         animation: trm-in var(--t-quick) var(--ease-out);
       }
 
@@ -174,7 +218,7 @@
 
       /* 系统开了「减少动态效果」：入场动画整个不做（铁律 §12.1 第 2 条） */
       @media (prefers-reduced-motion: reduce) {
-        .trm.in {
+        .trm-card.in {
           animation: none;
         }
         :root {
@@ -183,21 +227,25 @@
         }
       }
 
-      /* 普通菜单行。padding/字号/圆角照 .ctx-item（7px 10px / 13px / 4px）；
-         行高锁 36 —— lib.rs 的 tray_menu_height 按它算窗口高度，别改成 auto。 */
-      .trm-item {
+      /* 行公共底（参考图口径）：纯文字、左对齐、无图标；
+         hover 高亮是**圆角短条**——行本体左右各 inset 8px、圆角 6px，
+         不是全宽色条；文字距卡缘 20px（8 inset + 12 行内 padding）。
+         行高锁 40 —— lib.rs 的 tray_menu_height / tray_menu_sub_height
+         按它算窗口高度，别改成 auto。 */
+      .trm-item,
+      .trm-opt {
         display: flex;
         align-items: center;
-        gap: 9px;
-        width: 100%;
-        height: 36px;
+        width: calc(100% - 16px);
+        margin: 0 8px;
+        height: 40px;
         flex: none;
-        padding: 0 10px;
+        padding: 0 12px;
         border: none;
-        border-radius: 4px;
+        border-radius: 6px;
         background: transparent;
         font: inherit;
-        font-size: 13px;
+        font-size: 14px;
         color: var(--text-secondary);
         text-align: left;
         cursor: pointer;
@@ -205,21 +253,9 @@
         transition: background var(--t-micro) ease, color var(--t-micro) ease;
       }
 
-      .trm-item:hover {
+      .trm-item:hover,
+      .trm-opt:hover {
         background: var(--e2);
-        color: var(--text-primary);
-      }
-
-      .trm-item .trm-ico {
-        display: grid;
-        place-items: center;
-        width: 16px;
-        flex: none;
-        color: var(--text-tertiary);
-        transition: color var(--t-micro) ease;
-      }
-
-      .trm-item:hover .trm-ico {
         color: var(--text-primary);
       }
 
@@ -228,6 +264,15 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      /* 二级父项右侧的 ▸ 箭头：淡色小字，不抢文字（参考图无此元素，
+         但二级入口需要方向暗示；悬停/展开时不加色，保持低调） */
+      .trm-arrow {
+        flex: none;
+        margin-left: 12px;
+        font-size: 12px;
+        color: var(--text-tertiary);
       }
 
       .trm-item:disabled {
@@ -240,117 +285,42 @@
         color: var(--text-secondary);
       }
 
-      /* 选中项（当前库 / 当前语言）：底色 + 左侧 2px 竖线 + 文字色
-         （§12.4 行选中五件事里菜单行的三件）。竖线用强调色 --accent-a。 */
-      .trm-item.sel {
-        background: var(--e2);
-        color: var(--text-primary);
-      }
-
-      .trm-item.sel::before {
-        content: "";
-        position: absolute;
-        left: 3px;
-        width: 2px;
-        height: 14px;
-        border-radius: 1px;
-        background: var(--accent-a);
-      }
-
-      .trm-item.sel {
-        position: relative;
-      }
-
-      /* 分组标题（「切换字体库」/「切换语言」）：小字弱色，不可点。
-         行高锁 26 —— 同上，参与窗口高度计算。 */
-      .trm-group {
-        display: flex;
-        align-items: flex-end;
-        width: 100%;
-        height: 26px;
+      /* 选中态（参考图口径）：行首 **✓ 前缀**，替代旧的竖线 + 底色组合。
+         ✓ 与文字间距 8px；未选中的行留出等宽空位（.trm-check 恒占位），
+         所有行的文字起点才对得齐。主菜单与二级面板同一套。 */
+      .trm-check {
         flex: none;
-        padding: 0 10px 5px;
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.02em;
-        color: var(--text-tertiary);
-        pointer-events: none;
-      }
-
-      /* 子选项行（库目录 / 语言名）：比普通行矮一档，缩进对齐普通行的文字起点。
-         行高锁 32。 */
-      .trm-opt {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        width: 100%;
-        height: 32px;
-        flex: none;
-        padding: 0 10px 0 35px;
-        border: none;
-        border-radius: 4px;
-        background: transparent;
-        font: inherit;
-        font-size: 12.5px;
-        color: var(--text-secondary);
-        text-align: left;
-        cursor: pointer;
-        transition: background var(--t-micro) ease, color var(--t-micro) ease;
-      }
-
-      .trm-opt:hover {
-        background: var(--e2);
+        width: 14px;
+        margin-right: 8px;
+        font-size: 13px;
+        line-height: 1;
         color: var(--text-primary);
+        text-align: center;
       }
 
-      .trm-opt.sel {
-        position: relative;
-        background: var(--e2);
-        color: var(--text-primary);
-      }
-
-      .trm-opt.sel::before {
-        content: "";
-        position: absolute;
-        left: 24px;
-        width: 2px;
-        height: 14px;
-        border-radius: 1px;
-        background: var(--accent-a);
-      }
-
-      .trm-name {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
+      /* 库目录尾段提示（多个库同名时靠它分辨） */
       .trm-dir {
         flex: none;
-        max-width: 96px;
+        max-width: 110px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        font-size: 10.5px;
+        font-size: 11px;
         color: var(--text-tertiary);
       }
 
-      /* 分隔线：总高 9 = 1px 线 + 上下 4px（照 .ctx-sep） */
+      /* 分隔线：主菜单**唯一**一条，在「退出软件」之前（二级面板没有）。
+         总高 11 = 1px 线 + 上下 5px；与行同样左右 inset 8px。 */
       .trm-sep {
-        width: 100%;
+        width: calc(100% - 16px);
         height: 1px;
         flex: none;
-        margin: 4px 0;
+        margin: 5px 8px;
         background: rgba(var(--ink-rgb), 0.07);
       }
 
       /* 检查更新的结果态：结果直接写在这一项的标签上（不弹设置页），
-         检查中 / 失败用弱色，发现新版用强调色 */
-      .trm-item.trm-update-state .trm-label {
-        font-size: 12.5px;
-      }
-
+         检查中 / 失败用弱色，发现新版用主文字色 */
       .trm-item.trm-update-busy,
       .trm-item.trm-update-failed {
         color: var(--text-tertiary);
@@ -363,8 +333,8 @@
   </head>
 
   <body>
-    <!-- 结构由 src/tray.ts 渲染。这里留空壳：文案要等数据回来才知道语言。 -->
-    <div class="trm" id="trm"></div>
+    <!-- 结构由 src/tray.ts 渲染：#trm 是透明壳，内含主卡片与二级面板两张卡。 -->
+    <div id="trm"></div>
     <script type="module" src="/src/tray.ts"></script>
   </body>
 </html>

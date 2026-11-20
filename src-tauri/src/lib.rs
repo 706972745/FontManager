@@ -2728,7 +2728,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     // （tray.html + src/tray.ts，独立 vite 入口；绝不加载 index.html —— 那会把
     // 整个 React 应用和字体 store 再跑一遍，双份事件监听 + 双份扫描）。见
     // `open_tray_menu` / `build_tray_menu_window`。
-    let builder = TrayIconBuilder::with_id("main-tray")
+    let builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .tooltip("FontManager");
 
@@ -2738,7 +2738,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         builder
     };
 
-    builder
+    let tray = builder
         .on_tray_icon_event(|tray, event| {
             if let tauri::tray::TrayIconEvent::Click {
                 button,
@@ -2765,26 +2765,58 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
+    // build 返回的就是托盘句柄：存一份给退出路径用（prepare_exit →
+    // set_visible(false)，Bug④）。TrayIcon 是 Clone，tauri 内部状态里还留着
+    // 原件，这里克隆的这份只在退出时 setVisible(false)。
+    let _ = TRAY_ICON.set(tray);
     Ok(())
 }
 
 // ───────────────── 托盘自绘菜单（tray-menu） ─────────────────
 
-/// 菜单窗口宽度（逻辑像素）。tray.html 的内联 CSS 里 `.trm` 的宽度就是它 ——
+/// 托盘图标 id（build_tray 建的时候用；移除走下面 TRAY_ICON 句柄）。
+const TRAY_ID: &str = "main-tray";
+
+/// 托盘图标的句柄（build_tray 时存一份 clone）。
+///
+/// Bug④（2026-11-20 真机）：Windows 托盘图标由 Explorer 绘制，进程退出时
+/// 不显式隐藏就会留下幽灵图标（鼠标划过该区域才被清理）。tauri 的
+/// `remove_tray_by_id` / `tray_by_id` 只挂在 **App** 上，而所有退出路径
+/// （命令 / 窗口事件 / RunEvent 回调）拿到的都是 **AppHandle**，所以把
+/// TrayIcon 克隆一份存这里，退出统一走 `set_visible(false)`（Windows 上
+/// 就是向 Explorer 发删除消息，图标当场消失）。
+static TRAY_ICON: std::sync::OnceLock<tauri::tray::TrayIcon<tauri::Wry>> =
+    std::sync::OnceLock::new();
+
+/// 退出前的统一收尾。**所有退出路径必须走这里**（tray_quit / 主窗口关闭且
+/// 未开「关闭到托盘」/ RunEvent::ExitRequested 保险钩），不许一处修一处漏：
+/// ① 显式隐藏托盘图标（防 Explorer 幽灵图标，Bug④；幂等，重复调无害）；
+/// ② 收掉托盘菜单窗口（防退出瞬间二级菜单还挂在屏幕上）。
+/// 这里**不做** exit —— 各路径按自己的语义自己退（exit 一旦启动，消息循环
+/// 结束，托盘删除消息就发不出去了，所以必须先收尾后退）。
+pub(crate) fn prepare_exit(app: &tauri::AppHandle) {
+    if let Some(tray) = TRAY_ICON.get() {
+        let _ = tray.set_visible(false);
+    }
+    if let Some(w) = app.get_webview_window("tray-menu") {
+        let _ = w.hide();
+    }
+}
+
+/// 菜单窗口宽度（逻辑像素）。卡片比窗口窄：窗口内四周留 10px 透明圈（卡片 272）。
 /// 两处各写一份是刻意的（独立页引不了 Rust 常量），**改哪边都要同步另一边**。
-const TRAY_MENU_W: f64 = 264.0;
-/// 托盘图标与菜单之间的间距（逻辑像素）。
+const TRAY_MENU_W: f64 = 292.0;
+/// 托盘图标与菜单之间的间距（**物理像素**；Bug③ 口径：菜单底边贴图标顶边上方
+/// 8 物理像素，不做 scale 换算）。
 const TRAY_MENU_GAP: f64 = 8.0;
-/// 上下内边距合计（逻辑像素，6px × 2）。与 tray.html `.trm` 的 padding 同步。
-const TRAY_MENU_PAD_V: f64 = 12.0;
-/// 普通菜单行高（打开主界面 / 插件中心 / 设置 / 检查更新 / 退出软件）。
-const TRAY_MENU_ROW: f64 = 36.0;
-/// 分组标题行高（「切换字体库」/「切换语言」的小标题）。
-const TRAY_MENU_GROUP: f64 = 26.0;
-/// 子选项行高（每个库目录 / 每种语言）。
-const TRAY_MENU_OPT: f64 = 32.0;
-/// 分隔线总高（1px 线 + 上下 4px 边距）。
-const TRAY_MENU_SEP: f64 = 9.0;
+/// 窗口上下留的透明圈合计（逻辑像素，10px × 2；tray.html `.trm-card { top: 10px }`）。
+/// 参考图改版：卡片四周各留 10px 透明圈、圆角 10px。
+const TRAY_MENU_PAD_V: f64 = 20.0;
+/// 菜单行高（主菜单行 / 二级子面板行同高；参考图口径：纯文字行、统一 40）。
+const TRAY_MENU_ROW: f64 = 40.0;
+/// 分隔线总高（1px 线 + 上下 5px 边距）。参考图口径：主菜单**唯一**一条，
+/// 在「退出软件」之前；二级面板没有分隔线。
+const TRAY_MENU_SEP: f64 = 11.0;
 /// 九种界面语言（与 src/lib/i18n.ts 的 `LOCALES` 同一份口径，顺序也一致）。
 /// Rust 侧只用来**校验**托盘传来的语言码；文案九语表在 tray.ts 里维护。
 const TRAY_LOCALES: [&str; 9] = ["en", "de", "es", "fr", "pt-BR", "ru", "ja", "zh-CN", "zh-TW"];
@@ -2825,30 +2857,38 @@ fn tray_menu_libs(state: &store::AppState) -> Vec<TrayMenuLib> {
 /// 菜单窗口高度（逻辑像素）。行高常量与 tray.html 的 CSS 一一对应 ——
 /// 窗口高度必须在**显示前**就定死（Rust 侧定位 + 免去 JS 量高再调尺寸的来回），
 /// 所以这里按行数算，CSS 改了行高这边不改，菜单就会被裁掉一截。
+///
+/// 二级菜单改版：主菜单收敛为纯行（分组标题行删除）—— 打开主界面 / 插件中心 /
+/// 设置 + [切换字体库 ▸（多库才有）] + 切换语言 ▸ + 检查更新 + 退出软件，
+/// 行间唯一一条分隔线（「退出软件」前）。行数 = 6 + [库父项]。
 fn tray_menu_height(lib_count: usize) -> f64 {
-    // 「切换字体库」分组只在多库时渲染（标题一行 + 每库一行）
-    let libs = if lib_count > 1 {
-        TRAY_MENU_GROUP + lib_count as f64 * TRAY_MENU_OPT
-    } else {
-        0.0
-    };
-    TRAY_MENU_PAD_V
-        + 3.0 * TRAY_MENU_ROW // 打开主界面 / 插件中心 / 设置
-        + libs
-        + TRAY_MENU_GROUP // 「切换语言」标题
-        + 9.0 * TRAY_MENU_OPT // 九种语言
-        + TRAY_MENU_ROW // 检查更新
-        + TRAY_MENU_SEP // 分隔线
-        + TRAY_MENU_ROW // 退出软件
+    let rows = 6.0 + if lib_count > 1 { 1.0 } else { 0.0 };
+    TRAY_MENU_PAD_V + rows * TRAY_MENU_ROW + TRAY_MENU_SEP
+}
+
+/// 二级子面板高度（逻辑像素）：行数 × 行高 + 上下透明圈。
+/// 语言面板恒 9 行 = 380；字库面板 ≤ 3 行 = 140。二级展开时窗口高取
+/// max(主菜单, 子面板) —— 主菜单 271 < 语言 380，窗口会纵向长高（横向锚定
+/// 让主卡片原地不动），见 `tray_menu_sub`。
+fn tray_menu_sub_height(rows: usize) -> f64 {
+    TRAY_MENU_PAD_V + rows as f64 * TRAY_MENU_ROW
 }
 
 /// 右键托盘时弹出菜单窗口。
 ///
-/// 定位口径：以**图标矩形**为锚（拿不到 rect 时退回光标位置），菜单底边压在
-/// 图标上方 `TRAY_MENU_GAP` 处；任务栏在顶部（图标贴近屏幕顶）时翻到图标下方。
-/// 横竖都 clamp 到**光标所在显示器的工作区**（work_area 已扣掉任务栏，
-/// 任务栏在左/右的机器也不会溢出）；多显示器以 `monitor_from_point` 取
-/// 光标所在的那个，不假设主屏。
+/// 定位口径（Bug③ 重写，2026-11-20 真机）：**默认向上** —— 菜单底边贴托盘图标
+/// **顶边**再往上留 `TRAY_MENU_GAP`（8 物理像素）；只有 `menu_y < work_area.top`
+/// （任务栏在屏幕顶部的机器）才翻到图标**下方**，且向下时必须不出工作区底边
+/// （放不下就贴底边，宁可盖住一点图标也不许出屏）。水平：菜单中心对齐图标中心，
+/// clamp 进工作区左右边界。多显示器以 `monitor_from_point` 取图标所在的那个，
+/// 不假设主屏。
+///
+/// 为什么全用**物理像素**直设（`Position::Physical` / `PhysicalSize`）：
+/// 上一版算的是物理坐标、落盘却走 `LogicalPosition` —— set_position 的逻辑坐标
+/// 按**窗口当前所在**显示器的 scale 换算，托盘窗口复用时「当前所在显示器」跟
+/// 托盘所在的不是同一块（或 scale 不同），换算就用错 scale，菜单落点下移且
+/// 实际高度被放大，表现就是「从图标向下展开、底部被屏幕裁掉」。物理坐标
+/// 从事件到落盘一路到底，中间不做任何逻辑换算，这个坑不存在了。
 fn open_tray_menu(
     app: &tauri::AppHandle,
     position: tauri::PhysicalPosition<f64>,
@@ -2860,6 +2900,10 @@ fn open_tray_menu(
         .unwrap_or(0);
     let w = TRAY_MENU_W;
     let h = tray_menu_height(lib_count);
+
+    // 每次弹都从干净的主菜单几何出发：二级侧向状态归零（下面的 set_size /
+    // set_position 本来就会按主菜单尺寸重设，状态与几何必须一起归零）
+    TRAY_MENU_SUB_SIDE.store(0, std::sync::atomic::Ordering::SeqCst);
 
     // 第一次右键才建窗；之后 show + 重新定位复用（建 WebView 很慢，绝不销毁重建）。
     let window = match app.get_webview_window("tray-menu") {
@@ -2875,21 +2919,24 @@ fn open_tray_menu(
     };
 
     let (cx, cy) = (position.x, position.y);
-    // 光标所在的显示器；取不到（极罕见的平台失败）就按 scale = 1、不 clamp 兜底
+    // 图标所在的显示器；取不到（极罕见的平台失败）就退回窗口自身 scale、再退 1.0
     let monitor = match app.monitor_from_point(cx, cy) {
         Ok(Some(m)) => Some(m),
         _ => app.primary_monitor().ok().flatten(),
     };
-    let scale = monitor.as_ref().map(|m| m.scale_factor()).unwrap_or(1.0);
+    let scale = monitor
+        .as_ref()
+        .map(|m| m.scale_factor())
+        .unwrap_or_else(|| window.scale_factor().unwrap_or(1.0));
     let work = monitor.as_ref().map(|m| m.work_area());
 
+    // 菜单的物理尺寸：逻辑高 × scale，一次算死，落盘全走物理
     let w_phys = w * scale;
     let h_phys = h * scale;
-    let gap_phys = TRAY_MENU_GAP * scale;
-    // 锚点用图标矩形的上/下边（更稳：光标可能停在图标边缘），rect 无效时退回光标。
-    // tauri 的 Rect 里 position/size 是带单位的枚举：托盘事件恒为物理像素，
-    // 逻辑分支按当前 scale 兜底换算，全无效就退回光标位置。
-    let (rect_y, _rect_x, _rect_w, rect_h) = match (rect.position, rect.size) {
+    // 图标矩形（物理像素）。tauri 的 Rect 里 position/size 是带单位的枚举：
+    // 托盘事件恒为物理像素，逻辑分支按当前 scale 兜底换算；全无效退回光标位置
+    // （宽高按 0 处理：锚点退化为光标点，居中与向上公式同样成立）。
+    let (rect_x, rect_y, rect_w, rect_h) = match (rect.position, rect.size) {
         (tauri::Position::Physical(p), tauri::Size::Physical(s)) => (
             p.x as f64,
             p.y as f64,
@@ -2901,44 +2948,54 @@ fn open_tray_menu(
         }
         _ => (0.0, 0.0, 0.0, 0.0),
     };
-    let (icon_top, icon_bottom) = if rect_h > 0.0 {
-        (rect_y, rect_y + rect_h)
+    let (icon_x, icon_y, icon_w, icon_h) = if rect_h > 0.0 && rect_w > 0.0 {
+        (rect_x, rect_y, rect_w, rect_h)
     } else {
-        (cy, cy)
+        (cx, cy, 0.0, 0.0)
     };
-    // 先试「图标上方」；顶部越界（任务栏在顶 / 图标贴顶）翻到图标下方，
-    // 下方也放不下就贴工作区底边
-    let mut top = icon_top - gap_phys - h_phys;
+
+    // 默认向上：底边贴图标顶边上方 TRAY_MENU_GAP（物理像素）
+    let gap_phys = TRAY_MENU_GAP;
+    let mut menu_y = icon_y - h_phys - gap_phys;
     if let Some(area) = &work {
         let work_top = area.position.y as f64;
-        if top < work_top {
-            top = icon_bottom + gap_phys;
+        if menu_y < work_top {
+            // 任务栏在屏幕顶部（或图标贴顶）：翻到图标下方，且底部不许出工作区；
+            // 向下也放不下就贴工作区底边（宁可盖住一点图标，不许出屏）
+            menu_y = icon_y + icon_h + gap_phys;
             let work_bottom = work_top + area.size.height as f64;
-            if top + h_phys > work_bottom {
-                top = work_bottom - h_phys;
+            if menu_y + h_phys > work_bottom {
+                menu_y = work_bottom - h_phys;
             }
         }
     }
-    // 水平：以光标（≈图标）为中心，clamp 进工作区左右边
-    let mut left = cx - w_phys / 2.0;
+    // 水平：菜单中心对齐图标中心，clamp 进工作区左右边界
+    let mut menu_x = icon_x + icon_w / 2.0 - w_phys / 2.0;
     if let Some(area) = &work {
         let work_left = area.position.x as f64;
         let work_right = work_left + area.size.width as f64;
-        if left < work_left {
-            left = work_left;
+        if menu_x < work_left {
+            menu_x = work_left;
         }
-        if left + w_phys > work_right {
-            left = work_right - w_phys;
+        if menu_x + w_phys > work_right {
+            menu_x = work_right - w_phys;
         }
     }
 
-    let _ = window.set_size(tauri::LogicalSize::new(w, h));
-    let _ = window.set_position(tauri::LogicalPosition::new(left / scale, top / scale));
+    // 物理坐标一路到底：尺寸与位置都直设 Physical，中间不做逻辑换算
+    //（理由见上函数头注释，Bug③ 的根因）
+    let _ = window.set_size(tauri::PhysicalSize::new(w_phys, h_phys));
+    let _ = window.set_position(tauri::PhysicalPosition::new(menu_x, menu_y));
     let _ = window.show();
     let _ = window.set_focus();
     // 每次显示前让 tray.html 重新拉一次数据（库列表 / 当前语言可能已经变了）；
     // 顺带重放入场动画（窗口是 hide/show 复用的，页面不会重新加载）
     let _ = app.emit_to("tray-menu", "tray://show", ());
+    // 「点外面就收」的兜底轮询（Bug②，2026-11-20 真机）：set_focus 在托盘场景
+    // 不是每次都能真的把焦点拿到（系统托盘 flyout 会抢），Focused(false) 事件链
+    // 不可全信 —— 轮询前台窗口是唯一可靠的保证。
+    #[cfg(target_os = "windows")]
+    start_tray_menu_focus_watch(app);
 }
 
 /// 菜单窗口只有一份，第一次右键时创建。属性逐项对齐 splash 的建窗口径：
@@ -2978,6 +3035,8 @@ fn build_tray_menu_window(app: &tauri::AppHandle) -> tauri::Result<tauri::Webvie
     let handle = window.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(false) = event {
+            // 失焦藏起：二级面板几何状态一并复位（下次 show 必是干净的主菜单态）
+            TRAY_MENU_SUB_SIDE.store(0, std::sync::atomic::Ordering::SeqCst);
             let _ = handle.hide();
         }
     });
@@ -2985,10 +3044,97 @@ fn build_tray_menu_window(app: &tauri::AppHandle) -> tauri::Result<tauri::Webvie
 }
 
 /// 藏起菜单窗口（点完动作后由各命令调用；失焦兜底之外的一条确定路径）。
+/// 顺手复位二级面板侧向状态 + 顶掉兜底轮询代次：hide 即停拍、下次 show
+/// 必是干净的主菜单几何（open_tray_menu 每次都会重设尺寸与位置）。
 fn hide_tray_menu(app: &tauri::AppHandle) {
+    TRAY_MENU_SUB_SIDE.store(0, std::sync::atomic::Ordering::SeqCst);
+    #[cfg(target_os = "windows")]
+    TRAY_MENU_WATCH_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     if let Some(w) = app.get_webview_window("tray-menu") {
         let _ = w.hide();
     }
+}
+
+/// 兜底轮询的代次：每次 show 自增，旧一拍见到代次不符即退（同 window_dock
+/// sensor 的边沿纪律 —— 藏起 / 代次顶掉 / 窗口不可见都退出，绝不常驻空转）。
+#[cfg(target_os = "windows")]
+static TRAY_MENU_WATCH_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 菜单可见期间的轻量轮询（~300ms 一拍）：前台窗口不是 tray-menu（含其子窗口
+/// —— 焦点常落在 WebView2 的子 HWND 上，用 GA_ROOT 归一后再比）→ 立即藏起并停拍。
+///
+/// 两条防误藏：
+/// ① 首拍给 500ms 宽限 —— 刚 show 时焦点还没落稳（WebView 初始化），此时前台
+///    必然还是别的窗口，照直比会把菜单刚打开就藏掉；
+/// ② 记住本拍里菜单**是否拿到过焦点**：拿到过 → 前台一变（≠ tray-menu）就藏；
+///    一直没拿到（set_focus 被系统吃掉）→ 只有前台窗口**变成跟 show 那一刻
+///    不同的别的窗口**才藏（用户真的点去了别处）。后者覆盖不了「点回 show 时
+///    的同一个前台窗口」（比如一直在资源管理器上点桌面）这种罕见路径，那条
+///    路由失焦 Focused(false) 兜底，两层加起来不留死角。
+#[cfg(target_os = "windows")]
+fn start_tray_menu_focus_watch(app: &tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+    let gen = TRAY_MENU_WATCH_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        // 宽限拍：等焦点落稳再开始比对
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut had_focus = false;
+        let mut initial_fg = tray_menu_fg_hwnd();
+        loop {
+            if TRAY_MENU_WATCH_GEN.load(Ordering::SeqCst) != gen {
+                return; // 下一次 show 把代次顶掉了：本拍退出
+            }
+            let Some(window) = handle.get_webview_window("tray-menu") else {
+                return;
+            };
+            if !window.is_visible().unwrap_or(false) {
+                return; // 已被藏起（命令路径 / 失焦路径）：停拍
+            }
+            let fg = tray_menu_fg_hwnd();
+            if !had_focus && tray_menu_hwnd_matches(&window, fg) {
+                had_focus = true;
+            }
+            let foreign = !tray_menu_hwnd_matches(&window, fg);
+            let click_outside = foreign
+                && (had_focus || (!initial_fg.is_null() && fg != initial_fg));
+            if click_outside {
+                let _ = window.hide();
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    });
+}
+
+/// 当前前台窗口的 HWND（取不到返回空指针值，调用方按「无前台」处理）。
+#[cfg(target_os = "windows")]
+fn tray_menu_fg_hwnd() -> windows_sys::Win32::Foundation::HWND {
+    unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() }
+}
+
+/// 前台窗口是否属于 tray-menu：是它本身，或它的根窗口（焦点在 WebView2 子 HWND 时）。
+/// 拿不到本窗口 hwnd（理论上不该发生）按「有焦点」处理：宁可晚藏一拍，不误藏。
+#[cfg(target_os = "windows")]
+fn tray_menu_hwnd_matches(
+    window: &tauri::WebviewWindow,
+    fg: windows_sys::Win32::Foundation::HWND,
+) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
+    let Ok(hwnd) = window.hwnd() else {
+        return true;
+    };
+    // tauri 的 hwnd() 返回 windows crate 的 HWND 结构体，`.0` 就是裸指针；
+    // windows_sys 的 HWND 是同一种表示（*mut c_void），直接比指针
+    let hwnd: windows_sys::Win32::Foundation::HWND = hwnd.0;
+    if fg.is_null() {
+        return false;
+    }
+    if fg == hwnd {
+        return true;
+    }
+    let root = unsafe { GetAncestor(fg, GA_ROOT) };
+    root == hwnd
 }
 
 /// 托盘菜单的数据源：库列表（含当前库标记）、语言偏好、主题、版本号。
@@ -3102,9 +3248,127 @@ fn tray_menu_hide(app: tauri::AppHandle) {
 
 /// 托盘「退出软件」：明确意图，直接退出。不受「关闭到托盘」影响 ——
 /// 那个开关只拦主窗口的 CloseRequested（on_window_event），拦不到显式 exit。
+/// 退出前先走 prepare_exit（显式隐藏托盘图标，防 Explorer 幽灵图标，Bug④）。
 #[tauri::command]
 fn tray_quit(app: tauri::AppHandle) {
+    prepare_exit(&app);
     app.exit(0);
+}
+
+/// 二级面板的展开侧：0 无 / 1 左（面板在主卡片左侧，默认，主卡贴屏幕右缘）/
+/// 2 右（主菜单被 clamp 到屏幕左缘时）。开合几何全由 `tray_menu_sub` 驱动，
+/// hide / 重新 show 都会归零。
+static TRAY_MENU_SUB_SIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// 二级面板（切换字体库 / 切换语言）的开合几何。
+///
+/// 窗口由两个「半区」组成，每半区宽 = `TRAY_MENU_W`（卡片 = 半区 - 10px 透明圈；
+/// tray.html 的 .trm-card 宽度在展开态走 `calc(50% - 20px)` 跟随）。
+/// - **open = true**：窗口加宽一个半区；主卡片锚在原地（开左侧 = 窗口 x 左移
+///   一个半区宽）；高度取 max(主菜单, 子面板)（语言面板 380 > 主菜单 271，
+///   窗口纵向长高，y 向下越界时上移 clamp 进工作区）。方向判定：主卡片右缘外
+///   剩余空间放不下一个半区、且左侧放得下 → 开左（默认）；反之开右。
+/// - **open = false**：按记住的侧复原 x 与宽高（side=1 时 x 右移一个半区宽）。
+/// - 已开着又调 open=true（悬停换另一组）：宽与 x 不动，只把高度调到新 max。
+///
+/// Bug③ 同口径：**全物理像素直设**（outer_position / outer_size / PhysicalSize /
+/// PhysicalPosition），中间不做逻辑换算。
+/// 返回展开侧（"left" / "right"），前端据此挂方向类；收起返回空串。
+#[tauri::command]
+fn tray_menu_sub(app: tauri::AppHandle, panel: String, open: bool) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
+    let window = app
+        .get_webview_window("tray-menu")
+        .ok_or_else(|| "tray-menu 窗口不存在".to_string())?;
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let half_w = (TRAY_MENU_W * scale).round();
+    let lib_count = app
+        .try_state::<Store>()
+        .and_then(|store| store.0.lock().ok().map(|s| tray_menu_libs(&s).len()))
+        .unwrap_or(0);
+    let main_w = (TRAY_MENU_W * scale).round();
+    let main_h = (tray_menu_height(lib_count) * scale).round();
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let side = TRAY_MENU_SUB_SIDE.load(Ordering::SeqCst);
+
+    // 收起：按记住的侧把 x 复原（开在左 = 窗口当时左移过），宽高回主菜单
+    if !open {
+        if side == 1 {
+            let _ = window.set_position(tauri::PhysicalPosition::new(
+                pos.x + half_w.round() as i32,
+                pos.y,
+            ));
+        }
+        let _ = window.set_size(tauri::PhysicalSize::new(
+            main_w.round() as u32,
+            main_h.round() as u32,
+        ));
+        TRAY_MENU_SUB_SIDE.store(0, Ordering::SeqCst);
+        return Ok(String::new());
+    }
+
+    let sub_rows = match panel.as_str() {
+        "libs" => lib_count.max(1),
+        "lang" => 9,
+        _ => return Err(format!("未知二级面板：{panel}")),
+    };
+    let sub_h = (tray_menu_sub_height(sub_rows) * scale).round();
+    let new_h = main_h.max(sub_h);
+    // 窗口中心所在的显示器（窗口可能因展开左移过，中心仍落在同屏）
+    let work = {
+        let cx = pos.x as f64 + size.width as f64 / 2.0;
+        let cy = pos.y as f64 + size.height as f64 / 2.0;
+        app.monitor_from_point(cx, cy)
+            .ok()
+            .flatten()
+            .map(|m| m.work_area().clone())
+    };
+    // 纵向 clamp：窗口加高后不许越出工作区上下界
+    let mut new_y = pos.y;
+    if let Some(area) = &work {
+        let wt = area.position.y;
+        let wb = wt + area.size.height as i32;
+        if new_y + new_h as i32 > wb {
+            new_y = wb - new_h as i32;
+        }
+        if new_y < wt {
+            new_y = wt;
+        }
+    }
+    if side == 0 {
+        // 首次展开：默认开左侧（菜单贴屏幕右缘）；左放不下且右放得下才开右
+        let mut chosen = 1u8;
+        if let Some(area) = &work {
+            let wl = area.position.x as f64;
+            let wr = wl + area.size.width as f64;
+            let room_left = pos.x as f64 - wl;
+            let room_right = wr - (pos.x as f64 + size.width as f64);
+            if room_left < half_w && room_right >= half_w {
+                chosen = 2;
+            }
+        }
+        let new_x = if chosen == 1 {
+            pos.x - half_w.round() as i32
+        } else {
+            pos.x
+        };
+        let _ = window.set_size(tauri::PhysicalSize::new(
+            size.width + half_w.round() as u32,
+            new_h.round() as u32,
+        ));
+        let _ = window.set_position(tauri::PhysicalPosition::new(new_x, new_y));
+        TRAY_MENU_SUB_SIDE.store(chosen, Ordering::SeqCst);
+        Ok(if chosen == 1 { "left" } else { "right" }.to_string())
+    } else {
+        // 已开着（悬停换另一组）：宽与 x 不动，只把高度调到新 max
+        let _ = window.set_size(tauri::PhysicalSize::new(
+            size.width as f64,
+            new_h.round() as f64,
+        ));
+        let _ = window.set_position(tauri::PhysicalPosition::new(pos.x, new_y));
+        Ok(if side == 1 { "left" } else { "right" }.to_string())
+    }
 }
 
 #[tauri::command]
@@ -3910,6 +4174,10 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
                             if let Some(w) = handle.get_webview_window("main") {
                                 let _ = w.hide();
                             }
+                        } else {
+                            // 关窗即退出（没开「关闭到托盘」且不在批量启停中）：
+                            // 退出前先收托盘图标，防幽灵图标（Bug④）
+                            prepare_exit(&handle);
                         }
                     }
                 });
@@ -4093,6 +4361,7 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             tray_switch_library,
             tray_set_locale,
             tray_open_main,
+            tray_menu_sub,
             tray_menu_hide,
             tray_quit,
             default_library_dir,
@@ -4116,6 +4385,13 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
         .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
+            // 保险钩：任何绕过 prepare_exit 的退出路径（第三方 / 未来新增）也
+            // 能收掉托盘图标。选 ExitRequested 而不是 Exit：前者还处在消息循环
+            // 活跃窗口内，托盘删除消息发得出去；Exit 时循环已在收尾，可能来不及。
+            // 幂等：正常路径（tray_quit / 主窗口关闭）已经 set_visible(false) 过。
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                prepare_exit(app);
+            }
             if let tauri::RunEvent::Exit = event {
                 // 插件是独立进程，不显式收会留在后台；API 监听也一起关掉
                 plugins::stop_all();
@@ -4169,17 +4445,20 @@ mod tray_menu_tests {
         assert!(libs[0].active);
     }
 
-    /// 窗口高度必须把每一行都算进去：多库时多出「标题 + N 行」，单库/无库时不计。
-    /// 算少了菜单被裁一截、算多了底部有一块透明死区（挡点击），两边都不能错。
+    /// 主菜单高度（二级菜单改版）：分组标题行已删，行数收敛 ——
+    /// 无库父项：20(透明圈) + 6×40(3 固定行 + 语言父项 + 检查更新 + 退出) + 11(分隔线)
+    /// = 271；有库父项再加一行 40 = 311。
     #[test]
     fn tray_menu_height_counts_rows_exactly() {
-        let base = tray_menu_height(1); // 1 或 0 库都不渲染切换分组
-        assert_eq!(base, tray_menu_height(0));
-        // 12(padding) + 3×36(主菜单) + 26(库标题) + 9×32(语言) + 36(检查更新) + 9(分隔线) + 36(退出)
-        assert!((base - 515.0).abs() < 0.001, "base = {base}");
-        // 多库分组 = 标题一行 + 每库一行（从「不渲染」跳到 2 个库，就是 26 + 2×32）
-        assert!((tray_menu_height(2) - (base + 26.0 + 64.0)).abs() < 0.001);
-        assert!((tray_menu_height(3) - (base + 26.0 + 96.0)).abs() < 0.001);
+        // 单库/无库：不渲染「切换字体库」父项
+        assert_eq!(tray_menu_height(1), tray_menu_height(0));
+        assert!((tray_menu_height(0) - 271.0).abs() < 0.001, "base = {}", tray_menu_height(0));
+        assert!((tray_menu_height(2) - 311.0).abs() < 0.001, "with libs = {}", tray_menu_height(2));
+        assert_eq!(tray_menu_height(3), tray_menu_height(2));
+        // 二级子面板：语言 9 行 = 20 + 9×40 = 380（> 主菜单 311，窗口纵向长高）
+        assert!((tray_menu_sub_height(9) - 380.0).abs() < 0.001);
+        assert!((tray_menu_sub_height(3) - 140.0).abs() < 0.001);
+        assert!(tray_menu_sub_height(9) > tray_menu_height(2), "语言面板比主菜单高：窗口取 max");
     }
 
     /// 语言码白名单与前端九语一致：托盘传来的码必须能过这道闸。
