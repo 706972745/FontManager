@@ -2365,6 +2365,20 @@ fn set_settings(
     store: State<Store>,
     settings: Settings,
 ) -> Result<(), String> {
+    apply_settings(&app, store.inner(), settings)
+}
+
+/// 设置落盘与换库的全部副作用（`set_settings` 的本体）。
+///
+/// 为什么抽出来：托盘菜单的「切换字体库」（`tray_switch_library`）走的是**同一条**
+/// 换库链路 —— 旧库登记退场、library.json 数据换仓、库图标迁移、asset scope 重授、
+/// watcher 重启，一步都不能少。两处各写一份必然漂移，所以抽成这一个函数，
+/// 命令壳只负责构造 `Settings` 再调进来（main.rs 头注的分工约定：薄壳 + 既有实现）。
+fn apply_settings(
+    app: &tauri::AppHandle,
+    store: &Store,
+    settings: Settings,
+) -> Result<(), String> {
     let (library_dir, library_dirs) = normalize_library_dirs(
         settings.library_dir.clone(),
         settings.library_dirs.clone(),
@@ -2435,7 +2449,7 @@ fn set_settings(
         }
     }
     allow_dir(
-        &app,
+        app,
         &scanner::effective_managed_dir(
             settings
                 .library_dir_enabled
@@ -2443,8 +2457,8 @@ fn set_settings(
                 .flatten(),
         ),
     );
-    allow_previews(&app, &settings.extra_dirs);
-    apply_watch(&app, settings.watch_enabled, &settings.extra_dirs)
+    allow_previews(app, &settings.extra_dirs);
+    apply_watch(app, settings.watch_enabled, &settings.extra_dirs)
 }
 
 /// 单独给某个目录挂库图标（设置页「应用图标」入口，以及换库时的补挂）。
@@ -2700,22 +2714,23 @@ fn show_main(app: &tauri::AppHandle) {
 }
 
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
-
-    let show = MenuItem::with_id(app, "show", "Show FontManager", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
 
     let icon = app
         .default_window_icon()
         .ok_or_else(|| tauri::Error::InvalidIcon(std::io::Error::other("no bundled window icon")))?
         .clone();
 
+    // 为什么必须自绘（选型的根因）：tauri 原生托盘菜单是系统样式（Windows 上是
+    // Win32 弹出菜单），圆角、配色、字体、深浅色全部跟操作系统走，与软件界面主题
+    // 对不上 —— owner 要求「和软件界面风格一致」，所以这里**不再挂任何原生 Menu**
+    // （连 Show/Quit 都不挂），右键改在托盘上方弹一个透明无边框小窗
+    // （tray.html + src/tray.ts，独立 vite 入口；绝不加载 index.html —— 那会把
+    // 整个 React 应用和字体 store 再跑一遍，双份事件监听 + 双份扫描）。见
+    // `open_tray_menu` / `build_tray_menu_window`。
     let builder = TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("FontManager")
-        .menu(&menu);
+        .tooltip("FontManager");
 
     let builder = if cfg!(target_os = "windows") {
         builder.show_menu_on_left_click(false)
@@ -2724,23 +2739,372 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     };
 
     builder
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "show" => show_main(app),
-            "quit" => app.exit(0),
-            _ => {}
-        })
         .on_tray_icon_event(|tray, event| {
             if let tauri::tray::TrayIconEvent::Click {
-                button: tauri::tray::MouseButton::Left,
-                button_state: tauri::tray::MouseButtonState::Up,
+                button,
+                button_state,
+                position,
+                rect,
                 ..
             } = event
             {
-                show_main(tray.app_handle());
+                match (button, button_state) {
+                    // 左键弹主界面：行为与改造前完全一致，一行没动
+                    (
+                        tauri::tray::MouseButton::Left,
+                        tauri::tray::MouseButtonState::Up,
+                    ) => show_main(tray.app_handle()),
+                    // 右键弹自绘菜单（position / rect 都是**物理像素**，
+                    // 逻辑坐标的换算在 open_tray_menu 里按显示器 scale_factor 做）
+                    (
+                        tauri::tray::MouseButton::Right,
+                        tauri::tray::MouseButtonState::Up,
+                    ) => open_tray_menu(tray.app_handle(), position, rect),
+                    _ => {}
+                }
             }
         })
         .build(app)?;
     Ok(())
+}
+
+// ───────────────── 托盘自绘菜单（tray-menu） ─────────────────
+
+/// 菜单窗口宽度（逻辑像素）。tray.html 的内联 CSS 里 `.trm` 的宽度就是它 ——
+/// 两处各写一份是刻意的（独立页引不了 Rust 常量），**改哪边都要同步另一边**。
+const TRAY_MENU_W: f64 = 264.0;
+/// 托盘图标与菜单之间的间距（逻辑像素）。
+const TRAY_MENU_GAP: f64 = 8.0;
+/// 上下内边距合计（逻辑像素，6px × 2）。与 tray.html `.trm` 的 padding 同步。
+const TRAY_MENU_PAD_V: f64 = 12.0;
+/// 普通菜单行高（打开主界面 / 插件中心 / 设置 / 检查更新 / 退出软件）。
+const TRAY_MENU_ROW: f64 = 36.0;
+/// 分组标题行高（「切换字体库」/「切换语言」的小标题）。
+const TRAY_MENU_GROUP: f64 = 26.0;
+/// 子选项行高（每个库目录 / 每种语言）。
+const TRAY_MENU_OPT: f64 = 32.0;
+/// 分隔线总高（1px 线 + 上下 4px 边距）。
+const TRAY_MENU_SEP: f64 = 9.0;
+/// 九种界面语言（与 src/lib/i18n.ts 的 `LOCALES` 同一份口径，顺序也一致）。
+/// Rust 侧只用来**校验**托盘传来的语言码；文案九语表在 tray.ts 里维护。
+const TRAY_LOCALES: [&str; 9] = ["en", "de", "es", "fr", "pt-BR", "ru", "ja", "zh-CN", "zh-TW"];
+
+/// 托盘菜单里的一项字体库（数据给 tray.html 渲染，也参与窗口高度计算）。
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TrayMenuLib {
+    dir: String,
+    name: String,
+    active: bool,
+}
+
+/// 托盘菜单的库列表。与设置页同一套推导：`normalize_library_dirs` 理清单，
+/// 关掉「自定义字体库」= 只有默认库，返回空（前端 libs.len() <= 1 就不渲染切换项）。
+fn tray_menu_libs(state: &store::AppState) -> Vec<TrayMenuLib> {
+    if !state.library_dir_enabled {
+        return Vec::new();
+    }
+    let (current, dirs) = normalize_library_dirs(
+        state.library_dir.clone(),
+        state.library_dirs.clone(),
+        state.library_dir_enabled,
+    );
+    dirs.iter()
+        .map(|dir| TrayMenuLib {
+            name: std::path::Path::new(dir)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(dir)
+                .to_string(),
+            dir: dir.clone(),
+            active: current.as_deref() == Some(dir.as_str()),
+        })
+        .collect()
+}
+
+/// 菜单窗口高度（逻辑像素）。行高常量与 tray.html 的 CSS 一一对应 ——
+/// 窗口高度必须在**显示前**就定死（Rust 侧定位 + 免去 JS 量高再调尺寸的来回），
+/// 所以这里按行数算，CSS 改了行高这边不改，菜单就会被裁掉一截。
+fn tray_menu_height(lib_count: usize) -> f64 {
+    // 「切换字体库」分组只在多库时渲染（标题一行 + 每库一行）
+    let libs = if lib_count > 1 {
+        TRAY_MENU_GROUP + lib_count as f64 * TRAY_MENU_OPT
+    } else {
+        0.0
+    };
+    TRAY_MENU_PAD_V
+        + 3.0 * TRAY_MENU_ROW // 打开主界面 / 插件中心 / 设置
+        + libs
+        + TRAY_MENU_GROUP // 「切换语言」标题
+        + 9.0 * TRAY_MENU_OPT // 九种语言
+        + TRAY_MENU_ROW // 检查更新
+        + TRAY_MENU_SEP // 分隔线
+        + TRAY_MENU_ROW // 退出软件
+}
+
+/// 右键托盘时弹出菜单窗口。
+///
+/// 定位口径：以**图标矩形**为锚（拿不到 rect 时退回光标位置），菜单底边压在
+/// 图标上方 `TRAY_MENU_GAP` 处；任务栏在顶部（图标贴近屏幕顶）时翻到图标下方。
+/// 横竖都 clamp 到**光标所在显示器的工作区**（work_area 已扣掉任务栏，
+/// 任务栏在左/右的机器也不会溢出）；多显示器以 `monitor_from_point` 取
+/// 光标所在的那个，不假设主屏。
+fn open_tray_menu(
+    app: &tauri::AppHandle,
+    position: tauri::PhysicalPosition<f64>,
+    rect: tauri::Rect,
+) {
+    let lib_count = app
+        .try_state::<Store>()
+        .and_then(|store| store.0.lock().ok().map(|s| tray_menu_libs(&s).len()))
+        .unwrap_or(0);
+    let w = TRAY_MENU_W;
+    let h = tray_menu_height(lib_count);
+
+    // 第一次右键才建窗；之后 show + 重新定位复用（建 WebView 很慢，绝不销毁重建）。
+    let window = match app.get_webview_window("tray-menu") {
+        Some(w) => w,
+        None => match build_tray_menu_window(app) {
+            Ok(w) => w,
+            // 建不出来（理论上不该发生）：记日志直接放弃，托盘图标本身还能用
+            Err(e) => {
+                crate::diag::log(&format!("[tray-menu] 菜单窗口创建失败：{e}"));
+                return;
+            }
+        },
+    };
+
+    let (cx, cy) = (position.x, position.y);
+    // 光标所在的显示器；取不到（极罕见的平台失败）就按 scale = 1、不 clamp 兜底
+    let monitor = match app.monitor_from_point(cx, cy) {
+        Ok(Some(m)) => Some(m),
+        _ => app.primary_monitor().ok().flatten(),
+    };
+    let scale = monitor.as_ref().map(|m| m.scale_factor()).unwrap_or(1.0);
+    let work = monitor.as_ref().map(|m| m.work_area());
+
+    let w_phys = w * scale;
+    let h_phys = h * scale;
+    let gap_phys = TRAY_MENU_GAP * scale;
+    // 锚点用图标矩形的上/下边（更稳：光标可能停在图标边缘），rect 无效时退回光标。
+    // tauri 的 Rect 里 position/size 是带单位的枚举：托盘事件恒为物理像素，
+    // 逻辑分支按当前 scale 兜底换算，全无效就退回光标位置。
+    let (rect_y, _rect_x, _rect_w, rect_h) = match (rect.position, rect.size) {
+        (tauri::Position::Physical(p), tauri::Size::Physical(s)) => (
+            p.x as f64,
+            p.y as f64,
+            s.width as f64,
+            s.height as f64,
+        ),
+        (tauri::Position::Logical(p), tauri::Size::Logical(s)) => {
+            (p.x * scale, p.y * scale, s.width * scale, s.height * scale)
+        }
+        _ => (0.0, 0.0, 0.0, 0.0),
+    };
+    let (icon_top, icon_bottom) = if rect_h > 0.0 {
+        (rect_y, rect_y + rect_h)
+    } else {
+        (cy, cy)
+    };
+    // 先试「图标上方」；顶部越界（任务栏在顶 / 图标贴顶）翻到图标下方，
+    // 下方也放不下就贴工作区底边
+    let mut top = icon_top - gap_phys - h_phys;
+    if let Some(area) = &work {
+        let work_top = area.position.y as f64;
+        if top < work_top {
+            top = icon_bottom + gap_phys;
+            let work_bottom = work_top + area.size.height as f64;
+            if top + h_phys > work_bottom {
+                top = work_bottom - h_phys;
+            }
+        }
+    }
+    // 水平：以光标（≈图标）为中心，clamp 进工作区左右边
+    let mut left = cx - w_phys / 2.0;
+    if let Some(area) = &work {
+        let work_left = area.position.x as f64;
+        let work_right = work_left + area.size.width as f64;
+        if left < work_left {
+            left = work_left;
+        }
+        if left + w_phys > work_right {
+            left = work_right - w_phys;
+        }
+    }
+
+    let _ = window.set_size(tauri::LogicalSize::new(w, h));
+    let _ = window.set_position(tauri::LogicalPosition::new(left / scale, top / scale));
+    let _ = window.show();
+    let _ = window.set_focus();
+    // 每次显示前让 tray.html 重新拉一次数据（库列表 / 当前语言可能已经变了）；
+    // 顺带重放入场动画（窗口是 hide/show 复用的，页面不会重新加载）
+    let _ = app.emit_to("tray-menu", "tray://show", ());
+}
+
+/// 菜单窗口只有一份，第一次右键时创建。属性逐项对齐 splash 的建窗口径：
+/// 主题用 `panel_theme()` 决定 WebView 的 prefers-color-scheme（与 splash 同法，
+/// 窗口建出来首帧就是对的主题，不用等 IPC 回来再跳）；additionalBrowserArgs
+/// 与 main 窗口**一个字符都不能差**（WebView2 渲染行为对齐，见 splash 处的注释）。
+/// 数据目录**不**单独建：托盘菜单是启动很久之后才建的，不存在 splash 那个
+/// environment 并发竞态（tauri#8196），与 main 共享默认目录即可，也不多占一块盘。
+fn build_tray_menu_window(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    let mut builder = tauri::WebviewWindowBuilder::new(
+        app,
+        "tray-menu",
+        tauri::WebviewUrl::App("tray.html".into()),
+    )
+    .title("FontManager")
+    .additional_browser_args(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force-renderer-accessibility",
+    )
+    .inner_size(TRAY_MENU_W, tray_menu_height(0))
+    .resizable(false)
+    .maximizable(false)
+    .minimizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .disable_drag_drop_handler()
+    .visible(false);
+    // 主题必须在建窗时给（晚一步页面已加载，prefers-color-scheme 就错了）
+    if let Some(theme) = crate::plugins::panel_theme() {
+        builder = builder.theme(Some(theme));
+    }
+    let window = builder.build()?;
+    // 失焦即藏（hide 不 close：建 WebView 很慢，窗口留着复用）。只挂在
+    // tray-menu 这一个窗口上，不会把主窗口 / 速览一起藏掉。
+    let handle = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Focused(false) = event {
+            let _ = handle.hide();
+        }
+    });
+    Ok(window)
+}
+
+/// 藏起菜单窗口（点完动作后由各命令调用；失焦兜底之外的一条确定路径）。
+fn hide_tray_menu(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("tray-menu") {
+        let _ = w.hide();
+    }
+}
+
+/// 托盘菜单的数据源：库列表（含当前库标记）、语言偏好、主题、版本号。
+/// 薄壳 —— 只读 store 现成字段，不做任何推导以外的事。
+#[tauri::command]
+fn tray_menu_data(store: State<Store>) -> serde_json::Value {
+    let state = match store.0.lock() {
+        Ok(s) => s,
+        Err(_) => {
+            return serde_json::json!({
+                "libs": [], "langPref": "system", "theme": "system",
+                "version": env!("CARGO_PKG_VERSION"),
+            })
+        }
+    };
+    let lang_pref = state
+        .prefs
+        .get("localePref")
+        .and_then(|v| v.as_str())
+        .unwrap_or("system")
+        .to_string();
+    let theme = state
+        .prefs
+        .get("themePref")
+        .and_then(|v| v.as_str())
+        .unwrap_or("system");
+    let theme = if theme == "light" || theme == "dark" { theme } else { "system" };
+    serde_json::json!({
+        "libs": tray_menu_libs(&state),
+        "langPref": lang_pref,
+        "theme": theme,
+        "version": env!("CARGO_PKG_VERSION"),
+    })
+}
+
+/// 托盘切库：构造当前设置、只换 `library_dir`，走 `apply_settings` 这条
+/// 与设置页完全相同的链路。目录必须在已有清单里 —— 托盘不是设置任意路径的入口。
+#[tauri::command]
+fn tray_switch_library(
+    app: tauri::AppHandle,
+    store: State<Store>,
+    dir: String,
+) -> Result<(), String> {
+    let settings = {
+        let state = store.0.lock().map_err(|e| e.to_string())?;
+        if !state.library_dir_enabled || !state.library_dirs.iter().any(|d| d == &dir) {
+            return Err("该目录不在字体库清单里".into());
+        }
+        Settings {
+            extra_dirs: state.extra_dirs.clone(),
+            watch_enabled: state.watch_enabled,
+            auto_activate_imports: state.auto_activate_imports,
+            library_dir: Some(dir),
+            library_dirs: state.library_dirs.clone(),
+            library_dir_enabled: true,
+            affinity_enabled: state.affinity_enabled,
+            affinity_deactivate_on_quit: state.affinity_deactivate_on_quit,
+            online_fonts_enabled: state.online_fonts_enabled,
+        }
+    };
+    apply_settings(&app, store.inner(), settings)?;
+    hide_tray_menu(&app);
+    // 主窗口的字体列表 / 设置页状态要跟着换：前端收到后重拉 settings + rescan
+    let _ = app.emit_to("main", "tray://library-changed", ());
+    Ok(())
+}
+
+/// 托盘切语言：写 prefs（托盘侧的持久化）+ 通知主窗口热切（不重启）。
+/// 主窗口前端收到 `tray://locale` 后走 `setLocalePref`，持久化与即时生效
+/// 都是它自己的既有路径，这里不代劳。
+#[tauri::command]
+fn tray_set_locale(app: tauri::AppHandle, store: State<Store>, code: String) -> Result<(), String> {
+    if !TRAY_LOCALES.contains(&code.as_str()) {
+        return Err(format!("未知语言码：{code}"));
+    }
+    {
+        let mut state = store.0.lock().map_err(|e| e.to_string())?;
+        if let Some(p) = state.prefs.as_object_mut() {
+            p.insert("localePref".into(), serde_json::json!(code));
+        } else {
+            state.prefs = serde_json::json!({ "localePref": code });
+        }
+        store::save_prefs(&state)?;
+    }
+    hide_tray_menu(&app);
+    let _ = app.emit_to("main", "tray://locale", serde_json::json!({ "code": code }));
+    Ok(())
+}
+
+/// 打开主界面（target = main / settings / pluginCenter）。先 `show_main`
+/// 把主窗口捞回来（可能藏在托盘 / 最小化 / 停在速览），再发事件让前端切面板。
+#[tauri::command]
+fn tray_open_main(app: tauri::AppHandle, target: String) -> Result<(), String> {
+    match target.as_str() {
+        "main" | "settings" | "pluginCenter" => {}
+        _ => return Err(format!("未知目标：{target}")),
+    }
+    hide_tray_menu(&app);
+    show_main(&app);
+    if target != "main" {
+        let _ = app.emit_to("main", "tray://open", serde_json::json!({ "target": target }));
+    }
+    Ok(())
+}
+
+/// Esc 收起菜单（tray.html 的键盘兜底；点别处由失焦 hide 兜）。
+#[tauri::command]
+fn tray_menu_hide(app: tauri::AppHandle) {
+    hide_tray_menu(&app);
+}
+
+/// 托盘「退出软件」：明确意图，直接退出。不受「关闭到托盘」影响 ——
+/// 那个开关只拦主窗口的 CloseRequested（on_window_event），拦不到显式 exit。
+#[tauri::command]
+fn tray_quit(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -3259,7 +3623,8 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
     let _ = boot_at();
     // 应用标识换了名字（1.9.8），WebView2 的数据目录跟着标识走，必须**在建窗口之前**搬过去
     migrate_webview_data_dir();
-    // 资源管理器双击 `.S-/.P-/.L-FontManager` 时，Windows 会把文件路径当 argv[1] 传进来。
+    // 资源管理器双击 `.S-/.P-/.D-FontManager`（旧版还叫 `.L-FontManager`，仍注册着
+    // 兼容关联）时，Windows 会把文件路径当 argv[1] 传进来。
     let opened_file = startup_file_arg();
     // 已经有一个实例在跑：把它正开着的那个窗口（哪怕正收在屏幕顶端一根细线里）
     // 叫回完整界面，并把双击的文件路径一并递过去，然后自己退出。
@@ -3369,7 +3734,7 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             // 只写 HKCU，后台跑，失败也不影响启动。
             #[cfg(target_os = "windows")]
             std::thread::spawn(|| match file_assoc::ensure_associations() {
-                Ok(true) => eprintln!("[file-assoc] S/P/L-FontManager associations registered"),
+                Ok(true) => eprintln!("[file-assoc] S/P/D-FontManager associations registered (incl. legacy L)"),
                 Ok(false) => {}
                 Err(e) => eprintln!("[file-assoc] skipped: {e}"),
             });
@@ -3724,6 +4089,12 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
             runtime_download,
             get_settings,
             set_settings,
+            tray_menu_data,
+            tray_switch_library,
+            tray_set_locale,
+            tray_open_main,
+            tray_menu_hide,
+            tray_quit,
             default_library_dir,
             open_folder,
             reveal_in_folder,
@@ -3755,6 +4126,71 @@ fn run_main(context: tauri::Context<tauri::Wry>) {
                 comhost::shutdown();
             }
         });
+}
+
+#[cfg(test)]
+mod tray_menu_tests {
+    use super::*;
+
+    /// 库列表推导：关掉自定义库 = 只有默认库 → 托盘不显示切换项（返回空）。
+    /// 这是「只有存在多个字体库时才显示切换项」这条需求的后端判定依据。
+    #[test]
+    fn tray_menu_libs_hidden_when_custom_dirs_disabled() {
+        let mut state = store::AppState::default();
+        state.library_dir_enabled = false;
+        state.library_dir = Some(r"E:\libs\默认库".into());
+        state.library_dirs = vec![r"E:\libs\默认库".into(), r"E:\libs\备库".into()];
+        assert!(tray_menu_libs(&state).is_empty());
+    }
+
+    /// 开着自定义库：清单原样给出，当前库带 active 标记（单库时也给出，
+    /// 前端按 libs.len() <= 1 自己藏 —— 判定集中在一边，别两边各算一遍）。
+    /// 注意 `normalize_library_dirs` 会把**当前库排第一**（设置页同口径），
+    /// 托盘子列表沿用这个顺序。
+    #[test]
+    fn tray_menu_libs_marks_active_and_keeps_single() {
+        let mut state = store::AppState::default();
+        state.library_dir_enabled = true;
+        state.library_dir = Some(r"E:\libs\B".into());
+        state.library_dirs = vec![r"E:\libs\A".into(), r"E:\libs\B".into()];
+        let libs = tray_menu_libs(&state);
+        assert_eq!(libs.len(), 2);
+        // 当前库排第一且带 active 标记
+        assert_eq!(libs[0].dir, r"E:\libs\B");
+        assert!(libs[0].active);
+        assert_eq!(libs[1].dir, r"E:\libs\A");
+        assert!(!libs[1].active);
+        // 名字取路径末段（托盘里显示目录名，不显示全路径）
+        assert_eq!(libs[0].name, "B");
+        // 单库也返回这一项（active = true），显不显示由前端按数量决定
+        state.library_dirs = vec![r"E:\libs\B".into()];
+        let libs = tray_menu_libs(&state);
+        assert_eq!(libs.len(), 1);
+        assert!(libs[0].active);
+    }
+
+    /// 窗口高度必须把每一行都算进去：多库时多出「标题 + N 行」，单库/无库时不计。
+    /// 算少了菜单被裁一截、算多了底部有一块透明死区（挡点击），两边都不能错。
+    #[test]
+    fn tray_menu_height_counts_rows_exactly() {
+        let base = tray_menu_height(1); // 1 或 0 库都不渲染切换分组
+        assert_eq!(base, tray_menu_height(0));
+        // 12(padding) + 3×36(主菜单) + 26(库标题) + 9×32(语言) + 36(检查更新) + 9(分隔线) + 36(退出)
+        assert!((base - 515.0).abs() < 0.001, "base = {base}");
+        // 多库分组 = 标题一行 + 每库一行（从「不渲染」跳到 2 个库，就是 26 + 2×32）
+        assert!((tray_menu_height(2) - (base + 26.0 + 64.0)).abs() < 0.001);
+        assert!((tray_menu_height(3) - (base + 26.0 + 96.0)).abs() < 0.001);
+    }
+
+    /// 语言码白名单与前端九语一致：托盘传来的码必须能过这道闸。
+    #[test]
+    fn tray_locale_whitelist_matches_frontend_locales() {
+        for code in ["en", "de", "es", "fr", "pt-BR", "ru", "ja", "zh-CN", "zh-TW"] {
+            assert!(TRAY_LOCALES.contains(&code), "{code} 不在白名单里");
+        }
+        assert!(!TRAY_LOCALES.contains(&"zh"));
+        assert!(!TRAY_LOCALES.contains(&"system"));
+    }
 }
 
 #[cfg(test)]

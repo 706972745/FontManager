@@ -40,8 +40,8 @@ export const EXPORT_SPECS: Record<ExportKind, ExportSpec> = {
   },
   curation: {
     kind: "curation",
-    suffix: ".L-FontManager",
-    extension: "L-FontManager",
+    suffix: ".D-FontManager",
+    extension: "D-FontManager",
     label: "字体整理数据",
     purpose:
       "保存标签、分组、收藏与 1~5 星评分、备注、手动版权判定和版权到期日。只包含整理成果，不含字体文件本体，体积很小。",
@@ -80,8 +80,18 @@ export const OUR_EXTENSIONS = [
   EXPORT_SPECS["library-pack"].extension,
 ];
 
+/**
+ * 这一版把「仅数据」的后缀从 `.L-FontManager` 改成 `.D-FontManager`（D = Data，
+ * 与图标上的 DF 一致）。用户手上还存着旧后缀的文件，所以：
+ * - 导入对话框、后缀判定都要放行 `.L`，否则旧文件挑不出来；
+ * - 但导出、默认文件名、界面文案只出现 `.D`，`LEGACY_EXTENSIONS` 不许进
+ *   `OUR_EXTENSIONS`，不然会从别处漏进导出流程。
+ */
+export const LEGACY_EXTENSIONS = ["L-FontManager"];
+
 export const isOurSuffix = (path: string) =>
-  /\.(s|p|l)-fontmanager$/i.test(path.trim());
+  // d = 现行后缀，l = 旧后缀（只读兼容，见 LEGACY_EXTENSIONS）
+  /\.(s|p|d|l)-fontmanager$/i.test(path.trim());
 
 /**
  * 只凭 JSON 内容判断导出物类型，一个字都不看文件名。

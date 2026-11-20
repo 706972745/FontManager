@@ -89,9 +89,12 @@
 !macro NSIS_HOOK_POSTUNINSTALL
   ; ── 1. 软件本体留下的注册表关联：无论是否勾选都清掉（都是死链接了）──
   ; 这三个扩展名是 FontManager 专有，不会与其它软件冲突。
+  ; `.D-FontManager` 是现行「整理数据」后缀，`.L-FontManager` 是它的旧名字
+  ; （2.5.4 及以前）：程序为兼容旧文件同时也注册了 .L，卸载时两个键都要清。
   ${If} $UpdateMode <> 1
     DeleteRegKey HKCU "Software\Classes\.S-FontManager"
     DeleteRegKey HKCU "Software\Classes\.P-FontManager"
+    DeleteRegKey HKCU "Software\Classes\.D-FontManager"
     DeleteRegKey HKCU "Software\Classes\.L-FontManager"
 
     ; 1.5.5 起 publisher 从 "TheHolyOneZ / IIEOzo" 改为 "IIEOzo"，
