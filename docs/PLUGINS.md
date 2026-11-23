@@ -239,20 +239,65 @@ PUT  /api/v1/curation/collection  { "name": "分组名", "families": ["族1", "�
 | 端点 | 方法 | 权限 | 重大操作 |
 |---|---|---|---|
 | `/health` | GET | 只要令牌 | — |
+| `/routes` | GET | 只要令牌 | — |
 | `/fonts`、`/fonts/families` | GET | `read:fonts` | — |
+| `/fonts/{family}`、`/fonts/{family}/license`、`/fonts/{family}/coverage` | GET | `read:fonts` | — |
 | `/fonts/activate`、`/fonts/deactivate`、`/fonts/scan` | POST | `write:fonts` | ✅ |
 | `/fonts/apply` | POST | `write:apply` | — |
+| `/fonts/install`、`/fonts/uninstall` | POST | `write:library` | ✅ |
 | `/apps/active` | GET | `read:apps` | — |
+| `/library` | GET | `read:library` | — |
+| `/library/dedupe`、`/library/restore-deduped` | POST | `write:library` | ✅ |
+| `/trash` | GET | `read:trash` | — |
+| `/trash/restore`、`DELETE /trash`、`DELETE /trash/{id}` | POST / DELETE | `write:trash` | ✅ |
+| `/tags`、`/tag-groups`、`/collections` | GET | `read:curation` | — |
+| `/tags/{name}`、`/tag-groups[/{name}]`、`/collections[/{name}]` | PUT / DELETE / POST | `write:curation` | — |
 | `/snapshots` | GET | `read:snapshot` | — |
 | `/snapshots`、`/snapshots/{name}` | POST / DELETE | `write:snapshot` | ✅ |
 | `/snapshots/{name}/apply` | POST | `write:snapshot` | ✅ |
 | `/curation` | GET | `read:curation` | — |
 | `/curation/{rating,favorite,tags,note,collection}` | PUT | `write:curation` | — |
-| `/export/pack`、`/jobs/{id}` | POST / GET | `export` | — |
+| `/online/catalogue`、`/online/families/{id}`、`/online/hosts` | GET | `read:online` | — |
+| `/online/download` | POST | `write:online` | ✅ |
+| `/settings`、`/features`、`/system/paths` | GET | `read:settings` | — |
+| `/settings` | PUT | `write:settings` | ✅ |
+| `/system/open` | POST | `open:external` | — |
+| `/plugins` | GET | `read:plugins` | — |
+| `/plugins/{id}/enable`、`/plugins/install` | POST | `write:plugins` | ✅ |
+| `/runtimes` | GET | `read:runtimes` | — |
+| `/runtimes/{kind}/download` | POST | `write:runtimes` | ✅ |
+| `/runtimes/{kind}` | DELETE | `write:runtimes` | ✅ |
+| `/update/check` | GET | `read:update` | — |
+| `/update/download`、`/update/install` | POST | `write:update` | ✅ |
+| `/export/pack`、`/export/fonts`、`/export/folder`、`/export/cancel` | POST | `export` | — |
+| `/jobs/{id}` | GET | `export` | — |
 | `/import` | POST | `import` | ✅ |
+
+> 标签 / 标签分组 / 字体分组属于「整理数据」，复用现有的 `read:curation` / `write:curation`，
+> 没有另开 `read:tags` 之类的碎权限。
+
 
 > 端口默认自动挑一个空闲的（`api.json` 里的 `port`），也可以在 设置 → 本地 API 里固定；
 > 只监听 `127.0.0.1`。
+
+### 接口目录：`GET /routes`（2.5 起）
+
+不想在插件里硬编码端点表？先读一次 `/routes`（只要令牌，不需要额外权限）：
+
+```json
+{
+  "routes": [
+    { "method": "GET",  "path": "/api/v1/fonts",         "perm": "read:fonts",   "dangerous": false, "summary": "分页查询字面…" },
+    { "method": "POST", "path": "/api/v1/fonts/install", "perm": "write:library","dangerous": true,  "summary": "安装字体到字体库…" },
+    { "method": "GET",  "path": "/api/v1/health",        "perm": null,           "dangerous": false, "summary": "探活…" }
+  ]
+}
+```
+
+- `perm` 就是中间件真正会查的那一项（`null` = 只要令牌）；`dangerous` 表示是否还要过
+  「重大操作」两道闸。插件可以据此在启动时自检「我这枚令牌能调哪些端点」。
+- `/routes` 与 `routes()` 由单测钉住，**不会**出现「表里有、实际没有」或反过来的情况。
+- `/health` 也带 `apiVersion`（当前为 `"1"`）与 `routeCount`，可以先看这两个再决定要不要拉目录。
 
 **「重大操作」要过两道闸（1.9.25）**：会改字体库或系统字体状态的操作（上表 ✅ 的那些），
 
@@ -346,6 +391,161 @@ PS/AI/CDR 的就是答案。前台是别的软件时直接返回 `null` —— �
 
 没有目标时**也是 200**（`{"app":null,"exe":""}`），这是正常状态，不是错误。
 
+## 2.5 新增端点（字体库 / 回收站 / 标签 / 在线库 / 设置 / 插件 / 更新 / 导出）
+
+所有路径都在 `/api/v1` 下，请求体与响应一律 **camelCase**，业务错误一律 **400 +
+`{"error": "人话"}`**。下面是每个域最常用的形状；完整清单以 `/routes` 为准。
+
+> 安装 / 卸载 / 归置 / 还原这些动作只改磁盘与 state，**不会**立刻重扫字体列表。
+> 需要最新字面清单时，动作完成后调一次 `POST /fonts/scan`（注意 30 秒节流）。
+
+### 字体详情（`read:fonts`）
+
+```
+GET /fonts/{family}              → { family, faceCount, faces[], dirs[], licenses[] }
+GET /fonts/{family}/license      → { family, class, note, dirs[], files[], faces[] }
+GET /fonts/{family}/coverage     → { family, faces[{ id, path, style, hanCoverage, charset }] }
+```
+
+- `class` 是 `free_commercial` / `free_personal` / `paid` / `timelimited` / `unknown`。
+- `coverage` 的 `hanCoverage` 是 `none` / `sparse` / `full`，`charset` 是码位统计对象。
+- 字族名按 URL 段传；含空格 / 中文时记得 percent-encode。查不到字族 → 400。
+
+### 字体安装 / 卸载（`write:library`，重大操作）
+
+```
+POST /fonts/install   { "paths": ["D:\\Fonts\\思源黑体"], "mode": "copy" }
+POST /fonts/uninstall { "path": "<字体库>/思源黑体/SourceHanSans-Regular.otf", "family": "思源黑体" }
+```
+
+- `mode`：`copy`（默认，源文件保留）/ `move`（搬进库）/ `link`（库外链接）。
+- `paths` 里每一项必须存在；一次最多 256 项，批量请分批。
+- **安装写不到库外**：落点永远是当前字体库（zip 解包也在数据根下的 staging），
+  调用方指定不了目标路径。**卸载只允许字体库目录内的文件**（`..`、符号链接、8.3 短名
+  都会先 `canonicalize` 再判）；库外链接字体请引导用户在界面里「移除链接」——
+  那里会一并处理注册表别名。
+- 安装成功返回 `{ ok, result: { installed[], errors[], duplicates[], … } }`；
+  `ok=false` 时逐条看 `errors`。
+
+### 字体库（`read:library` / `write:library`）
+
+```
+GET  /library                  → { library, libraryDirs[], libraryDirEnabled, extraDirs[], faceCount, familyCount, linked }
+POST /library/dedupe           { "dryRun": true }   → { ok, dryRun, report: { moved, failed, bytes, samples[] } }
+POST /library/restore-deduped                       → { ok, report }
+```
+
+`dedupe` 会把与系统已装字体重复的文件归置到 `<库>/_重复字体/`；先 `dryRun: true` 看数量。
+
+### 回收站（`read:trash` / `write:trash`）
+
+```
+GET    /trash                → { total, entries[{ id, originalPath, trashedPath, family, trashedAt }] }
+POST   /trash/restore        { "id": "…" }
+DELETE /trash/{id}           永久删除单条
+DELETE /trash                清空
+```
+
+`restore` 若原路径是「库外链接字体」，返回 `{ ok, relinked: true, path }`，同时把该路径登记回链接表。
+
+### 标签 / 标签分组 / 字体分组（`read:curation` / `write:curation`）
+
+```
+GET    /tags                 → { tags: { 字族: [标签…] }, tagMeta: { 标签: { color, group } } }
+PUT    /tags/{name}          { "color": "blue", "group": "客户", "name": "新标签名" }
+DELETE /tags/{name}          → { ok, removed }
+
+GET    /tag-groups           → { groups: [{ name, color }] }
+POST   /tag-groups           { "name": "客户", "color": "teal" }
+PUT    /tag-groups/{name}    { "name": "新组名", "color": "amber" }
+DELETE /tag-groups/{name}    → { ok, freed }
+
+GET    /collections          → { collections: { 分组名: [字族…] } }
+POST   /collections          { "name": "项目 A", "families": ["族1", "族2"] }
+PUT    /collections/{name}   { "families": ["族1"], "name": "新分组名" }
+DELETE /collections/{name}
+```
+
+- 标签颜色只认语义键（`gray` / `red` / `orange` / `amber` / `green` / `teal` / `blue` /
+  `indigo` / `violet` / `pink`）；`color: ""` 表示清除颜色。
+- `group: ""` 表示移出标签分组；分组名不存在时会**顺手建出来**（与界面上的行为一致）。
+- `PUT /tags/{name}` 的 `name` 是「改成新名字」，与已有标签重名 = 合并。
+- 字体分组的成员名单是**整份覆盖**（不传 `families` = 不动成员）。
+
+### 在线库（`read:online` / `write:online`，下载是重大操作）
+
+```
+GET  /online/catalogue?force=true   → { fetchedAt, fromCache, families[] }
+GET  /online/families/{id}          → 字族详情（授权、文件清单、许可证原文）
+GET  /online/hosts                  → { hosts: ["github.com", …] }
+POST /online/download  { "id": "noto-sans-sc", "files": ["NotoSansSC-Regular.otf"], "license": true }
+                                    → 下载到暂存区，返回 { family, paths[], licensePath, source }
+```
+
+`/online/download` 只负责下载；要真正入库，再调 `POST /fonts/install`（暂存区路径就在
+`paths` 里）。`files` 省略 = 该字族全部字重。在线字体开关关着时返回 400。
+
+### 设置 / 系统（`read:settings` / `write:settings` / `open:external`）
+
+```
+GET /settings   → 应用设置 + prefs（白名单）+ api{ enabled, port, dangerous, tokenName }
+PUT /settings   { "watchEnabled": true, "autoActivateImports": false,
+                  "affinityDeactivateOnQuit": true, "onlineFontsEnabled": true,
+                  "updateCheck": true }
+GET /features   → { apiVersion, features{…}, permissions[], installKind, platform }
+GET /system/paths → { dataRoot, library, libraryDirs[], plugins, online, trash }
+POST /system/open { "path": "<数据根或字体库内的路径>" }  或  { "url": "https://…" }
+```
+
+- **`GET /settings` 绝不返回令牌 / 密钥**：`prefs` 只放白名单键，
+  `prefsRedacted` 只报被滤掉的键**数量**（不报名）。
+- `PUT /settings` 只接受上面那五个键；`libraryDir` 涉及整套换库流程（旧库登记退场、
+  业务数据搬迁、目录图标迁移），**故意不开放**，传了会 400 并说明原因。
+- `POST /system/open` 的路径必须先 `canonicalize`，且落在**数据根或字体库**里；
+  URL 只接受 `http(s)://`、不含空白 / 控制字符、长度 ≤ 2048。它不会启动任意 exe。
+
+### 插件 / 运行时（`read:plugins` / `read:runtimes` / 写操作是重大操作）
+
+```
+GET  /plugins                     → { total, plugins[] }（不含任何令牌）
+POST /plugins/{id}/enable         { "enabled": true }   默认 true；false = 停用
+POST /plugins/install             { "path": "D:\\x\\plugin.zip" }
+GET  /runtimes                    → { total, runtimes[{ kind, bundledVersion, systemVersion, pluginsUsing[] }] }
+POST /runtimes/{kind}/download     kind = python | node
+DELETE /runtimes/{kind}
+```
+
+- 插件安装只接受 `.zip`；更新时只覆盖代码，`config` / `secret` / `state` 原样保留，
+  装完若插件在跑会自动重启。
+- 启用/停用会写进 prefs（下次启动照此恢复），与界面开关同一套记忆。
+- 删除运行时前会拦「有插件正在使用 / 正在运行」的情况，错误里会点名。
+
+### 更新（`read:update` / `write:update`，写是重大操作）
+
+```
+GET  /update/check?force=true    → { ok, update: { latest, url, notes, setupUrl, sha256, … } }
+POST /update/download { "url": "…", "name": "FontManager-2.5.0-setup.exe", "sha256": "…", "assetId": 0 }
+POST /update/install  { "path": "<刚下载的 setup.exe>", "sha256": "…", "version": "2.5.0" }
+```
+
+- 下载强制要求 SHA-256；对不上会删文件并报错，**绝不执行**。
+- `install` 会起一段等待脚本并让主程序退出（Windows 不允许覆盖运行中的 exe）。
+  调用方要把「连接会被断开」当成正常结果，别重试。
+
+### 导出（`export`）
+
+```
+POST /export/fonts  { "paths": ["<库内或系统字体路径>"], "destDir": "D:\\导出" }
+POST /export/folder { "fontPath": "<字族里的一个字体>", "dest": "D:\\导出\\思源黑体.zip",
+                      "familyPaths": ["…"] }
+POST /export/cancel → { ok, cancelled }     取消正在跑的整库打包
+```
+
+- `/export/fonts` 只复制文件；`destDir` 必须已存在。
+- 导出源只允许**字体库或系统字体目录**里的文件。
+- `/export/folder` 会把该字族所在文件夹整体压成 zip（含授权书 / 说明文档）；字体直接躺在
+  库根时只打包本字族。
+
 ## 权限：403 到底是谁拦的
 
 插件跑在独立进程里，**所有能力都通过本地 API 走 HTTP**，所以「权限」不是一句口号，
@@ -374,13 +574,28 @@ PS/AI/CDR 的就是答案。前台是别的软件时直接返回 `null` —— �
 
 | 权限 | 能做什么 | 对应端点 |
 |---|---|---|
-| `read:fonts` | 读字体 / 字族清单、启用状态 | `GET /fonts`、`GET /fonts/families` |
+| `read:fonts` | 读字体 / 字族清单、启用状态、字族详情 / 授权 / 覆盖 | `GET /fonts`、`/fonts/families`、`/fonts/{family}`、`/fonts/{family}/license`、`/fonts/{family}/coverage` |
 | `write:fonts` | **启用 / 停用 / 重扫**（改的是系统级状态） | `POST /fonts/activate`、`/deactivate`、`/scan` |
+| `read:library` | 看字体库根目录、库清单、字面 / 字族数 | `GET /library` |
+| `write:library` | **安装 / 卸载字体、归置重复字体**（动的是库里的文件） | `POST /fonts/install`、`/fonts/uninstall`、`/library/dedupe`、`/library/restore-deduped` |
+| `read:trash` | 看回收站条目 | `GET /trash` |
+| `write:trash` | **还原 / 永久删除 / 清空回收站** | `POST /trash/restore`、`DELETE /trash/{id}`、`DELETE /trash` |
+| `read:online` | 读在线字体目录 / 详情 / 允许的主机 | `GET /online/catalogue`、`/online/families/{id}`、`/online/hosts` |
+| `write:online` | **下载在线字族**（写暂存区、走网络） | `POST /online/download` |
+| `read:settings` | 读设置（敏感项已滤除）、能力清单、系统路径 | `GET /settings`、`/features`、`/system/paths` |
+| `write:settings` | **改白名单设置项** | `PUT /settings` |
+| `read:plugins` | 看插件清单与运行状态 | `GET /plugins` |
+| `write:plugins` | **启用 / 停用 / 安装插件**（会拉起进程） | `POST /plugins/{id}/enable`、`/plugins/install` |
+| `read:runtimes` | 看插件运行时状态 | `GET /runtimes` |
+| `write:runtimes` | **下载 / 删除插件运行时** | `POST /runtimes/{kind}/download`、`DELETE /runtimes/{kind}` |
+| `read:update` | 检查更新 | `GET /update/check` |
+| `write:update` | **下载 / 静默安装更新**（install 会让程序退出） | `POST /update/download`、`/update/install` |
+| `open:external` | 用系统程序打开**数据根 / 字体库内**的路径或 http(s) URL | `POST /system/open` |
 | `read:snapshot` | 看方案快照列表 | `GET /snapshots` |
 | `write:snapshot` | 建 / 删 / 应用快照 | `POST /snapshots`、`DELETE /snapshots/{name}`、`POST /snapshots/{name}/apply` |
-| `read:curation` | 读你写的标签 / 备注 / 评分 / 收藏 | `GET /curation` |
-| `write:curation` | 改上面这些 | `PUT /curation/{note,rating,favorite,tags}` |
-| `export` | 触发打包导出、查导出进度 | `POST /export/pack`、`GET /jobs/{id}` |
+| `read:curation` | 读标签 / 备注 / 评分 / 收藏 / 标签分组 / 字体分组 | `GET /curation`、`/tags`、`/tag-groups`、`/collections` |
+| `write:curation` | 改上面这些 | `PUT /curation/{note,rating,favorite,tags}`、`PUT / DELETE /tags/{name}`、`POST / PUT / DELETE /tag-groups[/{name}]`、`POST / PUT / DELETE /collections[/{name}]` |
+| `export` | 打包导出、单文件导出、导出进度、取消 | `POST /export/pack`、`/export/fonts`、`/export/folder`、`/export/cancel`、`GET /jobs/{id}` |
 | `import` | 导入字体包 | `POST /import` |
 | `write:apply` | **把字体套用到 Photoshop / Illustrator / CorelDRAW**（会去驱动别人的软件） | `POST /fonts/apply` |
 | `read:apps` | 问「现在最近在用的是哪个设计软件」 | `GET /apps/active` |
@@ -418,18 +633,36 @@ log(f"我是「{health['tokenName']}」，权限：{health['permissions']}")
 
 新增一个 API 要**成套**改这几处，漏了第 2 步那道口子就对所有已登录令牌**默认放行**：
 
-1. `api.rs::routes()` 里 `.route(...)` 注册路径；
+1. `api.rs::routes()` 里注册路径（`.route("/api/v1/…", get(...))`）；
 2. `api.rs::perm_for()` 里加一行 `方法 + 路径 → 权限名`；
 3. `PERMS` 里没有合适的权限名，就新增一个，并同步这张表；
-4. 本文件上面的权限表补一行。
+4. 写操作还要判断是否进 `DANGEROUS_PERMS`（要过「重大操作」两道闸的写进，只读 / 可逆的不进）；
+5. `api.rs::ROUTE_DOCS` 里补一条 `{ method, path, summary }`（`/routes` 的数据源与
+   单测的比对基准）；
+6. 本文件上面的权限表与端点表补一行。
 
 `perm_for` 是个 `match`，**从上往下取第一条命中的**，顺序很要紧：`GET /snapshots` 必须写在
 `_ if p.starts_with("/snapshots")` 之前，否则「查快照」会被「写快照」那条吃掉。
-1.9.11 的 `POST /fonts/apply` 同理 —— 它必须写在 `POST if p.starts_with("/fonts/")` 之前，
+`POST /fonts/apply` 同理 —— 它必须写在 `POST if p.starts_with("/fonts/")` 之前，
 否则会拿到 `write:fonts`（能改系统字体表的权限）而不是 `write:apply`。
-`api.rs` 里有条单测（`apply_and_active_use_their_own_perm`）钉住这个顺序。
-默认分支 `_ => None` 是**不校验**，只在 `/health` 这种明确无害的端点上留口子；
-另有 `every_route_is_gated` 单测直接读源码里的 `.route(...)`，新端点忘了登记权限会立刻变红。
+2.5 的 `/fonts/install`、`/fonts/uninstall` 也一样：它们必须是 `write:library`，
+不能被字体前缀规则吃掉。
+
+默认分支 `_ => None` 是**不校验**，只在 `/health`、`/routes` 这种明确无害的端点上留口子。
+钉住这些约定的单测（都在 `api.rs` 的 `tests` 里）：
+
+| 单测 | 钉住什么 |
+|---|---|
+| `every_route_is_gated` | 每条静态路由都要有权限，或显式进 `EXEMPT` |
+| `new_route_perms_are_precise` | 2.5 新端点的权限精确命中，不被前缀规则吃掉 |
+| `dangerous_perms_include_new_writes` | 新增写权限都在 `DANGEROUS_PERMS` 里 |
+| `route_docs_cover_every_static_route` | `ROUTE_DOCS` 与 `routes()` 一一对应（不多不少） |
+| `routes_endpoint_matches_gate_table` | `/routes` 每条记录的 `perm` / `dangerous` 与闸门一致；`/health` 带 `apiVersion` / `routeCount` |
+
+> 加端点时**不要**顺手开放「任意路径读写 / 执行」类能力：`read_text_file` /
+> `write_text_file` / `write_binary_file` / `plugin_invoke` / 任意 exe 启动都不属于插件 API
+> 的范围。需要打开文件就走 `POST /system/open`（有数据根 / 字体库的路径闸门）。
+
 
 ## 调试
 

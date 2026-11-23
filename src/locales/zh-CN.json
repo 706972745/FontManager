@@ -1327,5 +1327,6 @@
   "about.stillEarly.p3": "你赞助的每一分钱都留在这里，变成下一行代码、软件家族的下一个成员。",
   "about.stillEarly.disclaimer": "「原始股东」仅是一个称呼，不涉及任何股权、所有权、分红或决策权。本项目以 GPL-3.0 协议开源，代码属于每一位遵守该协议的人。我保留作者身份，也保留它继续开源的承诺。",
   "about.stillEarly.alipay": "支付宝",
-  "about.stillEarly.wechat": "微信"
+  "about.stillEarly.wechat": "微信",
+  "shortcuts.footer": "按 ? 打开此面板 · Esc 关闭。"
 }

@@ -147,6 +147,7 @@ export function ShortcutsOverlay() {
                 </section>
               ))}
             </div>
+            <footer className="shortcuts-foot">{t("shortcuts.footer")}</footer>
           </motion.div>
         </motion.div>
       )}

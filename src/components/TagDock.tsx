@@ -165,10 +165,12 @@ export function TagDock() {
     if (!menuOpen) setMenuHold(false);
   }, [menuOpen]);
 
-  /** 有标签正在筛（右侧蓝线亮着）时面板保持展开，切到别的导航就自然解除（用户 2026-11-16） */
-  const selectedHold = nav.kind === "tag";
+  /**
+   * 自动固定已移除（2026-11-23 用户）：选中某个标签筛字体时，面板不再自动撑开、
+   * 也不再把自己显示成「已固定」。展开只来自用户手动图钉、悬停、聚焦、菜单和编辑态。
+   */
   const open =
-    pinned || selectedHold || activeDock === DOCK_ID || focusHold || menuHold || edit !== null;
+    pinned || activeDock === DOCK_ID || focusHold || menuHold || edit !== null;
 
   /**
    * 两个面板同时展开时各让一步（用户 2026-11-16 定：各自限到约 220px）。
@@ -256,16 +258,10 @@ export function TagDock() {
   const activeTag = nav.kind === "tag" ? nav.tag : null;
   const activeColor = activeTag ? tagMeta[activeTag]?.color : undefined;
 
-  /** 界面上「已固定」的显示口径：手动固定的，或被选中项撑开的 */
-  const showingPinned = pinned || selectedHold;
+  /** 界面上「已固定」只认用户亲手点的图钉；选中标签不再等价于固定。 */
+  const showingPinned = pinned;
 
   const togglePin = () => {
-    // 面板是被「选中的标签」撑开时，点头部的意思是收起它 —— 那就先取消这个筛选，
-    // 否则点了没反应（pinned 本来就是 false，切了也看不出变化）。
-    if (selectedHold && !pinned) {
-      setNav({ kind: "library" });
-      return;
-    }
     const next = !pinned;
     setPinned(next);
     savePinned(next);

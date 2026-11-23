@@ -1336,5 +1336,6 @@
   "about.stillEarly.p3": "Every penny you sponsor stays here, turning into the next line of code, the next member of the software family.",
   "about.stillEarly.disclaimer": "\"Original shareholder\" is only a name. It carries no equity, ownership, dividends or decision-making rights. This project is open source under GPL-3.0, and the code belongs to everyone who follows that licence. I keep my authorship, and I keep my promise that it stays open source.",
   "about.stillEarly.alipay": "Alipay",
-  "about.stillEarly.wechat": "WeChat"
+  "about.stillEarly.wechat": "WeChat",
+  "shortcuts.footer": "Press ? to open this panel · Esc closes it."
 }

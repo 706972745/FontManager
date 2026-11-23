@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Camera, ChevronDown, ChevronRight, Clock, FileUp, FolderOpen, Globe, History, Info, Keyboard, Library, Monitor, Plus, Power, PowerOff, Star, Trash2 } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Clock, FileUp, FolderOpen, Globe, History, Info, Keyboard, Library, Monitor, Plus, Power, PowerOff, Star, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { openContextMenu, useContextMenuOpen, type MenuItem } from "../design/primitives/ContextMenu";
@@ -366,9 +366,8 @@ export function Sidebar() {
     [],
   );
   /** 正在看某个分组时面板保持展开，切到别的导航自然解除（用户 2026-11-16，与标签面板一致） */
-  const collSelected = nav.kind === "collection";
-  /** 「已固定」的显示口径：手动固定的，或被选中分组撑开的 */
-  const collShowingPinned = collPinned || collSelected;
+  /* 「已固定」只认用户亲手点的图钉；选中分组不再自动撑开面板（2026-11-23 用户）。 */
+  const collShowingPinned = collPinned;
   const collOpen =
     collShowingPinned ||
     activeDock === "collections" ||
@@ -391,11 +390,6 @@ export function Sidebar() {
   }, [collOpen, setDockOpen]);
 
   const toggleCollPin = () => {
-    // 被「选中的分组」撑开时，点头部 = 收起它 → 先取消这个选中，否则点了没反应
-    if (collSelected && !collPinned) {
-      setNav({ kind: "library" });
-      return;
-    }
     const next = !collPinned;
     setCollPinned(next);
     try {
@@ -439,6 +433,8 @@ export function Sidebar() {
   const toggleSection = useFontStore((s) => s.toggleSection);
   // 排序必须与字重行胶囊的序号同源（`sortContainers`），否则「快照 2」会对不上第 2 行
   const collectionNames = sortContainers(Object.keys(collections));
+  /** 当前正在筛的分组：头部要显示它，和标签面板的 activeTag 同一个口径 */
+  const activeCollection = nav.kind === "collection" ? nav.name : null;
   const collNeedle = collQ.trim().toLowerCase();
   const shownCollections = collectionNames.filter(
     (n) => !collNeedle || n.toLowerCase().includes(collNeedle),
@@ -754,8 +750,30 @@ export function Sidebar() {
         >
           <FolderOpen size={15} strokeWidth={1.5} className="tag-dock-icon" />
           <span className="tag-dock-title">{t("side.collections")}</span>
-          {collectionNames.length > 0 && (
-            <span className="tag-dock-count tabular">{collectionNames.length}</span>
+          {/* 有选中分组时，头部显示「分组名 + ×」，与标签面板的 activeTag 一致；
+              没有选中才显示数量。收起状态下也能看见当前在筛哪个分组。 */}
+          {activeCollection ? (
+            <span className="tag-dock-filter coll-filter">
+              <FolderOpen size={10} strokeWidth={1.8} />
+              <span className="tag-dock-filter-name">{activeCollection}</span>
+              <span
+                className="tag-dock-filter-x"
+                role="button"
+                tabIndex={0}
+                aria-label={translate("tag.filterClear")}
+                title={translate("tag.filterClear")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNav({ kind: "library" });
+                }}
+              >
+                <X size={9} strokeWidth={2.4} />
+              </span>
+            </span>
+          ) : (
+            collectionNames.length > 0 && (
+              <span className="tag-dock-count tabular">{collectionNames.length}</span>
+            )
           )}
           <span className={`tag-dock-caret ${collOpen ? "" : "closed"}`}>
             <ChevronRight size={10} strokeWidth={2} />

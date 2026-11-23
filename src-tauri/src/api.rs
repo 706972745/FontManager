@@ -47,6 +47,9 @@ impl Scope {
     }
 }
 
+/// API 版本。写进 `/health` 与 `/routes`，客户端据此判断宿主支持哪些能力。
+pub const API_VERSION: &str = "1";
+
 /// 权限名单（插件 manifest 里写这些字符串）
 pub const PERMS: &[&str] = &[
     "read:fonts",
@@ -61,6 +64,24 @@ pub const PERMS: &[&str] = &[
     "write:apply",
     // 1.9.11：问「现在最近在用的是哪个设计软件」，给插件的「自动」项用
     "read:apps",
+    // ── 2.5：插件需要的字体库 / 回收站 / 在线库 / 设置 / 插件 / 运行时 / 更新 ──
+    "read:library",
+    "write:library",
+    "read:trash",
+    "write:trash",
+    "read:online",
+    "write:online",
+    "read:settings",
+    "write:settings",
+    "read:plugins",
+    "write:plugins",
+    "read:runtimes",
+    "write:runtimes",
+    "read:update",
+    "write:update",
+    // 用系统程序打开「数据根 / 字体库内」的路径或 http(s) URL。
+    // 有路径闸门，不动字体、不改系统状态，所以不算重大操作。
+    "open:external",
 ];
 
 /// 插件 manifest 申报的权限 → 实际签发的权限（保留项, 被丢掉的原样）。
@@ -423,31 +444,111 @@ fn start_server(hub: &Arc<Hub>) -> Result<u16, String> {
 fn perm_for(method: &str, path: &str) -> Option<&'static str> {
     let p = path.strip_prefix("/api/v1").unwrap_or(path);
     match method {
-        _ if p == "/health" => None,
-        "GET" if p == "/fonts" || p == "/fonts/families" => Some("read:fonts"),
+        // 探活与接口目录：只要令牌。`/routes` 本身只描述「有哪些端点」，
+        // 不含任何数据；插件拿它做能力发现，不需要额外权限。
+        _ if p == "/health" || p == "/routes" => None,
+
+        // ── 字体 ──
         // 精确匹配必须排在下面那条前缀规则之前：match 是自上而下取第一条命中的，
         // 反过来写的话 /fonts/apply 会被 starts_with("/fonts/") 吃掉，
         // 拿到 write:fonts 而不是 write:apply（两个权限的分量完全不同）。
+        "GET" if p == "/fonts" || p == "/fonts/families" => Some("read:fonts"),
         "POST" if p == "/fonts/apply" => Some("write:apply"),
+        // 安装 / 卸载动的是字体库里的文件：权限归 write:library（重大操作），
+        // 同样必须排在前缀规则前面，否则会被 write:fonts 吃掉。
+        "POST" if p == "/fonts/install" || p == "/fonts/uninstall" => Some("write:library"),
         "POST" if p.starts_with("/fonts/") => Some("write:fonts"),
+        // `/fonts/{family}` 与 `/fonts/{family}/license|coverage` 的族名是路径参数，
+        // 只能按前缀判定；`/fonts/families` 已在上面精确命中。
+        "GET" if p.starts_with("/fonts/") => Some("read:fonts"),
+        // 兜底：其余方法落到字体写权限，绝不回落到 `None`（默认放行）。
+        _ if p.starts_with("/fonts") => Some("write:fonts"),
+
         "GET" if p == "/apps/active" => Some("read:apps"),
+
+        // ── 字体库 ──
+        "GET" if p == "/library" => Some("read:library"),
+        _ if p.starts_with("/library") => Some("write:library"),
+
+        // ── 回收站 ──
+        "GET" if p == "/trash" => Some("read:trash"),
+        _ if p.starts_with("/trash") => Some("write:trash"),
+
+        // ── 标签 / 标签分组 / 字体分组 ──
+        // 这三样都是「整理数据」，与 `/curation/*` 同一类，复用 curation 权限，
+        // 不再新增 read:tags / write:tags 之类的碎权限。
+        "GET" if p == "/tags" => Some("read:curation"),
+        _ if p.starts_with("/tags") => Some("write:curation"),
+        "GET" if p == "/tag-groups" => Some("read:curation"),
+        _ if p.starts_with("/tag-groups") => Some("write:curation"),
+        "GET" if p == "/collections" => Some("read:curation"),
+        _ if p.starts_with("/collections") => Some("write:curation"),
+
         "GET" if p == "/snapshots" => Some("read:snapshot"),
         _ if p.starts_with("/snapshots") => Some("write:snapshot"),
         "GET" if p == "/curation" => Some("read:curation"),
         _ if p.starts_with("/curation") => Some("write:curation"),
-        "POST" if p == "/export/pack" => Some("export"),
+
+        // ── 在线库 ──
+        "GET" if p.starts_with("/online") => Some("read:online"),
+        _ if p.starts_with("/online") => Some("write:online"),
+
+        // ── 设置 / 系统 ──
+        // `POST /system/open` 要排在 GET 规则之前：它带的不是 read:settings。
+        "POST" if p == "/system/open" => Some("open:external"),
+        "GET" if p == "/settings" || p == "/features" || p.starts_with("/system/") => {
+            Some("read:settings")
+        }
+        "PUT" if p == "/settings" => Some("write:settings"),
+        // 兜底：将来若加了别的 /system/ 或 /settings 写接口，默认按设置写权限拦，
+        // 不再静默放行。
+        _ if p == "/settings" || p == "/features" || p.starts_with("/system/") => {
+            Some("write:settings")
+        }
+
+        // ── 插件 / 运行时 ──
+        "GET" if p.starts_with("/plugins") => Some("read:plugins"),
+        _ if p.starts_with("/plugins") => Some("write:plugins"),
+        "GET" if p.starts_with("/runtimes") => Some("read:runtimes"),
+        _ if p.starts_with("/runtimes") => Some("write:runtimes"),
+
+        // ── 更新 ──
+        "GET" if p == "/update/check" => Some("read:update"),
+        _ if p.starts_with("/update") => Some("write:update"),
+
+        // ── 导出 / 导入 ──
+        "POST"
+            if p == "/export/pack"
+                || p == "/export/fonts"
+                || p == "/export/folder"
+                || p == "/export/cancel" =>
+        {
+            Some("export")
+        }
         "GET" if p.starts_with("/jobs/") => Some("export"),
         "POST" if p == "/import" => Some("import"),
         _ => None,
     }
 }
 
-/// 「重大操作」：会改字体库或系统字体状态的那些权限。
+/// 「重大操作」：会改字体库 / 系统字体状态 / 插件运行环境的那些权限。
 ///
 /// 读、导出、套用到设计软件、写标签/评分这些都不算 —— 它们要么只读，
 /// 要么可逆、不碰字体文件本身。真正要拦的是：启用/停用/重扫（改系统字体表）、
-/// 导入（往库里写文件）、应用快照（批量改启用状态）。
-pub const DANGEROUS_PERMS: &[&str] = &["write:fonts", "import", "write:snapshot"];
+/// 导入（往库里写文件）、应用快照（批量改启用状态），以及 2.5 起放开的
+/// 字体库 / 回收站 / 在线库 / 设置 / 插件 / 运行时 / 更新这些写操作。
+pub const DANGEROUS_PERMS: &[&str] = &[
+    "write:fonts",
+    "import",
+    "write:snapshot",
+    "write:library",
+    "write:trash",
+    "write:online",
+    "write:plugins",
+    "write:runtimes",
+    "write:settings",
+    "write:update",
+];
 
 pub fn is_dangerous(perm: &str) -> bool {
     DANGEROUS_PERMS.contains(&perm)
@@ -555,9 +656,103 @@ async fn require_perm(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
+/// `/routes` 的一条静态说明。
+///
+/// 这张表**只记「方法 + 路径 + 一句话」**，权限与是否危险不在这里手写 ——
+/// 出参时现调 [`perm_for`] / [`is_dangerous`]，避免两处各写一份、改了一处忘另一处。
+/// 它与 `routes()` 的一致性由单测 `route_docs_cover_every_static_route` 钉住：
+/// 新增了路由却没进这张表，测试会立刻变红。
+struct RouteDoc {
+    method: &'static str,
+    path: &'static str,
+    summary: &'static str,
+}
+
+const ROUTE_DOCS: &[RouteDoc] = &[
+    // 探活 / 发现
+    RouteDoc { method: "GET", path: "/api/v1/health", summary: "探活：版本、端口、权限、字族数与 routeCount" },
+    RouteDoc { method: "GET", path: "/api/v1/routes", summary: "本接口目录（方法 / 路径 / 权限 / 是否重大操作）" },
+    // 字体
+    RouteDoc { method: "GET", path: "/api/v1/fonts", summary: "分页查询字面（q / family / license / limit / offset）" },
+    RouteDoc { method: "GET", path: "/api/v1/fonts/families", summary: "全部字族名" },
+    RouteDoc { method: "POST", path: "/api/v1/fonts/activate", summary: "按路径或字族启用" },
+    RouteDoc { method: "POST", path: "/api/v1/fonts/deactivate", summary: "按路径或字族停用" },
+    RouteDoc { method: "POST", path: "/api/v1/fonts/scan", summary: "重扫字体库（30 秒节流）" },
+    RouteDoc { method: "POST", path: "/api/v1/fonts/apply", summary: "把字体套用到 PS / AI / CorelDRAW" },
+    RouteDoc { method: "GET", path: "/api/v1/apps/active", summary: "最近在用的设计软件" },
+    RouteDoc { method: "GET", path: "/api/v1/fonts/{family}", summary: "字族详情：字面清单 + 目录版权判定" },
+    RouteDoc { method: "GET", path: "/api/v1/fonts/{family}/license", summary: "字族授权：分类、判定原文与授权文件" },
+    RouteDoc { method: "GET", path: "/api/v1/fonts/{family}/coverage", summary: "字族字符覆盖：汉字档位与码位统计" },
+    RouteDoc { method: "POST", path: "/api/v1/fonts/install", summary: "安装字体到字体库（copy / move / link）" },
+    RouteDoc { method: "POST", path: "/api/v1/fonts/uninstall", summary: "把字体库内文件移到回收站" },
+    // 字体库
+    RouteDoc { method: "GET", path: "/api/v1/library", summary: "字体库概览：根目录、库清单、字面/字族数" },
+    RouteDoc { method: "POST", path: "/api/v1/library/dedupe", summary: "把与系统重复的字体归置到 _重复字体" },
+    RouteDoc { method: "POST", path: "/api/v1/library/restore-deduped", summary: "退回归置过的重复字体" },
+    // 回收站
+    RouteDoc { method: "GET", path: "/api/v1/trash", summary: "回收站条目列表" },
+    RouteDoc { method: "POST", path: "/api/v1/trash/restore", summary: "按 id 还原回收站条目" },
+    RouteDoc { method: "DELETE", path: "/api/v1/trash/{id}", summary: "永久删除单个回收站条目" },
+    RouteDoc { method: "DELETE", path: "/api/v1/trash", summary: "清空回收站" },
+    // 标签 / 标签分组 / 字体分组
+    RouteDoc { method: "GET", path: "/api/v1/tags", summary: "字族 → 标签 与标签颜色/分组" },
+    RouteDoc { method: "PUT", path: "/api/v1/tags/{name}", summary: "改标签颜色 / 分组 / 改名" },
+    RouteDoc { method: "DELETE", path: "/api/v1/tags/{name}", summary: "删除标签（摘掉所有关联）" },
+    RouteDoc { method: "GET", path: "/api/v1/tag-groups", summary: "标签分组列表" },
+    RouteDoc { method: "POST", path: "/api/v1/tag-groups", summary: "新建标签分组" },
+    RouteDoc { method: "PUT", path: "/api/v1/tag-groups/{name}", summary: "改标签分组：改名 / 颜色" },
+    RouteDoc { method: "DELETE", path: "/api/v1/tag-groups/{name}", summary: "解散标签分组" },
+    RouteDoc { method: "GET", path: "/api/v1/collections", summary: "字体分组（收藏夹）列表" },
+    RouteDoc { method: "POST", path: "/api/v1/collections", summary: "新建 / 整份覆盖字体分组" },
+    RouteDoc { method: "PUT", path: "/api/v1/collections/{name}", summary: "改字体分组：成员 / 改名" },
+    RouteDoc { method: "DELETE", path: "/api/v1/collections/{name}", summary: "删除字体分组" },
+    // 快照 / 整理
+    RouteDoc { method: "GET", path: "/api/v1/snapshots", summary: "方案快照列表" },
+    RouteDoc { method: "POST", path: "/api/v1/snapshots", summary: "新建方案快照" },
+    RouteDoc { method: "DELETE", path: "/api/v1/snapshots/{name}", summary: "删除方案快照" },
+    RouteDoc { method: "POST", path: "/api/v1/snapshots/{name}/apply", summary: "应用方案快照" },
+    RouteDoc { method: "GET", path: "/api/v1/curation", summary: "读整理数据（标签/备注/评分/收藏/分组）" },
+    RouteDoc { method: "PUT", path: "/api/v1/curation/rating", summary: "设置评分" },
+    RouteDoc { method: "PUT", path: "/api/v1/curation/favorite", summary: "设置收藏" },
+    RouteDoc { method: "PUT", path: "/api/v1/curation/tags", summary: "设置某字族的标签" },
+    RouteDoc { method: "PUT", path: "/api/v1/curation/collection", summary: "写字体分组的完整成员名单" },
+    RouteDoc { method: "PUT", path: "/api/v1/curation/note", summary: "设置某字族的备注" },
+    // 在线库
+    RouteDoc { method: "GET", path: "/api/v1/online/catalogue", summary: "在线字体目录（?force=true 跳过缓存）" },
+    RouteDoc { method: "GET", path: "/api/v1/online/families/{id}", summary: "在线字族详情" },
+    RouteDoc { method: "GET", path: "/api/v1/online/hosts", summary: "在线源允许访问的主机名单" },
+    RouteDoc { method: "POST", path: "/api/v1/online/download", summary: "下载在线字族文件到暂存区" },
+    // 设置 / 系统
+    RouteDoc { method: "GET", path: "/api/v1/settings", summary: "读设置（令牌 / 密钥等敏感项已滤除）" },
+    RouteDoc { method: "PUT", path: "/api/v1/settings", summary: "改白名单设置项" },
+    RouteDoc { method: "GET", path: "/api/v1/features", summary: "宿主能力清单" },
+    RouteDoc { method: "GET", path: "/api/v1/system/paths", summary: "数据根 / 字体库 / 插件 / 回收站等路径" },
+    RouteDoc { method: "POST", path: "/api/v1/system/open", summary: "用系统程序打开库内路径或 http(s) URL" },
+    // 插件 / 运行时
+    RouteDoc { method: "GET", path: "/api/v1/plugins", summary: "插件清单与运行状态" },
+    RouteDoc { method: "POST", path: "/api/v1/plugins/{id}/enable", summary: "启用 / 停用插件" },
+    RouteDoc { method: "POST", path: "/api/v1/plugins/install", summary: "从 zip 安装或更新插件" },
+    RouteDoc { method: "GET", path: "/api/v1/runtimes", summary: "插件运行时状态（版本 / 占用 / 被谁使用）" },
+    RouteDoc { method: "POST", path: "/api/v1/runtimes/{kind}/download", summary: "下载插件运行时（python / node）" },
+    RouteDoc { method: "DELETE", path: "/api/v1/runtimes/{kind}", summary: "删除插件运行时" },
+    // 更新
+    RouteDoc { method: "GET", path: "/api/v1/update/check", summary: "检查更新（?force=true 跳过缓存）" },
+    RouteDoc { method: "POST", path: "/api/v1/update/download", summary: "下载更新安装包并校验 SHA-256" },
+    RouteDoc { method: "POST", path: "/api/v1/update/install", summary: "静默安装已下载的更新（会重启程序）" },
+    // 导出 / 导入
+    RouteDoc { method: "POST", path: "/api/v1/export/pack", summary: "整库打包导出（后台任务）" },
+    RouteDoc { method: "GET", path: "/api/v1/jobs/{id}", summary: "导出任务进度" },
+    RouteDoc { method: "POST", path: "/api/v1/export/fonts", summary: "导出若干字体文件到目录" },
+    RouteDoc { method: "POST", path: "/api/v1/export/folder", summary: "把字族文件夹打包成 zip" },
+    RouteDoc { method: "POST", path: "/api/v1/export/cancel", summary: "取消正在跑的整库打包" },
+    RouteDoc { method: "POST", path: "/api/v1/import", summary: "导入 .P-FontManager 字体包" },
+];
+
 fn routes() -> Router<Arc<Hub>> {
     Router::new()
         .route("/api/v1/health", get(health))
+        // 接口目录：客户端先读它再决定用哪些端点（只要令牌）
+        .route("/api/v1/routes", get(list_routes))
         .route("/api/v1/fonts", get(list_fonts))
         .route("/api/v1/fonts/families", get(list_families))
         .route("/api/v1/fonts/activate", post(activate))
@@ -565,8 +760,29 @@ fn routes() -> Router<Arc<Hub>> {
         .route("/api/v1/fonts/scan", post(scan))
         // 1.9.11：把字体套用到 PS / AI / CDR（引擎只有一份，在 adobe.rs）
         .route("/api/v1/fonts/apply", post(apply_font))
+        // 2.5：字族详情 / 授权 / 覆盖，以及安装与卸载
+        .route("/api/v1/fonts/{family}", get(font_detail))
+        .route("/api/v1/fonts/{family}/license", get(font_license))
+        .route("/api/v1/fonts/{family}/coverage", get(font_coverage_api))
+        .route("/api/v1/fonts/install", post(install_fonts_api))
+        .route("/api/v1/fonts/uninstall", post(uninstall_font_api))
         // 1.9.11：最近在用的设计软件，给插件「自动」项用
         .route("/api/v1/apps/active", get(active_app))
+        // 2.5：字体库
+        .route("/api/v1/library", get(library_info))
+        .route("/api/v1/library/dedupe", post(library_dedupe))
+        .route("/api/v1/library/restore-deduped", post(library_restore_deduped))
+        // 2.5：回收站
+        .route("/api/v1/trash", get(list_trash_entries).delete(empty_trash_api))
+        .route("/api/v1/trash/restore", post(restore_trash_entry))
+        .route("/api/v1/trash/{id}", axum::routing::delete(delete_trash_entry_api))
+        // 2.5：标签 / 标签分组 / 字体分组
+        .route("/api/v1/tags", get(list_tags))
+        .route("/api/v1/tags/{name}", put(update_tag).delete(delete_tag))
+        .route("/api/v1/tag-groups", get(list_tag_groups).post(create_tag_group))
+        .route("/api/v1/tag-groups/{name}", put(update_tag_group).delete(delete_tag_group))
+        .route("/api/v1/collections", get(list_collections).post(create_collection))
+        .route("/api/v1/collections/{name}", put(update_collection).delete(delete_collection))
         .route(
             "/api/v1/snapshots",
             get(list_snapshots).post(create_snapshot),
@@ -583,7 +799,32 @@ fn routes() -> Router<Arc<Hub>> {
         // 1.9.24：写一个分组的完整成员名单（插件同步分组用；空名单 = 删掉这个分组）
         .route("/api/v1/curation/collection", put(set_collection_api))
         .route("/api/v1/curation/note", put(set_note))
+        // 2.5：在线库
+        .route("/api/v1/online/catalogue", get(online_catalogue_api))
+        .route("/api/v1/online/families/{id}", get(online_family_api))
+        .route("/api/v1/online/hosts", get(online_hosts_api))
+        .route("/api/v1/online/download", post(online_download_api))
+        // 2.5：设置 / 系统
+        .route("/api/v1/settings", get(get_settings_api).put(put_settings_api))
+        .route("/api/v1/features", get(get_features_api))
+        .route("/api/v1/system/paths", get(system_paths))
+        .route("/api/v1/system/open", post(system_open))
+        // 2.5：插件 / 运行时
+        .route("/api/v1/plugins", get(list_plugins_api))
+        .route("/api/v1/plugins/{id}/enable", post(enable_plugin_api))
+        .route("/api/v1/plugins/install", post(install_plugin_api))
+        .route("/api/v1/runtimes", get(list_runtimes_api))
+        .route("/api/v1/runtimes/{kind}/download", post(download_runtime_api))
+        .route("/api/v1/runtimes/{kind}", axum::routing::delete(remove_runtime_api))
+        // 2.5：更新
+        .route("/api/v1/update/check", get(check_update_api))
+        .route("/api/v1/update/download", post(download_update_api))
+        .route("/api/v1/update/install", post(install_update_api))
+        // 导出 / 导入
         .route("/api/v1/export/pack", post(export_pack))
+        .route("/api/v1/export/fonts", post(export_fonts_api))
+        .route("/api/v1/export/folder", post(export_folder_api))
+        .route("/api/v1/export/cancel", post(cancel_export_api))
         .route("/api/v1/jobs/{id}", get(job_status))
         .route("/api/v1/import", post(import_pack))
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
@@ -725,6 +966,9 @@ async fn health(State(hub): State<Arc<Hub>>, Extension(scope): Extension<Scope>)
     Json(json!({
         "ok": true,
         "version": env!("CARGO_PKG_VERSION"),
+        // 接口目录的版本与条目数：客户端（插件 / Agent）先看这两个再决定要不要读 /routes
+        "apiVersion": API_VERSION,
+        "routeCount": ROUTE_DOCS.len(),
         "port": cfg.port,
         "dangerous": cfg.dangerous,
         "faces": fonts::face_count(),
@@ -1305,6 +1549,1896 @@ fn chrono_like_stamp() -> String {
     format!("{secs}")
 }
 
+// ═══════════════════════ 2.5：插件需要的扩展端点 ═══════════════════════
+//
+// 这一段只做「参数校验 + 组合既有 service」，不重写业务：
+//   · 能调 `installer` / `scanner` / `store` / `online` / `plugins` / `update` 的，
+//     一律直接调；只有 lib.rs 里才有的私有实现（如字族目录改名）不在这里复制。
+//   · 所有可能阻塞的动作（安装 / 归置 / 扫描 / 导出 / 下载 / 更新）都进
+//     `tauri::async_runtime::spawn_blocking`，不占 axum 的工作线程。
+//   · 业务错误一律 400 + `{"error": "人话"}`；越权路径 403。
+
+/// 在阻塞线程池里跑一段可能耗时的工作。
+async fn blocking<T, F>(f: F) -> Result<T, Response>
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
+{
+    match tauri::async_runtime::spawn_blocking(f).await {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => Err(map_err(e)),
+        Err(e) => Err(fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+fn ok_json(v: Value) -> Response {
+    Json(v).into_response()
+}
+
+fn lock_state(hub: &Hub) -> Result<std::sync::MutexGuard<'_, crate::store::AppState>, Response> {
+    hub.store
+        .0
+        .lock()
+        .map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, format!("状态锁坏了：{e}")))
+}
+
+fn library_root(hub: &Hub) -> std::path::PathBuf {
+    let dir = hub
+        .store
+        .0
+        .lock()
+        .ok()
+        .and_then(|s| s.active_library_dir().map(|x| x.to_owned()));
+    crate::scanner::effective_managed_dir(dir.as_deref())
+}
+
+/// 规范化之后判断 `path` 是否真的在 `dir` 里面。
+///
+/// `canonicalize` 会把 `..`、符号链接、Windows 8.3 短名一起解掉；
+/// 只比字符串前缀等于给「`...\字体库2\a.ttf` 冒充 `...\字体库\`」留门。
+fn path_under_dir(dir: &std::path::Path, path: &str) -> bool {
+    let Ok(real) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    let Ok(root) = std::fs::canonicalize(dir) else {
+        return false;
+    };
+    real.starts_with(&root)
+}
+
+fn validate_collection_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("分组名不能为空".into());
+    }
+    if name.chars().count() > 64 {
+        return Err("分组名太长了（最多 64 个字符）".into());
+    }
+    if name.chars().any(|c| c.is_control()) {
+        return Err("分组名里不能有控制字符".into());
+    }
+    Ok(name.to_string())
+}
+
+fn query_bool(q: &HashMap<String, String>, key: &str) -> bool {
+    q.get(key)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+// ───────────────────────────── 发现 ─────────────────────────────
+
+/// `GET /api/v1/routes`：把整张静态路由表连同权限一起交出去。
+///
+/// 权限是现调 [`perm_for`] 得到的，不手写第二份 —— 免得接口目录说「只要 read:fonts」
+/// 而实际闸门要 write:library 这种自相矛盾。
+async fn list_routes() -> Response {
+    let routes: Vec<Value> = ROUTE_DOCS
+        .iter()
+        .map(|d| {
+            let perm = perm_for(d.method, d.path);
+            json!({
+                "method": d.method,
+                "path": d.path,
+                "perm": perm,
+                "dangerous": perm.map(is_dangerous).unwrap_or(false),
+                "summary": d.summary,
+            })
+        })
+        .collect();
+    ok_json(json!({ "routes": routes }))
+}
+
+// ───────────────────────────── 字体详情 ─────────────────────────────
+
+async fn font_detail(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(family): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:fonts") {
+        return r;
+    }
+    let fam = family.trim().to_string();
+    if fam.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "family 不能为空");
+    }
+    let root = library_root(&hub);
+    match blocking(move || {
+        let faces = fonts::query(None, Some(fam.as_str()), None, 0);
+        if faces.is_empty() {
+            return Err(format!(
+                "没有这个字族：{fam}；先用 GET /api/v1/fonts/families 查准确名字"
+            ));
+        }
+        let mut dirs = Vec::new();
+        let mut licenses = Vec::new();
+        for d in crate::copyright::family_dirs_for(&root, &fam) {
+            let info = crate::copyright::inspect_dir(&d);
+            let dir = d.to_string_lossy().into_owned();
+            licenses.push(json!({
+                "dir": dir.clone(),
+                "class": info.class.as_str(),
+                "note": info.note,
+            }));
+            dirs.push(dir);
+        }
+        Ok(json!({
+            "family": fam,
+            "faceCount": faces.len(),
+            "faces": faces,
+            "dirs": dirs,
+            "licenses": licenses,
+        }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn font_license(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(family): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:fonts") {
+        return r;
+    }
+    let fam = family.trim().to_string();
+    if fam.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "family 不能为空");
+    }
+    let root = library_root(&hub);
+    match blocking(move || {
+        let faces = fonts::query(None, Some(fam.as_str()), None, 0);
+        if faces.is_empty() {
+            return Err(format!("没有这个字族：{fam}"));
+        }
+        let mut class: &'static str = "unknown";
+        let mut note: Option<String> = None;
+        let mut dirs: Vec<Value> = Vec::new();
+        let mut files: Vec<Value> = Vec::new();
+        for d in crate::copyright::family_dirs_for(&root, &fam) {
+            let info = crate::copyright::inspect_dir(&d);
+            if class == "unknown" && info.class.as_str() != "unknown" {
+                class = info.class.as_str();
+            }
+            if note.is_none() {
+                note = info.note.clone();
+            }
+            let dir = d.to_string_lossy().into_owned();
+            if let Ok(entries) = std::fs::read_dir(&d) {
+                for e in entries.filter_map(|e| e.ok()) {
+                    let p = e.path();
+                    if !p.is_file() || !crate::installer::is_info_file(&p) {
+                        continue;
+                    }
+                    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                        files.push(json!({ "dir": dir.clone(), "name": name }));
+                    }
+                }
+            }
+            dirs.push(json!({
+                "dir": dir,
+                "class": info.class.as_str(),
+                "note": info.note,
+            }));
+        }
+        let face_docs: Vec<Value> = faces
+            .iter()
+            .map(|f| {
+                json!({
+                    "id": f.id,
+                    "path": f.path,
+                    "style": f.style,
+                    "faceIndex": f.face_index,
+                    "postscriptName": f.postscript_name,
+                    "license": f.license,
+                    "licenseUrl": f.license_url,
+                    "copyright": f.copyright,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "family": fam,
+            "class": class,
+            "note": note,
+            "dirs": dirs,
+            "files": files,
+            "faces": face_docs,
+        }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn font_coverage_api(
+    Extension(scope): Extension<Scope>,
+    AxPath(family): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:fonts") {
+        return r;
+    }
+    let fam = family.trim().to_string();
+    if fam.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "family 不能为空");
+    }
+    match blocking(move || {
+        let faces = fonts::query(None, Some(fam.as_str()), None, 0);
+        if faces.is_empty() {
+            return Err(format!("没有这个字族：{fam}"));
+        }
+        let out: Vec<Value> = faces
+            .iter()
+            .map(|f| {
+                let p = std::path::Path::new(&f.path);
+                json!({
+                    "id": f.id,
+                    "path": f.path,
+                    "style": f.style,
+                    "faceIndex": f.face_index,
+                    "hanCoverage": crate::parser::face_han_coverage(p, f.face_index).as_str(),
+                    "charset": crate::parser::face_charset_stats(p, f.face_index),
+                })
+            })
+            .collect();
+        Ok(json!({ "family": fam, "faces": out }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+// ───────────────────────── 字体安装 / 卸载 ─────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallFontsBody {
+    #[serde(default)]
+    paths: Vec<String>,
+    /// `copy`（默认，源文件保留）/ `move`（搬走）/ `link`（库外链接）
+    #[serde(default)]
+    mode: Option<String>,
+}
+
+async fn install_fonts_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<InstallFontsBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:library") {
+        return r;
+    }
+    if body.paths.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "paths 不能为空");
+    }
+    if body.paths.len() > 256 {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "一次最多安装 256 个路径；大批量请分批调用",
+        );
+    }
+    let missing: Vec<String> = body
+        .paths
+        .iter()
+        .filter(|p| !std::path::Path::new(p.as_str()).exists())
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("这些路径不存在：{}", missing.iter().take(3).cloned().collect::<Vec<_>>().join("、")),
+        );
+    }
+    // 安装源允许是任意本地字体（用户就是要把别处的字体导进来），但**落点只有一个**：
+    // 下面传给 installer 的 library 就是当前字体库，zip 解包也在数据根下的 staging，
+    // 调用方没法指定目标路径——写不到库外去。卸载则相反，只认库内路径（见下）。
+    let mode_s = body.mode.clone().unwrap_or_else(|| "copy".into());
+    let mode = match crate::installer::InstallMode::parse(&mode_s) {
+        Ok(m) => m,
+        Err(_) => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                format!("mode「{mode_s}」不认识，只能是 copy / move / link"),
+            )
+        }
+    };
+    let Some(app) = crate::plugins::app_handle() else {
+        return fail(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "主程序句柄还没就绪，稍后重试（软件刚启动时可能发生）",
+        );
+    };
+    let store = hub.store.clone();
+    let library = library_root(&hub);
+    let existing: std::collections::HashSet<String> = fonts::snapshot_faces()
+        .iter()
+        .map(crate::installer::dup_key)
+        .collect();
+    let paths = body.paths;
+    match blocking(move || {
+        let mut result = crate::installer::install(&app, paths, &existing, mode, &library);
+        let now = services::now_secs();
+        if let Ok(mut state) = store.0.lock() {
+            // 与 lib.rs 的 install_fonts 保持同一套记账：链接字体登记、入库时间、
+            // 「导入后自动启用」的持久意图。
+            if matches!(mode, crate::installer::InstallMode::Link) {
+                for face in &result.installed {
+                    if !std::path::Path::new(&face.path).starts_with(&library) {
+                        state.linked.insert(face.path.clone());
+                    }
+                }
+            }
+            let auto = state.auto_activate_imports && result.installed.len() < 64;
+            for face in &result.installed {
+                let _ = crate::activation::sync(&mut state, &face.path, auto, true);
+                state.added.insert(face.path.clone(), now);
+            }
+            if let Err(e) = store::save(&state) {
+                result.errors.push(format!("保存状态失败：{e}"));
+            }
+            for face in &mut result.installed {
+                face.active = auto;
+                face.added_at = Some(now);
+            }
+        }
+        Ok(json!({ "ok": result.errors.is_empty(), "result": result }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UninstallFontBody {
+    path: String,
+    #[serde(default)]
+    family: String,
+}
+
+async fn uninstall_font_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<UninstallFontBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:library") {
+        return r;
+    }
+    let path = body.path.trim().to_string();
+    if path.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "path 不能为空");
+    }
+    if !std::path::Path::new(&path).is_file() {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("字体文件不存在：{path}"),
+        );
+    }
+    // 只允许动字体库里的文件：库外路径一律拒绝（链接字体请走界面里的「移除链接」，
+    // 它会同时处理注册表别名，比这里硬删安全）。
+    if !path_under_dir(&library_root(&hub), &path) {
+        return fail(
+            StatusCode::FORBIDDEN,
+            format!("「{path}」不在字体库里，不允许通过 API 卸载。库外链接字体请在设置界面里移除。"),
+        );
+    }
+    let family = if body.family.trim().is_empty() {
+        std::path::Path::new(&path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        body.family.trim().to_string()
+    };
+    let store = hub.store.clone();
+    match blocking(move || {
+        let mut state = store.0.lock().map_err(|e| e.to_string())?;
+        // 停用中的字体先恢复启用，否则文件搬走后注册表里会留下一条空路径。
+        if state.deactivated.contains(&path) {
+            let _ = crate::activation::sync(&mut state, &path, true, false);
+        }
+        state.linked.remove(&path);
+        state.added.remove(&path);
+        let entry = crate::installer::uninstall_quiet(&path, &family)?;
+        let _ = state.record_activated(&path, false);
+        store::save(&state)?;
+        crate::installer::refresh_system_font_cache();
+        Ok(json!({ "ok": true, "entry": entry }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+// ───────────────────────────── 字体库 ─────────────────────────────
+
+async fn library_info(State(hub): State<Arc<Hub>>, Extension(scope): Extension<Scope>) -> Response {
+    if let Err(r) = need(&scope, "read:library") {
+        return r;
+    }
+    let (root, dirs, enabled, extra, linked) = {
+        let state = match lock_state(&hub) {
+            Ok(s) => s,
+            Err(r) => return r,
+        };
+        (
+            crate::scanner::effective_managed_dir(state.active_library_dir())
+                .to_string_lossy()
+                .into_owned(),
+            state.library_dirs.clone(),
+            state.library_dir_enabled,
+            state.extra_dirs.clone(),
+            state.linked.len(),
+        )
+    };
+    ok_json(json!({
+        "library": root,
+        "libraryDirs": dirs,
+        "libraryDirEnabled": enabled,
+        "extraDirs": extra,
+        "faceCount": fonts::face_count(),
+        "familyCount": fonts::family_count(),
+        "linked": linked,
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DedupeBody {
+    #[serde(default)]
+    dry_run: bool,
+}
+
+async fn library_dedupe(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<DedupeBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:library") {
+        return r;
+    }
+    let root = library_root(&hub);
+    let dry = body.dry_run;
+    match blocking(move || {
+        let rep = crate::scanner::dedupe_library(&root, dry);
+        Ok(json!({ "ok": true, "dryRun": dry, "report": rep }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn library_restore_deduped(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:library") {
+        return r;
+    }
+    let root = library_root(&hub);
+    match blocking(move || {
+        let rep = crate::scanner::restore_deduped(&root);
+        Ok(json!({ "ok": true, "report": rep }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+// ───────────────────────────── 回收站 ─────────────────────────────
+
+async fn list_trash_entries(
+    Extension(scope): Extension<Scope>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:trash") {
+        return r;
+    }
+    match blocking(move || {
+        let entries = crate::installer::list_trash();
+        let total = entries.len();
+        Ok(json!({ "total": total, "entries": entries }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+struct TrashRestoreBody {
+    id: String,
+}
+
+async fn restore_trash_entry(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<TrashRestoreBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:trash") {
+        return r;
+    }
+    let id = body.id.trim().to_string();
+    if id.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "id 不能为空");
+    }
+    let store = hub.store.clone();
+    match blocking(move || match crate::installer::restore(&id)? {
+        crate::installer::RestoreOutcome::Moved => Ok(json!({ "ok": true, "relinked": false })),
+        crate::installer::RestoreOutcome::Relinked(path) => {
+            let mut state = store.0.lock().map_err(|e| e.to_string())?;
+            state.linked.insert(path.clone());
+            store::save(&state)?;
+            Ok(json!({ "ok": true, "relinked": true, "path": path }))
+        }
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn delete_trash_entry_api(
+    Extension(scope): Extension<Scope>,
+    AxPath(id): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:trash") {
+        return r;
+    }
+    let id = id.trim().to_string();
+    if id.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "id 不能为空");
+    }
+    match blocking(move || {
+        crate::installer::delete_trash_entry(&id)?;
+        Ok(json!({ "ok": true, "id": id }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn empty_trash_api(Extension(scope): Extension<Scope>) -> Response {
+    if let Err(r) = need(&scope, "write:trash") {
+        return r;
+    }
+    match blocking(move || {
+        crate::installer::empty_trash()?;
+        Ok(json!({ "ok": true }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+// ───────────────────── 标签 / 标签分组 / 字体分组 ─────────────────────
+
+async fn list_tags(State(hub): State<Arc<Hub>>, Extension(scope): Extension<Scope>) -> Response {
+    if let Err(r) = need(&scope, "read:curation") {
+        return r;
+    }
+    let state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    ok_json(json!({
+        "tags": state.tags.clone(),
+        "tagMeta": state.tag_meta.clone(),
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TagPatchBody {
+    /// 空串 = 清除颜色
+    #[serde(default)]
+    color: Option<String>,
+    /// 空串 = 移出分组
+    #[serde(default)]
+    group: Option<String>,
+    /// 改成新名字（与已有标签重名 = 合并）
+    #[serde(default)]
+    name: Option<String>,
+}
+
+async fn update_tag(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(name): AxPath<String>,
+    Json(body): Json<TagPatchBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    let old = name.trim().to_string();
+    if old.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "标签名不能为空");
+    }
+    // 先把「改成什么」全部校验完再动 state：中途 400 不能留下改了一半的内存状态。
+    let new_tag = match body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(new) => match store::validate_tag_name(new) {
+            Ok(n) => Some(n),
+            Err(e) => return fail(StatusCode::BAD_REQUEST, e),
+        },
+        None => None,
+    };
+    let apply_color: Option<Option<String>> = match body.color {
+        None => None,
+        Some(c) if c.trim().is_empty() => Some(None),
+        Some(c) => {
+            let c = c.trim().to_string();
+            if let Err(e) = store::validate_tag_color(&Some(c.clone())) {
+                return fail(StatusCode::BAD_REQUEST, e);
+            }
+            Some(Some(c))
+        }
+    };
+    let apply_group: Option<Option<String>> = match body.group {
+        None => None,
+        Some(g) if g.trim().is_empty() => Some(None),
+        Some(g) => match store::validate_group_name(&g) {
+            Ok(g) => Some(Some(g)),
+            Err(e) => return fail(StatusCode::BAD_REQUEST, e),
+        },
+    };
+
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let tag = match new_tag {
+        Some(new) => {
+            store::rename_tag_in_state(&mut state, &old, &new);
+            new
+        }
+        None => old,
+    };
+    if let Some(color) = apply_color {
+        match color {
+            None => {
+                if let Some(meta) = state.tag_meta.get_mut(&tag) {
+                    meta.color = None;
+                }
+            }
+            Some(c) => {
+                state.tag_meta.entry(tag.clone()).or_default().color = Some(c);
+            }
+        }
+    }
+    if let Some(group) = apply_group {
+        match group {
+            None => {
+                if let Some(meta) = state.tag_meta.get_mut(&tag) {
+                    meta.group = None;
+                }
+            }
+            Some(g) => {
+                if !state.tag_groups.iter().any(|x| x.name == g) {
+                    state.tag_groups.push(store::TagGroup {
+                        name: g.clone(),
+                        color: None,
+                    });
+                }
+                state.tag_meta.entry(tag.clone()).or_default().group = Some(g);
+            }
+        }
+    }
+    // 清空之后什么都不表达的条目直接丢掉（与 lib.rs 的 tag_set_color 同口径）
+    state
+        .tag_meta
+        .retain(|_, m| m.color.is_some() || m.group.is_some());
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "tag": tag }))
+}
+
+async fn delete_tag(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(name): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    let tag = name.trim().to_string();
+    if tag.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "标签名不能为空");
+    }
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let removed = store::delete_tag_in_state(&mut state, &tag);
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "tag": tag, "removed": removed }))
+}
+
+async fn list_tag_groups(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:curation") {
+        return r;
+    }
+    let state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    ok_json(json!({ "groups": state.tag_groups.clone() }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TagGroupBody {
+    name: String,
+    #[serde(default)]
+    color: Option<String>,
+}
+
+async fn create_tag_group(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<TagGroupBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    let name = match store::validate_group_name(&body.name) {
+        Ok(n) => n,
+        Err(e) => return fail(StatusCode::BAD_REQUEST, e),
+    };
+    let color = match body.color {
+        Some(c) if !c.trim().is_empty() => {
+            let c = c.trim().to_string();
+            if let Err(e) = store::validate_tag_color(&Some(c.clone())) {
+                return fail(StatusCode::BAD_REQUEST, e);
+            }
+            Some(c)
+        }
+        _ => None,
+    };
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    if state.tag_groups.iter().any(|g| g.name == name) {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("这个标签分组已经存在：{name}"),
+        );
+    }
+    state.tag_groups.push(store::TagGroup {
+        name: name.clone(),
+        color,
+    });
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "name": name }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TagGroupPatchBody {
+    /// 新名字（可选）
+    #[serde(default)]
+    name: Option<String>,
+    /// 空串 = 清除颜色
+    #[serde(default)]
+    color: Option<String>,
+}
+
+async fn update_tag_group(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(name): AxPath<String>,
+    Json(body): Json<TagGroupPatchBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    let old = name.trim().to_string();
+    if old.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "分组名不能为空");
+    }
+    let target = match body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(n) => match store::validate_group_name(n) {
+            Ok(n) => n,
+            Err(e) => return fail(StatusCode::BAD_REQUEST, e),
+        },
+        None => old.clone(),
+    };
+    // 颜色先校验完再动 state
+    let apply_color: Option<Option<String>> = match body.color {
+        None => None,
+        Some(c) if c.trim().is_empty() => Some(None),
+        Some(c) => {
+            let c = c.trim().to_string();
+            if let Err(e) = store::validate_tag_color(&Some(c.clone())) {
+                return fail(StatusCode::BAD_REQUEST, e);
+            }
+            Some(Some(c))
+        }
+    };
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    if target != old {
+        if state.tag_groups.iter().any(|g| g.name == target) {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                format!("已经有一个叫「{target}」的标签分组了"),
+            );
+        }
+        let Some(g) = state.tag_groups.iter_mut().find(|g| g.name == old) else {
+            return fail(StatusCode::BAD_REQUEST, format!("没有这个标签分组：{old}"));
+        };
+        g.name = target.clone();
+        for meta in state.tag_meta.values_mut() {
+            if meta.group.as_deref() == Some(old.as_str()) {
+                meta.group = Some(target.clone());
+            }
+        }
+    }
+    if let Some(color) = apply_color {
+        let Some(g) = state.tag_groups.iter_mut().find(|g| g.name == target) else {
+            return fail(StatusCode::BAD_REQUEST, format!("没有这个标签分组：{target}"));
+        };
+        g.color = color;
+    }
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "name": target }))
+}
+
+async fn delete_tag_group(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(name): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "分组名不能为空");
+    }
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let freed = store::ungroup_in_state(&mut state, &name);
+    state.tag_groups.retain(|g| g.name != name);
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "name": name, "freed": freed }))
+}
+
+async fn list_collections(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:curation") {
+        return r;
+    }
+    let state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    ok_json(json!({ "collections": state.collections.clone() }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CollectionBodyApi {
+    name: String,
+    #[serde(default)]
+    families: Vec<String>,
+}
+
+async fn create_collection(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<CollectionBodyApi>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    let name = match validate_collection_name(&body.name) {
+        Ok(n) => n,
+        Err(e) => return fail(StatusCode::BAD_REQUEST, e),
+    };
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    state.collections.insert(name.clone(), body.families.clone());
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "name": name, "families": body.families.len() }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CollectionPatchBody {
+    /// 新名字（可选）
+    #[serde(default)]
+    name: Option<String>,
+    /// 整份成员名单（可选；不传 = 不动成员）
+    #[serde(default)]
+    families: Option<Vec<String>>,
+}
+
+async fn update_collection(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(name): AxPath<String>,
+    Json(body): Json<CollectionPatchBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    let old = name.trim().to_string();
+    if old.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "分组名不能为空");
+    }
+    let target = match body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(n) => match validate_collection_name(n) {
+            Ok(n) => n,
+            Err(e) => return fail(StatusCode::BAD_REQUEST, e),
+        },
+        None => old.clone(),
+    };
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    // 先确认旧分组在，再做任何改动 —— 中途 400 不能把成员名单弄丢。
+    let Some(existing) = state.collections.get(&old).cloned() else {
+        return fail(StatusCode::BAD_REQUEST, format!("没有这个字体分组：{old}"));
+    };
+    if target != old && state.collections.contains_key(&target) {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("已经有一个叫「{target}」的字体分组了"),
+        );
+    }
+    let families = body.families.unwrap_or(existing);
+    let count = families.len();
+    state.collections.remove(&old);
+    state.collections.insert(target.clone(), families);
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "name": target, "families": count }))
+}
+
+async fn delete_collection(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(name): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:curation") {
+        return r;
+    }
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "分组名不能为空");
+    }
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    if state.collections.remove(&name).is_none() {
+        return fail(StatusCode::BAD_REQUEST, format!("没有这个字体分组：{name}"));
+    }
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "name": name }))
+}
+
+// ───────────────────────────── 在线库 ─────────────────────────────
+
+async fn online_catalogue_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:online") {
+        return r;
+    }
+    let force = query_bool(&q, "force");
+    let client = {
+        let state = match lock_state(&hub) {
+            Ok(s) => s,
+            Err(r) => return r,
+        };
+        crate::net::client(&state)
+    };
+    let client = match client {
+        Ok(c) => c,
+        Err(e) => return map_err(e),
+    };
+    match crate::online::fontsource::catalogue(&client, force).await {
+        Ok(cat) => ok_json(serde_json::to_value(&cat).unwrap_or(Value::Null)),
+        Err(e) => map_err(e),
+    }
+}
+
+async fn online_family_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(id): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:online") {
+        return r;
+    }
+    let id = id.trim().to_string();
+    if id.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "id 不能为空");
+    }
+    let client = {
+        let state = match lock_state(&hub) {
+            Ok(s) => s,
+            Err(r) => return r,
+        };
+        crate::net::client(&state)
+    };
+    let client = match client {
+        Ok(c) => c,
+        Err(e) => return map_err(e),
+    };
+    match crate::online::github::detail(&client, &id).await {
+        Ok(det) => ok_json(serde_json::to_value(&det).unwrap_or(Value::Null)),
+        Err(e) => map_err(e),
+    }
+}
+
+async fn online_hosts_api(Extension(scope): Extension<Scope>) -> Response {
+    if let Err(r) = need(&scope, "read:online") {
+        return r;
+    }
+    ok_json(json!({ "hosts": crate::net::ALLOWED_HOSTS }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OnlineDownloadBody {
+    id: String,
+    #[serde(default)]
+    files: Option<Vec<String>>,
+    #[serde(default)]
+    license: Option<bool>,
+}
+
+async fn online_download_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<OnlineDownloadBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:online") {
+        return r;
+    }
+    let id = body.id.trim().to_string();
+    if id.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "id 不能为空");
+    }
+    let Some(app) = crate::plugins::app_handle() else {
+        return fail(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "主程序句柄还没就绪，稍后重试",
+        );
+    };
+    let client = {
+        let state = match lock_state(&hub) {
+            Ok(s) => s,
+            Err(r) => return r,
+        };
+        crate::net::client(&state)
+    };
+    let client = match client {
+        Ok(c) => c,
+        Err(e) => return map_err(e),
+    };
+    match crate::online::github::download(
+        &app,
+        &client,
+        &id,
+        body.files.as_deref(),
+        body.license.unwrap_or(true),
+    )
+    .await
+    {
+        Ok(res) => ok_json(serde_json::to_value(&res).unwrap_or(Value::Null)),
+        Err(e) => map_err(e),
+    }
+}
+
+// ───────────────────────────── 设置 / 系统 ─────────────────────────────
+
+/// 允许原样回给客户端的 prefs 键。**白名单**，不是黑名单 ——
+/// `prefs` 里混着 `apiToken` 这类密钥，黑名单漏一个就是一次泄漏。
+const SAFE_PREF_KEYS: &[&str] = &[
+    "updateCheck",
+    "updateLastCheck",
+    "updateSkipped",
+    "apiEnabled",
+    "apiPort",
+    "apiDangerous",
+];
+
+async fn get_settings_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:settings") {
+        return r;
+    }
+    let state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let prefs_src = state.prefs.clone();
+    let mut prefs = serde_json::Map::new();
+    for key in SAFE_PREF_KEYS {
+        if let Some(v) = prefs_src.get(*key) {
+            prefs.insert((*key).to_string(), v.clone());
+        }
+    }
+    let kept = prefs.len();
+    let total = prefs_src.as_object().map(|o| o.len()).unwrap_or(0);
+    let cfg = hub.cfg.lock().map(|c| c.clone()).unwrap_or_default();
+    ok_json(json!({
+        "extraDirs": state.extra_dirs.clone(),
+        "watchEnabled": state.watch_enabled,
+        "autoActivateImports": state.auto_activate_imports,
+        "libraryDir": state.library_dir.clone(),
+        "libraryDirs": state.library_dirs.clone(),
+        "libraryDirEnabled": state.library_dir_enabled,
+        "affinityEnabled": state.affinity_enabled,
+        "affinityDeactivateOnQuit": state.affinity_deactivate_on_quit,
+        "onlineFontsEnabled": state.online_fonts_enabled,
+        "prefs": Value::Object(prefs),
+        // 被滤掉的键数（只报数量，不报名字 —— 名字本身就暴露「这里有个密钥」）
+        "prefsRedacted": total.saturating_sub(kept),
+        "api": {
+            "enabled": cfg.enabled,
+            "port": cfg.port,
+            "dangerous": cfg.dangerous,
+            "tokenName": scope.name,
+        },
+    }))
+}
+
+async fn put_settings_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<HashMap<String, Value>>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:settings") {
+        return r;
+    }
+    if body.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "请求体是空的：至少要带一个白名单里的设置键");
+    }
+    let mut unknown: Vec<String> = Vec::new();
+    let mut watch: Option<bool> = None;
+    let mut auto_imports: Option<bool> = None;
+    let mut affinity_quit: Option<bool> = None;
+    let mut online: Option<bool> = None;
+    let mut update_check: Option<bool> = None;
+    for (k, v) in &body {
+        match k.as_str() {
+            "watchEnabled" => match v.as_bool() {
+                Some(b) => watch = Some(b),
+                None => return fail(StatusCode::BAD_REQUEST, "watchEnabled 必须是 true / false"),
+            },
+            "autoActivateImports" => match v.as_bool() {
+                Some(b) => auto_imports = Some(b),
+                None => return fail(StatusCode::BAD_REQUEST, "autoActivateImports 必须是 true / false"),
+            },
+            "affinityDeactivateOnQuit" => match v.as_bool() {
+                Some(b) => affinity_quit = Some(b),
+                None => {
+                    return fail(
+                        StatusCode::BAD_REQUEST,
+                        "affinityDeactivateOnQuit 必须是 true / false",
+                    )
+                }
+            },
+            "onlineFontsEnabled" => match v.as_bool() {
+                Some(b) => online = Some(b),
+                None => return fail(StatusCode::BAD_REQUEST, "onlineFontsEnabled 必须是 true / false"),
+            },
+            "updateCheck" => match v.as_bool() {
+                Some(b) => update_check = Some(b),
+                None => return fail(StatusCode::BAD_REQUEST, "updateCheck 必须是 true / false"),
+            },
+            other => unknown.push(other.to_string()),
+        }
+    }
+    if !unknown.is_empty() {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "这些设置项不能通过本地 API 修改：{}。字体库地址涉及整套换库流程（旧库登记退场、业务数据搬迁），请用界面切换",
+                unknown.join("、")
+            ),
+        );
+    }
+    let mut changed: Vec<&str> = Vec::new();
+    let mut state = match lock_state(&hub) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    if let Some(b) = watch {
+        state.watch_enabled = b;
+        changed.push("watchEnabled");
+    }
+    if let Some(b) = auto_imports {
+        state.auto_activate_imports = b;
+        changed.push("autoActivateImports");
+    }
+    if let Some(b) = affinity_quit {
+        state.affinity_deactivate_on_quit = b;
+        changed.push("affinityDeactivateOnQuit");
+    }
+    if let Some(b) = online {
+        state.online_fonts_enabled = b;
+        changed.push("onlineFontsEnabled");
+    }
+    if let Some(b) = update_check {
+        if let Some(p) = state.prefs.as_object_mut() {
+            p.insert("updateCheck".into(), json!(b));
+            changed.push("updateCheck");
+        }
+    }
+    if let Err(e) = store::save(&state) {
+        return map_err(e);
+    }
+    ok_json(json!({ "ok": true, "updated": changed }))
+}
+
+async fn get_features_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:settings") {
+        return r;
+    }
+    let online = hub
+        .store
+        .0
+        .lock()
+        .map(|s| s.online_fonts_enabled)
+        .unwrap_or(false);
+    let install_kind = match crate::update::install_kind() {
+        crate::update::InstallKind::PerUser => "user",
+        crate::update::InstallKind::PerMachine => "system",
+        crate::update::InstallKind::Portable => "portable",
+    };
+    ok_json(json!({
+        "apiVersion": API_VERSION,
+        "features": {
+            "fonts": true,
+            "library": true,
+            "trash": true,
+            "tags": true,
+            "collections": true,
+            "snapshots": true,
+            "curation": true,
+            "online": online,
+            "plugins": true,
+            "runtimes": true,
+            "update": true,
+            "export": ["pack", "fonts", "folder", "cancel"],
+            "import": true,
+            "systemOpen": true,
+        },
+        "permissions": PERMS,
+        "installKind": install_kind,
+        "platform": std::env::consts::OS,
+    }))
+}
+
+async fn system_paths(State(hub): State<Arc<Hub>>, Extension(scope): Extension<Scope>) -> Response {
+    if let Err(r) = need(&scope, "read:settings") {
+        return r;
+    }
+    let (library, dirs) = {
+        let state = match lock_state(&hub) {
+            Ok(s) => s,
+            Err(r) => return r,
+        };
+        (
+            crate::scanner::effective_managed_dir(state.active_library_dir())
+                .to_string_lossy()
+                .into_owned(),
+            state.library_dirs.clone(),
+        )
+    };
+    ok_json(json!({
+        "dataRoot": store::data_root().to_string_lossy().into_owned(),
+        "library": library,
+        "libraryDirs": dirs,
+        "plugins": crate::plugins::plugins_dir().to_string_lossy().into_owned(),
+        "online": crate::online::online_dir().to_string_lossy().into_owned(),
+        "trash": store::trash_dir().to_string_lossy().into_owned(),
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemOpenBody {
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+}
+
+async fn system_open(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<SystemOpenBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "open:external") {
+        return r;
+    }
+    let Some(app) = crate::plugins::app_handle() else {
+        return fail(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "主程序句柄还没就绪，稍后重试",
+        );
+    };
+    let opener = tauri_plugin_opener::OpenerExt::opener(&app);
+
+    if let Some(url) = body.url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if !url.starts_with("https://") && !url.starts_with("http://") {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                format!("只允许 http(s) URL，拒绝：{url}"),
+            );
+        }
+        if url.chars().any(|c| c.is_control() || c.is_whitespace()) || url.chars().count() > 2048 {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "URL 里不能有空白 / 控制字符，且长度不超过 2048",
+            );
+        }
+        return match opener.open_url(url.to_string(), None::<&str>) {
+            Ok(()) => ok_json(json!({ "ok": true, "opened": "url" })),
+            Err(e) => map_err(e.to_string()),
+        };
+    }
+
+    let Some(path) = body.path.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "path 与 url 至少给一个（url 只接受 http(s)）",
+        );
+    };
+    let p = std::path::Path::new(path);
+    if !p.exists() {
+        return fail(StatusCode::BAD_REQUEST, format!("路径不存在：{path}"));
+    }
+    // 只允许「数据根 / 字体库（含库清单）内」的路径：不给插件当任意文件打开器。
+    let mut roots: Vec<std::path::PathBuf> = vec![store::data_root(), library_root(&hub)];
+    if let Ok(state) = hub.store.0.lock() {
+        roots.extend(
+            state
+                .library_dirs
+                .iter()
+                .map(|d| std::path::PathBuf::from(d.as_str())),
+        );
+    }
+    if !roots.iter().any(|r| path_under_dir(r, path)) {
+        return fail(
+            StatusCode::FORBIDDEN,
+            format!("「{path}」不在数据根或字体库里，不允许通过 API 打开"),
+        );
+    }
+    match opener.open_path(path.to_string(), None::<&str>) {
+        Ok(()) => ok_json(json!({ "ok": true, "opened": "path" })),
+        Err(e) => map_err(e.to_string()),
+    }
+}
+
+// ───────────────────────────── 插件 / 运行时 ─────────────────────────────
+
+async fn list_plugins_api(
+    Extension(scope): Extension<Scope>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:plugins") {
+        return r;
+    }
+    match blocking(move || {
+        let list = crate::plugins::list();
+        let total = list.len();
+        Ok(json!({ "total": total, "plugins": list }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnablePluginBody {
+    /// 不传 = true（路由名就是 enable；显式传 false 等于停用）
+    #[serde(default)]
+    enabled: Option<bool>,
+}
+
+async fn enable_plugin_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    AxPath(id): AxPath<String>,
+    Json(body): Json<EnablePluginBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:plugins") {
+        return r;
+    }
+    let id = id.trim().to_string();
+    if id.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "插件 id 不能为空");
+    }
+    let enabled = body.enabled.unwrap_or(true);
+    let store = hub.store.clone();
+    match blocking(move || {
+        if enabled {
+            crate::plugins::enable(&id).map(|_| ())?;
+        } else {
+            // 插件可能自己先退了：关开关不该报错，用户的本意就是「别再让它开」
+            let _ = crate::plugins::disable(&id);
+        }
+        crate::plugins::remember(&store, &id, enabled);
+        let state = store.0.lock().map_err(|e| e.to_string())?;
+        store::save_prefs(&state)?;
+        Ok(json!({ "ok": true, "id": id, "enabled": enabled }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallPluginBody {
+    path: String,
+}
+
+async fn install_plugin_api(
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<InstallPluginBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:plugins") {
+        return r;
+    }
+    let path = body.path.trim().to_string();
+    if path.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "path 不能为空");
+    }
+    if !path.to_ascii_lowercase().ends_with(".zip") {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "只接受插件 zip 包（.zip）；解压后的目录请放进插件目录后重扫",
+        );
+    }
+    if !std::path::Path::new(&path).is_file() {
+        return fail(StatusCode::BAD_REQUEST, format!("插件包不存在：{path}"));
+    }
+    match blocking(move || {
+        // 插件数据不可信：任何 panic 都换成错误返回
+        let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let (id, name, version) = crate::plugins::install_zip(std::path::Path::new(&path))?;
+            let restarted = crate::plugins::restart_if_running(&id);
+            Ok(json!({
+                "ok": true,
+                "id": id,
+                "name": name,
+                "version": version,
+                "restarted": restarted,
+            }))
+        }));
+        out.unwrap_or_else(|_| Err("安装插件包时出错了（已拦下，软件继续运行）；详情见日志".into()))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn list_runtimes_api(
+    Extension(scope): Extension<Scope>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:runtimes") {
+        return r;
+    }
+    match blocking(move || {
+        let list = crate::plugins::runtimes_status();
+        let total = list.len();
+        Ok(json!({ "total": total, "runtimes": list }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn download_runtime_api(
+    Extension(scope): Extension<Scope>,
+    AxPath(kind): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:runtimes") {
+        return r;
+    }
+    let kind = kind.trim().to_ascii_lowercase();
+    if kind != "python" && kind != "node" {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("未知运行时：{kind}（只能是 python / node）"),
+        );
+    }
+    let Some(app) = crate::plugins::app_handle() else {
+        return fail(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "主程序句柄还没就绪，稍后重试",
+        );
+    };
+    match blocking(move || {
+        // runtime_download 自己起下载线程，立即返回；进度走 runtime:progress 事件。
+        crate::plugins::runtime_download(app, &kind)?;
+        Ok(json!({ "ok": true, "kind": kind, "started": true }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn remove_runtime_api(
+    Extension(scope): Extension<Scope>,
+    AxPath(kind): AxPath<String>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:runtimes") {
+        return r;
+    }
+    let kind = kind.trim().to_ascii_lowercase();
+    if kind != "python" && kind != "node" {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("未知运行时：{kind}（只能是 python / node）"),
+        );
+    }
+    match blocking(move || {
+        crate::plugins::runtime_delete(&kind)?;
+        Ok(json!({ "ok": true, "kind": kind }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+// ───────────────────────────── 更新 ─────────────────────────────
+
+async fn check_update_api(
+    Extension(scope): Extension<Scope>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    if let Err(r) = need(&scope, "read:update") {
+        return r;
+    }
+    let force = query_bool(&q, "force");
+    match crate::update::check(force).await {
+        Ok(info) => ok_json(json!({
+            "ok": true,
+            "update": serde_json::to_value(&info).unwrap_or(Value::Null),
+        })),
+        Err(e) => map_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDownloadBody {
+    url: String,
+    name: String,
+    sha256: String,
+    #[serde(default)]
+    asset_id: u64,
+}
+
+async fn download_update_api(
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<UpdateDownloadBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:update") {
+        return r;
+    }
+    let url = body.url.trim().to_string();
+    let name = body.name.trim().to_string();
+    let sha = body.sha256.trim().to_ascii_lowercase();
+    if url.is_empty() || name.is_empty() || sha.is_empty() {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "url / name / sha256 都不能为空（没有 SHA-256 一律不下载）",
+        );
+    }
+    let Some(app) = crate::plugins::app_handle() else {
+        return fail(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "主程序句柄还没就绪，稍后重试",
+        );
+    };
+    let asset_id = body.asset_id;
+    match blocking(move || {
+        let path = crate::update::download_setup(&app, &url, &name, &sha, asset_id)?;
+        Ok(json!({ "ok": true, "path": path }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInstallBody {
+    path: String,
+    sha256: String,
+    #[serde(default)]
+    version: String,
+}
+
+async fn install_update_api(
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<UpdateInstallBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "write:update") {
+        return r;
+    }
+    let path = body.path.trim().to_string();
+    let sha = body.sha256.trim().to_ascii_lowercase();
+    if path.is_empty() || sha.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "path / sha256 都不能为空");
+    }
+    if !std::path::Path::new(&path).is_file() {
+        return fail(StatusCode::BAD_REQUEST, format!("安装包不存在：{path}"));
+    }
+    let Some(app) = crate::plugins::app_handle() else {
+        return fail(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "主程序句柄还没就绪，稍后重试",
+        );
+    };
+    let version = body.version;
+    match blocking(move || {
+        let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::update::install_setup(&app, &path, &sha, version.as_str())
+        }));
+        match out {
+            // 正常返回表示「已交给等待脚本」，程序会在约 1.2 秒后退出并静默安装。
+            Ok(Ok(())) => Ok(json!({ "ok": true, "restarting": true })),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err("安装出错（已拦下，软件继续运行）；详情见日志".into()),
+        }
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+// ───────────────────────────── 导出 ─────────────────────────────
+
+/// 导出源允许的两类位置：字体库里，或系统字体目录里。
+fn export_source_allowed(hub: &Hub, path: &str) -> bool {
+    if path_under_dir(&library_root(hub), path) {
+        return true;
+    }
+    crate::scanner::system_font_dirs()
+        .iter()
+        .any(|d| path_under_dir(d, path))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportFontsBody {
+    paths: Vec<String>,
+    dest_dir: String,
+}
+
+async fn export_fonts_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<ExportFontsBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "export") {
+        return r;
+    }
+    if body.paths.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "paths 不能为空");
+    }
+    let dest_dir = body.dest_dir.trim().to_string();
+    if !std::path::Path::new(&dest_dir).is_dir() {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("目标目录不存在：{dest_dir}"),
+        );
+    }
+    let bad: Vec<String> = body
+        .paths
+        .iter()
+        .filter(|p| !export_source_allowed(&hub, p.as_str()))
+        .cloned()
+        .collect();
+    if !bad.is_empty() {
+        return fail(
+            StatusCode::FORBIDDEN,
+            format!(
+                "只允许导出字体库或系统字体目录里的文件：{}",
+                bad.iter().take(3).cloned().collect::<Vec<_>>().join("、")
+            ),
+        );
+    }
+    let paths = body.paths;
+    match blocking(move || {
+        let dir = std::path::Path::new(&dest_dir);
+        let mut copied = 0usize;
+        for p in &paths {
+            let src = std::path::Path::new(p);
+            if !src.is_file() {
+                return Err(format!("不是字体文件：{p}"));
+            }
+            let name = src
+                .file_name()
+                .ok_or_else(|| format!("取不到文件名：{p}"))?;
+            std::fs::copy(src, dir.join(name)).map_err(|e| format!("复制失败 {p}：{e}"))?;
+            copied += 1;
+        }
+        Ok(json!({ "ok": true, "count": copied, "destDir": dest_dir }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportFolderBody {
+    font_path: String,
+    dest: String,
+    #[serde(default)]
+    family_paths: Vec<String>,
+}
+
+async fn export_folder_api(
+    State(hub): State<Arc<Hub>>,
+    Extension(scope): Extension<Scope>,
+    Json(body): Json<ExportFolderBody>,
+) -> Response {
+    if let Err(r) = need(&scope, "export") {
+        return r;
+    }
+    let font_path = body.font_path.trim().to_string();
+    let dest = body.dest.trim().to_string();
+    if font_path.is_empty() || dest.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "fontPath / dest 都不能为空");
+    }
+    if !std::path::Path::new(&font_path).is_file() {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("字体文件不存在：{font_path}"),
+        );
+    }
+    if !export_source_allowed(&hub, &font_path) {
+        return fail(
+            StatusCode::FORBIDDEN,
+            format!("「{font_path}」不在字体库或系统字体目录里，不允许导出"),
+        );
+    }
+    let family_paths = body.family_paths;
+    match blocking(move || {
+        let rep = crate::folder_export::export_folder(
+            std::path::Path::new(&font_path),
+            std::path::Path::new(&dest),
+            &family_paths,
+        )?;
+        Ok(json!({ "ok": true, "report": rep }))
+    })
+    .await
+    {
+        Ok(v) => ok_json(v),
+        Err(r) => r,
+    }
+}
+
+async fn cancel_export_api(Extension(scope): Extension<Scope>) -> Response {
+    if let Err(r) = need(&scope, "export") {
+        return r;
+    }
+    crate::library_pack::request_pack_cancel();
+    ok_json(json!({ "ok": true, "cancelled": true }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1579,12 +3713,15 @@ mod tests {
 
     #[test]
     fn every_route_is_gated() {
-        // 只需令牌、不需要额外权限的路由（目前只有探活）
-        const EXEMPT: &[(&str, &str)] = &[("GET", "/api/v1/health")];
+        // 只需令牌、不需要额外权限的路由（探活 + 接口目录）
+        const EXEMPT: &[(&str, &str)] = &[
+            ("GET", "/api/v1/health"),
+            ("GET", "/api/v1/routes"),
+        ];
 
         let routes = parse_routes(include_str!("api.rs"));
         assert!(
-            routes.len() >= 16,
+            routes.len() >= 40,
             "只解析到 {} 条路由，解析器大概失效了（源码写法变了？）",
             routes.len()
         );
@@ -1595,7 +3732,11 @@ mod tests {
 
         for (method, path) in routes {
             // 路径模板 → 一个具体路径，喂给 perm_for 判断
-            let concrete = path.replace("{name}", "x").replace("{id}", "1");
+            let concrete = path
+                .replace("{name}", "x")
+                .replace("{id}", "1")
+                .replace("{family}", "某字族")
+                .replace("{kind}", "python");
             let exempt = EXEMPT.iter().any(|(m, p)| *m == method && *p == path);
             match perm_for(&method, &concrete) {
                 Some(perm) => assert!(
@@ -1609,5 +3750,204 @@ mod tests {
                 ),
             }
         }
+    }
+
+    /// 2.5 新增路由的权限必须精确落在「那一条」上，不能被前缀规则吃掉。
+    ///
+    /// `/fonts/install` 撞的是 `POST if p.starts_with("/fonts/")`；
+    /// 顺序写反了它就会拿到 `write:fonts`（改系统字体表）而不是 `write:library`。
+    #[test]
+    fn new_route_perms_are_precise() {
+        // 字体：精确路由 vs 前缀
+        assert_eq!(perm_for("POST", "/api/v1/fonts/install"), Some("write:library"));
+        assert_eq!(perm_for("POST", "/api/v1/fonts/uninstall"), Some("write:library"));
+        assert_eq!(perm_for("POST", "/api/v1/fonts/apply"), Some("write:apply"));
+        assert_eq!(perm_for("POST", "/api/v1/fonts/activate"), Some("write:fonts"));
+        assert_eq!(perm_for("POST", "/api/v1/fonts/deactivate"), Some("write:fonts"));
+        assert_eq!(perm_for("GET", "/api/v1/fonts"), Some("read:fonts"));
+        assert_eq!(perm_for("GET", "/api/v1/fonts/families"), Some("read:fonts"));
+        assert_eq!(perm_for("GET", "/api/v1/fonts/思源黑体"), Some("read:fonts"));
+        assert_eq!(perm_for("GET", "/api/v1/fonts/思源黑体/license"), Some("read:fonts"));
+        assert_eq!(perm_for("GET", "/api/v1/fonts/思源黑体/coverage"), Some("read:fonts"));
+
+        // 字体库 / 回收站
+        assert_eq!(perm_for("GET", "/api/v1/library"), Some("read:library"));
+        assert_eq!(perm_for("POST", "/api/v1/library/dedupe"), Some("write:library"));
+        assert_eq!(perm_for("POST", "/api/v1/library/restore-deduped"), Some("write:library"));
+        assert_eq!(perm_for("GET", "/api/v1/trash"), Some("read:trash"));
+        assert_eq!(perm_for("POST", "/api/v1/trash/restore"), Some("write:trash"));
+        assert_eq!(perm_for("DELETE", "/api/v1/trash/abc"), Some("write:trash"));
+        assert_eq!(perm_for("DELETE", "/api/v1/trash"), Some("write:trash"));
+
+        // 标签 / 分组（整理数据 → curation 权限）
+        assert_eq!(perm_for("GET", "/api/v1/tags"), Some("read:curation"));
+        assert_eq!(perm_for("PUT", "/api/v1/tags/衬线"), Some("write:curation"));
+        assert_eq!(perm_for("DELETE", "/api/v1/tags/衬线"), Some("write:curation"));
+        assert_eq!(perm_for("GET", "/api/v1/tag-groups"), Some("read:curation"));
+        assert_eq!(perm_for("POST", "/api/v1/tag-groups"), Some("write:curation"));
+        assert_eq!(perm_for("PUT", "/api/v1/tag-groups/客户"), Some("write:curation"));
+        assert_eq!(perm_for("DELETE", "/api/v1/tag-groups/客户"), Some("write:curation"));
+        assert_eq!(perm_for("GET", "/api/v1/collections"), Some("read:curation"));
+        assert_eq!(perm_for("POST", "/api/v1/collections"), Some("write:curation"));
+        assert_eq!(perm_for("PUT", "/api/v1/collections/项目"), Some("write:curation"));
+        assert_eq!(perm_for("DELETE", "/api/v1/collections/项目"), Some("write:curation"));
+
+        // 在线库
+        assert_eq!(perm_for("GET", "/api/v1/online/catalogue"), Some("read:online"));
+        assert_eq!(perm_for("GET", "/api/v1/online/families/noto"), Some("read:online"));
+        assert_eq!(perm_for("GET", "/api/v1/online/hosts"), Some("read:online"));
+        assert_eq!(perm_for("POST", "/api/v1/online/download"), Some("write:online"));
+
+        // 设置 / 系统
+        assert_eq!(perm_for("GET", "/api/v1/settings"), Some("read:settings"));
+        assert_eq!(perm_for("PUT", "/api/v1/settings"), Some("write:settings"));
+        assert_eq!(perm_for("GET", "/api/v1/features"), Some("read:settings"));
+        assert_eq!(perm_for("GET", "/api/v1/system/paths"), Some("read:settings"));
+        assert_eq!(perm_for("POST", "/api/v1/system/open"), Some("open:external"));
+
+        // 插件 / 运行时
+        assert_eq!(perm_for("GET", "/api/v1/plugins"), Some("read:plugins"));
+        assert_eq!(perm_for("POST", "/api/v1/plugins/com.example.p/enable"), Some("write:plugins"));
+        assert_eq!(perm_for("POST", "/api/v1/plugins/install"), Some("write:plugins"));
+        assert_eq!(perm_for("GET", "/api/v1/runtimes"), Some("read:runtimes"));
+        assert_eq!(perm_for("POST", "/api/v1/runtimes/python/download"), Some("write:runtimes"));
+        assert_eq!(perm_for("DELETE", "/api/v1/runtimes/python"), Some("write:runtimes"));
+
+        // 更新 / 导出
+        assert_eq!(perm_for("GET", "/api/v1/update/check"), Some("read:update"));
+        assert_eq!(perm_for("POST", "/api/v1/update/download"), Some("write:update"));
+        assert_eq!(perm_for("POST", "/api/v1/update/install"), Some("write:update"));
+        assert_eq!(perm_for("POST", "/api/v1/export/fonts"), Some("export"));
+        assert_eq!(perm_for("POST", "/api/v1/export/folder"), Some("export"));
+        assert_eq!(perm_for("POST", "/api/v1/export/cancel"), Some("export"));
+
+        // 发现 / 探活：只需令牌
+        assert_eq!(perm_for("GET", "/api/v1/routes"), None);
+        assert_eq!(perm_for("GET", "/api/v1/health"), None);
+
+        // 所有新权限名都真的进了 PERMS（否则插件申请不到）
+        for perm in [
+            "read:library", "write:library",
+            "read:trash", "write:trash",
+            "read:online", "write:online",
+            "read:settings", "write:settings",
+            "read:plugins", "write:plugins",
+            "read:runtimes", "write:runtimes",
+            "read:update", "write:update",
+            "open:external",
+        ] {
+            assert!(PERMS.contains(&perm), "PERMS 少了 {perm}");
+        }
+    }
+
+    /// 2.5 追加的重大操作清单：写库 / 写回收站 / 写在线库 / 写设置 / 写插件 / 写运行时 / 更新。
+    #[test]
+    fn dangerous_perms_include_new_writes() {
+        for perm in [
+            "write:library",
+            "write:trash",
+            "write:online",
+            "write:plugins",
+            "write:runtimes",
+            "write:settings",
+            "write:update",
+        ] {
+            assert!(is_dangerous(perm), "{perm} 应该是重大操作");
+        }
+        for perm in [
+            "read:library",
+            "read:trash",
+            "read:online",
+            "read:settings",
+            "read:plugins",
+            "read:runtimes",
+            "read:update",
+            "open:external",
+        ] {
+            assert!(!is_dangerous(perm), "{perm} 不该被拦");
+        }
+    }
+
+    /// `/routes` 必须覆盖 `routes()` 里的**每一条**静态路由，不多不少。
+    ///
+    /// 直接读源码里的路由声明：新增端点忘了补说明表，测试会立刻变红。
+    #[test]
+    fn route_docs_cover_every_static_route() {
+        let parsed = parse_routes(include_str!("api.rs"));
+        let want: std::collections::BTreeSet<(String, String)> = parsed.into_iter().collect();
+        let got: std::collections::BTreeSet<(String, String)> = ROUTE_DOCS
+            .iter()
+            .map(|d| (d.method.to_string(), d.path.to_string()))
+            .collect();
+        assert_eq!(
+            got, want,
+            "ROUTE_DOCS 与 routes() 不一致：左边是接口目录、右边是实际注册的路由"
+        );
+        assert!(
+            !got.is_empty() && got.len() >= 40,
+            "/routes 只有 {} 条，明显没覆盖全",
+            got.len()
+        );
+    }
+
+    /// `/routes` 的每条记录都要带正确的权限与「是否重大操作」。
+    #[test]
+    fn routes_endpoint_matches_gate_table() {
+        let res = tauri::async_runtime::block_on(list_routes());
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = tauri::async_runtime::block_on(axum::body::to_bytes(res.into_body(), 64 * 1024))
+            .expect("读响应体失败");
+        let v: Value = serde_json::from_slice(&bytes).expect("响应不是 JSON");
+        let arr = v.get("routes").and_then(|r| r.as_array()).expect("缺 routes 数组");
+        assert_eq!(arr.len(), ROUTE_DOCS.len());
+
+        for item in arr {
+            let method = item.get("method").and_then(|x| x.as_str()).unwrap();
+            let path = item.get("path").and_then(|x| x.as_str()).unwrap();
+            let perm = perm_for(method, path);
+            assert_eq!(
+                item.get("perm").and_then(|x| x.as_str()),
+                perm,
+                "{method} {path} 的 perm 不对"
+            );
+            assert_eq!(
+                item.get("dangerous").and_then(|x| x.as_bool()),
+                Some(perm.map(is_dangerous).unwrap_or(false)),
+                "{method} {path} 的 dangerous 不对"
+            );
+            assert!(
+                item.get("summary").and_then(|x| x.as_str()).is_some_and(|s| !s.is_empty()),
+                "{method} {path} 缺 summary"
+            );
+        }
+
+        // /health 的 apiVersion / routeCount（不依赖全局 Hub：现造一个够用的）
+        let hub = Arc::new(Hub {
+            store: Store(std::sync::Arc::new(std::sync::Mutex::new(
+                crate::store::AppState::default(),
+            ))),
+            cfg: Mutex::new(Cfg::default()),
+            tokens: Mutex::new(HashMap::new()),
+            task: Mutex::new(None),
+            scan_lock: Mutex::new(false),
+        });
+        let res = axum::response::IntoResponse::into_response(
+            tauri::async_runtime::block_on(health(
+                State(hub),
+                Extension(Scope::full("test")),
+            )),
+        );
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = tauri::async_runtime::block_on(axum::body::to_bytes(res.into_body(), 64 * 1024))
+            .expect("读响应体失败");
+        let v: Value = serde_json::from_slice(&bytes).expect("响应不是 JSON");
+        assert_eq!(
+            v.get("apiVersion").and_then(|x| x.as_str()),
+            Some(API_VERSION)
+        );
+        assert_eq!(
+            v.get("routeCount").and_then(|x| x.as_u64()),
+            Some(ROUTE_DOCS.len() as u64)
+        );
     }
 }
