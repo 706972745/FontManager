@@ -11934,3 +11934,501 @@ body.tour-qb .qb-actions .qb-btn-text {
   flex: 1;
   padding: 0 4px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   控件归一（2026-11-24）
+   --------------------------------------------------------------------
+   目标不是「某个控件变好看」，而是**一屏之内所有控件长同一副骨架**。
+   收口前的分歧：高度 24 / 28 / 30 / 36 四档混着（同一行能差 8px）；
+   圆角 4 / 5 / 6 / 8 / 999 五种并存；边框 rgba(ink,.06)/.1/.12/.14 四种；
+   hover 底一块 e1 一块 e2，按下有的抬 1px、有的缩 .97、有的不动。
+
+   本段只统一「几何 + 材质 + 状态」三件事，**布局一行没碰**：
+     · 宽度 / flex / gap / 卡片结构 / 内部排版全部沿用原规则
+     · 普通 28、大 30、紧凑 24；圆角 6（紧凑 4）；字 11 / 500
+     · 底 e1、边 --ui-line；hover 底 e2 + 边 --ui-line-hover；active 底 e3
+     · focus-visible 2px --focus-ring；过渡只动 background / border-color / color
+
+   ⚠️ 颜色语义**照旧**：危险（trash-empty / conflict-btn-trash / snapshot-danger）、
+     标签到期（tag-expiry）、强调（set-btn-accent / tour-next / compare-armed）
+     各留各的色，这里只并几何与过渡。
+   ⚠️ `.seg`（设置页分段）与 `.view-pill` 的滑动定位（top/left/width/transform）
+     **不在本段**：前者 30px 槽是 2.7.3 的既有规格，后者是算出来的位移公式，
+     只并了圆角，几何一处未动。
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── ① 普通档 28：有框按钮 ──────────────────────────────────────────
+   gap 留在各类自己的规则里（图标 + 文字要按内容调），这里只并盒模型。 */
+.settings-data-btn,
+.snapshot-btn,
+.tour-btn,
+.set-btn,
+.sort-btn,
+.conflict-btn,
+.copyright-status-btn {
+  height: var(--ctl-h);
+  min-height: var(--ctl-h);
+  padding: 0 10px;
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius);
+  background: var(--ctl-bg);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+
+/* 库行里的「切换 / 复制 / 重置」：选择器必须带 `.settings-library-row button`
+   —— 原规则就是 (0,2,1)，少一节盖不住它的 padding 和 999 圆角。 */
+.settings-library-row button.settings-library-switch {
+  display: inline-flex;
+  align-items: center;
+  height: var(--ctl-h);
+  padding: 0 10px;
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius);
+  background: var(--ctl-bg);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+
+/* 标签选择器的入口：几何并入普通档，**虚线保留** —— 它是「空槽 / 待添加」，
+   画成实线就跟「已选标签」分不出来了。 */
+.tag-pick-btn {
+  height: var(--ctl-h);
+  padding: 0 10px;
+  border: 1px dashed var(--ctl-border);
+  border-radius: var(--ctl-radius);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+.tag-pick-btn:hover,
+.tag-pick-btn.open {
+  background: var(--ctl-bg-hover);
+  border-color: var(--ctl-border-hover);
+  color: var(--text-secondary);
+}
+
+/* 大控件档 30：启动失败页的两颗按钮 —— 整页只有这一处可点，
+   跟设置面板里的小按钮不是同一个使用距离，尺寸沿用原 30，只并圆角 / 令牌 / 过渡。 */
+.boot-error-btn {
+  height: var(--ctl-h-lg);
+  padding: 0 14px;
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius);
+  background: var(--ctl-bg);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+.boot-error-btn:hover {
+  background: var(--ctl-bg-hover);
+  border-color: var(--ctl-border-hover);
+}
+.boot-error-btn:active {
+  background: var(--ctl-bg-active);
+}
+
+/* hover：统一 e2 + --ui-line-hover。
+   带颜色语义的变体用 :not() 排除，否则会把这几个的彩边盖成灰边：
+   · snapshot-warn / snapshot-danger（快照的警告 / 危险）
+   · conflict-btn-trash（删除冲突文件）
+   · copyright-status-active（当前版权状态）
+   · tour-next（强调，见下） */
+.settings-data-btn:hover:not(:disabled),
+.snapshot-btn:hover:not(:disabled):not(.snapshot-warn):not(.snapshot-danger),
+.tour-btn:hover:not(.tour-next),
+.set-btn:hover,
+.sort-btn:hover,
+.sort-btn.sort-open,
+.conflict-btn:hover:not(:disabled):not(.conflict-btn-trash),
+.copyright-status-btn:hover:not(.copyright-status-active) {
+  background: var(--ctl-bg-hover);
+  border-color: var(--ctl-border-hover);
+  color: var(--text-primary);
+  /* 原 .settings-data-btn / .conflict-btn 的 hover 会抬 1px；
+     同一排里别的按钮不抬，视觉上就是「这块跳了一下」，一并压平。 */
+  transform: none;
+}
+/* 库行按钮的 hover 保留「切库」的强调色（原规则语义，不该被灰边盖掉） */
+.settings-library-row button.settings-library-switch:hover {
+  background: var(--ctl-bg-hover);
+  border-color: color-mix(in srgb, var(--accent-a) 45%, transparent);
+  color: var(--accent-a);
+}
+
+/* 按下：底再深一档（e3），同样不带位移 */
+.settings-data-btn:active:not(:disabled),
+.tour-btn:active,
+.set-btn:active,
+.sort-btn:active,
+.conflict-btn:active:not(:disabled),
+.copyright-status-btn:active {
+  background: var(--ctl-bg-active);
+  transform: none;
+}
+
+/* 强调色按钮：几何并入，颜色按「这一颗是主操作」保留。
+   `.set-btn-accent` 在旧段里只写了底色和文字色，这里补回强调态，
+   否则会被上面 ① 的 e1 底盖平。 */
+.set-btn-accent {
+  background: var(--e2);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.set-btn-accent:hover {
+  background: var(--e3);
+}
+.tour-btn.tour-next {
+  border-color: transparent;
+  background: var(--accent-gradient);
+  color: #fff;
+  font-weight: 600;
+}
+
+.conflict-btn-trash {
+  /* 上面的 .conflict-btn 分组会把底 / 边 / 字色拉回 e1 + 发丝边（同为 0,1,0，后写胜），
+     危险语义按原值钉回来 —— 它只参与几何与过渡。 */
+  background: color-mix(in srgb, var(--danger, #71717a) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger, #71717a) 55%, transparent);
+  color: var(--danger, #71717a);
+}
+.conflict-btn-trash:hover:not(:disabled) {
+  background: var(--danger, #71717a);
+  border-color: var(--danger, #71717a);
+  color: #fff;
+  transform: none;
+}
+
+/* 危险 / 标签色：只并几何与过渡，底色、边框色、文字色一律不动 */
+.trash-empty-btn {
+  height: var(--ctl-h);
+  padding: 0 12px;
+  border-radius: var(--ctl-radius);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  line-height: 1;
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+.trash-empty-btn:hover {
+  background: color-mix(in srgb, var(--error) 13%, transparent);
+  border-color: color-mix(in srgb, var(--error) 34%, transparent);
+}
+
+/* 标签 chip 上的到期按钮：它挤在 20px 高的 chip 里，撑到 28 会把 chip 顶变形，
+   所以只并圆角 / 字号 / 过渡，尺寸交给 chip。 */
+.tag-expiry-btn {
+  border-radius: var(--ctl-radius-sm);
+  font-size: var(--ctl-font);
+  transition: opacity var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+/* 按钮里的箭头是子元素，不是控件本体：只给它一条同款过渡 */
+.settings-btn-arrow {
+  opacity: 0.5;
+  transition: opacity var(--t-quick) var(--ease-std);
+}
+
+/* ─── ② 图标档 28×28 / padding 0 ─────────────────────────────────────── */
+.rescan-btn,
+.star-btn {
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  min-width: var(--ctl-h);
+  padding: 0;
+  border-radius: var(--ctl-radius);
+  transition: background var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std);
+}
+/* 带框的那一颗（star 是纯图标，不铺底也不描边） */
+.rescan-btn:not(.tb-action) {
+  border: 1px solid var(--ctl-border);
+  background: var(--ctl-bg);
+  color: var(--text-tertiary);
+}
+.rescan-btn:not(.tb-action):hover:not(:disabled) {
+  background: var(--ctl-bg-hover);
+  border-color: var(--ctl-border-hover);
+  color: var(--text-primary);
+}
+/* 标题栏变体保持 30×30：它与同排窗口按钮必须等高，28 会在那排里凹一块。
+   这里只把圆角并到 6（原 4），尺寸沿用 `.tb-action` 自己的 30。 */
+.rescan-btn.tb-action {
+  width: var(--ctl-h-lg);
+  height: var(--ctl-h-lg);
+  border-radius: var(--ctl-radius);
+}
+/* star 的选中色是语义（warning），基础色 / hover 色都不在这里改，只改几何 */
+.star-btn:hover {
+  background: var(--ctl-bg-hover);
+}
+
+/* 侧栏分区标题的折叠开关：`flex: 1` 的文字按钮，宽 28 会把标题压没。
+   所以只钉高度与内距（padding 0），宽度继续交给 flex。 */
+.sidebar-toggle {
+  height: var(--ctl-h);
+  padding: 0;
+  border-radius: var(--ctl-radius-sm);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+.sidebar-toggle:hover {
+  background: var(--ctl-bg-hover);
+}
+
+/* ─── ③ 紧凑档 24：条状工具按钮 ──────────────────────────────────────── */
+.qb-btn {
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  min-width: var(--ctl-h-sm);
+  padding: 0;
+  border-radius: var(--ctl-radius-sm);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  transition: background var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+/* 带文字的同类（`qb-btn qb-btn-text`）：宽度回到内容，别被上面的 24 钉死 */
+.qb-btn-text {
+  width: auto;
+  min-width: 0;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.tag-tool-btn {
+  height: var(--ctl-h-sm);
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--ctl-radius-sm);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+.tag-tool-btn:hover:not(.on) {
+  background: var(--ctl-bg-hover);
+  color: var(--text-secondary);
+}
+/* 选中态 = active 档：底 e3 + 发丝边，与分段控件的选中项同一个读法 */
+.tag-tool-btn.on {
+  background: var(--ctl-bg-active);
+  border-color: var(--ctl-border);
+  color: var(--text-primary);
+}
+
+.compare-btn {
+  height: var(--ctl-h-sm);
+  padding: 0 9px;
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius-sm);
+  background: var(--ctl-bg);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+/* picking / armed 两态自带蓝边与渐变，不能被 hover 的灰底盖掉 */
+.compare-btn:hover:not(.compare-picking):not(.compare-armed) {
+  background: var(--ctl-bg-hover);
+  border-color: var(--ctl-border-hover);
+  color: var(--text-primary);
+}
+.compare-btn:active:not(.compare-picking):not(.compare-armed) {
+  background: var(--ctl-bg-active);
+}
+
+/* ─── ④ 输入档 28：单元素 input ──────────────────────────────────────── */
+.settings-input,
+.settings-port-input,
+.copyright-expiry-input,
+.online-search-input,
+.hotkey-field {
+  height: var(--ctl-h);
+  padding: 0 10px;
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius);
+  background: var(--ctl-bg);
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  color: var(--text-primary);
+  outline: none;
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), color var(--t-quick) var(--ease-std);
+}
+/* 搜索框左右各留 30 给放大镜和清除按钮（沿用原横向内距，只压掉纵向） */
+.online-search-input {
+  padding: 0 30px;
+}
+/* 端口框：保留居中（与上面的地址牌对齐的原口径），宽度仍是 96 */
+.settings-port-input {
+  text-align: center;
+}
+/* 字符筛选框：一次只显示一个字，字号是**功能**不是排版（16px 才看得清字形），
+   所以只并盒子，字号显式保留 16。 */
+.filter-charinput {
+  height: var(--ctl-h);
+  padding: 0 6px;
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius);
+  background: var(--ctl-bg);
+  font-size: var(--fs-16);
+  color: var(--text-primary);
+  text-align: center;
+  outline: none;
+}
+
+/* 焦点：统一 2px 环，不再用各种模糊光晕（原来 3px / 5px 的 glow 各写各的）。
+   文本输入用 :focus（鼠标点进去也算焦点），按钮型的热键框用 :focus-visible。 */
+.settings-input:focus,
+.settings-port-input:focus,
+.copyright-expiry-input:focus,
+.online-search-input:focus,
+.filter-charinput:focus {
+  border-color: var(--focus-ring);
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+.hotkey-field:focus-visible {
+  border-color: var(--focus-ring);
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+.hotkey-field:hover {
+  border-color: var(--ctl-border-hover);
+  color: var(--text-primary);
+}
+
+/* ─── ⑤ 输入档 28：容器型（外层是框，内层才是真 input） ─────────────── */
+.tag-input,
+.collection-input {
+  height: var(--ctl-h);
+  min-height: var(--ctl-h);
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius);
+  background: var(--ctl-bg);
+  box-shadow: none;
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), box-shadow var(--t-quick) var(--ease-std);
+}
+.tag-input {
+  padding: 0 9px 0 12px;
+}
+/* 「新建字体库」：出现即聚焦，用焦点环的边色常亮表示「正在输入」，
+   不再糊一层 3px 光晕（那圈光晕在浅色主题下几乎看不见） */
+.collection-input {
+  padding: 0 11px;
+  border-color: var(--focus-ring);
+}
+.tag-input:focus-within {
+  border-color: var(--focus-ring);
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
+/* 命令面板的搜索头是「整条头 + 下边线」，不是 28px 小输入框 ——
+   钉高度会把首行顶乱，所以尺寸不动，只并边线色，聚焦时下边线转焦点色。 */
+.palette-input {
+  border-bottom-color: var(--ctl-border);
+  transition: border-color var(--t-quick) var(--ease-std);
+}
+.palette-input:focus-within {
+  border-bottom-color: var(--focus-ring);
+}
+
+/* ─── ⑥ 复选：一套 4px 圆角 + 发丝边 + 同款过渡 ──────────────────────── */
+.ctx-checkbox {
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius-sm);
+  background: var(--ctl-bg);
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), box-shadow var(--t-quick) var(--ease-std);
+}
+.ctx-item:hover .ctx-checkbox:not(.ctx-checked) {
+  border-color: var(--ctl-border-hover);
+}
+/* 勾上之后是实心强调块：`.ctx-checked` 与上面的基础规则同为 (0,1,0)、写在前面，
+   不重述就会被 e1 底 + 发丝边盖掉 —— 按原值钉回来。 */
+.ctx-checked {
+  background: var(--accent-gradient);
+  border-color: transparent;
+}
+/* 原生 checkbox：盒子交给浏览器（自绘反而难点），只并尺寸与行内字号 ——
+   设置面板正文本来就是 11，这里把残留的 13 收回来。 */
+.settings-check {
+  gap: 7px;
+  font-size: var(--ctl-font);
+  font-weight: 500;
+}
+.settings-check input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-a);
+}
+/* 语言菜单的勾选格：它是一枚图标位（grid），没有边框，只并色与过渡 */
+.lang-option-check {
+  width: 14px;
+  color: var(--accent-a);
+  transition: color var(--t-quick) var(--ease-std);
+}
+
+/* ─── ⑦ 视图切换：只并外壳几何，滑动指示器的定位公式一处未改 ──────────
+   `.view-pill` 的 top/bottom/left/width/transform 是由 3px 内衬 + 2px gap
+   算出来的（见该规则上方的推导），改内衬就得同步改公式 ——
+   这里 padding: 3px / gap: 2px 原样保留，只把 36px 高收到 28、5px 圆角并到 6。 */
+.view-toggle {
+  height: var(--ctl-h);
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--ctl-border);
+  border-radius: var(--ctl-radius);
+  background: var(--ctl-bg);
+  box-shadow: none;
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std);
+}
+.view-btn {
+  padding: 0 10px;
+  font-size: var(--ctl-font);
+  font-weight: 500;
+  transition: color var(--t-quick) var(--ease-std);
+}
+/* 指示器与按钮必须同一个圆角：比按钮更圆，切换时四角会露边（原注释的坑）。
+   两层同取紧凑档 4px，外层 6px − 3px 内衬正好收在视觉同心范围内。 */
+.view-toggle > *,
+.view-pill {
+  border-radius: var(--ctl-radius-sm);
+}
+
+/* ─── ⑧ 开关：PillToggle 是单一组件，结构不动 ──────────────────────────
+   34×19 的胶囊塞进 28px 行里靠外边距凑，行内垂直居中交给 flex；
+   过渡补到与控件同一组属性、同一时长，开关和按钮的「响应感」才一致。 */
+.pill-toggle {
+  align-self: center;
+  transition: background var(--t-quick) var(--ease-std),
+    border-color var(--t-quick) var(--ease-std), box-shadow var(--t-quick) var(--ease-std);
+}
+
+/* ─── ⑨ 自查口径（改这一段的后来人照着看） ─────────────────────────────
+   · 同一行两个按钮不等高 → 先看是否漏进上面的分组，再看是否有 :not() 把它排除了
+   · 输入框与按钮并排差 2px → ④⑤ 都是 28，差的那一侧一定是没被覆盖的旧规则
+   · `.seg` 是 30px 槽（2.7.3 定的），**不属于**控件档，别顺手改
+   · `.tag-expiry-btn` / `.sidebar-toggle` / `.palette-input` / `.filter-charinput`
+     是显式例外，原因写在各条规则上，别为了「凑齐 28」把它们拉平 */

@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.7.2-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.7.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -48,7 +48,7 @@ and MCP when you want your tools to join in.
 
 ## 🆕 What's new
 
-**2.7.2 — Every settings page now uses AssetManager's card layout: card head, hairline rows, unified spacing (general page included)**
+**2.7.4 — All controls now share one token set: buttons, inputs, checkboxes and segmented controls use the same heights, radii, borders, states and transitions**
 
 **2.6.0 — English installer/uninstaller on non-Chinese systems; the old NSIS fallback UI is gone; the About page now carries the “original shareholders” note and two sponsor QR codes**
 
@@ -996,7 +996,7 @@ The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.7.2-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.7.4-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -1025,7 +1025,7 @@ The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 
 ## 🆕 最近更新
 
-**2.7.2 —— 所有设置页统一成 AssetManager 卡片式布局：卡头、发丝线行距，通用页一并统一**
+**2.7.4 —— 所有控件统一一套令牌：按钮、输入框、复选框、分段控件共用高度、圆角、边框、状态与过渡**
 
 **2.6.0 —— 非中文系统的安装/卸载界面改用英文；移除 NSIS 备用 UI；关于页加入「原始股东」说明与两张赞助二维码**
 

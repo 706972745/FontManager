@@ -112,6 +112,33 @@
      宽度和偏移各一条，以后加规则只引令牌，不再手写像素。 */
   --focus-ring-w: 2px;
   --focus-ring-offset: 2px;
+
+  /* ─── 控件令牌（2026-11-24，控件归一） ───────────────────────────────────
+     按钮 / 输入框 / 开关 / 分段 / 复选框此前各写各的一套：高度 24 / 28 / 30 / 36
+     四档混着，圆角 4 / 5 / 6 / 8 / 999 五种，边框有的 rgba(ink,.06) 有的 .12，
+     hover 底一块 e1 一块 e2 —— 单独看都还行，并排就露馅（同一行两个按钮不等高、
+     输入框和按钮差 2px、圆角对不上）。
+
+     这里只立「几何 + 状态」十项，颜色全部**引用**既有层次令牌（e1/e2/e3、--ui-line），
+     所以浅色主题、减弱透明度主题会自动跟着换值，不需要各写一套。
+
+       --ctl-h / -lg / -sm   普通 28 / 大 30 / 紧凑 24
+       --ctl-radius(-sm)     6 / 紧凑 4
+       --ctl-font            11px（字重 500 写在 app.css 的分组规则里）
+       --ctl-bg(-hover/-active)  e1 / e2 / e3
+       --ctl-border(-hover)  --ui-line / --ui-line-hover
+     落地分组见 app.css 末尾「控件归一」段；.seg 的 30px 槽不在其列。 */
+  --ctl-h: 28px;
+  --ctl-h-lg: 30px;
+  --ctl-h-sm: 24px;
+  --ctl-radius: 6px;
+  --ctl-radius-sm: 4px;
+  --ctl-font: var(--fs-11);
+  --ctl-bg: var(--e1);
+  --ctl-bg-hover: var(--e2);
+  --ctl-bg-active: var(--e3);
+  --ctl-border: var(--ui-line);
+  --ctl-border-hover: var(--ui-line-hover);
 }
 
 :root[data-theme="light"] {
@@ -146,6 +173,21 @@
   --accent-glow: rgba(63, 63, 70, 0.38);
   --accent-glow-soft: rgba(63, 63, 70, 0.16);
   --focus-ring: var(--accent-a);
+
+  /* 控件令牌在浅色主题里再声明一遍：值全是 var() 引用（e1/e2/e3 + --ui-line），
+     本来就跟着主题走；显式重复是为了「这一档是两套主题的公共契约」——
+     以后真要在浅色下单独调控件底/边，改这里就够，不用去翻 app.css 的分组规则。 */
+  --ctl-h: 28px;
+  --ctl-h-lg: 30px;
+  --ctl-h-sm: 24px;
+  --ctl-radius: 6px;
+  --ctl-radius-sm: 4px;
+  --ctl-font: var(--fs-11);
+  --ctl-bg: var(--e1);
+  --ctl-bg-hover: var(--e2);
+  --ctl-bg-active: var(--e3);
+  --ctl-border: var(--ui-line);
+  --ctl-border-hover: var(--ui-line-hover);
 
   --success: #3f3f46;
   --warning: #3f3f46;

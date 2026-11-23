@@ -4,6 +4,15 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.4] — 2026-11-24
+
+### 变更
+
+- **控件统一**：按钮、输入框、复选框、分段控件共用一套控件令牌
+  （28/30/24 三档高度、6/4px 圆角、`--ui-line` 边框、11px/500 字阶、
+  `--t-quick` 过渡、统一 hover/active/focus/disabled 状态）；危险色与
+  紧凑快捷栏按钮保留各自语义。
+
 ## [2.7.3] — 2026-11-24
 
 ### 修复
