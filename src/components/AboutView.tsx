@@ -16,6 +16,10 @@ import { spring, springSnappy, springSoft, staggerDelay } from "../design/spring
 import { toast } from "../design/primitives/Toast";
 import { t as translate, useT, type TKey } from "../lib/i18n";
 import { APP_LICENSE, displayVersion } from "../lib/version";
+// 赞助二维码（640×640 PNG，白边已烘焙进图里）。用 ESM import 让 vite 带 hash 打包，
+// 不走 `public/` —— 与 AssetManager 关于页同一份成品、同一顺序（左支付宝、右微信）。
+import qrAlipay from "../assets/about/sponsor-alipay.png";
+import qrWechat from "../assets/about/sponsor-wechat.png";
 
 function GithubGlyph({ size = 16 }: { size?: number }) {
   return (
@@ -55,6 +59,12 @@ const LOCAL_LINKS: LinkItem[] = [
     // 插件用拼图图标，跟上面那张 GitHub 字形区分开（两张卡都是纯 GitHub 图标会看着像重复）
     icon: <Puzzle size={16} strokeWidth={1.5} />,
   },
+];
+
+/** 赞助二维码：左支付宝、右微信（顺序是 owner 定的，别调）。 */
+const QR_CODES: { src: string; key: TKey }[] = [
+  { src: qrAlipay, key: "about.stillEarly.alipay" },
+  { src: qrWechat, key: "about.stillEarly.wechat" },
 ];
 
 /** 一张链接卡。 */
@@ -152,6 +162,30 @@ export function AboutView() {
       </div>
       {/* 2026-11-14 用户定：不再写「从 ZFontManager 0.8.0 迭代而来」——这个软件已经和
           那个项目不是同一个东西。出处只保留在 LICENSE 的 0.8.0 版权声明里（GPL 要求）。 */}
+
+      {/* 赞助区（2026-11-23，照 AssetManager 同款）：文案一字不改（owner 手写），
+          标点（；——「」）照抄；两张二维码左支付宝、右微信，整块居中。 */}
+      <motion.section
+        className="about-sponsor"
+        aria-label={t("about.stillEarly.title")}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ ...springSoft, delay: 0.12 }}
+      >
+        <h2 className="about-sponsor-title">{t("about.stillEarly.title")}</h2>
+        <p className="about-sponsor-copy">{t("about.stillEarly.p1")}</p>
+        <p className="about-sponsor-copy">{t("about.stillEarly.p2")}</p>
+        <p className="about-sponsor-copy">{t("about.stillEarly.p3")}</p>
+        <p className="about-sponsor-note">{t("about.stillEarly.disclaimer")}</p>
+        <div className="about-sponsor-qr">
+          {QR_CODES.map((q) => (
+            <figure key={q.key} className="about-sponsor-card">
+              <img src={q.src} alt="" draggable={false} />
+              <figcaption className="about-sponsor-cap">{t(q.key)}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </motion.section>
     </motion.div>
   );
 }

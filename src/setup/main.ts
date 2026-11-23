@@ -15,11 +15,14 @@ import "./setup.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { normalizeInstallDir } from "../lib/installDir";
+import { applyStatic, detectLang, setLang, t as tr } from "./i18n";
 
 type Mode = "install" | "uninstall";
 
 interface SetupEnv {
   mode: Mode;
+  /** 系统语言（后端按 GetUserDefaultUILanguage 判定） */
+  lang: "zh" | "en";
   version: string;
   /** 用户这台机器上已安装的版本（没装就是 null） */
   installedVersion: string | null;
@@ -166,7 +169,7 @@ function startTicker(subSel: string, progSel: string) {
       return;
     }
     const s = Math.round((Date.now() - tickFrom) / 1000);
-    sub.textContent = s >= 20 ? `已用 ${s} 秒 · 正在写入，请勿关闭窗口` : `已用 ${s} 秒`;
+    sub.textContent = s >= 20 ? tr("install.elapsedWarn", { s }) : tr("install.elapsed", { s });
   }, 1000);
 }
 
@@ -181,6 +184,8 @@ function stopTicker() {
 async function boot() {
   env = await invoke<SetupEnv>("setup_env");
   mode = env.mode;
+  setLang(env.lang ?? detectLang());
+  applyStatic();
   body.classList.toggle("mode-install", mode === "install");
   body.classList.toggle("mode-uninstall", mode === "uninstall");
   $("#ver").textContent = env.installedVersion ?? env.version;
@@ -188,34 +193,37 @@ async function boot() {
   if (mode === "install") {
     targetDir = env.defaultDir;
     $("#mInstallDir").textContent = tail(env.defaultDir, 2);
-    $("#mNeeded").textContent = `约 ${mb(env.payloadBytes)}`;
-    $("#mDataDir").textContent = "<安装目录>\\data";
+    $("#mNeeded").textContent = tr("install.size", { size: mb(env.payloadBytes) });
+    $("#mDataDir").textContent = tr("install.dataDir");
     $("#iSub0").textContent = env.elevated
-      ? "预计 5 秒 · 当前已是管理员权限"
-      : "预计 5 秒 · 无需管理员权限";
+      ? tr("install.eta.admin")
+      : tr("install.eta.normal");
     $("#iStatus0").textContent = env.installedVersion
-      ? `检测到已安装 ${env.installedVersion} · 将直接覆盖升级`
-      : "准备就绪 · 即将开始安装";
+      ? tr("install.upgrade", { v: env.installedVersion })
+      : tr("install.ready");
     if (env.demo) {
       // 演练模式：把话说在前面，绝不让用户以为真装了
-      $("#iStatus0").textContent = "演练模式 · 当前没有可驱动的安装包";
-      $("#iSub0").textContent = "只走界面流程，不写注册表、不落文件";
+      $("#iStatus0").textContent = tr("install.demo");
+      $("#iSub0").textContent = tr("install.demoSub");
     }
     // 首屏就把"有实例没关"说出来，比等到点"安装"才弹窗从容（弹窗仍然要弹，
     // 因为在开始装之前必须确认一次）
     void invoke<RunningProc[]>("setup_running")
       .then((list) => {
         if (!list.length) return;
-        $("#iStatus0").textContent = "FontManager 正在运行 · 安装前会请你先关闭";
-        $("#iSub0").textContent = `检测到 ${list.length} 个正在运行的实例（不影响继续）`;
+        $("#iStatus0").textContent = tr("install.running");
+        $("#iSub0").textContent = tr("install.runningSub", { n: list.length });
       })
       .catch(() => {});
     goInstall(0);
   } else {
     targetDir = env.installDir ?? "";
-    $("#uInstallDir").textContent = tail(targetDir || "（未检测到安装）", 2);
+    $("#uInstallDir").textContent = tail(targetDir || tr("uninstall.notDetected"), 2);
     $("#uUsed").textContent = mb(env.appBytes);
-    $("#uDataDir").textContent = `${tail(env.dataDir, 2)}（${gb(env.dataBytes)}）`;
+    $("#uDataDir").textContent = tr("uninstall.data", {
+      path: tail(env.dataDir, 2),
+      size: gb(env.dataBytes),
+    });
     if (!env.installDir) {
       // 没装 / 注册表里没有：别让用户点一个注定失败的"卸载"
       $("#uWarn").style.display = "";
@@ -223,7 +231,7 @@ async function boot() {
       const btn = app.querySelector<HTMLButtonElement>("[data-act='uninstall']");
       if (btn) {
         btn.disabled = true;
-        btn.textContent = "未安装";
+        btn.textContent = tr("uninstall.notInstalled");
       }
     }
     goUninstall(0);
@@ -270,13 +278,13 @@ async function wireProgress() {
 /* ───────────────── 程序还在运行（2.1.7） ───────────────── */
 
 function openRunModal(count: number, kind: Mode) {
-  $("#runTitle").textContent = "FontManager 正在运行";
+  $("#runTitle").textContent = tr("run.title");
   $("#runBody").textContent =
     kind === "install"
-      ? `检测到 ${count} 个 FontManager 进程正在运行。安装需要替换程序文件，得先把它们关掉 —— 否则文件被占用，会出现「装完了版本还是旧的」。`
-      : `检测到 ${count} 个 FontManager 进程正在运行。卸载需要删除程序文件，得先把它们关掉 —— 否则文件删不掉，只能留到下次开机再清理。`;
+      ? tr("run.body.install", { n: count })
+      : tr("run.body.uninstall", { n: count });
   $("#runNote").textContent =
-    kind === "install" ? "关闭时，正在进行的操作会丢失。" : "关闭软件不会动你的字体库与设置。";
+    kind === "install" ? tr("run.note.install") : tr("run.note.uninstall");
   $("#runModal").hidden = false;
   app
     .querySelector<HTMLButtonElement>(".modal-acts [data-act='run-close']")
@@ -316,26 +324,25 @@ function finishInstall(p: Progress) {
     // 取消：退回欢迎屏，不留半装目录（目录清理由 Rust 做）
     goInstall(p.cancelled ? 0 : 2);
     if (!p.cancelled) {
-      $("#iStatus").textContent = p.failed ?? "安装失败";
+      $("#iStatus").textContent = p.failed ?? tr("install.failed");
       $("#iProg").style.width = "100%";
-      $("#iSub").textContent = "详细日志：%TEMP%\\FontManager-setup.log";
+      $("#iSub").textContent = tr("install.logPath");
       const acts = $("#iActs3");
       acts.innerHTML =
-        '<button class="btn btn-ghost" data-act="to-welcome">返回</button>' +
-        '<button class="btn btn-primary" data-act="install">重试</button>';
+        `<button class="btn btn-ghost" data-act="to-welcome">${tr("install.back")}</button>` +
+        `<button class="btn btn-primary" data-act="install">${tr("install.retry")}</button>`;
     }
     return;
   }
   const title = $("#iDoneTitle");
   const doneBody = $("#iDoneBody");
   if (env?.demo) {
-    title.textContent = "演练完成";
-    doneBody.textContent =
-      "界面流程已经走完，但这次没有写任何文件、也没有改注册表 —— 因为没有可驱动的安装包（--setup-exe 未传入）。";
+    title.textContent = tr("install.demoTitle");
+    doneBody.textContent = tr("install.demoBody");
     $("#iDoneChecks").style.display = "none";
   } else {
-    title.textContent = "安装完成";
-    doneBody.textContent = `FontManager ${env?.version ?? ""} 已安装。数据在安装目录的 data 文件夹，卸载时你可以决定是否保留。`;
+    title.textContent = tr("install.doneTitle");
+    doneBody.textContent = tr("install.doneBody", { v: env?.version ?? "" });
     $("#iDoneChecks").style.display = "";
   }
   goInstall(3);
@@ -349,8 +356,8 @@ async function startInstall(force = false) {
   goInstall(2);
   $("#iLog").innerHTML = "";
   $("#iProg").style.width = "0%";
-  $("#iStatus").textContent = "正在安装…";
-  $("#iSub").textContent = "已用 0 秒";
+  $("#iStatus").textContent = tr("install.installing");
+  $("#iSub").textContent = tr("install.elapsedZero");
   startTicker("#iSub", "#iProg");
   try {
     await invoke("setup_install", {
@@ -362,7 +369,7 @@ async function startInstall(force = false) {
   } catch (err) {
     finishInstall({
       percent: 100,
-      label: "安装失败",
+      label: tr("install.failed"),
       sub: String(err),
       log: "",
       done: true,
@@ -380,7 +387,7 @@ function finishUninstall(p: Progress) {
   if (p.failed) {
     $("#uStatus").textContent = p.failed;
     $("#uProg").style.width = "100%";
-    $("#uSub").textContent = "详细日志：%TEMP%\\FontManager-setup.log";
+    $("#uSub").textContent = tr("install.logPath");
     return;
   }
   if (p.cancelled) {
@@ -388,8 +395,8 @@ function finishUninstall(p: Progress) {
     return;
   }
   $("#uDoneBody").textContent = purgeData
-    ? "FontManager 已从这台电脑移除，你的数据与字体库也已全部删除。"
-    : `FontManager 已从这台电脑移除。你的数据保留在 ${env?.dataDir ?? ""}，重新安装会直接接上。`;
+    ? tr("uninstall.donePurged")
+    : tr("uninstall.doneKept", { path: env?.dataDir ?? "" });
   goUninstall(2);
 }
 
@@ -401,8 +408,8 @@ async function startUninstall(force = false) {
   $("#uLog").innerHTML = "";
   $("#uProg").style.width = "0%";
   startTicker("#uSub", "#uProg");
-  $("#uStatus").textContent = "正在移除…";
-  $("#uSub").textContent = "已用 0 秒";
+  $("#uStatus").textContent = tr("uninstall.removing");
+  $("#uSub").textContent = tr("install.elapsedZero");
   try {
     await invoke("setup_uninstall", {
       dir: targetDir,
@@ -412,7 +419,7 @@ async function startUninstall(force = false) {
   } catch (err) {
     finishUninstall({
       percent: 100,
-      label: "卸载失败",
+      label: tr("uninstall.failed"),
       sub: String(err),
       log: "",
       done: true,
@@ -434,7 +441,7 @@ async function pickDir() {
   $("#pathBox").textContent = dir;
   window.setTimeout(() => {
     const hint = $("#pathHint");
-    hint.textContent = "正在检查这个位置…";
+    hint.textContent = tr("install.checking");
     invoke<{ ok: boolean; hint: string }>("setup_check_dir", { dir })
       .then((r) => (hint.textContent = r.hint))
       .catch(() => (hint.textContent = ""));
@@ -473,7 +480,7 @@ function bind() {
         break;
       case "to-location":
         $("#pathBox").textContent = targetDir;
-        $("#mNeeded2").textContent = `约 ${mb(env?.payloadBytes ?? 0)}`;
+        $("#mNeeded2").textContent = tr("install.size", { size: mb(env?.payloadBytes ?? 0) });
         goInstall(1);
         invoke<{ ok: boolean; hint: string }>("setup_check_dir", { dir: targetDir })
           .then((r) => ($("#pathHint").textContent = r.hint))
@@ -516,9 +523,7 @@ function bind() {
         btns.forEach((b) => (b.disabled = false));
         if (left !== 0) {
           $("#runBody").textContent =
-            left > 0
-              ? `还有 ${left} 个 FontManager 进程没能关闭（可能以管理员身份运行）。请手动退出 FontManager 后再试。`
-              : "无法结束正在运行的 FontManager，请手动退出后再试。";
+            left > 0 ? tr("run.left", { n: left }) : tr("run.failed");
           return;
         }
         const retry = pendingRetry;
@@ -537,7 +542,7 @@ function bind() {
         {
           const c = app.querySelector<HTMLButtonElement>("[data-act='cancel-install']");
           if (c) {
-            c.textContent = "正在取消…";
+            c.textContent = tr("install.cancelling");
             c.disabled = true;
           }
         }
@@ -660,7 +665,7 @@ function showBootError(err: unknown) {
     "background:#fff;color:#b3261e;font:12px/1.55 ui-monospace,Consolas,monospace;" +
     "white-space:pre-wrap";
   d.textContent =
-    "安装界面启动失败：\n\n" +
+    tr("boot.failed") + "\n\n" +
     String((err as { stack?: string })?.stack ?? err) +
     "\n\n" +
     diag;

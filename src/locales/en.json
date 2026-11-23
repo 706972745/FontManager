@@ -1329,5 +1329,12 @@
   "boot.error.title": "The interface hit an error",
   "boot.error.body": "The error has been written to the log. Try Reload first; if it keeps happening, please send us the log.",
   "boot.error.retry": "Reload",
-  "boot.error.openLogs": "Open log folder"
+  "boot.error.openLogs": "Open log folder",
+  "about.stillEarly.title": "It's still early — just right.",
+  "about.stillEarly.p1": "I don't want to turn this software into a business, so there are no ads, no paid memberships, and no pop-ups nagging you to upgrade.",
+  "about.stillEarly.p2": "I'm only looking for a small group of people who are willing to believe in it once, while so few have used it yet. I call them the \"original shareholders\" — not because of shares, but because they were earlier than everyone else.",
+  "about.stillEarly.p3": "Every penny you sponsor stays here, turning into the next line of code, the next member of the software family.",
+  "about.stillEarly.disclaimer": "\"Original shareholder\" is only a name. It carries no equity, ownership, dividends or decision-making rights. This project is open source under GPL-3.0, and the code belongs to everyone who follows that licence. I keep my authorship, and I keep my promise that it stays open source.",
+  "about.stillEarly.alipay": "Alipay",
+  "about.stillEarly.wechat": "WeChat"
 }

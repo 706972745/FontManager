@@ -11691,3 +11691,78 @@ body.tour-qb .qb-actions .qb-btn-text {
 .toaster-main {
   top: var(--toast-safe-top, 112px);
 }
+
+/* ===== 关于 · 赞助区（「现在还早，刚好；」） =====
+   在两张链接卡下面，整块居中：标题 / 三段正文 / 弱化声明 / 两张二维码并排。
+   正文收在 640px 内（一行太长眼睛会跳行）；声明小一号 + 弱文字色，不许抢正文。
+   二维码图本身已带白边，卡片再留 padding + 浅描边/阴影。
+   深色下白卡不用纯白（#f7f7f4）并给一圈低透明度亮边 —— 纯白在暗底上像一块灯箱，
+   偏一点点灰既去掉刺眼感，又不影响二维码的黑白对比。 */
+.about-sponsor {
+  width: min(640px, 100%);
+  margin-top: 32px;
+  padding-top: 26px;
+  border-top: 1px solid var(--ui-line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.about-sponsor-title {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+.about-sponsor-copy {
+  max-width: 640px;
+  margin: 12px 0 0;
+  font-size: var(--fs-13);
+  line-height: 1.75;
+  color: var(--text-secondary);
+}
+.about-sponsor-note {
+  max-width: 640px;
+  margin: 18px 0 0;
+  /* 声明比正文小一号、颜色再弱一档：说明「原始股东」不是股权，但视觉上不该抢正文 */
+  font-size: var(--fs-11);
+  line-height: 1.7;
+  color: var(--text-tertiary);
+}
+.about-sponsor-qr {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+}
+.about-sponsor-card {
+  /* figure 自带 margin: 1em 40px，不清掉会左右各挤 40px，两张卡对不齐中线 */
+  margin: 0;
+  padding: 8px 8px 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border-radius: 12px;
+  background: #f7f7f4;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--shadow-mass);
+}
+.about-sponsor-card img {
+  width: 110px;
+  height: 110px;
+  display: block;
+  border-radius: 4px;
+}
+:root[data-theme="light"] .about-sponsor-card {
+  background: #ffffff;
+  border-color: rgba(20, 20, 18, 0.08);
+}
+.about-sponsor-cap {
+  /* 字在白卡上，不能用页面的 --text-*（那是给暗底的），单独给一档深灰 */
+  font-size: var(--fs-11);
+  letter-spacing: 0.02em;
+  color: #56564f;
+}

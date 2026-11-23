@@ -1320,5 +1320,12 @@
   "boot.error.title": "界面出了一点问题",
   "boot.error.body": "错误已经写进日志了。先点「重试」；如果反复出现，请把日志发给我们。",
   "boot.error.retry": "重试",
-  "boot.error.openLogs": "打开日志目录"
+  "boot.error.openLogs": "打开日志目录",
+  "about.stillEarly.title": "现在还早，刚好；",
+  "about.stillEarly.p1": "我不想把这个软件做成生意，所以不打广告、不卖会员、不弹窗逼你升级。",
+  "about.stillEarly.p2": "我只想找一小批人，在它还没被多少人用过的时候，愿意相信它一次。我把这些人叫做「原始股东」——不是因为股份，是因为他们比所有人都早。",
+  "about.stillEarly.p3": "你赞助的每一分钱都留在这里，变成下一行代码、软件家族的下一个成员。",
+  "about.stillEarly.disclaimer": "「原始股东」仅是一个称呼，不涉及任何股权、所有权、分红或决策权。本项目以 GPL-3.0 协议开源，代码属于每一位遵守该协议的人。我保留作者身份，也保留它继续开源的承诺。",
+  "about.stillEarly.alipay": "支付宝",
+  "about.stillEarly.wechat": "微信"
 }

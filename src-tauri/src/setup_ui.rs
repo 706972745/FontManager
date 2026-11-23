@@ -49,8 +49,21 @@ pub enum Mode {
     Uninstall,
 }
 
+/// 安装器 / 卸载器的界面语言。
+///
+/// 规则（owner 2026-11-23）：任何中文 → 中文，其余一律英文。系统语言由
+/// `GetUserDefaultUILanguage` 的主语言 ID 判定；`--ui-lang=zh|en` 只是 QA 用的
+/// 内部覆盖，不暴露在界面上。
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Lang {
+    Zh,
+    En,
+}
+
 struct Ctx {
     mode: Mode,
+    lang: Lang,
     /// 驱动真装的安装包；`None` = 演练模式（只走界面，不写盘）
     setup_exe: Option<PathBuf>,
     /// UI 被拉起来时的默认安装位置（`/D=` 或注册表里的旧位置）
@@ -76,6 +89,31 @@ fn ctx() -> &'static Ctx {
     CTX.get().expect("setup_ui::dispatch 没跑过就调了命令")
 }
 
+/// 系统 UI 语言：主语言 ID 0x04 = 中文（简/繁都算），其余一律英文。
+#[cfg(windows)]
+fn detect_lang() -> Lang {
+    // 0x0404 / 0x0804 / 0x0C04 / 0x1004 的主语言 ID 都是 0x04。
+    let id = unsafe { windows_sys::Win32::Globalization::GetUserDefaultUILanguage() };
+    if id & 0x3ff == 0x04 {
+        Lang::Zh
+    } else {
+        Lang::En
+    }
+}
+
+#[cfg(not(windows))]
+fn detect_lang() -> Lang {
+    Lang::En
+}
+
+/// 双语取词：只在界面路径里用（`log_line` 的内部调试日志保持中文，不进界面）。
+fn tr(zh: &str, en: &str) -> String {
+    match ctx().lang {
+        Lang::Zh => zh.to_string(),
+        Lang::En => en.to_string(),
+    }
+}
+
 /* ══════════════════════════ 入口 ══════════════════════════ */
 
 /// 扫描 `argv`：命中安装器/卸载器入口就接管进程并返回 true。
@@ -88,6 +126,7 @@ pub fn dispatch() -> bool {
     let mut mode = None;
     let mut setup_exe = None;
     let mut install_dir = None;
+    let mut lang_override = None;
 
     for a in &args {
         match a.as_str() {
@@ -98,6 +137,12 @@ pub fn dispatch() -> bool {
                     setup_exe = Some(PathBuf::from(v.trim_matches('"')));
                 } else if let Some(v) = a.strip_prefix("--install-dir=") {
                     install_dir = Some(PathBuf::from(v.trim_matches('"')));
+                } else if let Some(v) = a.strip_prefix("--ui-lang=") {
+                    lang_override = match v.trim().to_ascii_lowercase().as_str() {
+                        "zh" | "zh-cn" | "zh-tw" => Some(Lang::Zh),
+                        "en" | "en-us" | "en-gb" => Some(Lang::En),
+                        _ => None,
+                    };
                 }
             }
         }
@@ -120,6 +165,7 @@ pub fn dispatch() -> bool {
 
     let _ = CTX.set(Ctx {
         mode,
+        lang: lang_override.unwrap_or_else(detect_lang),
         setup_exe,
         install_dir,
         exit_code: std::sync::atomic::AtomicI32::new(0),
@@ -171,10 +217,11 @@ pub fn run_window(mut context: tauri::Context<tauri::Wry>) {
     context.config_mut().app.windows.clear();
 
     let mode = ctx().mode;
-    let title = if mode == Mode::Install {
-        "FontManager 安装程序"
-    } else {
-        "FontManager 卸载程序"
+    let title = match (mode, ctx().lang) {
+        (Mode::Install, Lang::Zh) => "FontManager 安装程序",
+        (Mode::Install, Lang::En) => "FontManager Setup",
+        (Mode::Uninstall, Lang::Zh) => "FontManager 卸载程序",
+        (Mode::Uninstall, Lang::En) => "FontManager Uninstall",
     };
 
     let app = tauri::Builder::default()
@@ -299,6 +346,7 @@ pub fn run_window(mut context: tauri::Context<tauri::Wry>) {
 #[serde(rename_all = "camelCase")]
 pub struct Env {
     mode: Mode,
+    lang: Lang,
     version: String,
     installed_version: Option<String>,
     default_dir: String,
@@ -342,6 +390,7 @@ fn setup_env() -> Env {
 
     Env {
         mode: c.mode,
+        lang: c.lang,
         version: env!("CARGO_PKG_VERSION").to_string(),
         installed_version: installed.as_ref().map(|i| i.version.clone()),
         install_dir: installed.as_ref().map(|i| i.dir.display().to_string()),
@@ -374,21 +423,21 @@ fn setup_check_dir(dir: String) -> serde_json::Value {
     let hint: String;
 
     if dir.trim().is_empty() {
-        return serde_json::json!({ "ok": false, "hint": "请选择一个目录" });
+        return serde_json::json!({ "ok": false, "hint": tr("请选择一个目录", "Choose a folder") });
     }
     // 盘符存不存在（目标是 C:\ 这种根目录时 parent 为空，直接用自己）
     let probe = if p.parent().is_some() { p.parent().unwrap().to_path_buf() } else { p.clone() };
     let free = free_space(&probe);
     if free == 0 {
         ok = false;
-        hint = "这个位置不存在或不可写".into();
+        hint = tr("这个位置不存在或不可写", "This location doesn't exist or isn't writable");
     } else if free < 80 * 1024 * 1024 {
         ok = false;
-        hint = format!("剩余空间只有 {}，不够安装", human(free));
+        hint = tr(&format!("剩余空间只有 {}，不够安装", human(free)), &format!("Only {} free — not enough to install", human(free)));
     } else if p.exists() && p.join("uninstall.exe").exists() {
-        hint = format!("已存在一份 FontManager · 将直接覆盖升级 · 剩余 {}", human(free));
+        hint = tr(&format!("已存在一份 FontManager · 将直接覆盖升级 · 剩余 {}", human(free)), &format!("FontManager is already here · it will be upgraded in place · {} free", human(free)));
     } else {
-        hint = format!("这个位置当前用户可写 · 剩余 {}", human(free));
+        hint = tr(&format!("这个位置当前用户可写 · 剩余 {}", human(free)), &format!("This location is writable · {} free", human(free)));
     }
     serde_json::json!({ "ok": ok, "hint": hint })
 }
@@ -513,7 +562,7 @@ fn setup_install(
     let force = force_close_running.unwrap_or(false);
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
-        let el = || format!("已用 {} 秒", started.elapsed().as_secs());
+        let el = || tr(&format!("已用 {} 秒", started.elapsed().as_secs()), &format!("{} s elapsed", started.elapsed().as_secs()));
 
         let existed = dir.exists();
         let setup_exe = ctx().setup_exe.clone();
@@ -539,10 +588,17 @@ fn setup_install(
                 return fail(
                     &handle,
                     "install",
-                    &format!(
-                        "还有 {} 个 FontManager 进程没能关闭（pid {}），请手动退出后再试",
-                        running.len(),
-                        running.iter().map(|p| p.pid.to_string()).collect::<Vec<_>>().join("、")
+                    &tr(
+                        &format!(
+                            "还有 {} 个 FontManager 进程没能关闭（pid {}），请手动退出后再试",
+                            running.len(),
+                            running.iter().map(|p| p.pid.to_string()).collect::<Vec<_>>().join("、")
+                        ),
+                        &format!(
+                            "{} FontManager process(es) are still running (pid {}); quit them and try again",
+                            running.len(),
+                            running.iter().map(|p| p.pid.to_string()).collect::<Vec<_>>().join(", ")
+                        ),
                     ),
                     existed,
                     &dir,
@@ -555,16 +611,16 @@ fn setup_install(
             &handle,
             Progress {
                 percent: 4,
-                label: "正在准备安装目录".into(),
+                label: tr("正在准备安装目录", "Preparing the install folder"),
                 sub: el(),
-                log: format!("目标目录 {}", dir.display()),
+                log: tr(&format!("目标目录 {}", dir.display()), &format!("Target folder {}", dir.display())),
                 done: false,
                 failed: None,
                 cancelled: false,
             },
         );
         if let Err(e) = std::fs::create_dir_all(&dir) {
-            return fail(&handle, "install", &format!("无法创建 {}：{e}", dir.display()), existed, &dir);
+            return fail(&handle, "install", &tr(&format!("无法创建 {}：{e}", dir.display()), &format!("Couldn't create {}: {e}", dir.display())), existed, &dir);
         }
 
         // ② 前面没有安装包可驱动 → 演练模式：走完界面，一个字节都不写
@@ -574,9 +630,9 @@ fn setup_install(
                 &handle,
                 Progress {
                     percent: 100,
-                    label: "演练完成".into(),
-                    sub: format!("共 {} 秒 · 未写入任何文件", started.elapsed().as_secs()),
-                    log: "演练模式：没有可驱动的安装包".into(),
+                    label: tr("演练完成", "Demo complete"),
+                    sub: tr(&format!("共 {} 秒 · 未写入任何文件", started.elapsed().as_secs()), &format!("{} s total · nothing written", started.elapsed().as_secs())),
+                    log: tr("演练模式：没有可驱动的安装包", "Demo mode: no installer to drive"),
                     done: true,
                     failed: None,
                     cancelled: false,
@@ -601,7 +657,7 @@ fn setup_install(
         let child = match spawn_silent(&exe, &args, Some(&format!("/D={}", dir.display()))) {
             Ok(c) => c,
             Err(e) => {
-                return fail(&handle, "install", &format!("无法启动安装引擎：{e}"), existed, &dir);
+                return fail(&handle, "install", &tr(&format!("无法启动安装引擎：{e}"), &format!("Couldn't start the install engine: {e}")), existed, &dir);
             }
         };
         if let Ok(mut slot) = ctx().child.lock() {
@@ -612,9 +668,9 @@ fn setup_install(
             &handle,
             Progress {
                 percent: 12,
-                label: "正在解压程序文件".into(),
+                label: tr("正在解压程序文件", "Extracting app files"),
                 sub: el(),
-                log: "安装引擎已启动（静默）".into(),
+                log: tr("安装引擎已启动（静默）", "Install engine started (silent)"),
                 done: false,
                 failed: None,
                 cancelled: false,
@@ -656,14 +712,14 @@ fn setup_install(
                     *slot = None;
                 }
                 log_line("[setup] 用户取消安装，开始回滚");
-                return fail(&handle, "install", "已取消安装", existed, &dir);
+                return fail(&handle, "install", &tr("已取消安装", "Install cancelled"), existed, &dir);
             }
 
             // 子进程句柄只在 ctx 里存一份（Child 不能克隆）：每拍借出来 try_wait 一下
             let status = {
                 let mut slot = match ctx().child.lock() {
                     Ok(s) => s,
-                    Err(_) => return fail(&handle, "install", "内部锁损坏", existed, &dir),
+                    Err(_) => return fail(&handle, "install", &tr("内部锁损坏", "Internal lock failure"), existed, &dir),
                 };
                 match slot.as_mut() {
                     Some(c) => match c.try_wait() {
@@ -672,7 +728,7 @@ fn setup_install(
                             return fail(
                                 &handle,
                                 "install",
-                                &format!("等待安装引擎失败：{e}"),
+                                &tr(&format!("等待安装引擎失败：{e}"), &format!("Couldn't wait for the install engine: {e}")),
                                 existed,
                                 &dir,
                             )
@@ -689,7 +745,7 @@ fn setup_install(
                     return fail(
                         &handle,
                         "install",
-                        &format!("安装引擎返回失败（退出码 {:?}）", status.code()),
+                        &tr(&format!("安装引擎返回失败（退出码 {:?}）", status.code()), &format!("Install engine failed (exit code {:?})", status.code())),
                         existed,
                         &dir,
                     );
@@ -705,9 +761,9 @@ fn setup_install(
                     &handle,
                     Progress {
                         percent: 62,
-                        label: "正在写入注册表与快捷方式".into(),
+                        label: tr("正在写入注册表与快捷方式", "Writing registry entries and shortcuts"),
                         sub: el(),
-                        log: "主程序已就位".into(),
+                        log: tr("主程序已就位", "App files are in place"),
                         done: false,
                         failed: None,
                         cancelled: false,
@@ -722,9 +778,9 @@ fn setup_install(
                     &handle,
                     Progress {
                         percent: 88,
-                        label: "正在登记卸载信息".into(),
+                        label: tr("正在登记卸载信息", "Registering the uninstaller"),
                         sub: el(),
-                        log: "卸载程序已生成".into(),
+                        log: tr("卸载程序已生成", "Uninstaller created"),
                         done: false,
                         failed: None,
                         cancelled: false,
@@ -740,7 +796,7 @@ fn setup_install(
                     }
                     *slot = None;
                 }
-                return fail(&handle, "install", "安装超时（180 秒）", existed, &dir);
+                return fail(&handle, "install", &tr("安装超时（180 秒）", "Install timed out (180 s)"), existed, &dir);
             }
             std::thread::sleep(std::time::Duration::from_millis(120));
         }
@@ -762,7 +818,7 @@ fn setup_install(
             return fail(
                 &handle,
                 "install",
-                &format!("安装后缺少文件：{}", missing.join("、")),
+                &tr(&format!("安装后缺少文件：{}", missing.join("、")), &format!("Missing files after install: {}", missing.join(", "))),
                 existed,
                 &dir,
             );
@@ -771,12 +827,12 @@ fn setup_install(
         let ver = installed
             .as_ref()
             .map(|i| i.version.clone())
-            .unwrap_or_else(|| "未知".into());
+            .unwrap_or_else(|| tr("未知", "Unknown"));
         if installed.is_none() {
             return fail(
                 &handle,
                 "install",
-                "注册表里没有卸载信息（Add/Remove Programs 里会找不到它）",
+                &tr("注册表里没有卸载信息（Add/Remove Programs 里会找不到它）", "No uninstall entry in the registry (it won't appear in Add/Remove Programs)"),
                 existed,
                 &dir,
             );
@@ -793,7 +849,7 @@ fn setup_install(
                 }
                 Some(lnk) => {
                     log_line(&format!("[setup] 桌面快捷方式未创建：{}", lnk.display()));
-                    " · 桌面快捷方式未能创建".to_string()
+                    tr(" · 桌面快捷方式未能创建", " · desktop shortcut could not be created")
                 }
                 None => String::new(),
             }
@@ -805,9 +861,9 @@ fn setup_install(
             &handle,
             Progress {
                 percent: 100,
-                label: "安装完成".into(),
-                sub: format!("共 {} 秒", started.elapsed().as_secs()),
-                log: format!("已登记 FontManager {ver}{lnk_note}"),
+                label: tr("安装完成", "Installation complete"),
+                sub: tr(&format!("共 {} 秒", started.elapsed().as_secs()), &format!("{} s total", started.elapsed().as_secs())),
+                log: tr(&format!("已登记 FontManager {ver}{lnk_note}"), &format!("Registered FontManager {ver}{lnk_note}")),
                 done: true,
                 failed: None,
                 cancelled: false,
@@ -836,7 +892,7 @@ fn setup_uninstall(
     let force = force_close_running.unwrap_or(false);
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
-        let el = || format!("已用 {} 秒", started.elapsed().as_secs());
+        let el = || tr(&format!("已用 {} 秒", started.elapsed().as_secs()), &format!("{} s elapsed", started.elapsed().as_secs()));
         let uninstaller = dir.join("uninstall.exe");
         log_line(&format!(
             "[setup] setup_uninstall 被调用 dir={} uninstaller={} purge={} force={}",
@@ -862,7 +918,7 @@ fn setup_uninstall(
             if !running.is_empty() {
                 return fail_uninstall(
                     &handle,
-                    &format!("还有 {} 个 FontManager 进程没能关闭，请手动退出后再试", running.len()),
+                    &tr(&format!("还有 {} 个 FontManager 进程没能关闭，请手动退出后再试", running.len()), &format!("{} FontManager process(es) are still running; quit them and try again", running.len())),
                     false,
                 );
             }
@@ -871,7 +927,7 @@ fn setup_uninstall(
         if !uninstaller.exists() {
             return fail_uninstall(
                 &handle,
-                &format!("找不到卸载程序：{}", uninstaller.display()),
+                &tr(&format!("找不到卸载程序：{}", uninstaller.display()), &format!("Couldn't find the uninstaller at {}", uninstaller.display())),
                 false,
             );
         }
@@ -918,16 +974,16 @@ fn setup_uninstall(
         ));
         let mut child = match spawn_silent(&uninstaller, &uargs, None) {
             Ok(c) => c,
-            Err(e) => return fail_uninstall(&handle, &format!("无法启动卸载引擎：{e}"), false),
+            Err(e) => return fail_uninstall(&handle, &tr(&format!("无法启动卸载引擎：{e}"), &format!("Couldn't start the uninstall engine: {e}")), false),
         };
 
         emit(
             &handle,
             Progress {
                 percent: 20,
-                label: "正在移除程序文件".into(),
+                label: tr("正在移除程序文件", "Removing app files"),
                 sub: el(),
-                log: "卸载引擎已启动（静默）".into(),
+                log: tr("卸载引擎已启动（静默）", "Uninstall engine started (silent)"),
                 done: false,
                 failed: None,
                 cancelled: false,
@@ -941,18 +997,18 @@ fn setup_uninstall(
                     if !status.success() {
                         return fail_uninstall(
                             &handle,
-                            &format!("卸载引擎返回失败（退出码 {:?}）", status.code()),
+                            &tr(&format!("卸载引擎返回失败（退出码 {:?}）", status.code()), &format!("Uninstall engine failed (exit code {:?})", status.code())),
                             false,
                         );
                     }
                     break;
                 }
                 Ok(None) => {}
-                Err(e) => return fail_uninstall(&handle, &format!("等待卸载引擎失败：{e}"), false),
+                Err(e) => return fail_uninstall(&handle, &tr(&format!("等待卸载引擎失败：{e}"), &format!("Couldn't wait for the uninstall engine: {e}")), false),
             }
             if std::time::Instant::now() > deadline {
                 let _ = child.kill();
-                return fail_uninstall(&handle, "卸载超时（180 秒）", false);
+                return fail_uninstall(&handle, &tr("卸载超时（180 秒）", "Uninstall timed out (180 s)"), false);
             }
             std::thread::sleep(std::time::Duration::from_millis(120));
         }
@@ -983,7 +1039,7 @@ fn setup_uninstall(
                     &handle,
                     Progress {
                         percent: 60 + (ticks / 12).min(35) as u8,
-                        label: "正在移除文件".into(),
+                        label: tr("正在移除文件", "Removing files"),
                         sub: el(),
                         log: String::new(),
                         done: false,
@@ -1008,7 +1064,7 @@ fn setup_uninstall(
                 .unwrap_or(0);
             return fail_uninstall(
                 &handle,
-                &format!("卸载未完成（90 秒后仍有残留：{leftover} 项）"),
+                &tr(&format!("卸载未完成（90 秒后仍有残留：{leftover} 项）"), &format!("Uninstall incomplete (still {leftover} item(s) after 90 s)")),
                 false,
             );
         }
@@ -1022,12 +1078,12 @@ fn setup_uninstall(
             &handle,
             Progress {
                 percent: 100,
-                label: if leftover > 0 { "卸载完成（有残留）".into() } else { "卸载完成".into() },
-                sub: format!("共 {} 秒", started.elapsed().as_secs()),
+                label: if leftover > 0 { tr("卸载完成（有残留）", "Uninstall complete (leftovers remain)") } else { tr("卸载完成", "Uninstall complete") },
+                sub: tr(&format!("共 {} 秒", started.elapsed().as_secs()), &format!("{} s total", started.elapsed().as_secs())),
                 log: if leftover > 0 {
-                    format!("还有 {leftover} 个文件未能删除（可能被占用）")
+                    tr(&format!("还有 {leftover} 个文件未能删除（可能被占用）"), &format!("{leftover} file(s) could not be removed (possibly in use)"))
                 } else {
-                    "程序文件已全部移除".into()
+                    tr("程序文件已全部移除", "All files removed")
                 },
                 done: true,
                 failed: None,
@@ -1197,8 +1253,8 @@ fn fail(app: &tauri::AppHandle, _kind: &str, why: &str, existed: bool, dir: &Pat
         app,
         Progress {
             percent: 100,
-            label: if cancelled { "已取消安装".into() } else { "安装未完成".into() },
-            sub: if cancelled { String::new() } else { "详细日志：%TEMP%\\FontManager-setup.log".into() },
+            label: if cancelled { tr("已取消安装", "Install cancelled") } else { tr("安装未完成", "Install did not finish") },
+            sub: if cancelled { String::new() } else { tr("详细日志：%TEMP%\\FontManager-setup.log", "Details: %TEMP%\\FontManager-setup.log") },
             log: why.to_string(),
             done: true,
             failed: if cancelled { None } else { Some(why.to_string()) },
@@ -1214,8 +1270,8 @@ fn fail_uninstall(app: &tauri::AppHandle, why: &str, cancelled: bool) {
         app,
         Progress {
             percent: 100,
-            label: "卸载未完成".into(),
-            sub: "详细日志：%TEMP%\\FontManager-setup.log".into(),
+            label: tr("卸载未完成", "Uninstall did not finish"),
+            sub: tr("详细日志：%TEMP%\\FontManager-setup.log", "Details: %TEMP%\\FontManager-setup.log"),
             log: why.to_string(),
             done: true,
             failed: Some(why.to_string()),
@@ -1227,19 +1283,19 @@ fn fail_uninstall(app: &tauri::AppHandle, why: &str, cancelled: bool) {
 /// 演练模式的时间线：所有文案与真实安装一致，唯独没有副作用。
 /// 这是唯一允许"编"进度的地方 —— 也必须编，否则用户看不到界面长什么样。
 fn demo_timeline(app: &tauri::AppHandle, kind: &str, el: &dyn Fn() -> String) {
-    let steps: [(u8, &str, &str); 4] = if kind == "install" {
+    let steps: [(u8, (&str, &str), (&str, &str)); 4] = if kind == "install" {
         [
-            (14, "正在解压程序文件", "正在写入 fontmanager.exe"),
-            (46, "正在写入程序文件", "正在写入 uninstall.exe"),
-            (72, "正在写注册表与快捷方式", "正在注册 .S-FontManager 文件关联"),
-            (92, "正在校验安装完整性", "正在登记卸载信息"),
+            (14, ("正在解压程序文件", "Extracting app files"), ("正在写入 fontmanager.exe", "Writing fontmanager.exe")),
+            (46, ("正在写入程序文件", "Writing the uninstaller"), ("正在写入 uninstall.exe", "Writing uninstall.exe")),
+            (72, ("正在写注册表与快捷方式", "Writing registry entries and shortcuts"), ("正在注册 .S-FontManager 文件关联", "Registering the .S-FontManager file association")),
+            (92, ("正在校验安装完整性", "Verifying the install"), ("正在登记卸载信息", "Registering the uninstaller")),
         ]
     } else {
         [
-            (18, "正在移除程序文件", "已移除 fontmanager.exe"),
-            (46, "正在清理快捷方式", "已删除开始菜单快捷方式"),
-            (72, "正在清理注册表", "已清理 卸载信息注册表项"),
-            (92, "正在完成清理", "已移除 文件关联 .S-FontManager"),
+            (18, ("正在移除程序文件", "Removing app files"), ("已移除 fontmanager.exe", "Removing fontmanager.exe")),
+            (46, ("正在清理快捷方式", "Cleaning up shortcuts"), ("已删除开始菜单快捷方式", "Removing Start menu entries and shortcuts")),
+            (72, ("正在清理注册表", "Cleaning the registry"), ("已清理 卸载信息注册表项", "Removing the uninstall registry entries")),
+            (92, ("正在完成清理", "Cleaning up leftover files"), ("已移除 文件关联 .S-FontManager", "Removing the .S-FontManager file association")),
         ]
     };
     for (pct, label, log) in steps {
@@ -1248,9 +1304,9 @@ fn demo_timeline(app: &tauri::AppHandle, kind: &str, el: &dyn Fn() -> String) {
             app,
             Progress {
                 percent: pct,
-                label: label.to_string(),
+                label: tr(label.0, label.1),
                 sub: el(),
-                log: log.to_string(),
+                log: tr(log.0, log.1),
                 done: false,
                 failed: None,
                 cancelled: false,
@@ -1555,7 +1611,7 @@ fn open_path(p: &str) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         let _ = p;
-        Err("暂不支持".into())
+        Err(tr("暂不支持", "Not supported"))
     }
 }
 

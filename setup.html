@@ -26,6 +26,22 @@
       // 发布版没有控制台：脚本挂了就是一块白板，用户只能截个白屏来报障。
       // 这里把第一个错误直接摊在页面上（只在出错时出现，正常路径零影响）。
       (function () {
+        // 启动期还没有 i18n 模块可用：按浏览器/系统语言先选一份最简文案。
+        // 规则与安装器一致：任何中文 → 中文，其余 → 英文。
+        var EN = !/^zh/i.test((navigator.language || "").toLowerCase());
+        var L = EN
+          ? {
+              boot: "The installer UI failed to start:",
+              res: "Failed to load resource: ",
+              unknown: "Unknown error",
+              promise: "Unhandled promise: ",
+            }
+          : {
+              boot: "安装界面启动失败：",
+              res: "资源加载失败：",
+              unknown: "未知错误",
+              promise: "Promise 未处理：",
+            };
         function show(msg) {
           // 界面已就绪后的运行期错误不覆盖界面（只在控制台留痕）
           if (document.body && document.body.classList.contains("ready")) {
@@ -39,22 +55,22 @@
             "position:fixed;inset:0;z-index:99999;margin:0;padding:18px;overflow:auto;" +
             "background:#fff;color:#b3261e;font:12px/1.55 ui-monospace,Consolas,monospace;" +
             "white-space:pre-wrap";
-          d.textContent = "安装界面启动失败：\n\n" + msg;
+          d.textContent = L.boot + "\n\n" + msg;
           (document.body || document.documentElement).appendChild(d);
         }
         window.addEventListener(
           "error",
           function (e) {
             if (e.target && e.target !== window && e.target.tagName) {
-              show("资源加载失败：" + (e.target.src || e.target.href));
+              show(L.res + (e.target.src || e.target.href));
               return;
             }
-            show((e.message || "未知错误") + "\n" + (e.filename || "") + ":" + (e.lineno || 0));
+            show((e.message || L.unknown) + "\n" + (e.filename || "") + ":" + (e.lineno || 0));
           },
           true,
         );
         window.addEventListener("unhandledrejection", function (e) {
-          show("Promise 未处理：" + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+          show(L.promise + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
         });
       })();
     </script>

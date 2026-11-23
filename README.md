@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.5.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.6.0-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -36,7 +36,7 @@ and MCP when you want your tools to join in.
 
 <br>
 
-<img src="main.png?v=2.5.5" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
+<img src="main.png?v=2.6.0" alt="FontManager — sidebar, toolbar, font cards with live previews" width="920" />
 
 <sub>The library: every family rendered live, one toggle away from any app's font menu.</sub>
 
@@ -47,6 +47,8 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.6.0 — English installer/uninstaller on non-Chinese systems; the old NSIS fallback UI is gone; the About page now carries the “original shareholders” note and two sponsor QR codes**
 
 **2.5.5 — All-new icon set; a redesigned in-app-style tray menu; the data-only export is now `.D-FontManager` (old `.L` files still open)**
 
@@ -240,7 +242,7 @@ one-click activation, and the iron rule that **your font files stay on your mach
 
 ### 2. Know the main window
 
-![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.5.5)
+![Main window: sidebar, toolbar, font cards with live previews](main.png?v=2.6.0)
 
 **Find your way first: the window has five regions**
 
@@ -392,7 +394,7 @@ the app icon (a gradient-blue wordmark on a white rounded card) · snapshot
 export **.S** · pack-with-fonts **.P** · data-only export **.D** · library
 folder **.F**:
 
-![FontManager icon set: white sheet + gradient-blue letter mark + handwritten caption](icons-overview.png?v=2.5.5)
+![FontManager icon set: white sheet + gradient-blue letter mark + handwritten caption](icons-overview.png?v=2.6.0)
 
 ### 11. Trash: regret is allowed
 
@@ -954,7 +956,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.5.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.6.0-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -971,7 +973,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 <br>
 
-<img src="main.png?v=2.5.5" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
+<img src="main.png?v=2.6.0" alt="FontManager —— 左侧栏、顶栏工具、字体卡片与实时预览" width="920" />
 
 <sub>字体库：每个字族都以自己的字形实时渲染，离任何应用的字体菜单都只差一个开关。</sub>
 
@@ -982,6 +984,8 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 ---
 
 ## 🆕 最近更新
+
+**2.6.0 —— 非中文系统的安装/卸载界面改用英文；移除 NSIS 备用 UI；关于页加入「原始股东」说明与两张赞助二维码**
 
 **2.5.5 —— 五枚图标整套换新；托盘右键菜单改成与界面同风格的自绘菜单；「仅数据」导出后缀改为 `.D-FontManager`（旧 `.L` 文件照常能打开）**
 
@@ -1154,7 +1158,7 @@ FontManager 在这个起点上加了什么：
 
 ### 2. 认识主界面
 
-![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.5.5)
+![主界面：左侧栏、顶栏工具、字体卡片与实时预览](main.png?v=2.6.0)
 
 **先认路：主界面分五个区**
 
@@ -1280,7 +1284,7 @@ FontManager 的专属文件都有**贴纸纸片风格图标**（撕纸毛边 + �
 软件图标（白色圆角底板上的渐变蓝字标）· 快照导出 **.S** · 导出-含字体 **.P** ·
 导出-仅数据 **.D** · 字体库文件夹 **.F**：
 
-![FontManager 图标方案：白纸片 + 渐变蓝字标 + 手写体小字](icons-overview.png?v=2.5.5)
+![FontManager 图标方案：白纸片 + 渐变蓝字标 + 手写体小字](icons-overview.png?v=2.6.0)
 
 ### 11. 回收站：删错了能后悔
 

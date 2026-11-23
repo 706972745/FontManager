@@ -356,6 +356,27 @@ export const SCENES = [
     viewport: "main",
     skip: "图标设计稿（1280×572），与运行时 UI 无关，不重拍",
   },
+  {
+    // 2.6.0 关于页赞助区：点侧栏「关于」→ 滚到底 → 拍「现在还早，刚好；」整块。
+    // 这是 owner 验收版式用的图，不进 README。
+    name: "about",
+    out: "about.png",
+    title: "关于页·赞助区（标题 / 三段正文 / 声明 / 两张二维码）",
+    viewport: "main",
+    async run(ctx) {
+      await ctx.clickNav("about");
+      await ctx.cdp.waitFor(".about-sponsor", { what: "关于页赞助区" });
+      await ctx.cdp.evaluate(
+        `(() => {
+           const el = document.querySelector('.about-sponsor');
+           if (el) el.scrollIntoView({ block: 'center' });
+           return true;
+         })()`,
+      );
+      await ctx.cdp.waitFrames({ frames: 2, settleMs: 420 });
+      return { note: "滚到赞助区" };
+    },
+  },
 ];
 
 /** 按名字找场景（支持逗号分隔的 --only） */

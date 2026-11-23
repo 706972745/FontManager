@@ -4,6 +4,32 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] — 2026-11-23
+
+> 这一版把「安装」这条路补完整：安装器 / 卸载器在非中文系统上一律说英文，
+> NSIS 回退面不再维护第二套自绘界面；关于页也开始讲清楚「原始股东」是什么、
+> 以及赞助的钱去了哪里。
+
+### 新增
+
+- **安装器 / 卸载器双语**：路线 C 的 4 屏安装界面与 3 屏卸载界面，按 Windows
+  显示语言自动选择中文或英文；任何中文系统显示中文，其余一律英文。按钮、进度、
+  失败原因、目录检查提示、两个确认弹窗都在同一套字典里，不会出现「界面英文、
+  报错中文」。`--ui-lang=zh|en` 只作为内部 QA 参数，不在界面暴露。
+- **关于页「现在还早，刚好；」**：标题、三段正文、一段弱化声明，以及左支付宝、
+  右微信两张二维码，整块居中排版；中英两套文案，其余语言回退英文。
+
+### 变更
+
+- **移除 NSIS 备用安装 / 卸载 UI**：自绘欢迎页、升级页、目录页 / 完成页文案覆盖、
+  `zfm-strings.nsh`、`sidebar.bmp`、`header.bmp`、`gen-nsis-images.py` 全部删除；
+  回退面只剩原生 MUI 页。`ZfmDirPre` / `ZfmDirLeave`（升级锁目录、写探针）、
+  `un.ConfirmShow` / `un.ConfirmLeave`（删除数据复选框）、完成页快捷方式结构与
+  `hooks.nsh` 白名单**一字未动**。
+- **安装器语言顺序改为英文优先兜底**：`languages` 从 `["SimpChinese","English"]`
+  改成 `["English","SimpChinese"]`，避免非中文系统错误地落到简体中文；中文系统
+  仍自动匹配简体中文。
+
 ## [2.5.5] — 2026-11-20
 
 > 两件事必须一起发，因为它们同时出现在资源管理器里：**五枚图标整套重画**（应用图标换成

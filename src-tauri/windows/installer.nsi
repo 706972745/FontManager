@@ -15,9 +15,8 @@
 ;         实例（许可页/完成页各一处），集合比会把「删掉一处但别处还留着」误判成「没删」。
 ;
 ; 本 fork 只改了「看得见的部分」：
-;   · 配色（白底 + 近黑字）、欢迎页/完成页的文案与留白、目录页的写探针、
-;     升级时跳过目录页、侧栏图换掉 NSIS 自带的蓝色 win.bmp；
-;   · 双语文案集中到 zfm-strings.nsh（在 MUI_LANGUAGE 之后 include）。
+;   · 配色（白底 + 近黑字）、目录页的写探针、升级时跳过目录页；
+;   · 仅存的行为性文案已内联在 MUI_LANGUAGE 之后；不再使用侧栏图。
 ;
 ; **一个字都没动**的东西（动了就是升级断链 / 数据被清）：
 ;   · .onInit 的 $INSTDIR 默认值与 RestorePreviousInstallLocation
@@ -29,8 +28,8 @@
 ;   · 所有 handlebars 循环（#each …，当前大多为空，但将来加资源/文件关联全靠它们注入；
 ;     删掉以后加资源会静默丢失，构建不报错）
 ;
-; 若某个界面文案突然变回英文长句 → 先来查 zfm-strings.nsh 里对 MUI_TEXT_* 的覆盖表，
-; MUI 大版本升级可能把这些私有 LangString 改名（不会崩，只是覆盖失效）。
+; 回退面已只剩原生 MUI 页面（欢迎 / 目录 / 安装 / 完成、卸载确认 / 卸载中）；
+; 自绘页与旧文案文件已移除，升级 Tauri 时不要再把那段带回来。
 ; ═══════════════════════════════════════════════════════════════════════════
 Unicode true
 ManifestDPIAware true
@@ -217,25 +216,6 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !define MUI_BGCOLOR   "FFFFFF"
 !define MUI_TEXTCOLOR "241C1C"
 
-; Installer sidebar image
-;
-; ⚠️ 这里不是「有就放、没有就算了」：MUI_WELCOMEFINISHPAGE_BITMAP 的默认值是
-; NSIS 自带的蓝色 win.bmp，而置空会编译期 !error（Pages/Welcome.nsh:26-28）——
-; 「不放图」的真实结果是「还是那张蓝的」，正是用户抱怨的东西。
-; 所以 sidebarImage 必须配（tauri.conf.json → bundle.windows.nsis.sidebarImage），
-; 图由 windows/gen-nsis-images.py 生成（纯标准库手写 BMP，可重新生成）。
-;
-; 内容 = **纯白 #ffffff + 右缘 1px #efefef 竖线，不画图标**：
-;   · 欢迎页改成自绘后，这张图只剩**完成页**在用；完成页右侧已经有「立即运行 /
-;     桌面快捷方式」两个交互，左边再放 logo 只是抢注意力；
-;   · FitControl 默认会把图**拉伸**到控件尺寸（164:314 不等于 MUI 内页 109u 的实际宽高比），
-;     纯白 + 1px 竖线拉伸后仍是纯白 + 略粗的竖线（可接受），图标会被拉变形；
-;   · 参考稿的美学就是「纯白 + 大量留白 + 1px 细线」，白底侧栏 = 「没有侧栏」。
-; 图标版留在 gen-nsis-images.py 的 build_sidebar_icon() 里（P2，默认不调用）。
-!if "${SIDEBARIMAGE}" != ""
-  !define MUI_WELCOMEFINISHPAGE_BITMAP "${SIDEBARIMAGE}"
-!endif
-
 ; Enable header images for installer and uninstaller pages when either image is configured.
 !if "${HEADERIMAGE}" != ""
   !define MUI_HEADERIMAGE
@@ -266,97 +246,9 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 ; Installer pages, must be ordered as they appear
 ;
 ; ══════════════════════════════════════════════════════════════════════════
-; 1. 欢迎页：**自绘**（Page custom），纯白满版 + 大标题 + 细线 + 页脚
-; ══════════════════════════════════════════════════════════════════════════
-; 为什么自绘而不是用 MUI 自带的欢迎页（Welcome 页宏）：
-;   MUI 的欢迎页把标题固定成 12pt bold、正文固定 130u 高、左侧**永远**留 109u 给位图，
-;   做不出参考稿那种「大标题 + 宽留白」的层次；而它的内部控件只能靠控件 ID 去改字体，
-;   MUI 一升级就断。自绘一个**内页**反而更稳：nsDialogs::Create 1018 建的是内页，
-;   外层窗口 / 按钮 / 品牌字仍然是 MUI 的，DPI 与键盘可达性都还在。
-;
-; DPI 三条纪律（125%/150% 全靠它们不错位）：
-;   · 坐标**一律用 u**，禁止像素 —— u 由系统 DPI 换算，像素不会；
-;   · 字号用 CreateFont 的「磅」，NSIS 内部按 GetDeviceCaps(LOGPIXELSY)/72 换算；
-;   · 字族用 $(^Font)（系统 UI 字体），写死「微软雅黑」会让英文系统 fallback 成难看的字。
-;
-; 已知风险（在验收里盯）：用户在辅助功能里把「文本大小」调到 125% 以上时 u 会整体变大，
-; 固定 u 高度的 Label 可能装不下两行正文 —— 靠「文案不超过 2 行 + 留够 12u 行高」来兜。
-; 跨显示器拖动不重排是 NSIS 不处理 WM_DPICHANGED，属已知限制，不修（修 = 自己写窗口过程）。
-Page custom ZfmWelcome
-Function ZfmWelcome
-  ; ── R-17：被动模式（/P）必须跳过本页 ──
-  ; Page custom **没有 PRE 回调**，只能在 create 里 Abort —— 这是 NSIS 的既定用法。
-  ; 不跳的后果：`setup.exe /P`（进度条模式的静默安装）会**卡在自绘页**上等人点下一步，
-  ; 而 /P 的设计前提恰好是「不需要人」。静默模式（/S）NSIS 本来就不建页面，不受影响。
-  ${If} $PassiveMode = 1
-    Abort
-  ${EndIf}
-
-  ; 外层 header 文案留空：大标题由下面自己的 Label 承担，否则同一句话会出现两遍
-  !insertmacro MUI_HEADER_TEXT "" ""
-
-  nsDialogs::Create 1018
-  Pop $0
-  ${If} $0 == error
-    Abort
-  ${EndIf}
-  ; 整页白底：给内页本身刷背景色，否则会露出系统灰
-  SetCtlColors $0 "0x241C1C" "0xFFFFFF"
-
-  ; ── 版面（2026-11-13 截图实测后重排的，别再凭感觉改）──
-  ;   · **负值坐标 = 距底**，按**内页实际高度**解析，不是固定像素。
-  ;     实测（100% DPI、客户端 662×416）：内页白区 y≈84..348px，1u ≈ 1.88px
-  ;     → 内页高约 **141u**（早先按「153u」估过一轮，负值落点算高了 12u，
-  ;      页脚因此压到正文上 —— 所以这两个数必须以实测为准）。
-  ;     -10u → 距顶 141-10 = 131u。换 DPI / 换 MUI 版本后要重新量一次。
-  ;   · 第一版按 200u 排版的教训：页脚 -22u 解析成距顶 131u，正好压在 124u 起的
-  ;     第二行正文上，屏幕上两行字叠在一起（截图实测两行渲染带都是 317..330）。
-  ;   · 布局表（自上而下，y 为距顶，h 为高）：
-  ;       大标题 26u/30u → 副标题 58u/14u → 细线 82u/1u → 正文 L1 92u/12u
-  ;       → 正文 L2 108u/12u（底边 120u）→ 页脚 -10u/10u（距顶约 131u，与 L2 盒子隔 11u）
-  ;   · 量出来的文字带（深像素行区间）：标题 140..169、副标题 193..208、
-  ;     L1 257..270、L2 287..300、页脚 332..341 —— L2 与页脚之间隔 32px，无重叠。
-  ;   · L2 底边与页脚之间至少 12u 间距是硬要求（截图量出来的最小不重叠距离）。
-
-  ; 大标题 22pt/700（#1c1c24）
-  ${NSD_CreateLabel} 16u 26u -32u 30u "$(ZM_WELCOME_TITLE)"
-  Pop $1
-  CreateFont $2 "$(^Font)" "22" "700"
-  SendMessage $1 ${WM_SETFONT} $2 0
-  SetCtlColors $1 "0x241C1C" "0xFFFFFF"
-
-  ; 副标题 10pt/400（#727279）
-  ${NSD_CreateLabel} 16u 58u -32u 14u "$(ZM_WELCOME_SUB)"
-  Pop $3
-  CreateFont $4 "$(^Font)" "10" "400"
-  SendMessage $3 ${WM_SETFONT} $4 0
-  SetCtlColors $3 "0x797272" "0xFFFFFF"
-
-  ; 1u 高的「细线」：NSIS 没有 Line 控件，用一个实心背景的静态控件模拟（标准做法）。
-  ; 用 u 不用 px —— 150% 下 1px 会消失，1u 会变成约 2px（可接受）。
-  ${NSD_CreateLabel} 16u 82u -32u 1u ""
-  Pop $5
-  SetCtlColors $5 "0xEFEFEF" "0xEFEFEF"
-
-  ; 正文两行：拆成两个 Label，不用 $\r$\n —— 不同 DPI 下 $\r$\n 的折行位置不可控
-  ${NSD_CreateLabel} 16u 92u -32u 12u "$(ZM_WELCOME_L1)"
-  Pop $6
-  SetCtlColors $6 "0x797272" "0xFFFFFF"
-  ${NSD_CreateLabel} 16u 108u -32u 12u "$(ZM_WELCOME_L2)"
-  Pop $7
-  SetCtlColors $7 "0x797272" "0xFFFFFF"
-
-  ; 页脚小字（#9b9ba0）：y 用负值 = 距底（见上面版面表里的实测说明）
-  ${NSD_CreateLabel} 16u -10u -32u 10u "$(ZM_FOOT)"
-  Pop $8
-  SetCtlColors $8 "0xA09B9B" "0xFFFFFF"
-
-  nsDialogs::Show
-FunctionEnd
-;
-; 注意：这里**没有** MUI_WELCOMEPAGE_TITLE / _TEXT 的 define 了 —— 欢迎页自绘后它们
-; 不再被使用；留着只会让人误以为改那两行就能改文案（实际显示的是上面的 Label）。
-; MUI_WELCOMEFINISHPAGE_BITMAP 仍然必须配：完成页还在用它（见上面 SIDEBARIMAGE 段）。
+; 1. 欢迎页（原生 MUI；路线 C 下 .onInit 已 Quit，不显示）
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
+!insertmacro MUI_PAGE_WELCOME
 
 ; 2. License Page (if defined)
 !if "${LICENSE}" != ""
@@ -370,290 +262,10 @@ FunctionEnd
   !insertmacro MULTIUSER_PAGE_INSTALLMODE
 !endif
 
-; 4. Custom page to ask user if he wants to reinstall/uninstall
-;    only if a previous installation was detected
-Var ReinstallPageCheck
-Page custom PageReinstall PageLeaveReinstall
-Function PageReinstall
-  ; Uninstall previous WiX installation if exists.
-  ;
-  ; A WiX installer stores the installation info in registry
-  ; using a UUID and so we have to loop through all keys under
-  ; `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`
-  ; and check if `DisplayName` and `Publisher` keys match ${PRODUCTNAME} and ${MANUFACTURER}
-  ;
-  ; This has a potential issue that there maybe another installation that matches
-  ; our ${PRODUCTNAME} and ${MANUFACTURER} but wasn't installed by our WiX installer,
-  ; however, this should be fine since the user will have to confirm the uninstallation
-  ; and they can chose to abort it if doesn't make sense.
-  StrCpy $0 0
-  wix_loop:
-    EnumRegKey $1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
-    StrCmp $1 "" wix_loop_done ; Exit loop if there is no more keys to loop on
-    IntOp $0 $0 + 1
-    ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
-    ReadRegStr $R1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "Publisher"
-    StrCmp "$R0$R1" "${PRODUCTNAME}${MANUFACTURER}" 0 wix_loop
-    ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "UninstallString"
-    ${StrCase} $R1 $R0 "L"
-    ${StrLoc} $R0 $R1 "msiexec" ">"
-    StrCmp $R0 0 0 wix_loop_done
-    StrCpy $WixMode 1
-    StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
-    Goto compare_version
-  wix_loop_done:
-
-  ; Check if there is an existing installation, if not, abort the reinstall page
-  ReadRegStr $R0 SHCTX "${UNINSTKEY}" ""
-  ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
-  ${IfThen} "$R0$R1" == "" ${|} Abort ${|}
-
-  ; Compare this installar version with the existing installation
-  ; and modify the messages presented to the user accordingly
-  compare_version:
-  ;
-  ; ★ R-18：下面三组 $R1/$R2/$R3 的赋值顺序就是「第几个 radio = 什么行为」的**唯一**定义，
-  ;   PageLeaveReinstall 完全依赖它。逐条对照基线，不要「顺手整理」成看起来对称的写法：
-  ;     同版本：R2(addOrReinstall) 进第 1 个 radio，R3(uninstallApp) 进第 2 个
-  ;     升级　：R2(uninstallBeforeInstalling) 进第 1 个 —— 注意这里第 1 个**是卸载**
-  ;     降级　：同上，且 downgrades 关闭时第 2 个 radio 被禁用
-  ;   「推荐」这一行在升级场景里是 R3(dontUninstall)，进的是第 2 个 radio。
-  StrCpy $R4 "$(older)"
-  ${If} $WixMode = 1
-    ReadRegStr $R0 HKLM "$R6" "DisplayVersion"
-  ${Else}
-    ReadRegStr $R0 SHCTX "${UNINSTKEY}" "DisplayVersion"
-  ${EndIf}
-  ${IfThen} $R0 == "" ${|} StrCpy $R4 "$(unknown)" ${|}
-
-  nsis_tauri_utils::SemverCompare "${VERSION}" $R0
-  Pop $R0
-  ; Reinstalling the same version
-  ${If} $R0 = 0
-    StrCpy $R1 "$(alreadyInstalledLong)"
-    StrCpy $R2 "$(addOrReinstall)"
-    StrCpy $R3 "$(uninstallApp)"
-    !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(chooseMaintenanceOption)"
-  ; Upgrading
-  ${ElseIf} $R0 = 1
-    StrCpy $R1 "$(olderOrUnknownVersionInstalled)"
-    StrCpy $R2 "$(uninstallBeforeInstalling)"
-    StrCpy $R3 "$(dontUninstall)"
-    ; ★ 2.1.5 一行默认值修正（不是语义变更）：默认勾选**第 2 个** radio。
-    ;   $R3 = dontUninstall = 「直接覆盖安装（推荐）」。不改的话默认停在第 1 个
-    ;   （uninstallBeforeInstalling = 先卸载再安装）上，用户直接点下一步就走了卸载分支，
-    ;   卸载成功但安装失败 = 这台机器上没软件了。
-    ;   ⚠️ 这里只写 $ReinstallPageCheck 的**初值**；上面 $R1/$R2/$R3 的映射与
-    ;   PageLeaveReinstall 的分支逻辑一个字节都不许动（R-18 红线）。
-    ;
-    ;   ★★ 这个守卫必须写 `= 0`（数值比较），**不能**写 `== 0`（字符串比较）。
-    ;   LogicLib 的语义（Include\LogicLib.nsh）：
-    ;     `==` → StrCmp（字符串比较）；`=` → IntCmp（数值比较，空串按 0）
-    ;   而 `Var ReinstallPageCheck` 的初值是**空串**：
-    ;     StrCmp("", "0") 恒假 → 守卫从不触发 → 默认永远停在第 1 个 radio；
-    ;     IntCmp("", 0) 成立 → 空串算 0 → 守卫按预期触发。
-    ;   用户点过 radio 之后值是 "1"/"2"，IntCmp("1",0) 为假，返回上一页时的选择原样保留
-    ;   （PageReinstallUpdateSelection 只在点过 radio 之后才写 1/2）。
-    ;   教训一句话：**判「变量还没被赋值」必须用 `=`，用 `== 0` 永远不成立。**
-    ${If} $ReinstallPageCheck = 0
-      StrCpy $ReinstallPageCheck 2
-    ${EndIf}
-    !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(choowHowToInstall)"
-  ; Downgrading
-  ${ElseIf} $R0 = -1
-    StrCpy $R1 "$(newerVersionInstalled)"
-    StrCpy $R2 "$(uninstallBeforeInstalling)"
-    !if "${ALLOWDOWNGRADES}" == "true"
-      StrCpy $R3 "$(dontUninstall)"
-      ; 同上：默认停在第 2 个（= 直接覆盖安装）。只改初值，不动 R-18 映射。
-      ; 守卫同样是 `= 0`（数值），理由见上面那段 LogicLib 说明。
-      ${If} $ReinstallPageCheck = 0
-        StrCpy $ReinstallPageCheck 2
-      ${EndIf}
-    !else
-      StrCpy $R3 "$(dontUninstallDowngrade)"
-      ; 这里**不**改默认：禁止降级时第 2 个 radio 是禁用的（下面 EnableWindow 0），
-      ; 默认勾一个灰掉的选项等于给用户一个点不动的「推荐」。
-    !endif
-    !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(choowHowToInstall)"
-  ${Else}
-    Abort
-  ${EndIf}
-
-  ; Skip showing the page if passive
-  ;
-  ; Note that we don't call this earlier at the beginning
-  ; of this function because we need to populate some variables
-  ; related to current installed version if detected and whether
-  ; we are downgrading or not.
-  ${If} $PassiveMode = 1
-    Call PageLeaveReinstall
-  ${Else}
-    nsDialogs::Create 1018
-    Pop $R4
-    ${IfThen} $(^RTL) = 1 ${|} nsDialogs::SetRTL $(^RTL) ${|}
-
-    ${NSD_CreateLabel} 0 0 100% 24u $R1
-    Pop $R1
-
-    ${NSD_CreateRadioButton} 30u 50u -30u 8u $R2
-    Pop $R2
-    ${NSD_OnClick} $R2 PageReinstallUpdateSelection
-
-    ${NSD_CreateRadioButton} 30u 70u -30u 8u $R3
-    Pop $R3
-    ; Disable this radio button if downgrading and downgrades are disabled
-    !if "${ALLOWDOWNGRADES}" == "false"
-      ${IfThen} $R0 = -1 ${|} EnableWindow $R3 0 ${|}
-    !endif
-    ${NSD_OnClick} $R3 PageReinstallUpdateSelection
-
-    ; Check the first radio button if this the first time
-    ; we enter this page or if the second button wasn't
-    ; selected the last time we were on this page
-    ${If} $ReinstallPageCheck <> 2
-      SendMessage $R2 ${BM_SETCHECK} ${BST_CHECKED} 0
-    ${Else}
-      SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0
-    ${EndIf}
-
-    ${NSD_SetFocus} $R2
-    nsDialogs::Show
-  ${EndIf}
-FunctionEnd
-Function PageReinstallUpdateSelection
-  ${NSD_GetState} $R2 $R1
-  ${If} $R1 == ${BST_CHECKED}
-    StrCpy $ReinstallPageCheck 1
-  ${Else}
-    StrCpy $ReinstallPageCheck 2
-  ${EndIf}
-FunctionEnd
-Function PageLeaveReinstall
-  ; ══════════════════════════════════════════════════════════════════════════
-  ; ⚠️ R-18 安全红线：这个函数里的**语义映射**一个字都不能动。
-  ;
-  ; $R0 = 版本比较结果（0 同版本 / 1 升级 / -1 降级）；
-  ; $R1 = 用户选中的是第几个 radio（1 = 第一个 / 0 = 第二个）。
-  ; 而「第一个 radio 是卸载还是直接覆盖」由 PageReinstall 里那三组 StrCpy 决定，
-  ; 且**每组的分工不一样**（同版本页 1=直接装、升级页 1=先卸载）。
-  ;
-  ; 把 $R1 的语义或那三组 StrCpy 的赋值顺序对调 = 用户在「推荐」选项上点下一步，
-  ; 实际走了**卸载**分支：卸载完再装失败，用户就没软件了（数据还在，但软件没了，
-  ; 而且他不知道发生了什么）。这是本文件里唯一「改错就毁机器」的地方。
-  ;
-  ; 允许改的只有：这些分支里引用的 $(...) 文案（见 zfm-strings.nsh 的
-  ; alreadyInstalled / dontUninstall / uninstallBeforeInstalling 覆盖）。
-  ; ══════════════════════════════════════════════════════════════════════════
-  ${NSD_GetState} $R2 $R1
-
-  ; If migrating from Wix, always uninstall
-  ${If} $WixMode = 1
-    Goto reinst_uninstall
-  ${EndIf}
-
-  ; In update mode, always proceeds without uninstalling
-  ${If} $UpdateMode = 1
-    Goto reinst_done
-  ${EndIf}
-
-  ; $R0 holds whether same(0)/upgrading(1)/downgrading(-1) version
-  ; $R1 holds the radio buttons state:
-  ;   1 => first choice was selected
-  ;   0 => second choice was selected
-  ${If} $R0 = 0 ; Same version, proceed
-    ${If} $R1 = 1              ; User chose to add/reinstall
-      Goto reinst_done
-    ${Else}                    ; User chose to uninstall
-      Goto reinst_uninstall
-    ${EndIf}
-  ${ElseIf} $R0 = 1 ; Upgrading
-    ${If} $R1 = 1              ; User chose to uninstall
-      Goto reinst_uninstall
-    ${Else}
-      Goto reinst_done         ; User chose NOT to uninstall
-    ${EndIf}
-  ${ElseIf} $R0 = -1 ; Downgrading
-    ${If} $R1 = 1              ; User chose to uninstall
-      Goto reinst_uninstall
-    ${Else}
-      Goto reinst_done         ; User chose NOT to uninstall
-    ${EndIf}
-  ${EndIf}
-
-  reinst_uninstall:
-    HideWindow
-    ClearErrors
-
-    ${If} $WixMode = 1
-      ReadRegStr $R1 HKLM "$R6" "UninstallString"
-      ExecWait '$R1' $0
-    ${Else}
-      ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
-      ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
-      ${IfThen} $UpdateMode = 1 ${|} StrCpy $R1 "$R1 /UPDATE" ${|} ; append /UPDATE
-      ${IfThen} $PassiveMode = 1 ${|} StrCpy $R1 "$R1 /P" ${|} ; append /P
-      StrCpy $R1 "$R1 _?=$4" ; append uninstall directory
-      ExecWait '$R1' $0
-    ${EndIf}
-
-    BringToFront
-
-    ${IfThen} ${Errors} ${|} StrCpy $0 2 ${|} ; ExecWait failed, set fake exit code
-
-    ${If} $0 <> 0
-    ${OrIf} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
-      ; User cancelled wix uninstaller? return to select un/reinstall page
-      ${If} $WixMode = 1
-      ${AndIf} $0 = 1602
-        Abort
-      ${EndIf}
-
-      ; User cancelled NSIS uninstaller? return to select un/reinstall page
-      ${If} $0 = 1
-        Abort
-      ${EndIf}
-
-      ; Other errors? 走 GUI 错误提示；静默分支保留但**当前不可达**（见下面的说明）。
-      ;
-      ; ★ 本函数是 `Page custom PageReinstall PageLeaveReinstall`（本文件 :347）的
-      ;   **页面 leave 回调**。NSIS 3.11 实测：`/S` 下页面回调**根本不执行**
-      ;   （`Page custom` 的 create / leave 都不会被调用，只有 Section 跑），
-      ;   所以这一段只覆盖 **GUI 的「重装 / 先卸载再装」路径**，
-      ;   **不是静默更新（`/S`）的保护**。
-      ;
-      ;   那为什么还留 `${If} ${Silent}` 分支？防的是未来重构：一旦有人把卸载旧版的
-      ;   逻辑挪进 Section 或 `.onInit`（那是 `/S` 会执行的），这里就会立刻变成活代码，
-      ;   届时"静默不弹窗 + 退出码非 0"必须已经是对的。在那之前它就是防御性代码，
-      ;   不要把它当"静默路径已受保护"的凭据 —— 静默下的 WebView2 失败由
-      ;   Section WebView2 里 downloadBootstrapper 分支的两处 `SetErrorLevel 1` + `Abort`
-      ;   （下载失败 / 安装失败，原行号 :901 / :933）负责，
-      ;   成功路径由 `.onInstSuccess` 的 `SetErrorLevel 0` 收口。
-      ;
-      ;   注：AttachConsole 会覆盖 $0（原值是旧卸载器的退出码），这里紧接着就 Abort，故无影响。
-      ${If} ${Silent}
-        System::Call 'kernel32::AttachConsole(i -1)i.r0'
-        ${If} $0 <> 0
-          System::Call 'kernel32::GetStdHandle(i -11)i.r0'
-          System::call 'kernel32::SetConsoleTextAttribute(i r0, i 0x0004)' ; set red color
-          FileWrite $0 "$(unableToUninstall)"
-        ${EndIf}
-        SetErrorLevel 1
-        Abort
-      ${Else}
-        MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
-        Abort
-      ${EndIf}
-    ${EndIf}
-  reinst_done:
-FunctionEnd
-
 ; 5. Choose install directory page
 ;
 ; 这一页是「装到 D 盘」的唯一入口，必须有（去掉它 = G2 直接失去意义）。
 ; 但**升级时必须跳过**并锁回旧目录 —— 见 ZfmDirPre 里那段反例说明。
-!define MUI_DIRECTORYPAGE_TEXT_TOP         "$(ZM_DIR_TOP)"
-!define MUI_DIRECTORYPAGE_TEXT_DESTINATION "$(ZM_DIR_DEST)"
 !define MUI_PAGE_CUSTOMFUNCTION_PRE        ZfmDirPre
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE      ZfmDirLeave
 !insertmacro MUI_PAGE_DIRECTORY
@@ -729,11 +341,6 @@ Var AppStartMenuFolder
 ; Don't auto jump to finish page after installation page,
 ; because the installation page has useful info that can be used debug any issues with the installer.
 !define MUI_FINISHPAGE_NOAUTOCLOSE
-; 大标题 + 两行说明：完成页是用户唯一会认真看一眼的页面，
-; 数据位置那句话就放在这里（设置页「数据位置」那一行是 P2，本版不做）。
-!define MUI_FINISHPAGE_TITLE_3LINES
-!define MUI_FINISHPAGE_TITLE "$(ZM_FINISH_TITLE)"
-!define MUI_FINISHPAGE_TEXT  "$(ZM_FINISH_TEXT)"
 ; Use show readme button in the finish page as a button create a desktop shortcut
 !define MUI_FINISHPAGE_SHOWREADME
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "$(ZM_FINISH_DESKTOP)"
@@ -754,7 +361,7 @@ FunctionEnd
 ;
 ; 正文用定稿表 ⑥ 的那一句（页标题沿用 MUI 原生的 "卸载 $(^NameDA)" = "卸载 FontManager"，
 ; 中文翻译与定稿表逐字一致，再覆盖一遍只会多一处要同步的文案）。
-; 复选框文案（$(deleteAppData)）在 zfm-strings.nsh 里改成「同时删除全部数据与字体库」——
+; 复选框文案（$(deleteAppData)）已内联为「同时删除全部数据与字体库」——
 ; hooks.nsh 勾选时确实会删 $INSTDIR\字体库（用户的付费字体也在里面），
 ; 不写清就是在踩 R-04 的口径风险；这属于信息披露，不是行为变更。
 ; ⚠️ 下面的 GetDpiForWindow + /96 换算是基线代码，整段保留，不要"顺手优化"。
@@ -811,33 +418,21 @@ FunctionEnd
   !include "{{this}}"
 {{/each}}
 
-; ────── FontManager 自己的双语文案（2.1.5）──────
+; ────── 仅存的行为性文案（内联）──────
 ;
 ; 位置不能动：LangString 只能往「已经 MUI_LANGUAGE 加载过的语言」里写，
 ; 所以这一段**必须**在 languages 那组循环（MUI_LANGUAGE）之后。
-;
-; 为什么路径绕这么一圈：NSIS 的 !include 相对路径以**主脚本所在目录**为基准
-; （已实测：子文件里 include 同目录的兄弟文件会 "could not find"），而渲染后的主脚本
-; 落在构建产物目录 rust-target\release\nsis\x64\ —— 我们的源码目录根本不在那。
-; handlebars 又只给绝对路径的**文件** token，没有「目录」token，所以从 sidebar_image
-; 的绝对路径里把文件名削掉换出源码目录。注意 NSIS 会把 define 里的反斜杠归一成正斜杠
-; （已实测），所以这里搜的是 "/sidebar.bmp" 而不是 "\sidebar.bmp"。
-;
-; 若 sidebarImage 被清空 → 这里编译期就炸，不会静默丢文案（宁可构建失败）。
-;
-; 反斜杠而不是正斜杠：**实测**过两种写法 —— 渲染后的脚本带 UTF-8 BOM，此时
-; `!define` 里的 `\` 原样保留（搜 "/sidebar.bmp" 匹配不到）；而不带 BOM 的脚本会被
-; NSIS 归一成正斜杠（搜 "\sidebar.bmp" 匹配不到）。因为 tauri 渲染时一定加 BOM，
-; 这里以反斜杠为准，同时保留正斜杠那次尝试兜住上游将来改行为。
-!searchreplace ZFM_NSIS_DIR "${SIDEBARIMAGE}" "\sidebar.bmp" ""
-!if "${ZFM_NSIS_DIR}" == "${SIDEBARIMAGE}"
-  !searchreplace ZFM_NSIS_DIR "${SIDEBARIMAGE}" "/sidebar.bmp" ""
-!endif
-!if "${ZFM_NSIS_DIR}" == "${SIDEBARIMAGE}"
-  !error "无法从 sidebarImage 推出源码目录，找 zfm-strings.nsh 失败：${SIDEBARIMAGE}"
-!endif
-!addincludedir "${ZFM_NSIS_DIR}"
-!include "zfm-strings.nsh"
+LangString deleteAppData     ${LANG_SIMPCHINESE} "同时删除全部数据与字体库"
+LangString ZM_UN_TEXT        ${LANG_SIMPCHINESE} "将从这台电脑移除 FontManager。"
+LangString ZM_DIR_NOWRITE    ${LANG_SIMPCHINESE} "这个位置当前用户没有写入权限。$\r$\n请换一个位置（例如“文档”下的文件夹），或者以管理员身份重新运行安装程序。"
+LangString ZM_FINISH_RUN     ${LANG_SIMPCHINESE} "立即运行 FontManager"
+LangString ZM_FINISH_DESKTOP ${LANG_SIMPCHINESE} "在桌面创建快捷方式"
+
+LangString deleteAppData     ${LANG_ENGLISH} "Also delete all data and the font library"
+LangString ZM_UN_TEXT        ${LANG_ENGLISH} "This will remove FontManager from this computer."
+LangString ZM_DIR_NOWRITE    ${LANG_ENGLISH} "You don't have write access to this folder.$\r$\nPick another location (for example one under Documents), or run the installer as administrator."
+LangString ZM_FINISH_RUN     ${LANG_ENGLISH} "Launch FontManager now"
+LangString ZM_FINISH_DESKTOP ${LANG_ENGLISH} "Create a desktop shortcut"
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
