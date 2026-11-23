@@ -11894,3 +11894,43 @@ body.tour-qb .qb-actions .qb-btn-text {
 .set-group .settings-section > :not(.detail-heading):not(.settings-row):last-child {
   margin-bottom: 12px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   分段控件（设置页：主题 / 动态效果 / 界面缩放 / 声音）
+   30px 高的槽 + 3px 内衬，选中项是一枚白底按钮；颜色、边框、背景
+   统一走 --t-quick 过渡。
+   ═══════════════════════════════════════════════════════════════════════ */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  height: 30px;
+  padding: 3px;
+  border: 1px solid rgba(var(--ink-rgb), 0.06);
+  border-radius: 6px;
+  background: var(--e1);
+}
+.seg-btn {
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: var(--fs-11);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  transition: background var(--t-quick), color var(--t-quick), border-color var(--t-quick);
+}
+.seg-btn:hover {
+  color: var(--text-secondary);
+}
+.seg-btn.on {
+  background: var(--ui-panel);
+  border-color: rgba(var(--ink-rgb), 0.06);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(20, 20, 18, 0.08);
+}
+.seg-fill {
+  width: 100%;
+}
+.seg-fill .seg-btn {
+  flex: 1;
+  padding: 0 4px;
+}

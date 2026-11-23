@@ -1979,18 +1979,22 @@ ${t("settings.labelResyncWhy")}`}
                     <SunMoon size={13} strokeWidth={1.5} /> {t("settings.theme")}<SettingHint text={t("settings.themeSub")} /></div>
                 </div>
                 <div
-                  className="view-toggle sound-toggle"
+                  className="seg"
                   role="radiogroup"
                   aria-label={t("settings.theme")}
                   onKeyDown={radioKeys}
                 >
-                  {(["dark", "light", "system"] as const).map((mode) => (
+                  {(["light", "dark", "system"] as const).map((mode) => (
                     <button
                       key={mode}
                       role="radio"
                       aria-checked={themePref === mode}
                       tabIndex={themePref === mode ? 0 : -1}
-                      className={`view-btn sound-btn ${themePref === mode ? "view-btn-active" : ""}`}
+                      className={
+                        themePref === mode
+                          ? "seg-btn on"
+                          : "seg-btn"
+                      }
                       onClick={() => setThemePref(mode)}
                     >
                       {t(`theme.${mode}`)}
@@ -2001,13 +2005,31 @@ ${t("settings.labelResyncWhy")}`}
               <div className="settings-row">
                 <div>
                   <div className="settings-label">
-                    <Eye size={13} strokeWidth={1.5} /> {t("settings.reduceMotion")}<SettingHint text={t("settings.reduceMotionSub")} /></div>
+                    <Eye size={13} strokeWidth={1.5} /> {t("settings.motion")}<SettingHint text={t("settings.reduceMotionSub")} /></div>
                 </div>
-                <PillToggle
-                  on={motionPref === "reduced"}
-                  onChange={(on) => setMotionPref(on ? "reduced" : "system")}
-                  label={t("settings.reduceMotion")}
-                />
+                <div
+                  className="seg"
+                  role="radiogroup"
+                  aria-label={t("settings.motion")}
+                  onKeyDown={radioKeys}
+                >
+                  {(["system", "reduced"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      role="radio"
+                      aria-checked={motionPref === mode}
+                      tabIndex={motionPref === mode ? 0 : -1}
+                      className={
+                        motionPref === mode
+                          ? "seg-btn on"
+                          : "seg-btn"
+                      }
+                      onClick={() => setMotionPref(mode)}
+                    >
+                      {t(mode === "system" ? "settings.motionSystem" : "settings.motionReduced")}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="settings-row">
                 <div>
@@ -2032,7 +2054,7 @@ ${t("settings.labelResyncWhy")}`}
                   </div>
                 </div>
                 <div
-                  className="view-toggle sound-toggle scale-toggle"
+                  className="seg seg-fill"
                   role="radiogroup"
                   aria-label={t("settings.uiScale")}
                   onKeyDown={radioKeys}
@@ -2043,7 +2065,11 @@ ${t("settings.labelResyncWhy")}`}
                       role="radio"
                       aria-checked={uiScale === step}
                       tabIndex={uiScale === step ? 0 : -1}
-                      className={`view-btn sound-btn ${uiScale === step ? "view-btn-active" : ""}`}
+                      className={
+                        uiScale === step
+                          ? "seg-btn on"
+                          : "seg-btn"
+                      }
                       onClick={() => setUiScale(step)}
                     >
                       {step === "auto" ? t("settings.uiScaleAuto") : `${Math.round(step * 100)}%`}
@@ -2061,7 +2087,7 @@ ${t("settings.labelResyncWhy")}`}
                     <Volume2 size={13} strokeWidth={1.5} /> {t("settings.interfaceSounds")}<SettingHint text={t("settings.interfaceSoundsSub")} /></div>
                 </div>
                 <div
-                  className="view-toggle sound-toggle"
+                  className="seg"
                   role="radiogroup"
                   aria-label={t("settings.soundLevelAria")}
                   onKeyDown={radioKeys}
@@ -2072,7 +2098,11 @@ ${t("settings.labelResyncWhy")}`}
                       role="radio"
                       aria-checked={soundPref === lvl}
                       tabIndex={soundPref === lvl ? 0 : -1}
-                      className={`view-btn sound-btn ${soundPref === lvl ? "view-btn-active" : ""}`}
+                      className={
+                        soundPref === lvl
+                          ? "seg-btn on"
+                          : "seg-btn"
+                      }
                       onClick={() => setSoundPref(lvl)}
                     >
                       {t(`sound.${lvl}`)}

@@ -4,6 +4,14 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.3] — 2026-11-24
+
+### 修复
+
+- **设置页分段控件对齐 AssetManager**：主题改为「浅色 / 深色 / 系统」，
+  动态效果改为「跟随系统 / 减少」两档，界面缩放与声音统一成同一套
+  `.seg` 槽 + 白底选中按钮；切换时背景/文字/描边走 120ms 过渡。
+
 ## [2.7.2] — 2026-11-24
 
 ### 变更
