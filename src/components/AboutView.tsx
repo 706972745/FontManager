@@ -38,7 +38,7 @@ type LinkItem = { key: TKey; sub: string; url: string; icon: React.ReactNode };
 /**
  * 链接区只有一层：**本项目自己的两个仓库**（应用 + 插件）。
  *
- * 2026-11-12 用户定：本项目与迭代起点（ZFontManager 0.8.0）早已没有关系，
+ * 2026-11-12 用户定：本项目与项目早期基线（0.8.0）早已没有关系，
  * 页面上不再出现上游仓库 / 作者 / 网站那组卡片。
  * 2026-11-14 追加：连「从 0.8.0 迭代而来」那一行也去掉（`about.linksTitle` 已从
  * 9 份 locale 里删除）。出处只留在 LICENSE 的 0.8.0 版权声明里，GPL 的要求仍然满足。
@@ -160,7 +160,7 @@ export function AboutView() {
           <LinkCard key={l.url} item={l} delay={staggerDelay(i)} />
         ))}
       </div>
-      {/* 2026-11-14 用户定：不再写「从 ZFontManager 0.8.0 迭代而来」——这个软件已经和
+      {/* 2026-11-14 用户定：不再写「从早期基线 0.8.0 迭代而来」——这个软件已经和
           那个项目不是同一个东西。出处只保留在 LICENSE 的 0.8.0 版权声明里（GPL 要求）。 */}
 
       {/* 赞助区（2026-11-23，照 AssetManager 同款）：文案一字不改（owner 手写），

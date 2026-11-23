@@ -5,7 +5,7 @@
 ; 内置脚本只清 $APPDATA\<bundleId> / $LOCALAPPDATA\<bundleId>（WebView2 缓存），
 ; 但本软件的数据自 2.1.5 起在 <安装目录>\data（老版本与回退情况在 %APPDATA%\FontManager）、
 ; 以及安装目录下的字体库 / plugins / *-runtime，还有 HKCU 字体表与文件关联，这里补齐。
-; 2.1.6 起**不再处理 ZFontManager 时期的旧目录**（`%APPDATA%\ZFontManager`）：那个产品
+; 2.1.6 起**不再处理旧项目时期的旧目录**（`%APPDATA%\ZFontManager`）：那个产品
 ; 和本软件已经不是同一个东西，用户 2026-11-14 明确「不需要兼容」。
 ;
 ; 原则（重要）：白名单精确删除。
@@ -97,8 +97,8 @@
     DeleteRegKey HKCU "Software\Classes\.D-FontManager"
     DeleteRegKey HKCU "Software\Classes\.L-FontManager"
 
-    ; 1.5.5 起 publisher 从 "TheHolyOneZ / IIEOzo" 改为 "IIEOzo"，
-    ; 安装记录键随之从 Software\TheHolyOneZ / IIEOzo\FontManager
+    ; 1.5.5 起 publisher 改为 "IIEOzo"，
+    ; 安装记录键随之从旧键迁移到 Software\IIEOzo\FontManager
     ; 变成 Software\IIEOzo\FontManager。模板只会删新键，旧键会残留，
     ; 这里按精确键名补删（/ifempty 保证不误删别人的子键）。
     DeleteRegValue HKCU "Software\TheHolyOneZ / IIEOzo\FontManager" "Installer Language"
@@ -210,7 +210,7 @@
     !insertmacro ZFM_MATCH_FONT_PREFIX "$LOCALAPPDATA\FontManager\字体库\"
     !insertmacro ZFM_MATCH_FONT_PREFIX "$APPDATA\FontManager\"
     ; 2.1.6 起不再认 `%APPDATA%\ZFontManager`（2026-11-14 用户定：本软件与
-    ; ZFontManager 已不是同一个东西，不做旧产品残留的清理与兼容）。
+    ; 旧产品已不是同一个东西，不做旧产品残留的清理与兼容）。
     ; 2.1.5 预防性一条：当前字体库**不在** data 下（见 ADR-D2，字体是用户资产，
     ; 不跟数据混在一层），所以这条今天匹配不到任何东西。
     ; 留着是因为将来若真把库搬进 data\，忘了加这条的后果是「卸载后 HKCU 里残留

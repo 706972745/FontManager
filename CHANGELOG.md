@@ -1048,9 +1048,9 @@ All notable changes to FontManager are documented here. The format follows
   这类硬错误（页面回调里的 WARN 不阻断，`/S` 下页面回调根本不跑）。
 - `docs/安装器与启动页-UI交付规格书.md`：新增 §4.9「程序还在运行 · 确认对话框」、§5 全部数值
   按 ×2 重写、§5.3 最短显示 600→1500 ms；`docs/make-spec-html.py` 同步生成 HTML 版。
-- **与 ZFontManager 彻底脱钩**（用户 2026-11-14：「这个软件和 ZFontManager 已经不一样了，不需要
+- **与旧项目彻底脱钩**（用户 2026-11-14：「这个软件和旧项目已经不一样了，不需要
   兼容」）：安装器 `hooks.nsh` 不再清理 `%APPDATA%\ZFontManager` 旧目录、HKCU 字体表也不再认
-  `%APPDATA%\ZFontManager\` 前缀；主界面「关于」里「从 ZFontManager 0.8.0 迭代而来」那一行
+  `%APPDATA%\ZFontManager\` 前缀；主界面「关于」里「从项目早期基线 0.8.0 迭代而来」那一行
   连同 9 份 locale 的 `about.linksTitle` 键一起删掉（出处只保留在 LICENSE 的 0.8.0 版权声明，
   GPL 要求仍满足）。**副作用**：极老机器上那份残留目录不会被卸载器顺手清掉了，需要手动删。
 
@@ -1778,14 +1778,14 @@ All notable changes to FontManager are documented here. The format follows
 
 ## [1.9.8] — 2026-11-12
 
-> **1.9.8 正式版**：把「上一个项目」的痕迹清干净。本项目从 ZFontManager 0.8.0 迭代而来，
+> **1.9.8 正式版**：把「上一个项目」的痕迹清干净。本项目以项目早期基线 0.8.0 为起点，
 > 此后与它没有关系 —— 界面上、元信息里、应用标识里不再出现旧名字和旧作者信息，
 > 只保留一句出处说明。不改变数据格式，可直接覆盖升级（升级时会自动搬一次 WebView 数据目录）。
 
 ### 变更
 
 - **关于页不再列「上游」那组卡片**：原来有四张卡（上游仓库、原作者 GitHub、原作者网站、
-  本项目源码），现在只留本项目自己的两个仓库（应用 + 插件），下面一句「从 ZFontManager 0.8.0
+  本项目源码），现在只留本项目自己的两个仓库（应用 + 插件），下面一句「从早期基线 0.8.0
   迭代而来」。旧的四张卡里有两张会把读者带到别的项目去，与「去哪儿看代码」冲突。
 - **两份 README**：致谢段与页脚重写，去掉上游仓库链接、原作者主页与 zsync.eu；
   许可证段改为说明「0.8.0 那部分代码的版权声明保留在 LICENSE 里」（GPL 要求），
@@ -1800,7 +1800,7 @@ All notable changes to FontManager are documented here. The format follows
 
 ### 说明
 
-- `LICENSE` 里 0.8.0 起点的版权声明（TheHolyOneZ）保留 —— GPL-3.0 的要求，删掉会违反许可。
+- `LICENSE` 里 0.8.0 起点的版权声明保留 —— GPL-3.0 的要求，删掉会违反许可。
 - 安装/卸载钩子里仍认得 `%APPDATA%\ZFontManager` 和旧标识目录：那是**旧版本留下的数据路径**，
   只用于迁移与清理，不代表与本项目有任何关系。
 
@@ -3010,11 +3010,11 @@ Host 白名单；其中激活路径闸门当场抓到并修掉 Windows `canonica
 ### 修复
 
 - **发布者署名只留 IIEOzo**：安装包的 `publisher` / `copyright` / `longDescription`
-  原先写成 `TheHolyOneZ / IIEOzo`，Windows「已安装的应用」和安装包属性里
+  原先写成旧作者名 + `IIEOzo` 两段，Windows「已安装的应用」和安装包属性里
   会显示成两个人；现在统一为 `IIEOzo`。同时把 `package.json` 的
   `author` / `repository` / `bugs` 与 `Cargo.toml` 的 `authors` / `repository`
   指回本人仓库 —— 旧的 `bugs` 地址指向上游仓库，用户反馈会跑到别人那里。
-  README / LICENSE 中对上游 TheHolyOneZ 的致谢按 GPL-3.0 要求保留；
+  README / LICENSE 中的版权声明按 GPL-3.0 要求保留；
   应用标识 `com.theholyonez.fontmanager` 保持不变（改了会被 Windows 当作新应用，
   导致数据目录迁移、状态丢失）。
   安装记录键因此从 `HKCU\Software\TheHolyOneZ / IIEOzo\FontManager` 变为
@@ -3139,9 +3139,8 @@ Host 白名单；其中激活路径闸门当场抓到并修掉 Windows `canonica
 
 ### 修复
 
-- 设置 → 语言：「申请添加语言」与「翻译指南」指向了上游仓库
-  （`TheHolyOneZ/ZFontManager`），留言会跑到别人那儿；现在都指到本项目
-  （`706972745/FontManager`），按钮直接打开 issue 新建页 —— 就是「给作者留言」。
+- 设置 → 语言：「申请添加语言」与「翻译指南」指向了旧项目仓库，留言会跑到别人那儿；
+  现在都指到本项目（`706972745/FontManager`），按钮直接打开 issue 新建页 —— 就是「给作者留言」。
 
 ## [1.5.0] — 2026-11-08（正式版）
 
@@ -3673,11 +3672,11 @@ Host 白名单；其中激活路径闸门当场抓到并修掉 Windows `canonica
   文件夹自定义图标机制，删掉这两个文件就恢复默认黄色文件夹）。
 - 只改显示，不动库里任何字体文件；已启用过的库即使以后切换走，图标仍保留。
 
-### 修复：关于页把原作者的仓库名改回来了
+### 修复：关于页把来源说明的仓库名改回来了
 
-- 1.2.4 统一改名时，顺手把「关于」里指向**原作者**的文字与链接也改成了 FontManager。
-  上游仓库本来就叫 `ZFontManager`，这版全部改回：`TheHolyOneZ 开源的 ZFontManager 0.8.0`、
-  「ZFontManager 源代码」卡片、设置页的翻译指南 / 请求语言链接、README 里的上游链接。
+- 1.2.4 统一改名时，顺手把「关于」里指向**来源项目**的文字与链接也改成了 FontManager。
+  这版全部改回：0.8.0 基线的来源说明、来源项目源代码卡片、设置页的翻译指南 /
+  请求语言链接、README 里的来源链接。
 
 ## [1.2.4] — 2026-11-05
 
@@ -3789,8 +3788,8 @@ Host 白名单；其中激活路径闸门当场抓到并修掉 Windows `canonica
   - 进入样张视图时**侧栏自动收成图标条**、**详情面板收起**，把宽度让给样张。
   - 名称从「瀑布流」改为「样张」（en: Specimen），顶栏提示、命令面板、
     引导文案同步更新。
-- **关于页介绍重写**：明确说明本软件是在 TheHolyOneZ 开源的 FontManager 0.8.0
-  基础上迭代、为 IIEOzo 定制的版本，并说明预览 / 标签 / 分组与快照 / 启停与安装
+- **关于页介绍重写**：明确说明本软件是以项目早期基线 0.8.0 为起点、为 IIEOzo 定制的版本，
+  并说明预览 / 标签 / 分组与快照 / 启停与安装
   这几项能力，字体文件始终留在本地。
 
 ### 调整
@@ -7475,8 +7474,6 @@ TopBar 是 `flex-wrap: wrap`（宽度不够时换行成两排，注释里写明�
 - The snapshot sidebar count counts font files while the "System fonts" view
   counts families; both are now documented to avoid confusion.
 
-[0.8.1-beta.1]: https://github.com/TheHolyOneZ/FontManager/compare/v0.8.0...HEAD
-
 ## [0.8.0] — 2026-10-23
 
 ### Fixed
@@ -7917,7 +7914,3 @@ ThinkPad.
 
 Earlier releases predate this changelog. Their installers remain available on
 the [download page](https://zsync.eu/fontmanager/).
-
-[0.3.0]: https://github.com/TheHolyOneZ/FontManager/releases/tag/v0.3.0
-[0.5.1]: https://github.com/TheHolyOneZ/FontManager/releases/tag/v0.5.1
-[0.6.0]: https://github.com/TheHolyOneZ/FontManager/releases/tag/v0.6.0

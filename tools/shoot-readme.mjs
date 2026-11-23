@@ -18,7 +18,7 @@
  * ---------------------------------------------------------------------
  * 前置：Git Bash 里 `source "…/软件迭代/Fonts工程文件/env.sh"`（cargo / rustc / MSVC / SDK）。
  *
- *   cd ZFontManager
+ *   cd <仓库根目录>
  *   source "../env.sh"
  *   # ① 前端先出 dist（比 pnpm build 快：跳过 tsc，截图只需要可运行的产物）
  *   npx vite build
