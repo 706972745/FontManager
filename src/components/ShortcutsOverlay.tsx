@@ -1,5 +1,4 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Keyboard } from "lucide-react";
 import { useEffect } from "react";
 import { scrimFade, springSoft } from "../design/springs";
 import { useFontStore } from "../state/fontStore";
@@ -7,7 +6,11 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
 import { useT, type TKey } from "../lib/i18n";
 
-const SECTIONS: [TKey, [string[], TKey][]][] = [
+/** 一组快捷键：组标题 + 该组的每一行（键帽数组、说明） */
+type ShortcutSection = [TKey, [string[], TKey][]];
+
+/** 左栏：浏览与选择 */
+const LEFT: ShortcutSection[] = [
   [
     "sc.navigate",
     [
@@ -29,6 +32,10 @@ const SECTIONS: [TKey, [string[], TKey][]][] = [
       [["Ctrl", "A"], "sc.selectAll"],
     ],
   ],
+];
+
+/** 右栏：动作、速览、帮助 */
+const RIGHT: ShortcutSection[] = [
   [
     "sc.act",
     [
@@ -61,6 +68,37 @@ const SECTIONS: [TKey, [string[], TKey][]][] = [
     [[["?"], "sc.thisOverlay"]],
   ],
 ];
+
+function Section({ section, rows }: { section: TKey; rows: [string[], TKey][] }) {
+  const t = useT();
+  return (
+    <section className="shortcuts-section">
+      <h3 className="shortcuts-heading">{t(section)}</h3>
+      <ul className="shortcuts-list">
+        {rows.map(([keys, what]) => (
+          /* 说明在左、键帽贴右（2026-11-18 照 AssetManager 快捷键面板改）：
+             原来键帽在左、说明右对齐，一列键帽宽窄不一时说明会跟着抖。 */
+          <li key={what} className="shortcuts-row">
+            <span className="shortcuts-what">{t(what)}</span>
+            <span className="shortcuts-keys">
+              {keys.map((k) => (
+                <kbd key={k} className={`kbd ${k === "DragTop" ? "kbd-wide" : ""}`}>
+                  {k === "Click"
+                    ? t("key.click")
+                    : k === "DragTop"
+                      ? t("key.dragTop")
+                      : k === "Wheel"
+                        ? t("key.wheel")
+                        : k}
+                </kbd>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export function ShortcutsOverlay() {
   const t = useT();
@@ -106,9 +144,7 @@ export function ShortcutsOverlay() {
             aria-label={t("shortcuts.aria")}
           >
             <header className="compare-head">
-              <h2 className="compare-title">
-                <Keyboard size={15} strokeWidth={1.5} /> {t("shortcuts.title")}
-              </h2>
+              <h2 className="compare-title">{t("shortcuts.title")}</h2>
               <button
                 className="kbd sc-esc"
                 aria-label={t("shortcuts.close")}
@@ -119,33 +155,16 @@ export function ShortcutsOverlay() {
               </button>
             </header>
             <div className="shortcuts-body">
-              {SECTIONS.map(([section, rows]) => (
-                <section key={section} className="shortcuts-section">
-                  <h3 className="shortcuts-heading">{t(section)}</h3>
-                  <ul className="shortcuts-list">
-                    {rows.map(([keys, what]) => (
-                      /* 说明在左、键帽贴右（2026-11-18 照 AssetManager 快捷键面板改）：
-                         原来键帽在左、说明右对齐，一列键帽宽窄不一时说明会跟着抖。 */
-                      <li key={what} className="shortcuts-row">
-                        <span className="shortcuts-what">{t(what)}</span>
-                        <span className="shortcuts-keys">
-                          {keys.map((k) => (
-                            <kbd key={k} className={`kbd ${k === "DragTop" ? "kbd-wide" : ""}`}>
-                              {k === "Click"
-                                ? t("key.click")
-                                : k === "DragTop"
-                                  ? t("key.dragTop")
-                                  : k === "Wheel"
-                                    ? t("key.wheel")
-                                    : k}
-                            </kbd>
-                          ))}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
+              <div className="shortcuts-col">
+                {LEFT.map(([section, rows]) => (
+                  <Section key={section} section={section} rows={rows} />
+                ))}
+              </div>
+              <div className="shortcuts-col">
+                {RIGHT.map(([section, rows]) => (
+                  <Section key={section} section={section} rows={rows} />
+                ))}
+              </div>
             </div>
             <footer className="shortcuts-foot">{t("shortcuts.footer")}</footer>
           </motion.div>

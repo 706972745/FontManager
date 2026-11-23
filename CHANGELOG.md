@@ -4,6 +4,14 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.1] — 2026-11-23
+
+### 修复
+
+- **快捷键面板对齐 AssetManager**：宽度 760px、固定左右双栏 + 1px 分隔线、26px 行高、
+  11px accent 分组小标题 + 2px 竖条；去掉键盘图标、46px 大行、斑马纹与 3px 粗条。
+  只改布局，快捷键条目与 Esc / focus trap 行为不变。
+
 ## [2.7.0] — 2026-11-23
 
 > 这一版把「插件能做什么」补到接近完整：本地 API 从 20 条扩到 66 条，

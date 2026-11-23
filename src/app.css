@@ -4601,56 +4601,13 @@ h2.detail-title.copy-name {
   color: var(--text-tertiary);
 }
 
-.shortcuts-panel {
-  /* 两排（两列）：原来单列在 400px 里要滚很久，用户 2026-11-16 要求改成两排 */
-  width: min(760px, 100%);
-  max-height: 100%;
-  overflow-y: auto;
-  border-radius: 10px;
-  padding: 18px 20px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.shortcuts-panel .compare-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.shortcuts-body {
-  /* 多列而不是 grid：分组高矮差很多，grid 会按行对齐、行内留一大片空白；
-     多列是按内容流自动填满左列再进右列，短面板不会出现「中间一个大洞」。
-     `break-inside: avoid` 保证一个分组（标题 + 快捷键）不会被劈成两半。 */
-  column-count: 2;
-  column-gap: 22px;
-}
-.shortcuts-section {
-  break-inside: avoid;
-  margin-bottom: 16px;
-}
-.shortcuts-heading {
-  font-size: var(--fs-10);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  padding: 0 10px 5px;
-}
+/* 快捷键面板的版式集中在文件末尾「快捷键面板：照 AssetManager 的布局」一段；
+   这里只留两栏布局用得到的行内结构。 */
 .shortcuts-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-.shortcuts-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 7px 10px;
-  border-radius: 6px;
-}
-.shortcuts-list .shortcuts-row:nth-child(odd) {
-  background: rgba(var(--ink-rgb), 0.03);
+  gap: 0;
 }
 .shortcuts-keys {
   display: flex;
@@ -11769,83 +11726,90 @@ body.tour-qb .qb-actions .qb-btn-text {
 
 /* ===== 快捷键面板：照 AssetManager 的布局（2026-11-23） =====
    目标图是 AssetManager 的 r26-keys-light/dark：
-   · 约 940px 宽，头部固定、正文两列流式、底部一行说明；
-   · 分组标题 = 3px 蓝色竖条 + 13px 正体，不再是 9px 全大写等宽；
-   · 行高 46、行间 1px 发丝线，去掉斑马纹；
-   · 键帽扁平 18px（mono 9px、--ui-line 边框、无阴影），只作用于这个面板。
+   · 760px 固定宽度，头部固定、正文固定双栏（左：浏览/选择，右：动作/速览/帮助）；
+   · 分组标题 = 11px accent 小字 + 左侧 2px 细竖条（不再是 3px 粗条 + 16px 主文字）；
+   · 行高 26、行间 1px 发丝线，去掉斑马纹；键帽扁平 18px，只作用于这个面板。
    行为（focus trap / Esc / ?）不动。 */
 .shortcuts-panel {
-  width: min(940px, calc(100vw - 80px));
-  max-height: 100%;
+  width: 760px;
+  max-width: calc(100vw - 64px);
+  max-height: min(78vh, 640px);
+  border-radius: 12px;
+  background: var(--e3);
+  border: 1px solid var(--ui-line);
+  box-shadow: var(--shadow-ambient);
+  overflow: hidden;
   padding: 0;
   gap: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 .shortcuts-panel .compare-head {
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid rgba(var(--ink-rgb), 0.06);
   margin: 0;
-  padding: 18px 20px 12px;
   flex: none;
 }
 .shortcuts-panel .compare-title {
-  gap: 8px;
-  font-size: var(--fs-16);
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  line-height: 1.2;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 0;
 }
 .shortcuts-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 20px 6px;
-  column-count: 2;
-  column-gap: 28px;
+  padding: 0;
+  /* 固定双栏，不再用多栏流式：左右两组由组件各自渲染，行序与分组跟着代码走 */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  column-count: initial;
+}
+.shortcuts-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 14px 18px 18px;
+}
+.shortcuts-col + .shortcuts-col {
+  border-left: 1px solid var(--ui-line);
 }
 .shortcuts-section {
-  break-inside: avoid;
-  margin-bottom: 18px;
+  margin: 0;
+  break-inside: auto;
 }
 .shortcuts-panel .shortcuts-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px 7px;
   font-family: var(--font-ui);
-  font-size: var(--fs-13);
-  font-weight: 600;
-  letter-spacing: 0;
+  font-size: var(--fs-11);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ui-accent);
+  padding: 0 0 0 9px;
+  border-left: 2px solid var(--ui-accent);
+  margin: 0 0 6px;
   text-transform: none;
-  color: var(--text-primary);
-}
-.shortcuts-panel .shortcuts-heading::before {
-  content: "";
-  width: 3px;
-  height: 12px;
-  flex: none;
-  border-radius: 2px;
-  background: var(--accent-a);
-}
-.shortcuts-list {
-  gap: 0;
+  display: block;
 }
 .shortcuts-panel .shortcuts-row {
-  min-height: 46px;
-  gap: 14px;
-  padding: 9px 10px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: 26px;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
   border-radius: 0;
-  border-top: 1px solid var(--ui-line);
-}
-.shortcuts-panel .shortcuts-row:first-child {
-  border-top: 0;
-}
-.shortcuts-panel .shortcuts-list .shortcuts-row:nth-child(odd) {
   background: none;
+  gap: 12px;
+}
+.shortcuts-panel .shortcuts-row:last-child {
+  border-bottom: 0;
 }
 .shortcuts-panel .shortcuts-what {
   font-size: var(--fs-13);
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 .shortcuts-panel .kbd {
   height: 18px;
@@ -11863,15 +11827,17 @@ body.tour-qb .qb-actions .qb-btn-text {
   font-family: var(--font-ui);
   letter-spacing: 0.01em;
 }
+/* 头部关闭键是按钮，比行内键帽高一档（22px，同 AssetManager 的 .kb-close） */
+.shortcuts-panel .compare-head .kbd,
 .shortcuts-panel .sc-esc {
-  height: 18px;
-  padding: 0 6px;
+  height: 22px;
+  padding: 0 7px;
 }
 .shortcuts-foot {
   flex: none;
-  border-top: 1px solid var(--ui-line);
-  padding: 12px 20px 14px;
-  font-size: var(--fs-11);
+  padding: 10px 18px 12px;
+  border-top: 1px solid rgba(var(--ink-rgb), 0.06);
+  font-size: var(--fs-10);
   color: var(--text-tertiary);
 }
 
