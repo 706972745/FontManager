@@ -4,6 +4,14 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.2] — 2026-11-24
+
+### 变更
+
+- **设置页统一成 AssetManager 的卡片式页面**：所有设置页（含通用页）的分区改成一张卡
+  （1px 描边 / 8px 圆角 / 面板底色），卡头 13px/600 + 发丝线，行 10/14 内距、
+  行间 5% 墨发丝线；通用页的「没有你的语言?」虚线块收进卡片内距，内容不变。
+
 ## [2.7.1] — 2026-11-23
 
 ### 修复

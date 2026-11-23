@@ -11846,3 +11846,51 @@ body.tour-qb .qb-actions .qb-btn-text {
 .tag-dock-filter.coll-filter {
   --tc: var(--ui-accent);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   设置页所有页面（含通用页）统一成 AssetManager 的卡片式页面
+   ─────────────────────────────────────────────────────────────────────
+   参考 AssetManager `app/src/styles/app.css`：
+   · .set-card      → 分区卡片：描边 + 8px 圆角 + 面板底色 + overflow hidden
+   · .set-card-head → 卡片头：12/14 内距、13px/600、底部发丝线
+   · .set-row       → 行：10/14 内距，行间 1px 发丝线
+   通用页内容不动，只套同一个壳；`>` 保证不碰嵌套行（接口页、插件清单头）。
+   旧规则 `.settings-panel .settings-section > .settings-row:not(...)` 是四个类，
+   这里用同样的 `:not()` 把行的侧距抬到 14px，否则会被它压回 2px。
+   ═══════════════════════════════════════════════════════════════════════ */
+.set-group .settings-section {
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-panel);
+  overflow: hidden;
+  gap: 0;
+  padding: 0;
+}
+.set-group .settings-section > .detail-heading {
+  padding: 12px 14px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--ui-line);
+}
+.set-group .settings-section > .settings-row:not(.settings-plugins-head) {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 10px 14px;
+}
+.set-group .settings-section > .settings-row + .settings-row {
+  border-top: 1px solid rgba(var(--ink-rgb), 0.05);
+}
+/* 卡片内不是普通行的内容（通用页「没有你的语言?」虚线块、插件列表、路径块等）
+   统一留 14px 侧距；虚线边框等自身样式一律保留。 */
+.set-group .settings-section > :not(.detail-heading):not(.settings-row) {
+  margin-left: 14px;
+  margin-right: 14px;
+}
+.set-group .settings-section > :not(.detail-heading):not(.settings-row):last-child {
+  margin-bottom: 12px;
+}
