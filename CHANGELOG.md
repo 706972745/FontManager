@@ -4,6 +4,35 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] — 2026-11-23
+
+> 这一版把「插件能做什么」补到接近完整：本地 API 从 20 条扩到 66 条，
+> 字体库 / 回收站 / 标签分组 / 在线库 / 设置 / 插件与运行时 / 更新全部有端点，
+> 并新增机器可读的 `/routes` 目录。界面侧同步把快捷键面板改成 AssetManager 布局，
+> 分组坞头部显示当前分组，去掉“选中即自动固定”的行为。
+
+### 新增
+
+- **本地 API 扩到 66 条端点**：新增字体详情 / 许可 / 字符覆盖、字体安装与卸载、
+  字体库信息与去重、回收站、标签 / 标签分组 / 字体分组、在线目录与下载、
+  设置 / 特性 / 系统路径 / 打开文件、插件与运行时、更新检查 / 下载 / 安装、
+  单字体与整目录导出 / 取消。仍**只绑 `127.0.0.1`**，Bearer 令牌，默认关闭。
+- **`GET /api/v1/routes`**：返回 `method` / `path` / `perm` / `dangerous` / `summary`，
+  插件可以运行时发现宿主支持的全部能力；`/health` 同步给出 `apiVersion` 与 `routeCount`。
+- **域权限**：`read/write:library`、`read/write:trash`、`read/write:online`、
+  `read/write:settings`、`read/write:plugins`、`read/write:runtimes`、
+  `read/write:update`、`open:external`；`DANGEROUS_PERMS` 同步扩到 10 项。
+- **README 端口清单**：本地 API、插件面板、插件中心面板、MCP、Affinity `6767`
+  出站、开发期 1420/1421/9223，逐项写明绑定、端口、生命周期与鉴权。
+
+### 变更
+
+- **快捷键面板改成 AssetManager 布局**：940px、头部固定、两列流式、蓝色竖条分组标题、
+  发丝线行、扁平 18px 键帽、底部说明；`?` / Esc / 焦点陷阱行为不变。
+- **分组坞头部显示当前分组**：选中分组时显示「📁 名称 ×」，数量隐藏；点 × 回到字体库。
+- **移除标签 / 分组坞的自动固定**：选中标签或分组不再自动撑开面板、也不再显示成已固定；
+  只有用户亲手点图钉才固定，悬停 / 聚焦 / 右键 / 新建改名仍临时展开。
+
 ## [2.6.0] — 2026-11-23
 
 > 这一版把「安装」这条路补完整：安装器 / 卸载器在非中文系统上一律说英文，

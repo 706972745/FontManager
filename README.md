@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.6.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.7.0-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -47,6 +47,8 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.7.0 — The local API now covers 66 endpoints (library, trash, tags, online fonts, settings, plugins, runtimes, updates) with per-domain scopes; the shortcuts panel follows AssetManager's layout, the group dock shows the active group and no longer auto-pins**
 
 **2.6.0 — English installer/uninstaller on non-Chinese systems; the old NSIS fallback UI is gone; the About page now carries the “original shareholders” note and two sponsor QR codes**
 
@@ -527,6 +529,24 @@ FontManager opens its core to automation — **opt-in, local-only, permission-sc
 | **Plugins** | Separate processes that talk JSON over stdin/stdout plus a **restricted token** — a plugin crash can never take the app down. Plugins may ship their own interpreter (`interpreterPath`) or a self-contained `.exe` | [docs/PLUGINS.md](docs/PLUGINS.md) |
 | **MCP server** | Wraps the local API as MCP tools so agents (WorkBuddy, Claude, Cursor…) can drive your library in conversation | [mcp/README.md](mcp/README.md) |
 
+#### Ports, listeners and outbound connections
+
+| Listener / connection | Bind | Port | Lifetime | Auth |
+|---|---|---|---|---|
+| Local HTTP API | `127.0.0.1` | `api.json.port` (random by default; can be pinned, falls back to random on a conflict) | while the API switch is on | Bearer token |
+| Plugin panel | `127.0.0.1` | random (`bind(:0)`) | while a plugin panel window is open | one-time `k` + session |
+| Plugin Center panel | `127.0.0.1` | random (`bind(:0)`) | while the Plugin Center window is open | one-time `k` + session |
+| MCP | no listener | — | — | reuses the API token |
+| Affinity | outbound to `127.0.0.1:6767/sse` | 6767 | while connected | the other app |
+| Dev only | `localhost` | 1420 / 1421 / 9223 | dev / QA only | none; not shipped |
+
+Everything FontManager opens is **loopback only** — a machine on your LAN or the internet
+cannot reach it. The API is **off by default**, and its port may change on every launch:
+scripts should read `api.json` at runtime, never hard-code the port. The plugin and
+Plugin Center panels use **one-time keys**, not a long-lived entry point for third-party
+plugins. `6767` is FontManager **connecting out to** Affinity's SSE endpoint — it is not
+a port FontManager listens on.
+
 ### 📥 Installing ready-made plugins
 
 The official plugin collection lives in the **[FontManager-Plugin](https://github.com/706972745/FontManager-Plugin)**
@@ -646,24 +666,31 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
   -d '{"family":"Noto Sans SC"}' $cfg.base/fonts/activate
 ```
 
-**20 routes / 21 handlers**, all permission-gated (full table in
-[docs/PLUGINS.md](docs/PLUGINS.md)):
+**66 endpoints**, all permission-gated. `GET /health` reports the same number as
+`routeCount`, and **`GET /api/v1/routes`** is the authoritative machine-readable catalogue:
+one entry per endpoint with `method` / `path` / `perm` / `dangerous` / `summary`. The table
+below mirrors it, grouped by domain:
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Totals, this token's scopes, full scope catalogue |
-| `GET /fonts` `GET /fonts/families` | List / search fonts (`q`, `limit`, `offset`, `family`, `license`) |
-| `POST /fonts/activate` `POST /fonts/deactivate` | Enable / disable families (**library paths only**) |
-| `POST /fonts/scan` `POST /fonts/apply` | Rescan (30 s throttle) / apply a font in PS·AI·CDR |
-| `GET /apps/active` | Most recently used design app (for "auto" apply) |
-| `GET/POST /snapshots` `DELETE /snapshots/{name}` `POST /snapshots/{name}/apply` | List / create / delete / apply snapshots |
-| `GET /curation` `PUT /curation/{rating,favorite,tags,collection,note}` | Read / edit ratings, favorites, tags, collections, notes |
-| `POST /export/pack` `GET /jobs/{id}` | Async pack export + progress |
-| `POST /import` | Import a font pack (needs the dangerous-ops master switch **and** `import`) |
+| Domain | Endpoints | Permission |
+|---|---|---|
+| health / routes | `GET /health` `GET /routes` | token only |
+| fonts | `GET /fonts` `GET /fonts/families` `GET /fonts/{family}` `GET /fonts/{family}/license` `GET /fonts/{family}/coverage` · `GET /apps/active` | `read:fonts` · `read:apps` |
+| fonts (write) | `POST /fonts/activate` `POST /fonts/deactivate` `POST /fonts/scan` · `POST /fonts/apply` · `POST /fonts/install` `POST /fonts/uninstall` | `write:fonts` · `write:apply` · `write:library` |
+| library | `GET /library` · `POST /library/dedupe` `POST /library/restore-deduped` | `read:library` · `write:library` |
+| trash | `GET /trash` · `POST /trash/restore` `DELETE /trash/{id}` `DELETE /trash` | `read:trash` · `write:trash` |
+| tags / groups / collections | `GET /tags` `GET /tag-groups` `GET /collections` · `PUT/DELETE /tags/{name}` `POST/PUT/DELETE /tag-groups[/{name}]` `POST/PUT/DELETE /collections[/{name}]` | `read:curation` · `write:curation` |
+| snapshots | `GET /snapshots` · `POST /snapshots` `DELETE /snapshots/{name}` `POST /snapshots/{name}/apply` | `read:snapshot` · `write:snapshot` |
+| curation | `GET /curation` · `PUT /curation/{rating,favorite,tags,collection,note}` | `read:curation` · `write:curation` |
+| online | `GET /online/catalogue` `GET /online/families/{id}` `GET /online/hosts` · `POST /online/download` | `read:online` · `write:online` |
+| plugins / runtimes | `GET /plugins` `GET /runtimes` · `POST /plugins/{id}/enable` `POST /plugins/install` · `POST /runtimes/{kind}/download` `DELETE /runtimes/{kind}` | `read:plugins` `read:runtimes` · `write:plugins` · `write:runtimes` |
+| settings / system | `GET /settings` `GET /features` `GET /system/paths` · `PUT /settings` · `POST /system/open` | `read:settings` · `write:settings` · `open:external` |
+| export / import | `POST /export/pack` `POST /export/fonts` `POST /export/folder` `POST /export/cancel` `GET /jobs/{id}` · `POST /import` | `export` · `import` |
+| update | `GET /update/check` · `POST /update/download` `POST /update/install` | `read:update` · `write:update` |
 
 > Body limit is 16 MiB. `permissions` in `/health` is **this token's** scope list;
 > `allPermissions` is the catalogue. The port rotates on every launch — read `api.json`
-> at runtime instead of hard-coding it.
+> (under the data root, e.g. `<install dir>\data\api.json`) at runtime instead of
+> hard-coding it.
 
 #### Permissions — where 403 comes from
 
@@ -673,24 +700,41 @@ with the missing scope named in the body.
 
 | Scope | What it allows |
 |---|---|
-| `read:fonts` | Read font / family lists and enabled state |
-| `write:fonts` | **Enable / disable / rescan** — changes system-wide state; the one to scrutinise |
+| `read:fonts` / `write:fonts` | Read font / family lists and enabled state / **enable, disable, rescan** — changes system-wide state |
 | `read:snapshot` / `write:snapshot` | Read / create / delete / apply setting snapshots |
-| `read:curation` / `write:curation` | Read / modify your notes, ratings, favorites, tags |
-| `export` / `import` | Start a pack export + poll progress / import a font pack |
+| `read:curation` / `write:curation` | Read / modify notes, ratings, favorites, tags, tag groups, collections |
+| `read:library` / `write:library` | Read library info / **install and uninstall font files, dedupe** |
+| `read:trash` / `write:trash` | Read trash entries / **restore, delete, empty the trash** |
+| `read:online` / `write:online` | Read the online catalogue and host allowlist / **download online families** |
+| `read:settings` / `write:settings` | Read settings, features, system paths / **change whitelisted settings** |
+| `read:plugins` / `write:plugins` | List installed plugins / **enable, disable, install plugins** |
+| `read:runtimes` / `write:runtimes` | Read runtime status / **download or delete plugin runtimes** |
+| `read:update` / `write:update` | Check for updates / **download and install an update** |
+| `export` / `import` | Start a pack export + poll progress / **import a font pack** |
 | `write:apply` | **Apply a font in Photoshop / Illustrator / CorelDRAW** (drives another app) |
 | `read:apps` | Ask "which design app was used most recently" |
+| `open:external` | Open a path inside the library or a http(s) URL with the system handler |
 
-These **10 scopes** are the entire whitelist (`api.rs::PERMS`). A plugin that declares
+These **25 scopes** are the entire whitelist (`api.rs::PERMS`). A plugin that declares
 `*` or misspells a scope gets it **silently dropped and logged** — it never receives full
 access. `GET /health` → `permissions` shows what was actually minted.
 
-The order is **401 (no token) → 403 (scope missing) → 422 (malformed body)**: the gate runs
-before the body is parsed, so a missing scope never shows up as 422.
+**Dangerous operations pass two gates.** Ten scopes are classed as dangerous
+(`DANGEROUS_PERMS`: `write:fonts`, `import`, `write:snapshot`, `write:library`,
+`write:trash`, `write:online`, `write:plugins`, `write:runtimes`, `write:settings`,
+`write:update`). They run only when **both** the master switch in Settings → Local API
+("allow dangerous operations") **and** a per-client grant for the caller are on. Clients
+are identified by plugin id for plugins, or by `x-zfm-client` (`api…` / `mcp…`) for
+scripts and MCP; granting a class (`mcp`) covers its named variants (`mcp:claude`).
+Either gate closed means **403**.
+
+The order is **401 (no token) → 403 (scope missing / dangerous gate) → 422 (malformed
+body)**: the gate runs before the body is parsed, so a missing scope never shows up as 422.
 
 Missing a scope? Add it to **the plugin's own** `plugin.json` and hit *Rescan* — tokens are
 minted at enable time. **No FontManager change needed.** To see what you actually hold, read
-`permissions` from `GET /health` (`allPermissions` is the full catalogue).
+`permissions` from `GET /health` (`allPermissions` is the full catalogue), and read
+`GET /api/v1/routes` to see which permission each endpoint demands.
 
 > Full scope table, plus the rule for adding a new route (`routes()` **and** `perm_for()`,
 > or the route is silently **open**), is in
@@ -956,7 +1000,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.6.0-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.7.0-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -984,6 +1028,8 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 ---
 
 ## 🆕 最近更新
+
+**2.7.0 —— 本地 API 扩到 66 条端点（字体库、回收站、标签、在线库、设置、插件、运行时、更新），按域细分权限；快捷键面板改成 AssetManager 布局，分组坞显示当前分组且不再自动固定**
 
 **2.6.0 —— 非中文系统的安装/卸载界面改用英文；移除 NSIS 备用 UI；关于页加入「原始股东」说明与两张赞助二维码**
 
@@ -1385,6 +1431,22 @@ FontManager 把核心能力开放给自动化——**默认关闭、仅限本机
 | **插件** | 独立进程，通过 stdin/stdout 的 JSON + **受限令牌**通信——插件崩溃绝不会带走主程序。插件可以自带解释器（`interpreterPath`），也可以直接是自包含的 `.exe` | [docs/PLUGINS.md](docs/PLUGINS.md) |
 | **MCP 服务器** | 把本地 API 包装成 MCP 工具，让 Agent（WorkBuddy、Claude、Cursor…）在对话里驱动你的字体库 | [mcp/README.md](mcp/README.md) |
 
+#### 端口、监听与出站
+
+| 监听 / 连接 | 绑定 | 端口 | 生命周期 | 鉴权 |
+|---|---|---|---|---|
+| 本地 HTTP API | `127.0.0.1` | `api.json.port`（默认随机；可固定，冲突回退随机） | 本地 API 开关打开期间 | Bearer 令牌 |
+| 插件面板 | `127.0.0.1` | 随机（`bind(:0)`） | 插件面板窗口打开期间 | 一次性 `k` + 会话 |
+| 插件中心面板 | `127.0.0.1` | 随机（`bind(:0)`） | 插件中心窗口打开期间 | 一次性 `k` + 会话 |
+| MCP | 不监听 | — | — | 复用 API 令牌 |
+| Affinity | 出站连 `127.0.0.1:6767/sse` | 6767 | 连接期间 | 由对方应用负责 |
+| 仅开发用 | `localhost` | 1420 / 1421 / 9223 | 仅开发 / QA | 无；不随安装包发布 |
+
+FontManager 打开的端口**一律只绑回环**，局域网或外网的机器都看不到。API **默认关闭**，
+端口每次启动可能轮换——脚本要在运行时读 `api.json`，不要硬编码。插件面板与插件中心面板
+用的是**一次性 key**，不是给第三方插件长期连接的入口。`6767` 是 FontManager
+**出站去连 Affinity** 的 SSE 端点，不是 FontManager 自己在监听。
+
 ### 📥 安装现成插件
 
 官方插件集中在 **[FontManager-Plugin](https://github.com/706972745/FontManager-Plugin)** 仓库。
@@ -1486,23 +1548,29 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
   -d '{"family":"Noto Sans SC"}' $cfg.base/fonts/activate
 ```
 
-常用端点速查（**本版共 20 条路由 / 21 个方法**，全部带权限闸门；完整表见
-[docs/PLUGINS.md](docs/PLUGINS.md)）：
+本版共 **66 条端点**，全部带权限闸门。`GET /health` 里的 `routeCount` 报的就是这个数；
+**`GET /api/v1/routes`** 是权威的机器可读目录，每条都给出 `method` / `path` / `perm` /
+`dangerous` / `summary`。下表是它的镜像，按域分组：
 
-| 端点 | 作用 |
-|---|---|
-| `GET /health` | 健康检查：字体总数、当前令牌的权限、全部权限清单 |
-| `GET /fonts` `GET /fonts/families` | 列出 / 搜索字体（q、limit、offset、family、license） |
-| `POST /fonts/activate` `POST /fonts/deactivate` | 启用 / 停用字族（**只认字体库内的路径**） |
-| `POST /fonts/scan` `POST /fonts/apply` | 触发库扫描（30 秒节流） / 把字体套到 PS·AI·CDR |
-| `GET /apps/active` | 最近在用的设计软件（「自动套用」用） |
-| `GET/POST /snapshots` `DELETE /snapshots/{name}` `POST /snapshots/{name}/apply` | 快照：列表 / 创建 / 删除 / 应用 |
-| `GET /curation` `PUT /curation/{rating,favorite,tags,collection,note}` | 读整理数据 / 改评分、收藏、标签、分组、备注 |
-| `POST /export/pack` `GET /jobs/{id}` | 打包导出（异步任务） / 查进度 |
-| `POST /import` | 导入字体包（需「允许危险操作」总开关 + `import` 权限） |
+| 域 | 端点 | 权限 |
+|---|---|---|
+| 健康 / 目录 | `GET /health` `GET /routes` | 只需令牌 |
+| 字体（读） | `GET /fonts` `GET /fonts/families` `GET /fonts/{family}` `GET /fonts/{family}/license` `GET /fonts/{family}/coverage` · `GET /apps/active` | `read:fonts` · `read:apps` |
+| 字体（写） | `POST /fonts/activate` `POST /fonts/deactivate` `POST /fonts/scan` · `POST /fonts/apply` · `POST /fonts/install` `POST /fonts/uninstall` | `write:fonts` · `write:apply` · `write:library` |
+| 字体库 | `GET /library` · `POST /library/dedupe` `POST /library/restore-deduped` | `read:library` · `write:library` |
+| 回收站 | `GET /trash` · `POST /trash/restore` `DELETE /trash/{id}` `DELETE /trash` | `read:trash` · `write:trash` |
+| 标签 / 标签分组 / 字体分组 | `GET /tags` `GET /tag-groups` `GET /collections` · `PUT/DELETE /tags/{name}` `POST/PUT/DELETE /tag-groups[/{name}]` `POST/PUT/DELETE /collections[/{name}]` | `read:curation` · `write:curation` |
+| 快照 | `GET /snapshots` · `POST /snapshots` `DELETE /snapshots/{name}` `POST /snapshots/{name}/apply` | `read:snapshot` · `write:snapshot` |
+| 整理数据 | `GET /curation` · `PUT /curation/{rating,favorite,tags,collection,note}` | `read:curation` · `write:curation` |
+| 在线库 | `GET /online/catalogue` `GET /online/families/{id}` `GET /online/hosts` · `POST /online/download` | `read:online` · `write:online` |
+| 插件 / 运行时 | `GET /plugins` `GET /runtimes` · `POST /plugins/{id}/enable` `POST /plugins/install` · `POST /runtimes/{kind}/download` `DELETE /runtimes/{kind}` | `read:plugins` `read:runtimes` · `write:plugins` · `write:runtimes` |
+| 设置 / 系统 | `GET /settings` `GET /features` `GET /system/paths` · `PUT /settings` · `POST /system/open` | `read:settings` · `write:settings` · `open:external` |
+| 导出 / 导入 | `POST /export/pack` `POST /export/fonts` `POST /export/folder` `POST /export/cancel` `GET /jobs/{id}` · `POST /import` | `export` · `import` |
+| 更新 | `GET /update/check` · `POST /update/download` `POST /update/install` | `read:update` · `write:update` |
 
 > 请求体上限 16 MiB；`/health` 里的 `permissions` 是**当前这枚令牌**的权限，
-> `allPermissions` 才是全局清单。端口每次启动轮换，脚本里别硬编码，从 `api.json` 现读。
+> `allPermissions` 才是全局清单。`api.json` 在数据根下（默认 `<安装目录>\data\api.json`），
+> 端口每次启动轮换，脚本里别硬编码，从 `api.json` 现读。
 
 #### 权限：403 是怎么回事
 
@@ -1511,24 +1579,39 @@ curl.exe -X POST -H "Authorization: Bearer $($cfg.token)" -H "Content-Type: appl
 
 | 权限 | 能做什么 |
 |---|---|
-| `read:fonts` | 读字体 / 字族清单、启用状态 |
-| `write:fonts` | **启用 / 停用 / 重扫**——改的是系统级状态，最该盯紧的一项 |
+| `read:fonts` / `write:fonts` | 读字体 / 字族清单、启用状态 / **启用、停用、重扫**——改的是系统级状态 |
 | `read:snapshot` / `write:snapshot` | 看 / 建 / 删 / 应用方案快照 |
-| `read:curation` / `write:curation` | 读 / 改你写的标签、备注、评分、收藏 |
-| `export` / `import` | 触发打包导出、查进度 / 导入字体包 |
+| `read:curation` / `write:curation` | 读 / 改标签、标签分组、分组、备注、评分、收藏 |
+| `read:library` / `write:library` | 读字体库信息 / **安装、卸载字体文件、归置重复字体** |
+| `read:trash` / `write:trash` | 读回收站 / **还原、永久删除、清空回收站** |
+| `read:online` / `write:online` | 读在线目录与主机白名单 / **下载在线字族** |
+| `read:settings` / `write:settings` | 读设置、能力清单、系统路径 / **改白名单设置项** |
+| `read:plugins` / `write:plugins` | 读插件清单 / **启用、停用、安装插件** |
+| `read:runtimes` / `write:runtimes` | 读运行时状态 / **下载、删除插件运行时** |
+| `read:update` / `write:update` | 检查更新 / **下载并安装更新** |
+| `export` / `import` | 触发打包导出、查进度 / **导入字体包** |
 | `write:apply` | **把字体套到 Photoshop / Illustrator / CorelDRAW**（会去驱动别的软件） |
 | `read:apps` | 问「现在最近在用的是哪个设计软件」 |
+| `open:external` | 用系统程序打开库内路径或 http(s) URL |
 
-这 **10 项**就是权限白名单的全部（`api.rs::PERMS`）。插件在 `plugin.json` 里写 `*`、
+这 **25 项**就是权限白名单的全部（`api.rs::PERMS`）。插件在 `plugin.json` 里写 `*`、
 或写错一个字母，都会被**直接丢掉并记日志**，不会拿到全权；`GET /health` 的
 `permissions` 能当场核对最终签发了什么。
 
-请求的判定顺序是 **401（没令牌）→ 403（没这项权限）→ 422（请求体格式错）**：
+**重大操作要过两道闸。** 其中 10 项被归为重大操作（`DANGEROUS_PERMS`：`write:fonts`、
+`import`、`write:snapshot`、`write:library`、`write:trash`、`write:online`、
+`write:plugins`、`write:runtimes`、`write:settings`、`write:update`）。它们必须同时满足
+**设置 → 本地 API 里的总开关**「允许危险操作」**和**针对调用方的**按客户端授权**才会执行。
+客户端身份：插件就是插件 id；脚本与 MCP 用 `x-zfm-client`（`api…` / `mcp…`）。授权一个类
+（如 `mcp`）会覆盖它的具名变体（`mcp:claude`）。任一闸没开就是 **403**。
+
+请求的判定顺序是 **401（没令牌）→ 403（没这项权限 / 重大操作闸）→ 422（请求体格式错）**：
 权限检查在解析 body **之前**就跑完了，所以「缺权限」永远不会表现成 422。
 
 少了权限，改**插件自己**的 `plugin.json` 把权限加进 `permissions`，再「重新扫描」即可
 （令牌是启用时签发的，不重启不会变）——**不用改 FontManager**。想确认自己手里到底有什么，
-读 `GET /health` 的 `permissions` 字段（`allPermissions` 才是全部可用权限）。
+读 `GET /health` 的 `permissions` 字段（`allPermissions` 才是全部可用权限）；
+想知道每条端点各要什么权限，读 `GET /api/v1/routes`。
 
 > 完整权限表、加新接口的规矩（`routes()` + `perm_for()` 必须同时改，否则**默认放行**）、
 > 以及 `perm_for` 里 `match` 顺序的坑，见 [docs/PLUGINS.md](docs/PLUGINS.md#权限403-到底是谁拦的)。
