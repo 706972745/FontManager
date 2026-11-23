@@ -165,7 +165,7 @@ and MCP when you want your tools to join in.
 - **The progress screen no longer plays dead**: the elapsed counter actually counts, the bar breathes, and a reinstall no longer pretends to jump to 88% and then sit there for forty seconds.
 - **Settings typography fixed**: the "Settings" title is now the largest thing on screen, section headings clearly outrank row labels, and size + weight carry the hierarchy.
 - **Cleaner uninstall**: leftover icon files and empty `plugins` / font-library shells are removed; "delete my data too" stays a separate, explicit choice.
-- **Fully decoupled from ZFontManager**: its old folders and wording are no longer cleaned up or mentioned.
+- **Independent project**: no upstream folders or wording are referenced.
 
 **2.1.5 — Your data follows the install folder**
 
@@ -193,9 +193,8 @@ See the full [changelog](CHANGELOG.md).
 
 ## 💡 Why FontManager?
 
-FontManager started from **ZFontManager 0.8.0** and has since grown into a project
-of its own: its own code, its own release track, its own plugin platform. Beyond that
-starting point it has no shared roadmap, maintenance, or upstream.
+FontManager is an independent project by IIEOzo: its own code, its own release track,
+its own plugin platform, with no shared roadmap, maintenance, or upstream.
 
 What FontManager adds:
 
@@ -867,7 +866,7 @@ The NSIS uninstaller's confirmation page has a **"Delete app data"** checkbox:
 - **Checked** — everything this app created is removed as well: `字体库`,
   `plugins`, `data` (state / prefs / caches / logs / online downloads / trash),
   `python-runtime` and `node-runtime` inside the install folder,
-  `%APPDATA%\FontManager` (the `ZFontManager` folder from 0.8.x is no longer touched since 2.1.6),
+  `%APPDATA%\FontManager`,
   `%LOCALAPPDATA%\FontManager\data` and `%LOCALAPPDATA%\FontManager\字体库`,
   the three file-association registry keys, and HKCU font-registry values whose
   data points into those font libraries. `data` is only removed when it actually
@@ -935,8 +934,7 @@ The release pipeline runs the same gates.
 
 ## 🙏 Credits
 
-FontManager is built by **IIEOzo**, and started from **ZFontManager 0.8.0**.
-That starting point is the only thing the two projects share today.
+FontManager is built and maintained by **IIEOzo**.
 
 <div align="center">
 
@@ -959,8 +957,7 @@ FontManager is free software, released under the
 In human terms: you may use it, share it, and change it — and if you
 distribute a changed version, it must stay just as free for the next person.
 
-The copyright notice of the 0.8.0 code FontManager started from is kept in
-[LICENSE](LICENSE), as the GPL requires.
+The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 
 ---
 
@@ -971,8 +968,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 **FontManager** · your fonts, your machine, your rules
 
-<sub>Built and maintained by <a href="https://github.com/706972745">IIEOzo</a>
-· started from ZFontManager 0.8.0</sub>
+<sub>Built and maintained by <a href="https://github.com/706972745">IIEOzo</a></sub>
 
 </div>
 
@@ -982,8 +978,8 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 [English](#english) | **简体中文**
 
-<!-- 中文正文与英文在同一份 README 里：顶部点「简体中文」是页内跳转（#简体中文），
-     不再跳到 README.zh-CN.md 的文件页。改文档时两边一起改，别只改一半。 -->
+<!-- 中文正文与英文在同一份 README 里：顶部点「简体中文」是页内跳转（#简体中文）。
+     改文档时两边一起改，别只改一半。 -->
 
 <div align="center">
 
@@ -1134,7 +1130,7 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 - **进度屏不再装死**：`已用 N 秒` 自己走字、进度条会呼吸，覆盖安装也不会再假装瞬间跳到 88% 然后干等四十秒。
 - **设置面板字阶重排**：最顶部的「设置」比所有文字都大，分区标题（语言 / 系统 / 字体库）明显大于行标签，靠字号 + 字重两级对比，不再一整屏一样大。
 - **卸载更干净**：残留的图标文件和空的 `plugins` / 字体库目录会清掉；「连数据一起删」仍是需要你主动勾选的独立选项。
-- **与 ZFontManager 彻底脱钩**：不再清理、也不再兼容它留下的旧目录与文案。
+- **独立项目**：不再引用任何上游目录或文案。
 
 **2.1.5 —— 数据跟着安装目录走**
 
@@ -1162,9 +1158,8 @@ The copyright notice of the 0.8.0 code FontManager started from is kept in
 
 ## 💡 为什么是 FontManager？
 
-FontManager 从 **ZFontManager 0.8.0** 迭代而来，此后已经长成自己的项目：
-自己的代码、自己的发版路线、自己的插件平台。除了这个起点，两者不再共享任何
-路线图、维护关系或上游依赖。
+FontManager 是 IIEOzo 的独立项目：自己的代码、自己的发版路线、自己的插件平台，
+不共享任何路线图、维护关系或上游依赖。
 
 FontManager 在这个起点上加了什么：
 
@@ -1732,7 +1727,7 @@ Release 说明中的 SHA-256。
 - **勾选**：除程序本体外，把本软件自己创建／下载的内容按白名单清干净 ——
   安装目录下的 `字体库`、`plugins`、`data`（账本 / 偏好 / 缓存 / 日志 / 在线目录 / 回收站）、
   `python-runtime`、`node-runtime`，
-  `%APPDATA%\FontManager`（2.1.6 起不再处理 0.8.x 留下的 `ZFontManager` 目录），
+  `%APPDATA%\FontManager`，
   `%LOCALAPPDATA%\FontManager\data`、`%LOCALAPPDATA%\FontManager\字体库`，
   三个文件关联注册键，以及 HKCU 字体表里
   **值数据指向本软件字体库**的注册项；恢复到像没装过的状态。
@@ -1796,8 +1791,7 @@ npx tauri build --bundles nsis,msi
 
 ## 🙏 致谢
 
-FontManager 由 **IIEOzo** 构建，从 **ZFontManager 0.8.0** 迭代而来。
-今天两者之间只剩这个起点这一层关系。
+FontManager 由 **IIEOzo** 构建与维护。
 
 <div align="center">
 
@@ -1819,7 +1813,7 @@ FontManager 是自由软件，遵循 **GNU General Public License v3.0**。
 用人话说：你可以使用、分享和修改它；但如果你分发修改后的版本，
 必须让下一个人获得同样的自由。
 
-迭代起点那部分代码的版权声明保留在 [LICENSE](LICENSE) 里（GPL 的要求）。
+版权声明保留在 [LICENSE](LICENSE) 里（GPL 的要求）。
 
 ---
 
@@ -1830,7 +1824,6 @@ FontManager 是自由软件，遵循 **GNU General Public License v3.0**。
 
 **FontManager** · 你的字体，你的电脑，你说了算
 
-<sub>由 <a href="https://github.com/706972745">IIEOzo</a> 构建与维护 ·
-从 ZFontManager 0.8.0 迭代而来</sub>
+<sub>由 <a href="https://github.com/706972745">IIEOzo</a> 构建与维护</sub>
 
 </div>
