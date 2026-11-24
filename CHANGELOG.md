@@ -14,8 +14,8 @@ All notable changes to FontManager are documented here. The format follows
   紧凑快捷栏按钮保留各自语义。
 - **主界面与速览四周 3px 宝蓝阴影**：外壳各往里缩 3px，`box-shadow`
   画进窗口边距（透明窗口外没有像素，不缩会被整个裁掉）——四边含顶部
-  完整一圈，与 AssetManager 同一套做法；收起态（提示条 / 细线）按既有
-  口径不留外阴影，提示条改 3px 内发光。
+  完整一圈，与 AssetManager 同一套做法；收起态（提示条 / 细线）一律
+  无阴影。
 - **阴影颜色分开可选**：设置 → 外观新增「主界面阴影颜色」「速览阴影
   颜色」两行，宝蓝（默认，随主题）/ 墨黑 / 纸白 / 中灰四个色块，分开
   记忆（`prefs.frameGlowMain` / `frameGlowQuick`）、点选即时生效。

@@ -6278,10 +6278,15 @@ h2.detail-title.copy-name {
   /* 收起成细线时底色要淡成透明（屏幕外切到 bar 阶段），过渡而不是一帧切过去。
      时长走令牌：正常态 260ms 与窗口动画同拍；「减少动效」下窗口是一帧到位的
      （animateHeight 0 时长），这里也必须同拍收成 1ms，否则会出现
-     「窗口已经缩成一条线了、内容还在慢慢滑」（2026-11-11 收口）。 */
+     「窗口已经缩成一条线了、内容还在慢慢滑」（2026-11-11 收口）。
+     margin / box-shadow 同拍过渡（2.7.5）：收起瞬间 dock-phase 翻成 hint，
+     边距 3→0、阴影由宝蓝渐隐成透明 —— 阴影跟着收起动作平滑消失，
+     而不是啪一下没掉（用户 2026-11-24：注意收起时阴影消失的动画）。 */
   transition:
     background-color var(--t-state) linear,
-    border-color var(--t-state) linear;
+    border-color var(--t-state) linear,
+    margin var(--t-state) linear,
+    box-shadow var(--t-state) linear;
 }
 /* 形变 / 淡出垫底用速览自己的底色，免得切换途中露出一块颜色不同的矩形 */
 body.qb-mode.is-morphing #root,
@@ -6400,19 +6405,19 @@ body.is-dragging textarea {
  *
  * 2.7.5 补：收起态**撤销那 3px 边距与外阴影** ——
  *   · 提示条窗口只有 34px、细线只有 12px 高，再让出上下各 3px 会把提示行 / 抓手线裁掉；
- *   · 细线态（bar）整块是透明的（只留中间那根线），留一圈蓝框等于凭空浮着一个空盒子。
- * 提示条改用 1px 内发光顶上（视觉上仍是宝蓝收边），细线态一点阴影都不要。
+ *   · 细线态（bar）整块是透明的（只留中间那根线），留一圈蓝框等于凭空浮着一个空盒子；
+ *   · 提示条也**不要任何阴影**（用户 2026-11-24：收起条不需要发光），一点蓝边都不留。
  */
 .qb-frame[data-dock-phase="hint"],
 .qb-frame[data-dock-phase="bar"] {
   margin: 0;
   max-width: none;
   max-height: none;
-  box-shadow: none;
+  /* 透明阴影而不是 none：box-shadow 到 none 不能过渡，写成透明色才能渐隐 */
+  box-shadow: 0 0 3px 0 transparent;
 }
 .qb-frame[data-dock-phase="hint"] {
   border-radius: var(--qb-radius, 8px);
-  box-shadow: inset 0 0 3px 0 var(--frame-glow-quick, var(--qb-accent));
 }
 /* html/body 全程透明（见文件顶部），速览不再需要按 qb-mode / 收起阶段切换底色。 */
 /**
