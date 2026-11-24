@@ -1,7 +1,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Puzzle, RefreshCw, Scaling, Search, Settings, Sparkles, SunMoon, Trash2, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Palette, Puzzle, RefreshCw, Scaling, Search, Settings, Sparkles, SunMoon, Trash2, Volume2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
@@ -20,6 +20,7 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { useModalLayer } from "../lib/modalLayer";
 import { useT, type TKey } from "../lib/i18n";
 import { LanguageSelect } from "./LanguageSelect";
+import { FrameGlowPicker } from "./FrameGlowPicker";
 import { LabelResyncDialog } from "./LabelResyncDialog";
 import { RuntimeManager } from "./RuntimeManager";
 import { PluginCenterAutoUpdate } from "./PluginCenterAutoUpdate";
@@ -2001,6 +2002,20 @@ ${t("settings.labelResyncWhy")}`}
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">
+                    <Palette size={13} strokeWidth={1.5} /> {t("settings.frameGlowMain")}<SettingHint text={t("settings.frameGlowSub")} /></div>
+                </div>
+                <FrameGlowPicker pref="main" />
+              </div>
+              <div className="settings-row">
+                <div>
+                  <div className="settings-label">
+                    <Palette size={13} strokeWidth={1.5} /> {t("settings.frameGlowQuick")}</div>
+                </div>
+                <FrameGlowPicker pref="quick" />
               </div>
               <div className="settings-row">
                 <div>

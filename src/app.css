@@ -33,10 +33,27 @@ body,
   animation-duration: 100ms;
 }
 
+:root {
+  /* 窗口外壳往里缩的量 = 四周 3px 宝蓝阴影的边距（2.7.5）。
+     全窗遮罩层（settings/compare/menu/ctx… 这批 fixed inset 蒙层）也读它：
+     scrim 只盖到外壳边缘为止，不压到外面那圈阴影上 —— 否则一点开设置，
+     阴影就被半透明黑纱罩成灰色（用户 2026-11-24 报的）。 */
+  --frame-inset: 3px;
+}
+
 .app-frame {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* 3px 宝蓝外阴影（2.7.5，与 AssetManager 主窗 / 贴图窗同一套做法）：
+     `box-shadow` 画在边框盒**外**，而窗口本体（tauri transparent:true / shadow:false）
+     没有任何像素 —— 所以外壳必须先往里缩 3px，阴影才落进窗口内这圈边距；
+     不缩的话整圈阴影都在窗口外，会被裁得一个像素都看不见（AssetManager 贴图窗踩过）。
+     代价：内容区四周各少 3px，最大化时屏幕边缘会透出这 3px 桌面。 */
+  margin: var(--frame-inset);
+  height: calc(100% - var(--frame-inset) * 2);
+  /* 形变帧会写行内 width/height（morph），max-* 把它夹在窗口内，阴影同样不被裁 */
+  max-width: calc(100% - var(--frame-inset) * 2);
+  max-height: calc(100% - var(--frame-inset) * 2);
   position: relative;
   border: 1px solid rgba(var(--ink-rgb), 0.07);
   background: var(--canvas);
@@ -47,6 +64,9 @@ body,
   overflow: hidden;
   overflow: hidden;
   isolation: isolate;
+  /* 颜色走令牌：默认宝蓝（浅色 #1b4fe0 / 深色 #5b8cff）；
+     --frame-glow-main 由设置页写入（2.7.5），用户自选颜色时覆盖默认 */
+  box-shadow: 0 0 3px 0 var(--frame-glow-main, var(--accent-a));
 }
 
 .app-frame::before {
@@ -724,7 +744,7 @@ body,
 }
 .menu-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   z-index: 30;
 }
 .sort-menu {
@@ -2206,7 +2226,7 @@ h2.detail-title.copy-name {
 
 .dropchoice {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   /* fixed 会逃出 .app-frame 的 overflow:hidden：不画圆角的话
      scrim 会把窗口四角的透明区一起盖住，看起来就是「四个角变直角」 */
   border-radius: var(--qb-radius, 8px);
@@ -2363,7 +2383,7 @@ h2.detail-title.copy-name {
 
 .dup-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   /* fixed 会逃出 .app-frame 的 overflow:hidden：不画圆角的话
      scrim 会把窗口四角的透明区一起盖住，看起来就是「四个角变直角」 */
   border-radius: var(--qb-radius, 8px);
@@ -2421,7 +2441,7 @@ h2.detail-title.copy-name {
    面板接近纯白，不再出现「整窗蒙一层重灰」（那层 55% 的黑纱就是发灰的元凶） */
 .trashconfirm-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   border-radius: var(--qb-radius, 8px);
   z-index: 76;
   display: grid;
@@ -2623,7 +2643,7 @@ h2.detail-title.copy-name {
 
 .ctx-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   z-index: 80;
 }
 .ctx-menu {
@@ -3830,7 +3850,7 @@ h2.detail-title.copy-name {
 
 .compare-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   /* fixed 会逃出 .app-frame 的 overflow:hidden：不画圆角的话
      scrim 会把窗口四角的透明区一起盖住，看起来就是「四个角变直角」 */
   border-radius: var(--qb-radius, 8px);
@@ -4502,7 +4522,7 @@ h2.detail-title.copy-name {
 
 .palette-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   /* fixed 会逃出 .app-frame 的 overflow:hidden：不画圆角的话
      scrim 会把窗口四角的透明区一起盖住，看起来就是「四个角变直角」 */
   border-radius: var(--qb-radius, 8px);
@@ -4984,7 +5004,7 @@ h2.detail-title.copy-name {
 
 .tour-layer {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   z-index: 88;
 }
 .tour-spotlight {
@@ -5160,7 +5180,7 @@ h2.detail-title.copy-name {
 
 .lang-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   z-index: 90;
 }
 .lang-menu {
@@ -5524,7 +5544,7 @@ h2.detail-title.copy-name {
 }
 .online-detail-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--frame-inset);
   z-index: 60;
   display: grid;
   place-items: center;
@@ -6233,7 +6253,15 @@ h2.detail-title.copy-name {
 .qb-frame {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* 3px 宝蓝外阴影（2.7.5）：和主界面 .app-frame 同一套做法 —— 窗口没有像素，
+     阴影画在边框盒外，所以先把外壳往里缩 3px，模糊正好落在窗口内这圈边距里。
+     width/height 会被 useQuickbarDock / morph 写成行内值（逐帧动画），
+     这里用 max-* 把它们夹在「窗口 - 6px」，动画途中阴影也不会被裁。
+     收起态（hint / bar）会撤销边距与这圈外阴影，见下面的 dock-phase 规则。 */
+  margin: var(--frame-inset);
+  height: calc(100% - var(--frame-inset) * 2);
+  max-width: calc(100% - var(--frame-inset) * 2);
+  max-height: calc(100% - var(--frame-inset) * 2);
   position: relative;
   border: 1px solid var(--qb-hair);
   background: var(--qb-bg);
@@ -6242,6 +6270,9 @@ h2.detail-title.copy-name {
      以前只在收起态（hint）加：展开时 docked 立刻变 false，这条规则失效，
      而系统圆角要等 IPC 往返才切回来，中间几帧窗口是直角 —— 就是「展开时四角闪一下」。 */
   border-radius: var(--qb-radius, 8px);
+  /* 速览自己有 --qb-accent（浅色 #1b4fe0 / 深色 #5b8cff）作默认；
+     用户在设置里给速览选了颜色时，--frame-glow-quick 覆盖（2.7.5，与主界面分开记） */
+  box-shadow: 0 0 3px 0 var(--frame-glow-quick, var(--qb-accent));
   color: var(--qb-fg);
   -webkit-font-smoothing: antialiased;
   /* 收起成细线时底色要淡成透明（屏幕外切到 bar 阶段），过渡而不是一帧切过去。
@@ -6366,9 +6397,22 @@ body.is-dragging textarea {
  * 收起态（提示条 / 细线）：窗口本体一律直角（DWM 圆角在速览期间是关掉的，
  * 见 useQuickbarDock），圆角由 .qb-frame 的常开 border-radius 画。
  * 这里保留一条显式规则只是为了语义清晰：收起态的形状与展开态完全一致。
+ *
+ * 2.7.5 补：收起态**撤销那 3px 边距与外阴影** ——
+ *   · 提示条窗口只有 34px、细线只有 12px 高，再让出上下各 3px 会把提示行 / 抓手线裁掉；
+ *   · 细线态（bar）整块是透明的（只留中间那根线），留一圈蓝框等于凭空浮着一个空盒子。
+ * 提示条改用 1px 内发光顶上（视觉上仍是宝蓝收边），细线态一点阴影都不要。
  */
+.qb-frame[data-dock-phase="hint"],
+.qb-frame[data-dock-phase="bar"] {
+  margin: 0;
+  max-width: none;
+  max-height: none;
+  box-shadow: none;
+}
 .qb-frame[data-dock-phase="hint"] {
   border-radius: var(--qb-radius, 8px);
+  box-shadow: inset 0 0 3px 0 var(--frame-glow-quick, var(--qb-accent));
 }
 /* html/body 全程透明（见文件顶部），速览不再需要按 qb-mode / 收起阶段切换底色。 */
 /**
@@ -12432,3 +12476,34 @@ body.tour-qb .qb-actions .qb-btn-text {
    · `.seg` 是 30px 槽（2.7.3 定的），**不属于**控件档，别顺手改
    · `.tag-expiry-btn` / `.sidebar-toggle` / `.palette-input` / `.filter-charinput`
      是显式例外，原因写在各条规则上，别为了「凑齐 28」把它们拉平 */
+
+/* ─── 窗口阴影颜色选择（2.7.5） ────────────────────────────────────────
+   设置页「外观」里的一排色块：宝蓝（默认）/ 墨黑 / 纸白 / 中灰。
+   选中的值写进 prefs.frameGlow 并落到 --frame-glow，主界面 / 速览的
+   3px 外阴影与速览收起条的内发光读这个变量，全部即时生效。 */
+.glow-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.glow-chip {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--ink-rgb), 0.22);
+  cursor: pointer;
+  transition: transform var(--t-quick) ease, box-shadow var(--t-quick) ease;
+}
+.glow-chip:hover {
+  transform: scale(1.12);
+}
+.glow-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-glow-soft);
+}
+/* 选中态：外圈一圈强调色描边，垫 2px 底色把描边和色块隔开 */
+.glow-chip.on {
+  box-shadow: 0 0 0 2px var(--canvas), 0 0 0 3.5px var(--accent-a);
+}

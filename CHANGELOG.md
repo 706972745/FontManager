@@ -12,6 +12,18 @@ All notable changes to FontManager are documented here. The format follows
   （28/30/24 三档高度、6/4px 圆角、`--ui-line` 边框、11px/500 字阶、
   `--t-quick` 过渡、统一 hover/active/focus/disabled 状态）；危险色与
   紧凑快捷栏按钮保留各自语义。
+- **主界面与速览四周 3px 宝蓝阴影**：外壳各往里缩 3px，`box-shadow`
+  画进窗口边距（透明窗口外没有像素，不缩会被整个裁掉）——四边含顶部
+  完整一圈，与 AssetManager 同一套做法；收起态（提示条 / 细线）按既有
+  口径不留外阴影，提示条改 3px 内发光。
+- **阴影颜色分开可选**：设置 → 外观新增「主界面阴影颜色」「速览阴影
+  颜色」两行，宝蓝（默认，随主题）/ 墨黑 / 纸白 / 中灰四个色块，分开
+  记忆（`prefs.frameGlowMain` / `frameGlowQuick`）、点选即时生效。
+- **遮罩层不再压灰阴影**：设置 / 对比 / 右键 / 菜单 / 命令面板 / 导览等
+  10 处全窗遮罩改用 `--frame-inset` 令牌，只盖到外壳边缘为止——点开
+  设置后背景照常变灰，窗口四周那圈阴影保持原色。
+- **语言包补齐**：`settings.motion*`、`about.stillEarly.*`、
+  `shortcuts.footer` 七语历史缺失键补上，九语全部 100%。
 
 ## [2.7.3] — 2026-11-24
 

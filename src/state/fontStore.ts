@@ -440,6 +440,9 @@ interface FontStore {
   soundPref: SoundLevel;
   themePref: ThemePref;
   localePref: LocalePref;
+  /** 窗口四周 3px 阴影的颜色（主界面 / 速览分开记）："accent" = 宝蓝（默认），"#rrggbb" = 自选 */
+  frameGlowMain: string;
+  frameGlowQuick: string;
 
   bulkTagFor: string[] | null;
 
@@ -715,6 +718,8 @@ interface FontStore {
   toggleSection: (id: string) => void;
   setSoundPref: (pref: SoundLevel) => void;
   setThemePref: (pref: ThemePref) => void;
+  setFrameGlowMain: (v: string) => void;
+  setFrameGlowQuick: (v: string) => void;
   setLocalePref: (pref: LocalePref) => void;
   startTour: () => void;
   setTourStep: (step: number) => void;
@@ -1243,6 +1248,34 @@ function applyTransparencyPref(pref: TransparencyPref) {
 }
 
 /**
+ * 窗口阴影颜色（2.7.5）：主界面与速览**分开**各存一份，用户可以在设置里分别选。
+ * `"accent"` = 跟随主题宝蓝；`"#rrggbb"` = 用户在设置里选的预设色。
+ * 各写成 CSS 变量 `--frame-glow-main` / `--frame-glow-quick`：
+ * .app-frame 的 3px 外阴影读前者，.qb-frame 的外阴影与收起条内发光读后者。
+ */
+export const FRAME_GLOW_DEFAULT = "accent";
+
+export function isFrameGlow(v: unknown): v is string {
+  return v === FRAME_GLOW_DEFAULT || (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v));
+}
+
+function applyFrameGlowMain(v: string) {
+  if (v === FRAME_GLOW_DEFAULT) {
+    document.documentElement.style.removeProperty("--frame-glow-main");
+  } else {
+    document.documentElement.style.setProperty("--frame-glow-main", v);
+  }
+}
+
+function applyFrameGlowQuick(v: string) {
+  if (v === FRAME_GLOW_DEFAULT) {
+    document.documentElement.style.removeProperty("--frame-glow-quick");
+  } else {
+    document.documentElement.style.setProperty("--frame-glow-quick", v);
+  }
+}
+
+/**
  * 版权状态同步改了字族目录名后重扫一次：目录改名 = 字体路径变了，
  * 不重扫的话列表里还是旧路径（启用/停用会找不到文件）。合并 1 秒内的多次改动。
  */
@@ -1288,6 +1321,8 @@ function persistPrefs(get: () => FontStore) {
       collapsedSections: s.collapsedSections,
       soundPref: s.soundPref,
       themePref: s.themePref,
+      frameGlowMain: s.frameGlowMain,
+      frameGlowQuick: s.frameGlowQuick,
       localePref: s.localePref,
       onboarded: s.onboarded,
       lastImported: s.lastImported,
@@ -2009,6 +2044,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
   motionPref: "system",
   soundPref: "off",
   themePref: "dark",
+  frameGlowMain: FRAME_GLOW_DEFAULT,
+  frameGlowQuick: FRAME_GLOW_DEFAULT,
   transparencyPref: "full",
   closeToTray: false,
   startMinimized: false,
@@ -2183,6 +2220,16 @@ export const useFontStore = create<FontStore>((set, get) => ({
           ? (prefs.soundPref as SoundLevel)
           : "off",
         themePref: picked.pref,
+        frameGlowMain: isFrameGlow(prefs.frameGlowMain)
+          ? prefs.frameGlowMain
+          : isFrameGlow(prefs.frameGlow)
+            ? prefs.frameGlow // 本会话开发期写入的旧单值键，两个界面一起继承
+            : FRAME_GLOW_DEFAULT,
+        frameGlowQuick: isFrameGlow(prefs.frameGlowQuick)
+          ? prefs.frameGlowQuick
+          : isFrameGlow(prefs.frameGlow)
+            ? prefs.frameGlow
+            : FRAME_GLOW_DEFAULT,
         onboarded: prefs.onboarded === true,
         localePref: isLocalePref(prefs.localePref) ? prefs.localePref : get().localePref,
         lastImported: Array.isArray(prefs.lastImported)
@@ -2281,6 +2328,8 @@ export const useFontStore = create<FontStore>((set, get) => ({
         .catch(() => {});
     }
     applyMotionPref(get().motionPref);
+    applyFrameGlowMain(get().frameGlowMain);
+    applyFrameGlowQuick(get().frameGlowQuick);
     applyTransparencyPref(get().transparencyPref);
     try {
       const scale = get().uiScale;
@@ -4675,6 +4724,18 @@ export const useFontStore = create<FontStore>((set, get) => ({
   setThemePref: (themePref) => {
     set({ themePref });
     applyTheme(themePref, true);
+    persistPrefs(get);
+  },
+
+  setFrameGlowMain: (frameGlowMain) => {
+    set({ frameGlowMain });
+    applyFrameGlowMain(frameGlowMain);
+    persistPrefs(get);
+  },
+
+  setFrameGlowQuick: (frameGlowQuick) => {
+    set({ frameGlowQuick });
+    applyFrameGlowQuick(frameGlowQuick);
     persistPrefs(get);
   },
 
