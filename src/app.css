@@ -34,14 +34,21 @@ body,
 }
 
 :root {
-  /* 窗口外壳往里缩的量 = 四周 3px 宝蓝阴影的边距（2.7.5）。
-     全窗遮罩层（settings/compare/menu/ctx… 这批 fixed inset 蒙层）也读它：
-     scrim 只盖到外壳边缘为止，不压到外面那圈阴影上 —— 否则一点开设置，
-     阴影就被半透明黑纱罩成灰色（用户 2026-11-24 报的）。 */
-  --frame-inset: 3px;
+  /* 窗口外壳往里缩的量。
+     2.7.5 时是 3px：给外壳外面留一圈边距画宝蓝阴影。
+     但窗口最外那 3px 是**透明**的，DWM 在窗口表面这几个像素上填的是白——
+     这就是「速览返回时宝蓝描边外露一圈白边」的来源（只在非白背景下看得见）。
+     2.7.6 修正（2026-11-24 用户定稿）：3px 阴影整个去掉，边距同时归零。
+     外壳直接贴住窗口边缘，窗口最外一圈像素就是内容本身，白没有地方露。
+     全窗遮罩层（settings/compare/menu/ctx… 这批 fixed inset 蒙层）也读它。 */
+  --frame-inset: 0px;
 }
 
 .app-frame {
+  /* 2.7.6：加了 1px 边框后必须 border-box。
+     否则 height:100% 算的是**内容高度**，再加下各 1px 边框就超出视口 2px，
+     底部那 1px 边框会被窗口直接裁掉 —— 用户 2026-11-24 报的「底部没有显示」就是它。 */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   /* 3px 宝蓝外阴影（2.7.5，与 AssetManager 主窗 / 贴图窗同一套做法）：
@@ -55,7 +62,11 @@ body,
   max-width: calc(100% - var(--frame-inset) * 2);
   max-height: calc(100% - var(--frame-inset) * 2);
   position: relative;
-  border: 1px solid rgba(var(--ink-rgb), 0.07);
+  /* 2.7.6：原来那圈 3px 宝蓝「阴影」改成 1px 边框（用户 2026-11-24 定稿）。
+     边框直接压在窗口最外一圈像素上，所以窗口边缘永远是不透明颜色 ——
+     DWM 没有透明像素可以填白，速览返回时那圈白边从根上没有了。
+     颜色 / 宽度都读设置页写入的变量：选「无边框」时宽度变 0，内容直接铺到边。 */
+  border: var(--frame-border-w-main, 1px) solid var(--frame-border-main, var(--accent-a));
   background: var(--canvas);
   /* 圆角与速览完全同源（--qb-radius，App 挂载时写入）：完整界面原来是 DWM 系统圆角，
      现在改由 CSS 画——DWM 圆角自带的那圈窗口阴影按用户要求一并去掉，
@@ -65,8 +76,9 @@ body,
   overflow: hidden;
   isolation: isolate;
   /* 颜色走令牌：默认宝蓝（浅色 #1b4fe0 / 深色 #5b8cff）；
-     --frame-glow-main 由设置页写入（2.7.5），用户自选颜色时覆盖默认 */
-  box-shadow: 0 0 3px 0 var(--frame-glow-main, var(--accent-a));
+     --frame-glow-main 由设置页写入（2.7.5），用户自选颜色时覆盖默认。
+     2.7.6：3px 宝蓝阴影按用户要求整个去掉（2026-11-24）。
+     窗口边缘不再留透明边距，也就没有「未光栅处被 DWM 填白」的那圈了。 */
 }
 
 .app-frame::before {
@@ -6251,6 +6263,8 @@ h2.detail-title.copy-name {
 }
 
 .qb-frame {
+  /* 和 .app-frame 同一个坑：有边框就得 border-box，否则底部那 1px 会被窗口裁掉 */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   /* 3px 宝蓝外阴影（2.7.5）：和主界面 .app-frame 同一套做法 —— 窗口没有像素，
@@ -6270,16 +6284,18 @@ h2.detail-title.copy-name {
   max-width: calc(100% - var(--qb-inset, var(--frame-inset)) * 2);
   max-height: calc(100% - var(--qb-inset, var(--frame-inset)) * 2);
   position: relative;
-  border: 1px solid var(--qb-hair);
+  /* 2.7.6：和主界面同一套 —— 3px 阴影改成 1px 边框，颜色/宽度读设置页变量，
+     「无边框」时宽度归零（见 useQuickbarDock / fontStore 的 applyFrameBorder）。 */
+  border: var(--frame-border-w-quick, 1px) solid var(--frame-border-quick, var(--qb-accent));
   background: var(--qb-bg);
   overflow: hidden;
   /* 圆角全程常开（半径 = 8 物理像素 / DPR，见 useQuickbarDock 的 --qb-radius）。
      以前只在收起态（hint）加：展开时 docked 立刻变 false，这条规则失效，
      而系统圆角要等 IPC 往返才切回来，中间几帧窗口是直角 —— 就是「展开时四角闪一下」。 */
   border-radius: var(--qb-radius, 8px);
-  /* 速览自己有 --qb-accent（浅色 #1b4fe0 / 深色 #5b8cff）作默认；
-     用户在设置里给速览选了颜色时，--frame-glow-quick 覆盖（2.7.5，与主界面分开记） */
-  box-shadow: 0 0 3px 0 var(--frame-glow-quick, var(--qb-accent));
+  /* 速览自己有 --qb-accent（浅色 #1b4fe0 / 深色 #5b8cff）作默认。
+     2.7.6：3px 宝蓝阴影按用户要求整个去掉（2026-11-24），和主界面保持一致 ——
+     窗口边缘就是内容边缘，速览收起/展开途中也不会再有透明边距被 DWM 填白。 */
   color: var(--qb-fg);
   -webkit-font-smoothing: antialiased;
   /* 收起成细线时底色要淡成透明（屏幕外切到 bar 阶段），过渡而不是一帧切过去。
@@ -12566,4 +12582,21 @@ body.tour-qb .qb-actions .qb-btn-text {
 /* 选中态：外圈一圈强调色描边，垫 2px 底色把描边和色块隔开 */
 .glow-chip.on {
   box-shadow: 0 0 0 2px var(--canvas), 0 0 0 3.5px var(--accent-a);
+}
+/* 「无边框」：空心圆 + 一条斜线 —— 排在四个色块后面，一眼看出是「不要边框」。
+   它同样是单选的一项，选中后走 .on 的外圈描边。 */
+.glow-chip.none {
+  position: relative;
+  background: transparent;
+}
+.glow-chip.none::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 11px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: rgba(var(--ink-rgb), 0.55);
+  transform: translate(-50%, -50%) rotate(-45deg);
 }

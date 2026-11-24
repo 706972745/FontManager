@@ -1295,31 +1295,52 @@ function applyTransparencyPref(pref: TransparencyPref) {
 }
 
 /**
- * 窗口阴影颜色（2.7.5）：主界面与速览**分开**各存一份，用户可以在设置里分别选。
- * `"accent"` = 跟随主题宝蓝；`"#rrggbb"` = 用户在设置里选的预设色。
- * 各写成 CSS 变量 `--frame-glow-main` / `--frame-glow-quick`：
- * .app-frame 的 3px 外阴影读前者，.qb-frame 的外阴影与收起条内发光读后者。
+ * 窗口边框颜色（原「阴影颜色」，2.7.5 起；2.7.6 改成 1px 边框）：主界面与速览**分开**各存一份。
+ * `"accent"` = 跟随主题宝蓝；`"#rrggbb"` = 用户在设置里选的预设色；
+ * `"none"` = 不要边框（2.7.6 新增，用户 2026-11-24 要求）。
+ *
+ * 各写成 CSS 变量：
+ * - `--frame-border-main` / `--frame-border-quick`：边框颜色（none 时不写，走默认）
+ * - `--frame-border-w-main` / `--frame-border-w-quick`：边框宽度（none = 0px，其余 = 1px）
+ *
+ * 为什么 none 要连宽度一起归零：只把颜色设成透明的话，窗口最外那 1px 仍是**透明像素**，
+ * DWM 会拿白去填，白边就又回来了 —— 宽度归零后内容直接铺到窗口边缘，才真的没有缝。
  */
 export const FRAME_GLOW_DEFAULT = "accent";
+export const FRAME_GLOW_NONE = "none";
 
 export function isFrameGlow(v: unknown): v is string {
-  return v === FRAME_GLOW_DEFAULT || (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v));
+  return (
+    v === FRAME_GLOW_DEFAULT ||
+    v === FRAME_GLOW_NONE ||
+    (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v))
+  );
+}
+
+/** 把一份设置落到 CSS 变量上：颜色 + 宽度一起算，none 时宽度给 0 */
+function applyFrameBorder(which: "main" | "quick", v: string) {
+  const s = document.documentElement.style;
+  const colorVar = `--frame-border-${which}`;
+  const widthVar = `--frame-border-w-${which}`;
+  if (v === FRAME_GLOW_NONE) {
+    s.setProperty(widthVar, "0px");
+    s.removeProperty(colorVar);
+    return;
+  }
+  s.removeProperty(widthVar); // 回到 CSS 里的默认 1px
+  if (v === FRAME_GLOW_DEFAULT) {
+    s.removeProperty(colorVar); // 走主题宝蓝
+  } else {
+    s.setProperty(colorVar, v);
+  }
 }
 
 function applyFrameGlowMain(v: string) {
-  if (v === FRAME_GLOW_DEFAULT) {
-    document.documentElement.style.removeProperty("--frame-glow-main");
-  } else {
-    document.documentElement.style.setProperty("--frame-glow-main", v);
-  }
+  applyFrameBorder("main", v);
 }
 
 function applyFrameGlowQuick(v: string) {
-  if (v === FRAME_GLOW_DEFAULT) {
-    document.documentElement.style.removeProperty("--frame-glow-quick");
-  } else {
-    document.documentElement.style.setProperty("--frame-glow-quick", v);
-  }
+  applyFrameBorder("quick", v);
 }
 
 /**

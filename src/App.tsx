@@ -1076,7 +1076,16 @@ export default function App() {
         // 从速览切回来时把内容钉在主界面尺寸上，窗口只是逐步把它露出来；
         // morph-fade 让内容随窗口一起浮现，节奏与 Windows 的窗口动画一致
         className={morph ? "app-frame morph-fade" : "app-frame"}
-        style={morph ? { width: `${morph.width}px`, height: `${morph.height}px` } : undefined}
+        style={
+          morph
+            ? {
+                // 钉住值偏小时外壳不满窗，宝蓝描边外会露 WebView 底；max() 让外壳永远铺到窗口边缘。
+                // 进入速览的缩小途中钉住值恒大于视口，max() 仍取钉住值，防重排语义不变。
+                width: `max(${morph.width}px, 100%)`,
+                height: `max(${morph.height}px, 100%)`,
+              }
+            : undefined
+        }
         initial={intro && !morph ? { opacity: 0 } : false}
         animate={{ opacity: 1 }}
         transition={intro && !morph ? easeTop : INTRO_OFF}

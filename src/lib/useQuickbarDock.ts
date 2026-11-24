@@ -69,17 +69,18 @@ export const DOCK_BAR_LINE = 5;
  * 阴影是画在边框盒外、只保留落在窗口内的那部分 —— 内缩多少就露出多少，
  * 于是「阴影渐显」「外壳内缩」天然同拍，不会出现落定后还在挪 3px 的错位。
  */
-const FRAME_GLOW_MAX = 3;
-const FRAME_GLOW_ZERO_H = 40;
-const FRAME_GLOW_FULL_H = 100;
-
-function frameGlowInset(heightLogical: number): number {
-  if (!(heightLogical > FRAME_GLOW_ZERO_H)) return 0;
-  const t = Math.min(
-    1,
-    (heightLogical - FRAME_GLOW_ZERO_H) / (FRAME_GLOW_FULL_H - FRAME_GLOW_ZERO_H),
-  );
-  return FRAME_GLOW_MAX * (t * t * (3 - 2 * t));
+/**
+ * 速览外壳的内缩量。
+ *
+ * 以前是 0~3px 的渐变（见下方被注释掉的三段式缓动），作用是给外壳外面那圈
+ * 宝蓝阴影让位。2026-11-24 用户要求把 3px 阴影整个去掉（主界面 + 速览都去），
+ * 内缩随之归零：外壳直接贴住窗口边缘，窗口最外一圈像素就是内容本身，
+ * DWM 没有透明边距可以填白，「速览返回时宝蓝描边外露一圈白边」从源头上没有了。
+ *
+ * 函数保留是为了不动四处逐帧调用点（它们仍要和窗口高度走同一条时间轴）。
+ */
+function frameGlowInset(_heightLogical: number): number {
+  return 0;
 }
 
 /**
