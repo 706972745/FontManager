@@ -2,6 +2,7 @@
   "about.appRepo": "App source",
   "about.desc": "Preview, tag, group and snapshot thousands of fonts, install them with a double click, enable or disable any family in one click — all offline, with duplicate detection and license notes. Your font files always stay on your machine.Installable plugins, a local HTTP API and MCP support let you wire font power into other tools.",
   "about.pluginRepo": "GitHub plugin repo",
+  "about.githubProfile": "GitHub profile",
   "about.stackAria": "Tech stack",
   "about.version": "Version {version} · {license}",
   "about.edition": "Stable",

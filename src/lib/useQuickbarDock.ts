@@ -57,6 +57,31 @@ export const DOCK_HEIGHT_HINT = 34;
 export const DOCK_HEIGHT_BAR = 12;
 /** 横线高度（逻辑像素）：CSS 里 .qb-grip-bar 用 clamp() 按 DPI/分辨率微调，这里只是文档说明 */
 export const DOCK_BAR_LINE = 5;
+
+/**
+ * 速览外壳四周那圈「3px 宝蓝阴影」需要的内缩量（逻辑像素），按窗口高度爬坡。
+ *
+ * 为什么不能固定 3px：窗口在收起/展开途中要经过 12px（细线）和 34px（提示条），
+ * 这两个高度上下各让 3px 之后只剩 6 / 28px，内容会被压扁、抓手线被切。
+ * 所以高度 ≤ 40px 时一点不让，到 100px 才给满 3px，中间 smoothstep 过渡。
+ *
+ * 关键：这个量和窗口高度**同一条时间轴**（都在 animateHeight 的每一帧里写），
+ * 阴影是画在边框盒外、只保留落在窗口内的那部分 —— 内缩多少就露出多少，
+ * 于是「阴影渐显」「外壳内缩」天然同拍，不会出现落定后还在挪 3px 的错位。
+ */
+const FRAME_GLOW_MAX = 3;
+const FRAME_GLOW_ZERO_H = 40;
+const FRAME_GLOW_FULL_H = 100;
+
+function frameGlowInset(heightLogical: number): number {
+  if (!(heightLogical > FRAME_GLOW_ZERO_H)) return 0;
+  const t = Math.min(
+    1,
+    (heightLogical - FRAME_GLOW_ZERO_H) / (FRAME_GLOW_FULL_H - FRAME_GLOW_ZERO_H),
+  );
+  return FRAME_GLOW_MAX * (t * t * (3 - 2 * t));
+}
+
 /**
  * 收成细线后，指针要贴到**窗口上沿**多少像素以内才展开（CSS 像素）。
  *
@@ -141,7 +166,9 @@ export async function expandQuickbarPanel(): Promise<void> {
 }
 
 /** 当前激活的「接管收起态」句柄：进入速览时窗口已经收成顶部一条，由它接上状态机 */
-let activeAdoptDock: ((widthPhys: number, heightPhys: number) => Promise<void>) | null = null;
+let activeAdoptDock:
+  | ((widthPhys: number, heightPhys: number, asLine?: boolean) => Promise<void>)
+  | null = null;
 
 /**
  * 当前激活的「贴顶最小化」句柄：返回 true 表示它自己处理完了，
@@ -182,16 +209,22 @@ export async function restoreQuickbarDock(): Promise<void> {
 }
 
 /**
- * 进入速览时由按钮触发：窗口已经形变到「屏幕顶部的一条」，这里把收起态接管过来，
+ * 进入速览时由按钮 / 热键触发：窗口已经形变到「屏幕顶部的一条」，这里把收起态接管过来，
  * 并记下展开时要还原的速览尺寸（物理像素）。
+ *
+ * `asLine` 为 true 表示「热键唤起、马上就要展开」：窗口直接落在 12px 细线，不显示提示条。
  *
  * 挂钩子需要等 QuickBar 挂载完，这里做一小段轮询，避免进入太快时丢掉这次收起。
  */
-export async function adoptQuickbarDock(widthPhys: number, heightPhys: number): Promise<void> {
+export async function adoptQuickbarDock(
+  widthPhys: number,
+  heightPhys: number,
+  asLine = false,
+): Promise<void> {
   for (let i = 0; i < 24 && !activeAdoptDock; i++) {
     await new Promise<void>((r) => setTimeout(r, 25));
   }
-  await activeAdoptDock?.(widthPhys, heightPhys);
+  await activeAdoptDock?.(widthPhys, heightPhys, asLine);
 }
 
 export function useQuickbarDock(enabled: boolean): QuickbarDockState {
@@ -359,10 +392,18 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
      * 取消动画（stopAnim / 各种 restore 路径）必须一起清：只重置 React 状态的话，
      * `.qb-frame` 会一直钉在中断那一帧的高度上，界面看起来「卡在半截」（§5 第 5 条）。
      */
-    const clearFrameDom = () => {
+    const clearFrameDom = (keepInset?: number) => {
       const el = document.querySelector<HTMLElement>(".qb-frame");
       if (!el) return;
       el.style.height = "";
+      /*
+       * 内缩量不能一律摘掉：摘掉就回到基础规则的 3px，而收起落点只有 34px ——
+       * 「清行内值」和「React 把 docked 翻成 true」之间只要漏出一帧，外壳就按
+       * `height: calc(100% - 6px)` 排成 28px，提示行被压扁、底部空 6px（2.7.5 的老毛病）。
+       * 落定时按目标高度写一次同款内缩（34px → 0，完整面板 → 3px），谁先合并都不跳。
+       */
+      if (keepInset === undefined) el.style.removeProperty("--qb-inset");
+      else el.style.setProperty("--qb-inset", `${keepInset.toFixed(2)}px`);
       el.removeAttribute("data-anim");
     };
 
@@ -502,6 +543,27 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     ) => {
       stopAnim();
       /*
+       * 外壳句柄 + 逐帧写入器要放在两条分支（0ms 一帧到位 / 逐帧动画）之前：
+       * 0ms 分支也得先把「落点那一帧」的内缩与高度写进去，否则 setSize 落地后
+       * 到 React 翻 docked 之间会按基础规则排成 28px（34px 提示条里空 6px）。
+       */
+      const frameEl = document.querySelector<HTMLElement>(".qb-frame");
+      /**
+       * 把「这一帧的内容高度」写成外壳的内缩 + 高度。
+       *
+       * 内缩必须按**内容**高度算，不能按窗口高度：展开方向窗口（h）跑在内容（hs）前面，
+       * 窗口已经 160px 时内容可能才 12px —— 拿窗口高度算会立刻给 3px 内缩，
+       * 12px 外壳减掉 6px 只剩 6px，画面上就是一条 6px 白片浮在窗口顶部（实测 2~3 帧）。
+       * 按内容高度算：外壳 = 内容高 - 2×内缩，永远不会比自己高，也不会溢出窗口。
+       */
+      const writeFrameBox = (contentH: number) => {
+        if (!frameEl) return;
+        frameEl.setAttribute("data-anim", "true");
+        const inset = frameGlowInset(contentH / scale);
+        frameEl.style.setProperty("--qb-inset", `${inset.toFixed(2)}px`);
+        frameEl.style.height = `${Math.max(1, contentH / scale - inset * 2).toFixed(2)}px`;
+      };
+      /*
        * 0 时长（「减少动效」开着，审计 P0-2）：不做逐帧动画，一帧到位。
        *
        * 这里有三个必须做对的细节：
@@ -517,6 +579,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
        */
       if (!(durationMs > 0)) {
         animating = true;
+        // 落点内缩先写：setSize 与 docked 翻转之间不能露出一帧 28px 外壳
+        writeFrameBox(toH);
         let settled = false;
         /**
          * 兜底定时器：`setSize` 既不 resolve 也不 reject 时必须有一条出路。
@@ -537,7 +601,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           notifyAnimSettled();
           // 钩子已经卸载：不要再碰 DOM / React 状态，但 animating 已经放开
           if (!alive) return;
-          clearFrameDom();
+          clearFrameDom(frameGlowInset(toH / scale));
           done();
         };
         zeroGuard = setTimeout(settleNow, ANIM_MS + 600);
@@ -551,11 +615,15 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         return;
       }
       animating = true;
-      const frameEl = document.querySelector<HTMLElement>(".qb-frame");
       const shrinking = toH < fromH;
       const start = performance.now();
       let settled = false;
-      const clearFrameHeight = clearFrameDom;
+      /*
+       * 起点这一帧先写死再排 rAF：stopAnim() 刚把行内值摘掉，rAF 要等下一帧才跑，
+       * 中间若发生一次布局/绘制，外壳会按基础规则的 3px 内缩去排 —— 12px 窗口里
+       * 只剩 6px、抓手线被切掉一截。展开的起点正是 12/34px，这一帧最显眼。
+       */
+      writeFrameBox(fromH);
       const finish = (writeFinal: boolean) => {
         if (settled) return;
         settled = true;
@@ -569,7 +637,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         }
         animating = false;
         notifyAnimSettled();
-        clearFrameHeight();
+        // 落点内缩跟着目标窗口高度走：收起 → 0（提示条/细线不吃边距），展开 → 3px
+        clearFrameDom(frameGlowInset(toH / scale));
         if (writeFinal) {
           // 兜底路径也把最终几何写一次，保证窗口和状态机一致
           void win.setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, toH))).catch(() => {
@@ -605,10 +674,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         const tf = shrinking ? t : norm;
         const easedS = 1 - Math.pow(1 - tf, 3);
         const hs = Math.round(fromH + (toH - fromH) * easedS);
-        if (frameEl) {
-          frameEl.setAttribute("data-anim", "true");
-          frameEl.style.height = `${(hs / scale).toFixed(2)}px`;
-        }
+        if (frameEl) writeFrameBox(hs);
         void win.setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, h))).catch(() => {
           /* 窗口正在被拖动时偶尔会失败，忽略即可 */
         });
@@ -643,10 +709,25 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     };
 
     const shrinkToBar = async () => {
-      if (animating || mutating || !dockedRef.current || phaseRef.current !== "hint") return;
+      /*
+       * 被挡下时必须重新排一次。
+       * hintTimer 在 scheduleShrink 里已经清掉了，这里直接 return 就等于「这一轮收细线
+       * 永远丢掉」—— 窗口停在 34px 提示条上，既不是展开也不是细线，状态和几何对不上。
+       * （2026-11-24 审查时发现的既有空档：动画 / 拖动撞上那一下就会踩到。）
+       */
+      const retryLater = () => {
+        if (alive && dockedRef.current && phaseRef.current === "hint") scheduleShrink();
+      };
+      if (animating || mutating || !dockedRef.current || phaseRef.current !== "hint") {
+        retryLater();
+        return;
+      }
       // 细线滑出会整块把窗口搬到屏幕外再搬回来，拖动的 rAF 同时在写位置时两边会互相覆盖：
       // 拖动中先把这一步让出去，松手后 onDragEnd 会重新走 evaluate（§5 第 15 条）。
-      if (document.body.classList.contains("is-dragging")) return;
+      if (document.body.classList.contains("is-dragging")) {
+        retryLater();
+        return;
+      }
       mutating = true;
       try {
         const s = await win.scaleFactor();
@@ -723,6 +804,13 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
 
     const collapse = async () => {
       if (animating || mutating || dockedRef.current) return;
+      /*
+       * 进 / 出速览的形变期间（morph 非空）窗口几何由 enterQuickbar / leaveQuickbar
+       * 逐帧写，这里插一脚会被它们最后那次 setSize 覆盖 —— 状态说收起、几何却是半截。
+       * 进速览时 adopt 已经提前接管，evaluate 的 settle 计时器完全可能在滑入途中到期，
+       * 所以这道闸必须有（不是只在用户点击时才有意义）。
+       */
+      if (useFontStore.getState().morph) return;
       mutating = true;
       try {
         const { scale, size } = await currentPhys();
@@ -782,6 +870,9 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
 
     const expand = async (byHover = false) => {
       if (animating || mutating || !dockedRef.current) return;
+      // 形变期间同样不许展开：那 160ms 的落点高度是「提示条 / 细线」，
+      // 中途展开会被 enterQuickbar 最后那次 setSize 压回去，留下 docked=false + 34px 的死局。
+      if (useFontStore.getState().morph) return;
       mutating = true;
       try {
         if (hintTimer) {
@@ -796,6 +887,12 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         if (!alive || !dockedRef.current) return;
         void ipc.setDockSensor(false).catch(() => {});
         restoreWindowHints();
+        /*
+         * 起步这一帧的内缩由 animateHeight 同步写入（见 writeFrameBox）：
+         * 翻 docked 会让收起态的「margin: 0」失效，基础规则那 3px 内缩立刻接管，
+         * 而 12px 窗口里外壳会被夹到 6px、抓手线被切掉一截 —— 必须在同一帧里
+         * 按起点高度重算内缩，不能等 rAF。
+         */
         dockedRef.current = false;
         setDocked(false);
         setPhaseBoth("hint");
@@ -849,38 +946,12 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       }
     };
 
-    /** 收起状态下先长回带提示的高度（顺便再告诉一次快捷键），随后展开 */
-    const growToHint = (then: () => void) => {
-      if (animating || mutating || !dockedRef.current || phaseRef.current === "hint") {
-        then();
-        return;
-      }
-      mutating = true;
-      void win
-        .scaleFactor()
-        .then((scale) => {
-          if (!alive || !dockedRef.current || phaseRef.current !== "bar") return;
-          const from = Math.round(DOCK_HEIGHT_BAR * scale);
-          const to = Math.round(DOCK_HEIGHT_HINT * scale);
-          const wide = restoreSize?.width ?? Math.round(QUICKBAR_WIDTH * scale);
-          setPhaseBoth("hint");
-          setBar(null);
-          restoreWindowHints();
-          void ipc.setDockSensor(false).catch(() => {});
-          animateHeight(
-            from,
-            to,
-            wide,
-            () => then(),
-            scale,
-            // 「减少动效」：细线长回提示条也是一帧到位（审计 P0-2）
-            motionReduced() ? 0 : ANIM_MS,
-          );
-        })
-        .finally(() => {
-          mutating = false;
-        });
-    };
+    /*
+     * 这里原来有个 growToHint：收起态靠近时先把 12px 细线长回 34px 提示条、
+     * 露出「速览已收起」+ 快捷键，再展开。用户 2026-11-24 明确否掉这条路 ——
+     * 提示条只属于收起态，展开方向出现提示条是错的。删掉后展开入口统一走
+     * 上面的 expand()，fromH 本来就是按 bar / hint 两个起点分别取的，不需要中转高度。
+     */
 
     /**
      * 被挡下来的「靠近」排一次重试。
@@ -1010,11 +1081,15 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     };
 
     /**
-     * 接管「已经收成一条」的窗口（进入速览时由按钮触发）：
-     * 窗口几何已经到位，这里只补上状态——展开时按传入的速览尺寸还原，
-     * 并锁住 hover 展开，免得点完按钮鼠标一动就弹开。
+     * 接管「已经收成一条」的窗口（进入速览时由按钮 / 热键触发）：
+     * 窗口几何已经到位，这里只补上状态——展开时按传入的速览尺寸还原。
+     *
+     * `asLine`：热键唤起速览时用。那条路径紧接着就会把面板展开（openQuickbarPanel），
+     * 窗口也直接落成 12px 细线，所以这里以 bar 阶段接管 —— **不显示「速览已收起」**。
+     * 用户 2026-11-24 口径：提示条只属于收起态，展开方向不该出现。
+     * 点按钮 / 导览进来仍然走 hint（34px 提示条），那一秒的引导是收起态自己的提示。
      */
-    const adoptDock = async (widthPhys: number, heightPhys: number) => {
+    const adoptDock = async (widthPhys: number, heightPhys: number, asLine = false) => {
       stopAnim();
       mutating = false;
       if (hintTimer) {
@@ -1023,16 +1098,35 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       }
       restoreSize = { width: widthPhys, height: heightPhys };
       await win.setMinSize(null).catch(() => {});
+      // 细线态要按 DPI 算宽度：先拿到缩放再翻状态，别翻完再补 setBar
+      const s = asLine ? await win.scaleFactor().catch(() => 1) : 1;
+      if (!alive) return;
+      /*
+       * 先落阶段、再翻 docked：两个 setState 在同一次提交里生效。
+       * 反过来（先 docked）会有一帧「docked=true + 还是旧阶段」，
+       * 那帧渲染的是提示条，而 asLine 路径窗口只有 12px，提示行会被压进一条缝里闪一下。
+       */
+      if (asLine) {
+        setPhaseBoth("bar");
+        setBar({ width: Math.round(widthPhys / s), height: DOCK_HEIGHT_BAR });
+      } else {
+        setPhaseBoth("hint");
+        setBar(null);
+      }
       dockedRef.current = true;
       lastChangeAt = Date.now();
       hoverExpanded = false;
-      hoverArmed = false;
+      hoverArmed = asLine;
       blurPending = false;
       clearRevealRetry();
       setDocked(true);
       setContentHeight(null);
-      setPhaseBoth("hint");
-      setBar(null);
+      if (asLine) {
+        // 细线态是常驻入口：解锁「靠近就展开」，别让热键那条路径万一失败后卡在 12px 没人能叫出来
+        shrinkWindowHints();
+        void ipc.setDockSensor(true).catch(() => {});
+        return;
+      }
       scheduleShrink();
     };
     activeAdoptDock = adoptDock;
@@ -1258,12 +1352,15 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         // 只有指针贴到窗口上沿才展开（2026-11-02 用户要求）。
         // 以前整条细线都是热区，英文输入时鼠标擦过屏幕顶边就误触弹出。
         if (e.clientY > TOP_EDGE_HOVER_PX) return;
-        // 长回提示高度后也要重新计时：万一这次没展开（冷却中 / 未解锁），
-        // 提示条不会一直挂在屏幕上，1 秒后照样收成横线。
-        growToHint(() => {
-          scheduleShrink();
-          reveal(true);
-        });
+        /*
+         * 细线阶段靠近展开：**不再先长回 34px 提示条**（用户 2026-11-24 口径：
+         * 「速览已收起」只属于收起态，展开方向一律不该出现）。
+         * 以前这里走 growToHint —— 12px 先长到 34px 露出提示文字、停 SETTLE_MS
+         * 再展开，用户看到的就是「想展开却先冒出一条『速览已收起』」。
+         * 现在窗口保持细线不动，reveal 的 100ms 稳定期一过就从 12px 直接长成完整面板；
+         * 万一这次被冷却 / 未解锁挡下，也只是一条细线待在原处（不再闪一下提示条）。
+         */
+        reveal(true);
         return;
       }
       reveal();
@@ -1286,13 +1383,11 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         scheduleRevealRetry(left > 0 ? left + 30 : 80, true);
         return;
       }
-      if (phaseRef.current === "bar") {
-        growToHint(() => {
-          scheduleShrink();
-          reveal(true);
-        });
-        return;
-      }
+      /*
+       * 细线（bar）和提示条（hint）两个阶段都直接 reveal(true)：
+       * 展开方向不经过「速览已收起」提示条（用户 2026-11-24 口径）。
+       * 提示条只属于「刚收起」那一秒（collapse / adoptDock 之后 scheduleShrink 之前）。
+       */
       reveal(true);
     };
 

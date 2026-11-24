@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Star,
+  UserRound,
 } from "lucide-react";
 import { spring, springSnappy, springSoft, staggerDelay } from "../design/springs";
 import { toast } from "../design/primitives/Toast";
@@ -53,11 +54,13 @@ const LOCAL_LINKS: LinkItem[] = [
     icon: <GithubGlyph />,
   },
   {
-    key: "about.pluginRepo",
-    sub: "github.com/706972745/FontManager-Plugin",
-    url: "https://github.com/706972745/FontManager-Plugin",
-    // 插件用拼图图标，跟上面那张 GitHub 字形区分开（两张卡都是纯 GitHub 图标会看着像重复）
-    icon: <Puzzle size={16} strokeWidth={1.5} />,
+    // 2026-11-24 用户定：第二张卡换成作者主页（跟 AssetManager 关于页一致）——
+    // 插件仓库入口移到插件中心里，关于页只留「应用仓库 + 作者主页」。
+    key: "about.githubProfile",
+    sub: "github.com/706972745",
+    url: "https://github.com/706972745",
+    // 人头像图标，跟上面那张 GitHub 字形区分开（两张都是 GitHub 图标会看着像重复）
+    icon: <UserRound size={16} strokeWidth={1.5} />,
   },
 ];
 

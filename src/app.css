@@ -6256,12 +6256,19 @@ h2.detail-title.copy-name {
   /* 3px 宝蓝外阴影（2.7.5）：和主界面 .app-frame 同一套做法 —— 窗口没有像素，
      阴影画在边框盒外，所以先把外壳往里缩 3px，模糊正好落在窗口内这圈边距里。
      width/height 会被 useQuickbarDock / morph 写成行内值（逐帧动画），
-     这里用 max-* 把它们夹在「窗口 - 6px」，动画途中阴影也不会被裁。
-     收起态（hint / bar）会撤销边距与这圈外阴影，见下面的 dock-phase 规则。 */
-  margin: var(--frame-inset);
-  height: calc(100% - var(--frame-inset) * 2);
-  max-width: calc(100% - var(--frame-inset) * 2);
-  max-height: calc(100% - var(--frame-inset) * 2);
+     这里用 max-* 把它们夹在「窗口 - 2×内缩」，动画途中阴影也不会被裁。
+
+     2.7.6：内缩量从常量 --frame-inset 改成可逐帧改写的 --qb-inset。
+     原因是收起/展开动画里窗口高度会经过 12 / 34px 这两档，那里根本让不出 6px；
+     以前 margin 走 260ms 的 CSS 过渡、高度走 200ms 的窗口动画，两套时间轴不同拍，
+     于是「窗口已经落定、外壳还在往里缩 3px」「展开到一半顶部被让出一条缝」
+     「收起到位后提示条又往上飘 3px」——用户看到的就是阴影/内容边缘对不上。
+     现在内缩由 animateHeight 每帧按当前窗口高度算出并与 height 一起写，
+     阴影强度天然跟着内缩走（外扩部分被窗口裁掉 = 渐隐），不需要单独的 box-shadow 过渡。 */
+  margin: var(--qb-inset, var(--frame-inset));
+  height: calc(100% - var(--qb-inset, var(--frame-inset)) * 2);
+  max-width: calc(100% - var(--qb-inset, var(--frame-inset)) * 2);
+  max-height: calc(100% - var(--qb-inset, var(--frame-inset)) * 2);
   position: relative;
   border: 1px solid var(--qb-hair);
   background: var(--qb-bg);
@@ -6276,17 +6283,14 @@ h2.detail-title.copy-name {
   color: var(--qb-fg);
   -webkit-font-smoothing: antialiased;
   /* 收起成细线时底色要淡成透明（屏幕外切到 bar 阶段），过渡而不是一帧切过去。
-     时长走令牌：正常态 260ms 与窗口动画同拍；「减少动效」下窗口是一帧到位的
-     （animateHeight 0 时长），这里也必须同拍收成 1ms，否则会出现
-     「窗口已经缩成一条线了、内容还在慢慢滑」（2026-11-11 收口）。
-     margin / box-shadow 同拍过渡（2.7.5）：收起瞬间 dock-phase 翻成 hint，
-     边距 3→0、阴影由宝蓝渐隐成透明 —— 阴影跟着收起动作平滑消失，
-     而不是啪一下没掉（用户 2026-11-24：注意收起时阴影消失的动画）。 */
+     时长走令牌：正常态 260ms；「减少动效」下窗口是一帧到位的（animateHeight 0 时长），
+     这里也必须同拍收成 1ms，否则会出现「窗口已经缩成一条线了、内容还在慢慢滑」。
+     2.7.6：margin 与 box-shadow **不再走 CSS 过渡** —— 内缩改由 animateHeight
+     逐帧写 --qb-inset，和窗口高度同一个时间轴；阴影外扩部分被窗口裁掉，
+     内缩 0 → 3px 的过程本身就是渐显。留在 transition 里反而会和行内逐帧值互相拉扯。 */
   transition:
     background-color var(--t-state) linear,
-    border-color var(--t-state) linear,
-    margin var(--t-state) linear,
-    box-shadow var(--t-state) linear;
+    border-color var(--t-state) linear;
 }
 /* 形变 / 淡出垫底用速览自己的底色，免得切换途中露出一块颜色不同的矩形 */
 body.qb-mode.is-morphing #root,
@@ -6352,6 +6356,28 @@ body.is-dragging textarea {
 }
 
 /**
+ * 展开 / 收起动画期间（animateHeight 逐帧给外壳挂 data-anim）：抓手线瞬时换形态。
+ *
+ * bar 阶段那条线是「铺满窗口的 100% × dock-line-h」，展开第一帧 setBar(null) 一撤，
+ * 它就回到 46 × 1px —— 中间若还走 --t-state 的 260ms 过渡，用户会看到细线在
+ * 面板长出来的同时横向慢慢缩水（一闪而过的多余额外动作）。
+ * 动画期间直接一帧切到目标样子。
+ */
+.qb-frame[data-anim="true"] .qb-grip-bar {
+  transition: none;
+}
+
+/**
+ * 动画期间外壳的底色 / 描边也不走过渡。
+ * 细线态（bar）是透明底 + 透明边，展开第一帧就必须直接是面板底色 ——
+ * 留着 260ms 的 background-color 过渡，面板在长高的同时底色还在从透明渐变，
+ * 前 100ms 能透出桌面，看起来像「面板没铺满窗口」。
+ */
+.qb-frame[data-anim="true"] {
+  transition: none;
+}
+
+/**
  * 收起态：窗口已经窄成一小段，抓手条要铺满整个窗口宽度，
  * 横线本身就是这条 5px 的实心线（上下留一点透明余量给鼠标当靶子）。
  */
@@ -6411,10 +6437,19 @@ body.is-dragging textarea {
 .qb-frame[data-dock-phase="hint"],
 .qb-frame[data-dock-phase="bar"] {
   margin: 0;
+  /*
+   * 2.7.6 补：这里必须把 height 顶成 100%。
+   * 基础规则的 height 是 `calc(100% - 2×内缩)`（= 28px），2.7.5 加 3px 阴影边距时
+   * 只撤了 margin / max-*，漏了 height —— 结果 34px 的提示条窗口里外壳只有 28px，
+   * `12px 抓手 + 20px 提示行` 放不进 26px 的内盒，提示行被 flex 压扁、底部永远空 6px。
+   * （bar 态由 useQuickbarDock 写的行内 height=12 覆盖，两者一致。）
+   */
+  height: 100%;
   max-width: none;
   max-height: none;
-  /* 透明阴影而不是 none：box-shadow 到 none 不能过渡，写成透明色才能渐隐 */
-  box-shadow: 0 0 3px 0 transparent;
+  /* 收起态一点光晕都不留（用户 2026-11-24：收起条不需要发光）。
+     2.7.6 起 box-shadow 不再参与过渡，可以直接 none。 */
+  box-shadow: none;
 }
 .qb-frame[data-dock-phase="hint"] {
   border-radius: var(--qb-radius, 8px);
@@ -6478,12 +6513,32 @@ body.is-morphing #root {
 }
 
 /**
+ * 最大化：**当作系统窗口最大化**，贴满屏幕、直角、没有那圈阴影。
+ *
+ * 平时外壳靠 3px 内缩把 box-shadow 让进窗口；最大化时屏幕边缘没有桌面可让，
+ * 留着内缩就会在屏幕四边透出 3px 桌面、圆角外还露出四个缺口（用户 2026-11-24 报
+ * 「最大化还有阴影」）。直接把令牌改成 0：margin / height / 全窗遮罩一起归零，
+ * 阴影没有内缩区自然被窗口裁掉；圆角同时收掉，四角不再露桌面。
+ */
+:root[data-maximized="true"] {
+  --frame-inset: 0px;
+}
+:root[data-maximized="true"] .app-frame {
+  border-radius: 0;
+  border-color: transparent;
+}
+
+/**
  * 切换时内容跟着窗口一起「浮现」，而不是啪地整块换掉——Windows 的窗口动画里
  * 内容就是随窗口渐显的。这里用 CSS 动画而不是 JS 动画：opacity 动画跑在合成器
  * 线程上，切进速览时主线程正忙着渲染上千张卡片也卡不住它。
  * 时长比窗口形变的 300ms 短一截，窗口最后几十毫秒做纯几何收尾时内容已经完全清晰。
+ *
+ * 2.7.6 修正：只淡**内容**（直接子节点），不淡外壳 —— 外壳带着那圈 3px 宝蓝，
+ * 整体淡入会让阴影跟着从 32% 透明渐到实色，窗口滑回来时看起来就是
+ * 「四边只有很淡的一半 → 越变越蓝」（用户 2026-11-24 报的返回动画阴影异常）。
  */
-.morph-fade {
+.morph-fade > * {
   animation: morph-fade 240ms cubic-bezier(0.4, 0, 0.2, 1) 20ms both;
 }
 
@@ -6524,7 +6579,7 @@ body.ui-fade-out .app-frame {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .morph-fade {
+  .morph-fade > * {
     animation-duration: 1ms;
   }
 
@@ -6551,7 +6606,7 @@ body.ui-fade-out .app-frame {
   animation-duration: 1ms;
 }
 
-:root[data-motion="reduced"] .morph-fade,
+:root[data-motion="reduced"] .morph-fade > *,
 :root[data-motion="reduced"] body.ui-fade-out .app-frame {
   animation-duration: 1ms;
 }

@@ -46,7 +46,6 @@ import { useCtrlWheelZoom } from "./lib/useCtrlWheelZoom";
 import { Toaster, toast } from "./design/primitives/Toast";
 import { easeTop, spring } from "./design/springs";
 import { INTRO_OFF, useIntro } from "./lib/useIntro";
-import { expandQuickbarPanel } from "./lib/useQuickbarDock";
 import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
 import { useT, t as translate } from "./lib/i18n";
 import type { LocalePref } from "./lib/i18n";
@@ -642,6 +641,42 @@ export default function App() {
     };
   }, []);
 
+  /**
+   * 最大化时去掉外壳那 3px 内缩（--frame-inset = 0）与圆角：
+   * 系统窗口最大化后是贴满屏幕的直角，这里留着 3px 边距会在屏幕四边透出桌面，
+   * 阴影也会跟着消失一半 —— 用户 2026-11-24 报「最大化还有阴影」。
+   * 用 DOM 属性而不是 React 状态：命中它的只有 CSS，不需要重渲染。
+   */
+  useEffect(() => {
+    const win = getCurrentWindow();
+    let alive = true;
+    let un: (() => void) | undefined;
+    const sync = () => {
+      void win
+        .isMaximized()
+        .then((v) => {
+          if (alive) document.documentElement.dataset.maximized = v ? "true" : "false";
+        })
+        .catch(() => {
+          /* 读不到就保持上一次的值 */
+        });
+    };
+    sync();
+    void win
+      .onResized(sync)
+      .then((f) => {
+        if (alive) un = f;
+        else f();
+      })
+      .catch(() => {
+        /* 拿不到 resize 事件时只在挂载时同步一次 */
+      });
+    return () => {
+      alive = false;
+      un?.();
+    };
+  }, []);
+
   // 软件已经开着时双击 .S-/.P-/.D-FontManager：第二个进程把路径写到请求文件后退出，
   // 首实例在这里收到路径，统一走「内容嗅探 → 分发导入」。
   useEffect(() => {
@@ -685,8 +720,8 @@ export default function App() {
       const win = getCurrentWindow();
       await win.unminimize().catch(() => {});
       await win.show().catch(() => {});
-      await st.setQuickbar(true);
-      await expandQuickbarPanel().catch(() => {});
+      // 一次到位：进速览直接落成细线并展开面板，中途不出现「速览已收起」提示条
+      await st.openQuickbarPanel();
     })
       .then((f) => {
         if (dead) {
@@ -1042,9 +1077,9 @@ export default function App() {
         // morph-fade 让内容随窗口一起浮现，节奏与 Windows 的窗口动画一致
         className={morph ? "app-frame morph-fade" : "app-frame"}
         style={morph ? { width: `${morph.width}px`, height: `${morph.height}px` } : undefined}
-        initial={intro ? { opacity: 0 } : false}
+        initial={intro && !morph ? { opacity: 0 } : false}
         animate={{ opacity: 1 }}
-        transition={intro ? easeTop : INTRO_OFF}
+        transition={intro && !morph ? easeTop : INTRO_OFF}
       >
         <Titlebar />
         <div className={viewMode === "specimen" ? "app-shell shell-specimen" : "app-shell"}>

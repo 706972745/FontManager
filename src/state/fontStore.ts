@@ -19,7 +19,9 @@ export const UNPREVIEWABLE_REASON = "软件里无法预览（字体格式不受�
 import { listen } from "@tauri-apps/api/event";
 import {
   adoptQuickbarDock,
+  DOCK_HEIGHT_BAR,
   DOCK_HEIGHT_HINT,
+  expandQuickbarPanel,
   OFFSCREEN_PAD,
   restoreQuickbarDock,
   RETRACT_IN_MS,
@@ -734,6 +736,14 @@ interface FontStore {
   setViewMode: (m: ViewMode) => void;
   /** 切换速览界面（会压缩/还原窗口大小与位置） */
   setQuickbar: (on: boolean) => Promise<void>;
+  /**
+   * 热键唤起速览并**立刻展开面板**（一次到位）。
+   *
+   * 不能写成 `setQuickbar(true)` + `expandQuickbarPanel()` 两句：那样中间会落在
+   * 34px 提示条上，「速览已收起」在展开前闪一下（用户 2026-11-24 口径不允许）。
+   * 这里打一次 enterQuickbarAsLine 意图，让进速览直接落成细线再展开。
+   */
+  openQuickbarPanel: () => Promise<void>;
   setQuickbarAutoHide: (on: boolean) => void;
   /** 改快捷键：本地立即生效并重新注册系统级热键 */
   setQuickbarHotkey: (hk: HotkeySpec) => Promise<void>;
@@ -951,6 +961,16 @@ async function ensureWindowVisible(target?: {
  */
 const LEGACY_SAMPLE_TEXTS = new Set(["The quick brown fox jumps over the lazy dog"]);
 
+/**
+ * 「这次进速览是热键唤起、马上就要展开面板」的一次性意图。
+ *
+ * 热键路径原来先 setQuickbar(true) 再 expandQuickbarPanel()：中间那段会按常规
+ * 落在 34px 提示条上，用户能看到「速览已收起」闪一下 —— 而按热键的意图就是展开。
+ * 打了这个标之后，enterQuickbar 直接把窗口落成 12px 细线、以 bar 阶段接管，
+ * 随后的展开全程不出现提示条（用户 2026-11-24 口径：提示条只属于收起态）。
+ */
+let enterQuickbarAsLine = false;
+
 /** 换好界面后到「落回原位」之间留的一小段时间：给主界面渲染一帧 */
 const SHOW_SETTLE_MS = 150;
 async function enterQuickbar() {
@@ -985,7 +1005,12 @@ async function enterQuickbar() {
     // 但用户把「贴顶自动隐藏」关掉时不要收：那种配置下窗口应该直接停在完整尺寸，
     // 否则会收成 34px 提示条、热键又被关掉，等于进来就出不去（§5 第 1 条）。
     const autoHide = useFontStore.getState().quickbarAutoHide;
-    const dockHeight = autoHide ? Math.round(DOCK_HEIGHT_HINT * scale) : fullHeight;
+    // 一次性意图：热键唤起 → 直接落成细线（12px），不经过提示条
+    const asLine = enterQuickbarAsLine;
+    enterQuickbarAsLine = false;
+    const dockHeight = autoHide
+      ? Math.round((asLine ? DOCK_HEIGHT_BAR : DOCK_HEIGHT_HINT) * scale)
+      : fullHeight;
     /*
      * 速览落点（用户 2026-11-04 五次修正后的最终口径）：**距显示器左上角 (400, 0)**，
      * 且要适配不同分辨率。
@@ -1036,10 +1061,27 @@ async function enterQuickbar() {
     // 2) 屏幕外换装：切界面 + 换成速览尺寸 + 挪到目标位置的正上方
     useFontStore.setState({
       quickbar: true,
-      morph: ms > 0 ? { width: targetWidth, height: targetHeight } : null,
+      // 外壳钉的是**这次真正要落的窗口高度**（34 提示条 / 12 细线），
+      // 不是完整面板高度：以前写 targetHeight，落回那 160ms 外壳被 max-height
+      // 夹在 28px、落地后 docked 一翻又跳到 34px，底部圆角和阴影闪一下。
+      morph: ms > 0 ? { width: targetWidth, height: dockHeight / scale } : null,
     });
     await win.setSize(new PhysicalSize(width, dockHeight)).catch(() => {});
     await win.setPosition(new PhysicalPosition(dockX, offY)).catch(() => {});
+
+    /*
+     * 落回之前就把收起态接过来（2.7.6 从原来的「落回之后」提到这里）。
+     *
+     * 落回那 160ms 是「已经换成速览尺寸、还在屏幕外/刚露头」的一段：提前接管之后，
+     * 全程滑入的都是同一条收起条（提示条或细线），落地那一帧不需要再换内容、
+     * 也不需要外壳的高度/边距再变一次 —— 以前落地后才 adopt，docked 一翻，
+     * 外壳从 28px 跳到 34px、3px 边距开始 260ms 地退场，看起来就是「落定又飘了一下」。
+     */
+    if (autoHide) {
+      await adoptQuickbarDock(width, fullHeight, asLine).catch((e) =>
+        console.warn("[quickbar] 接管收起态失败", e),
+      );
+    }
 
     if (ms > 0) {
       // 3) 从屏幕外落回显示器顶部
@@ -1055,14 +1097,6 @@ async function enterQuickbar() {
     // 所以动画结束后显式落一次终态，保证 dock 状态机接管时的窗口真的贴着左上角。
     await win.setSize(new PhysicalSize(width, dockHeight)).catch(() => {});
     await win.setPosition(new PhysicalPosition(dockX, dockY)).catch(() => {});
-    // 窗口已经是顶部一条：把收起态交给 dock，展开时还原成完整的速览尺寸
-    // 窗口已经到目标几何：autoHide 开着时窗口是顶部一条，把收起态交给 dock；
-    // 关着时窗口本来就是展开尺寸，没有收起态可接管（接管了会立刻被 scheduleShrink 压成细线）。
-    if (autoHide) {
-      await adoptQuickbarDock(width, fullHeight).catch((e) =>
-        console.warn("[quickbar] 接管收起态失败", e),
-      );
-    }
     // 速览界面置顶在所有窗口之上，回到完整界面时再取消
     await win.setAlwaysOnTop(true);
   } catch (e) {
@@ -1182,14 +1216,27 @@ async function exitQuickbar() {
 
     // ④ 从屏幕外落回原位（进入的第三段，反向）
     if (geometry) {
-      if (ms > 0 && !tooThin && !geometry.maximized) {
+      if (ms > 0 && !geometry.maximized) {
+        /*
+         * 2.7.7：细线态（窗口此前被 hide 掉）也走「从上面滑进来」。
+         *
+         * 以前 tooThin 走的是「直接 setPosition + show」：窗口凭空出现在原位，
+         * 那圈 3px 宝蓝跟着一起「啪」地出现，没有任何过渡——看起来就是阴影
+         * 被藏起来再冒出来（用户 2026-11-24 报的「阴影没有跟着一起动」）。
+         * 现在先把它摆到屏幕上方 dropY 再 show，然后和展开态一样落下来：
+         * 外壳（含阴影）全程是同一块内容在移动，阴影自然跟着窗口一起动。
+         */
+        if (tooThin) {
+          await win.setPosition(new PhysicalPosition(geometry.x, dropY)).catch(() => {});
+          await win.show().catch(() => {});
+        }
         await morphWindow(
           { x: geometry.x, y: dropY, width: geometry.width, height: geometry.height },
           { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height },
           RETRACT_IN_MS,
         );
       } else {
-        // 细线态（窗口已藏）/ 最大化：没法「滑进来」（系统会按最大化重新摆一遍），直接落位
+        // 最大化：系统会按最大化重新摆一遍，直接落位
         await win.setPosition(new PhysicalPosition(geometry.x, geometry.y)).catch(() => {});
       }
       if (geometry.maximized) await win.maximize().catch(() => {});
@@ -4836,6 +4883,17 @@ export const useFontStore = create<FontStore>((set, get) => ({
       }
     })();
     await quickbarChain;
+  },
+  openQuickbarPanel: async () => {
+    enterQuickbarAsLine = true;
+    try {
+      await get().setQuickbar(true);
+    } finally {
+      // enterQuickbar 正常会消费掉；这里兜底，免得异常时把「落成细线」漏给下一次
+      enterQuickbarAsLine = false;
+    }
+    // 已经在速览里（setQuickbar 判定无需切换）时也要能展开
+    await expandQuickbarPanel().catch(() => {});
   },
   setQuickbarAutoHide: (quickbarAutoHide) => set({ quickbarAutoHide }),
   setQuickbarHotkey: async (quickbarHotkey) => {

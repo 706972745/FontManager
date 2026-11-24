@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.7.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.7.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -48,7 +48,7 @@ and MCP when you want your tools to join in.
 
 ## 🆕 What's new
 
-**2.7.5 — The main window and quick panel get a 3px royal-blue glow with independently selectable colors; overlays no longer dim it; quick-panel auto-collapse is now self-healing**
+**2.7.6 — The 3px royal-blue glow now travels with the window (no more fading in on the way back); maximized windows sit flush with the screen; the quick panel no longer shows its hint bar while expanding**
 
 **2.6.0 — English installer/uninstaller on non-Chinese systems; the old NSIS fallback UI is gone; the About page now carries the “original shareholders” note and two sponsor QR codes**
 
@@ -996,7 +996,7 @@ The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.7.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.7.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -1025,7 +1025,7 @@ The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 
 ## 🆕 最近更新
 
-**2.7.5 —— 主界面与速览四周 3px 宝蓝光晕、颜色分开可选；遮罩不再压灰阴影；速览自动收起加入丢事件自愈**
+**2.7.6 —— 四周宝蓝阴影全程跟着窗口走（返回不再淡入）；最大化与系统窗口一致贴满屏幕；速览展开途中不再出现提示条；关于页第二张卡改为作者主页**
 
 **2.6.0 —— 非中文系统的安装/卸载界面改用英文；移除 NSIS 备用 UI；关于页加入「原始股东」说明与两张赞助二维码**
 
