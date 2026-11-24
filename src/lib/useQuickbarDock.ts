@@ -1420,6 +1420,29 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       });
     };
 
+    /**
+     * 丢事件自愈看门狗（2026-11-24，用户报「速览有时候不会自动收起」）。
+     *
+     * `pointerleave` / `mouseleave` 都是边沿事件：收起 / 展开动画里窗口在光标底下
+     * 挪动的那几帧，WebView 偶尔不派发（或派发到别的元素上），`pointerInside` 就
+     * 永远停在 true —— 「移开自动收起」从此失灵，面板一直摊在屏幕上。
+     * 这里低频（1.5s）用**原生光标位置**复核一次：hover 展开态 + 允许自动收 +
+     * 光标真的不在窗口里 → 当作 leave 收尾。动画 / 几何锁期间不动手，免得抢几何。
+     * `markEngaged()`（用户点过 / 在面板里打过字）保持豁免 —— 「在用就不收」
+     * 是设计语义，看门狗只修「事件丢了」这一种情况。
+     */
+    const WATCHDOG_MS = 1500;
+    const watchdog = window.setInterval(() => {
+      if (!alive || dockedRef.current || animating || mutating) return;
+      if (!hoverExpanded || !autoHideOn()) return;
+      void cursorInsideWindow().then((inside) => {
+        if (!alive || dockedRef.current || animating || mutating) return;
+        if (inside || !hoverExpanded || !autoHideOn()) return;
+        pointerInside = false;
+        void collapse();
+      });
+    }, WATCHDOG_MS);
+
     document.addEventListener("pointermove", onPointerMove, true);
     document.documentElement.addEventListener("pointerleave", onPointerLeave);
     document.addEventListener("mouseleave", onPointerLeave);
@@ -1486,6 +1509,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       clearHotkeyHold();
       clearRevealRetry();
       if (hintTimer) clearTimeout(hintTimer);
+      window.clearInterval(watchdog);
       document.removeEventListener("pointermove", onPointerMove, true);
       document.documentElement.removeEventListener("pointerleave", onPointerLeave);
       document.removeEventListener("mouseleave", onPointerLeave);
