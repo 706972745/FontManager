@@ -609,7 +609,7 @@ Behaviour worth knowing:
 - **What upload and sign-in are actually for**: uploading a plugin only puts it into a shared repository
   for storing and sharing. Signing in to GitHub is only so you can manage the plugins *you* uploaded —
   iterate on them later or take them down. **There is no other use for it.** The line stays at the
-  bottom of the panel and appears again where you paste the token
+  bottom of the panel and appears again on the sign-in step
 - **The panel updates itself**: once installed, the app checks after launch (never more than once every 24 h)
   and installs a newer panel in the background with a one-line notice; **nothing at all happens while the panel
   isn't installed**, and you can turn the check off in Settings → Plugins. New panels no longer wait for an app release
