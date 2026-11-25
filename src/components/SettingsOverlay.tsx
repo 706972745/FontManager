@@ -1,7 +1,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Languages, MessageSquarePlus, PackageOpen, Palette, Puzzle, RefreshCw, Scaling, Search, Settings, Sparkles, SunMoon, Trash2, Volume2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, Cloud, DatabaseBackup, Eye, FileText, FolderOpen, FolderSync, Info, Keyboard, KeyRound, Languages, MessageSquarePlus, Minimize2, PackageOpen, Palette, Plug, Power, Puzzle, RefreshCw, Scaling, Search, Settings, Sparkles, SunMoon, Trash2, Volume2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput";
@@ -1141,7 +1141,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.autostart")}<SettingHint text={t("settings.autostartSub")} /></div>
+                  <div className="settings-label"><Power size={13} strokeWidth={1.5} /> {t("settings.autostart")}<SettingHint text={t("settings.autostartSub")} /></div>
                 </div>
                 <PillToggle
                   on={autostart}
@@ -1176,7 +1176,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.startMinimized")}<SettingHint text={t("settings.startMinimizedSub")} /></div>
+                  <div className="settings-label"><Minimize2 size={13} strokeWidth={1.5} /> {t("settings.startMinimized")}<SettingHint text={t("settings.startMinimizedSub")} /></div>
                 </div>
                 <PillToggle
                   on={startMinimized}
@@ -1198,7 +1198,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.quickbarHotkey")}<SettingHint text={t("settings.quickbarHotkeySub")} /></div>
+                  <div className="settings-label"><Keyboard size={13} strokeWidth={1.5} /> {t("settings.quickbarHotkey")}<SettingHint text={t("settings.quickbarHotkeySub")} /></div>
                 </div>
                 <div className="hotkey-edit">
                   <button
@@ -1241,7 +1241,7 @@ export function SettingsOverlay() {
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.watch")}<SettingHint text={t("settings.watchSub")} /></div>
+                  <div className="settings-label"><FolderSync size={13} strokeWidth={1.5} /> {t("settings.watch")}<SettingHint text={t("settings.watchSub")} /></div>
                 </div>
                 <PillToggle
                   on={settings.watchEnabled}
@@ -1306,7 +1306,7 @@ export function SettingsOverlay() {
               <div className="detail-heading">{t("settings.libraryFolder")}</div>
               <div className="settings-row settings-col">
                 <div>
-                  <div className="settings-label">{t("settings.libraryFolder")}<SettingHint text={t("settings.libraryFolderSub")} /></div>
+                  <div className="settings-label"><FolderOpen size={13} strokeWidth={1.5} /> {t("settings.libraryFolder")}<SettingHint text={t("settings.libraryFolderSub")} /></div>
                 </div>
                 <div className="settings-folders">
                   <div className={`settings-folder ${customDirActive ? "settings-dim" : ""}`}>
@@ -1445,7 +1445,7 @@ export function SettingsOverlay() {
               {/* 端口：留空＝自动；填了就用这个（被占用会自动退回随机，并在上面提示） */}
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.apiPort")}</div>
+                  <div className="settings-label"><Plug size={13} strokeWidth={1.5} /> {t("settings.apiPort")}</div>
                   <div className="settings-sub">{t("settings.apiPortHint")}</div>
                 </div>
                 <BlinkCaretInput
@@ -1470,7 +1470,7 @@ export function SettingsOverlay() {
               {api?.enabled && api.token && (
                 <>
                   <div className="settings-row settings-col">
-                    <div className="settings-label">{t("settings.apiToken")}</div>
+                    <div className="settings-label"><KeyRound size={13} strokeWidth={1.5} /> {t("settings.apiToken")}</div>
                     <div className="settings-row">
                       <code className="detail-mono settings-api-token">
                         {showToken ? api.token : maskToken(api.token)}
@@ -1853,7 +1853,7 @@ ${t("settings.onlineHosts")}`} />
               </div>
               <div className="settings-row">
                 <div>
-                  <div className="settings-label">{t("settings.onlineEnable")}<SettingHint text={t("settings.onlineEnableSub")} /></div>
+                  <div className="settings-label"><Cloud size={13} strokeWidth={1.5} /> {t("settings.onlineEnable")}<SettingHint text={t("settings.onlineEnableSub")} /></div>
                 </div>
                 <PillToggle
                   on={settings.onlineFontsEnabled}

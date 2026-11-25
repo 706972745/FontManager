@@ -12,9 +12,7 @@ import {
   caretHeightFor,
   caretTopFor,
   charLengthAt,
-  coveredCharBox,
   coveredIndexFor,
-  textStartOffset,
 } from "./blinkCaret";
 
 /**
@@ -127,75 +125,81 @@ export const BlinkCaretInput = forwardRef<HTMLInputElement, BlinkCaretInputProps
       caret.style.height = `${caretH}px`;
       caret.style.top = `${blockTop}px`;
 
+      // ── 横向几何：让浏览器自己排，再读字符的真实矩形 ──
+      // 旧做法是「镜像测宽 + 手算居中偏移 + 减 scrollLeft」。字体回退（emoji、缺字回退到
+      // 另一个字体）、或输入框有自己的 text-align 时，推算和真实排版会差好几像素，
+      // 表现就是蓝块只盖住半个字、另半个露在块外（用户 2026-11-25 报的「位置错位」）。
+      // 现在把镜像做成**输入框内容盒的复制品**（宽 / 内边距 / 对齐 / 字体全同），
+      // 居中和滚动都由浏览器算，我们只读被覆盖字符那个 span 的 rect —— 不再有任何推算。
+      const borderL = Number.parseFloat(cs.borderLeftWidth) || 0;
+      const borderR = Number.parseFloat(cs.borderRightWidth) || 0;
+      const borderT = Number.parseFloat(cs.borderTopWidth) || 0;
+      const borderB = Number.parseFloat(cs.borderBottomWidth) || 0;
       const padL = Number.parseFloat(cs.paddingLeft) || 0;
       const padR = Number.parseFloat(cs.paddingRight) || 0;
-      const contentWidth = Math.max(0, input.clientWidth - padL - padR);
-
-      // 居中 / 右对齐（端口号、字符筛选）：镜像测宽按左对齐算，得先量整段文本宽度补偏移，
-      // 否则蓝块会贴着左边跑（2.2.4 实测端口框偏左约 30px）。左对齐时同步跳过这步。
-      const align = cs.textAlign;
+      mirror.style.boxSizing = "border-box";
+      mirror.style.width = `${input.offsetWidth}px`;
+      mirror.style.left = `${input.offsetLeft}px`;
+      mirror.style.top = `${input.offsetTop}px`;
+      // 镜像不带边框，用内边距把边框那几像素补回来 —— 内容盒与 input 严丝合缝
+      mirror.style.padding = `${borderT}px ${padR + borderR}px ${borderB}px ${padL + borderL}px`;
+      mirror.style.textAlign = cs.textAlign;
+      mirror.style.overflow = "hidden";
       syncFont(mirror, cs);
-      let textOffset = 0;
-      if (align === "center" || align === "right" || align === "end") {
-        mirror.textContent = value;
-        textOffset = textStartOffset(align, contentWidth, mirror.offsetWidth);
-      }
 
-      // ── 空输入：0.55em 空块贴在文本起始位置，没有白字形 ──
-      if (coveredIndexFor(value, sel) < 0) {
-        caret.style.left = `${padL + textOffset}px`;
+      const covered = coveredIndexFor(value, sel);
+
+      // ── 空输入：0.55em 空块贴在文本起始位置（居中输入框就是正中）──
+      if (covered < 0) {
+        const probe = document.createElement("span");
+        mirror.textContent = "";
+        mirror.appendChild(probe);
+        const probeRect = probe.getBoundingClientRect();
+        const mirrorRect = mirror.getBoundingClientRect();
+        caret.style.left = `${input.offsetLeft + Math.max(0, probeRect.left - mirrorRect.left)}px`;
         caret.style.width = "";
         caret.classList.add("blink-caret-empty");
         if (glyph) glyph.textContent = "";
-        mirror.textContent = "";
         return;
       }
       caret.classList.remove("blink-caret-empty");
 
-      // ── 镜像两次测宽：字符左缘、字符 advance ──
-      const covered = coveredIndexFor(value, sel);
-      mirror.textContent = value.slice(0, covered);
-      const startWidth = mirror.offsetWidth + textOffset;
       const charLen = charLengthAt(value, covered);
-      mirror.textContent = value.slice(covered, covered + charLen);
-      const charWidth = mirror.offsetWidth;
+      const char = value.slice(covered, covered + charLen);
+      const charSpan = document.createElement("span");
+      charSpan.textContent = char;
+      mirror.textContent = "";
+      mirror.append(value.slice(0, covered), charSpan, value.slice(covered + charLen));
+      // 输入框已经横向滚出时，镜像跟着滚同样的量，字的位置才对得上
+      mirror.scrollLeft = input.scrollLeft;
 
-      // 「清晰度优先于严丝合缝」（用户 2026-11-13）：块比字符左右各宽 4px，
-      // 白字四周留蓝边，一眼看清是哪个字。
-      const box = coveredCharBox(
-        value,
-        sel,
-        startWidth,
-        charWidth,
-        input.scrollLeft,
-        contentWidth,
-        BLOCK_PAD,
-      );
-      caret.style.left = `${padL + box.left}px`;
-      caret.style.width = `${box.width}px`;
+      const mirrorRect = mirror.getBoundingClientRect();
+      const charRect = charSpan.getBoundingClientRect();
+      const charLeft = charRect.left - mirrorRect.left;
 
-      // ── 白字形：蓝块内叠同字符白字，贴回字符的真实位置 ──
+      // 「清晰度优先于严丝合缝」（用户 2026-11-13）：块比字符左右各宽 4px，白字四周留蓝边
+      caret.style.left = `${input.offsetLeft + charLeft - BLOCK_PAD}px`;
+      caret.style.width = `${charRect.width + BLOCK_PAD * 2}px`;
+
+      // ── 白字形：蓝块内叠同字符白字，横向固定在块的内边距上（= 字符原位）──
       if (glyph) {
-        glyph.textContent = box.char ?? "";
-        if (box.char) {
-          syncFont(glyph, cs);
-          glyph.style.left = `${box.glyphShift}px`;
-          // 垂直对齐：input 把单行文本在内容区里垂直居中，白字形复刻同一几何 ——
-          // top = 内容区顶 + (内容高 − 行高)/2；line-height 是 normal 时令行高=内容高，
-          // 居中结果相同。
-          const padT = Number.parseFloat(cs.paddingTop) || 0;
-          const padB = Number.parseFloat(cs.paddingBottom) || 0;
-          const borderT = Number.parseFloat(cs.borderTopWidth) || 0;
-          const contentH = Math.max(0, input.clientHeight - padT - padB);
-          const contentTop = input.offsetTop + borderT + padT;
-          const lh = Number.parseFloat(cs.lineHeight);
-          if (Number.isFinite(lh) && lh > 0) {
-            glyph.style.lineHeight = `${lh}px`;
-            glyph.style.top = `${contentTop + Math.max(0, (contentH - lh) / 2) - blockTop}px`;
-          } else {
-            glyph.style.lineHeight = `${contentH}px`;
-            glyph.style.top = `${contentTop - blockTop}px`;
-          }
+        glyph.textContent = char;
+        syncFont(glyph, cs);
+        glyph.style.left = `${BLOCK_PAD}px`;
+        // 垂直对齐：input 把单行文本在内容区里垂直居中，白字形复刻同一几何 ——
+        // top = 内容区顶 + (内容高 − 行高)/2；line-height 是 normal 时令行高=内容高，
+        // 居中结果相同。
+        const padT = Number.parseFloat(cs.paddingTop) || 0;
+        const padB = Number.parseFloat(cs.paddingBottom) || 0;
+        const contentH = Math.max(0, input.clientHeight - padT - padB);
+        const contentTop = input.offsetTop + borderT + padT;
+        const lh = Number.parseFloat(cs.lineHeight);
+        if (Number.isFinite(lh) && lh > 0) {
+          glyph.style.lineHeight = `${lh}px`;
+          glyph.style.top = `${contentTop + Math.max(0, (contentH - lh) / 2) - blockTop}px`;
+        } else {
+          glyph.style.lineHeight = `${contentH}px`;
+          glyph.style.top = `${contentTop - blockTop}px`;
         }
       }
     }, []);

@@ -799,9 +799,17 @@ body,
   background: rgba(var(--ink-rgb), 0.08);
 }
 .filter-menu {
-  min-width: 176px;
+  min-width: 190px;
   max-height: min(480px, calc(100vh - 140px));
   overflow-y: auto;
+}
+/* 筛选项一律单行：文字变长（如「隐藏不允许停用的字体」）换行会把整项挤成两行，
+   和上下项的左边缘看着就不齐了。宁可末尾省略号，也不折行。 */
+.filter-menu .sort-item > span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* ─── 筛选菜单的「范围」二级菜单（标签 / 分组 / 快照，2026-11-10） ─────
    ⚠️ 必须 fixed 定位：.filter-menu 自己有 overflow-y:auto，绝对定位的子面板会被裁掉。

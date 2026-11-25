@@ -247,7 +247,7 @@
   "filter.ratingAtLeast": "至少 {count} 星",
   "filter.scope": "範圍",
   "filter.show": "顯示",
-  "filter.toggleableOnly": "隱藏系統不允許停用的字型",
+  "filter.toggleableOnly": "隱藏不允許停用的字型",
   "filter.typography": "排版特性",
   "filter.variableOnly": "僅可變字型",
   "fontlist.format": "格式",

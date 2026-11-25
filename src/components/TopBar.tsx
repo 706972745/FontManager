@@ -22,7 +22,7 @@ import { spring, springSnappy, springSoft } from "../design/springs";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { usePopoverMenu } from "../lib/usePopoverMenu";
 import { useToasterSafeTop } from "../lib/useToasterSafeTop";
-import { familiesFor, familyTagCounts, MIN_PREVIEW_SIZE_INDEX, SIZES, useFontStore, type SortMode } from "../state/fontStore";
+import { activeFilterCount, familiesFor, familyTagCounts, MIN_PREVIEW_SIZE_INDEX, SIZES, useFontStore, type SortMode } from "../state/fontStore";
 import { tagLabel } from "../lib/tagLabels";
 import { isAutoTagId } from "../lib/tagVocabulary";
 import { SearchSuggest, type Suggestion } from "./SearchSuggest";
@@ -233,11 +233,9 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
   const scriptFilter = useFontStore((s) => s.scriptFilter);
   const toggleScriptFilter = useFontStore((s) => s.toggleScriptFilter);
   const variableOnly = useFontStore((s) => s.variableOnly);
-  const setVariableOnly = useFontStore((s) => s.setVariableOnly);
   const toggleableOnly = useFontStore((s) => s.toggleableOnly);
-  const setToggleableOnly = useFontStore((s) => s.setToggleableOnly);
   const incompleteOnly = useFontStore((s) => s.incompleteOnly);
-  const setIncompleteOnly = useFontStore((s) => s.setIncompleteOnly);
+  const setShowFilter = useFontStore((s) => s.setShowFilter);
   const formatFilter = useFontStore((s) => s.formatFilter);
   const toggleFormat = useFontStore((s) => s.toggleFormat);
   const featureFilter = useFontStore((s) => s.featureFilter);
@@ -358,21 +356,12 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
     }
   }, [open]);
 
-  const activeCount =
-    scriptFilter.length +
-    formatFilter.length +
-    featureFilter.length +
-    licenseFilter.length +
-    (sourceFilter !== "all" ? 1 : 0) +
-    (charFilter ? 1 : 0) +
-    (variableOnly ? 1 : 0) +
-    (toggleableOnly ? 1 : 0) +
-    (incompleteOnly ? 1 : 0) +
-    (ratingFilter > 0 ? 1 : 0) +
-    tagFilter.length +
-    collectionFilter.length +
-    snapshotFilter.length +
-    (membership && favoriteOnly ? 1 : 0);
+  // 角标与空态「清除筛选」共用同一份口径（差一个条件就出现「角标亮着却不给按钮」）
+  const activeCount = useFontStore((s) => activeFilterCount(s, membership));
+
+  // 「全部字体」= 一条筛选条件都没有。点它会把其余所有已选项清空，
+  // 反过来只要别处还勾着任何东西，它就不该显示勾。
+  const showAll = activeCount === 0;
 
   return (
     <div className="sort-wrap">
@@ -498,19 +487,22 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
               <li className="filter-heading" role="none">
                 {t("filter.show")}
               </li>
-              {SOURCE_FILTERS.map((src) => (
-                <li key={src}>
-                  <button
-                    role="option"
-                    aria-selected={sourceFilter === src}
-                    className={sourceFilter === src ? "sort-item sort-active" : "sort-item"}
-                    onClick={() => setSourceFilter(src)}
-                  >
-                    <span>{t(`source.${src}`)}</span>
-                    {sourceFilter === src && <Check size={13} strokeWidth={2} />}
-                  </button>
-                </li>
-              ))}
+              {SOURCE_FILTERS.map((src) => {
+                const on = src === "all" ? showAll : sourceFilter === src;
+                return (
+                  <li key={src}>
+                    <button
+                      role="option"
+                      aria-selected={on}
+                      className={on ? "sort-item sort-active" : "sort-item"}
+                      onClick={() => (src === "all" ? setShowFilter("all") : setSourceFilter(src))}
+                    >
+                      <span>{t(`source.${src}`)}</span>
+                      {on && <Check size={13} strokeWidth={2} />}
+                    </button>
+                  </li>
+                );
+              })}
               <li className="sort-sep" role="none" />
               <li className="filter-heading" role="none">
                 {t("filter.copyright")}
@@ -618,7 +610,7 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   role="option"
                   aria-selected={variableOnly}
                   className={variableOnly ? "sort-item sort-active" : "sort-item"}
-                  onClick={() => setVariableOnly(!variableOnly)}
+                  onClick={() => setShowFilter("variable")}
                 >
                   <span>{t("filter.variableOnly")}</span>
                   {variableOnly && <Check size={13} strokeWidth={2} />}
@@ -630,7 +622,7 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   role="option"
                   aria-selected={toggleableOnly}
                   className={toggleableOnly ? "sort-item sort-active" : "sort-item"}
-                  onClick={() => setToggleableOnly(!toggleableOnly)}
+                  onClick={() => setShowFilter("toggleable")}
                 >
                   <span>{t("filter.toggleableOnly")}</span>
                   {toggleableOnly && <Check size={13} strokeWidth={2} />}
@@ -642,7 +634,7 @@ export function FilterMenu({ membership = false }: { membership?: boolean } = {}
                   role="option"
                   aria-selected={incompleteOnly}
                   className={incompleteOnly ? "sort-item sort-active" : "sort-item"}
-                  onClick={() => setIncompleteOnly(!incompleteOnly)}
+                  onClick={() => setShowFilter("incomplete")}
                 >
                   <span>{t("filter.incompleteOnly")}</span>
                   {incompleteOnly && <Check size={13} strokeWidth={2} />}

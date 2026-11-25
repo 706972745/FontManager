@@ -250,7 +250,7 @@
   "filter.ratingAtLeast": "Mindestens {count} Sterne",
   "filter.scope": "Umfang",
   "filter.show": "Anzeigen",
-  "filter.toggleableOnly": "Schriften ausblenden, die das OS nicht ausschalten lässt",
+  "filter.toggleableOnly": "OS-gesperrte ausblenden",
   "filter.typography": "Typografische Funktionen",
   "filter.variableOnly": "Nur variable",
   "fontlist.format": "Format",

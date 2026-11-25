@@ -186,6 +186,9 @@ export type SortMode = "name" | "styles" | "size" | "glyphs" | "added" | "activa
 export type SnapshotApplyMode = "switch" | "merge";
 export type SourceFilter = "all" | "system" | "user";
 
+/** 筛选菜单「显示」组的单选值（四选一，见 setShowFilter） */
+export type ShowFilter = "all" | "variable" | "toggleable" | "incomplete";
+
 export type Nav =
   | { kind: "library" }
   | { kind: "trash" }
@@ -754,21 +757,24 @@ interface FontStore {
   setRatingFilter: (n: number) => void;
   setSearch: (s: string) => void;
   /**
-   * 一次清空「筛选菜单」里的全部条件（2026-11-19，空态加「清除筛选」用）。
+   * 一次清空筛选：菜单里的全部条件（剧本 / 格式 / 特性 / 来源 / 字符 / 变量 /
+   * 可切换 / 不完整 / 授权 / 版权状态 / 评分 / 只收藏）+「范围」里的标签 / 分组 / 快照，
+   * 并在当前正停在标签 / 分组 / 快照视图时退回字体库（2026-11-25 用户要求）。
    *
-   * 为什么要一个专门的 action：筛选条件散在 12 个字段里（剧本 / 格式 / 特性 / 来源 /
-   * 字符 / 变量 / 可切换 / 不完整 / 授权 / 版权状态 / 评分 / 只收藏），
-   * 每加一个筛选项都要记得来这里补一行 —— 这正是「空态一键清除」最容易被漏成
-   * 「点了没反应」的地方。新增筛选项时请一并加到下面。
-   *
-   * 注意**不清导航类筛选**（标签 / 分组 / 快照）：那几项由 `nav` 表达，
-   * 清掉它们等于把用户从当前分组踢回字体库，不是「清除筛选」该干的事。
+   * 为什么要一个专门的 action：条件散在 15 个字段里，每加一个筛选项都要记得
+   * 来这里补一行 —— 这正是「空态一键清除」最容易被漏成「点了没反应」的地方。
+   * 新增筛选项时请一并加到下面。
    */
   resetFilters: () => void;
   toggleScriptFilter: (s: string) => void;
   setVariableOnly: (on: boolean) => void;
   setToggleableOnly: (on: boolean) => void;
   setIncompleteOnly: (on: boolean) => void;
+  /**
+   * 筛选菜单「显示」组是**单选**：全部字体 / 仅可变字体 / 隐藏系统不允许停用 / 只看损坏。
+   * 点其中任何一个，菜单里其余所有已选条件全部清空，只留本次这一个。
+   */
+  setShowFilter: (kind: ShowFilter) => void;
   /** 标记/撤销一个字面的「无法预览」。只写自己这一类，不覆盖更严重的损坏原因 */
   setFaceIncomplete: (id: string, reason: string | null) => void;
   toggleLicenseFilter: (c: string) => void;
@@ -4936,7 +4942,14 @@ export const useFontStore = create<FontStore>((set, get) => ({
     persistPrefs(get);
   },
   setSearch: (search) => set({ search }),
-  resetFilters: () =>
+  resetFilters: () => {
+    // 「范围」里的标签 / 分组 / 快照：清筛选菜单里的那几项之外，
+    // 如果当前正停在这些范围视图里（侧栏点进来的 nav），也一并退回字体库，
+    // 否则列表仍被范围限制着，用户点了「清除筛选」还是看不到全部字体
+    //（用户 2026-11-25 明确要求：清除筛选要连快照/分组/标签/评分一起清）。
+    const nav = get().nav;
+    const inScopeView =
+      nav.kind === "tag" || nav.kind === "collection" || nav.kind === "snapshot";
     set({
       scriptFilter: [],
       formatFilter: [],
@@ -4953,12 +4966,33 @@ export const useFontStore = create<FontStore>((set, get) => ({
       copyrightStatus: {},
       favoriteOnly: false,
       ratingFilter: 0,
-    }),
+      tagFilter: [],
+      collectionFilter: [],
+      snapshotFilter: [],
+      ...(inScopeView ? { nav: { kind: "library" } as Nav } : {}),
+    });
+  },
   toggleScriptFilter: (s) => {
     const cur = get().scriptFilter;
     set({ scriptFilter: cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s] });
   },
   setVariableOnly: (variableOnly) => set({ variableOnly }),
+  setShowFilter: (kind) => {
+    /*
+     * 这四个是「显示」的互斥入口（用户 2026-11-25）：点其中任何一个，
+     * 菜单里**其余所有已选条件一并清空**——版权、语言、格式、排版特性、评分、
+     * 字符、来源，以及「范围」里的收藏/标签/分组/快照。否则旧条件还挂着，
+     * 换个「显示」项就只剩空列表，看起来像筛选坏了。
+     * 复用 resetFilters，保证和空态那个「清除筛选」按钮永远同一个口径。
+     */
+    get().resetFilters();
+    if (kind === "all") return; // 全部字体 = 已经清空的默认态
+    set({
+      variableOnly: kind === "variable",
+      toggleableOnly: kind === "toggleable",
+      incompleteOnly: kind === "incomplete",
+    });
+  },
   toggleLicenseFilter: (c) => {
     const cur = get().licenseFilter;
     set({ licenseFilter: cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c] });
@@ -5708,6 +5742,51 @@ export function applyFamilyFilters(out: Family[], s: FamilyFilterState): Family[
     );
   }
   return out;
+}
+
+/**
+ * 当前生效的筛选条件条数。
+ *
+ * 顶栏「筛选」角标和空态那个「清除筛选」按钮**共用这一个口径**：
+ * 以前空态自己手写了一份子集（漏了评分 / 标签 / 分组 / 快照），结果角标显示 3 条、
+ * 列表已经筛空，空态却不给按钮 —— 用户 2026-11-25 报的就是这个。
+ * `membership`：速览界面才有「只看收藏」，主界面不把它算作条件。
+ */
+export function activeFilterCount(
+  s: {
+    scriptFilter: string[];
+    formatFilter: string[];
+    featureFilter: string[];
+    licenseFilter: string[];
+    tagFilter: string[];
+    collectionFilter: string[];
+    snapshotFilter: string[];
+    sourceFilter: SourceFilter;
+    charFilter: string;
+    ratingFilter: number;
+    variableOnly: boolean;
+    toggleableOnly: boolean;
+    incompleteOnly: boolean;
+    favoriteOnly: boolean;
+  },
+  membership = false,
+): number {
+  return (
+    s.scriptFilter.length +
+    s.formatFilter.length +
+    s.featureFilter.length +
+    s.licenseFilter.length +
+    s.tagFilter.length +
+    s.collectionFilter.length +
+    s.snapshotFilter.length +
+    (s.sourceFilter !== "all" ? 1 : 0) +
+    (s.charFilter ? 1 : 0) +
+    (s.ratingFilter > 0 ? 1 : 0) +
+    (s.variableOnly ? 1 : 0) +
+    (s.toggleableOnly ? 1 : 0) +
+    (s.incompleteOnly ? 1 : 0) +
+    (membership && s.favoriteOnly ? 1 : 0)
+  );
 }
 
 /**

@@ -256,7 +256,7 @@
   "filter.ratingAtLeast": "Не менее {count} звёзд",
   "filter.scope": "Область",
   "filter.show": "Показать",
-  "filter.toggleableOnly": "Скрыть шрифты, которые ОС не даёт отключить",
+  "filter.toggleableOnly": "Скрыть заблокированные",
   "filter.typography": "Типографские функции",
   "filter.variableOnly": "Только вариативные",
   "fontlist.format": "Формат",

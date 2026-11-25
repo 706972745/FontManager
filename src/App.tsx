@@ -46,7 +46,7 @@ import { useCtrlWheelZoom } from "./lib/useCtrlWheelZoom";
 import { Toaster, toast } from "./design/primitives/Toast";
 import { easeTop, spring } from "./design/springs";
 import { INTRO_OFF, useIntro } from "./lib/useIntro";
-import { familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
+import { activeFilterCount, familiesFor, selectVisibleFamilies, useFontStore, type Nav } from "./state/fontStore";
 import { useT, t as translate } from "./lib/i18n";
 import type { LocalePref } from "./lib/i18n";
 import { DiagHud } from "./components/DiagHud";
@@ -169,30 +169,23 @@ function EmptyLibrary({
    * 空态的主行动（2026-11-19，交互细节 2.4.1 的遗留项）。
    *
    * 判据很硬：**按钮只在「按下去真的会结束这个空态」时出现**。
-   * 所以「被筛没了」只有一种情况给按钮 —— 命中的是筛选菜单里的条件（可一键清），
-   * 而不是标签 / 分组 / 快照这类导航（清掉它们等于把用户踢回字体库，不是清除筛选）。
-   * 其它「空」是内容状态（收藏夹还空着、这个标签下还没加字体），没有安全的默认动作，
-   * 就只留说明，不硬塞一个按钮 —— 摆个点了没用的按钮比没有更差。
+   *
+   * 2026-11-25 修正：原来这里手写了一份「筛选条件」子集，漏了评分 / 标签 / 分组 / 快照，
+   * 于是顶栏角标明明亮着 3 条、列表也筛空了，空态却不给按钮。现在改成和角标
+   * 共用 `activeFilterCount()`，只要有任何一条筛选就算；另外停在标签 / 分组 / 快照
+   * 视图里也给它 —— 那三项现在也归「清除筛选」管（清完回字体库，空态就结束了）。
+   * 其它「空」是内容状态（收藏夹还空着、已停用里没有字体），没有安全的默认动作，
+   * 就只留说明，不硬塞一个点了没用的按钮。
    */
-  const menuFiltered = useFontStore(
-    (s) =>
-      s.scriptFilter.length > 0 ||
-      s.formatFilter.length > 0 ||
-      s.featureFilter.length > 0 ||
-      s.sourceFilter !== "all" ||
-      s.charFilter.length > 0 ||
-      s.variableOnly ||
-      s.toggleableOnly ||
-      s.incompleteOnly ||
-      s.licenseFilter.length > 0 ||
-      Object.keys(s.copyrightStatus).length > 0,
-  );
+  const anyFilter = useFontStore((s) => activeFilterCount(s) > 0);
+  const inScopeView =
+    nav.kind === "tag" || nav.kind === "collection" || nav.kind === "snapshot";
   const action = searching
     ? {
         label: t("empty.action.clearSearch"),
         run: () => useFontStore.getState().setSearch(""),
       }
-    : menuFiltered
+    : anyFilter || inScopeView
       ? {
           label: t("empty.action.clearFilters"),
           run: () => useFontStore.getState().resetFilters(),

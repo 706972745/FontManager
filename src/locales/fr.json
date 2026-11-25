@@ -253,7 +253,7 @@
   "filter.ratingAtLeast": "Au moins {count} étoiles",
   "filter.scope": "Portée",
   "filter.show": "Afficher",
-  "filter.toggleableOnly": "Masquer les polices que l’OS ne laisse pas désactiver",
+  "filter.toggleableOnly": "Masquer les verrouillées",
   "filter.typography": "Fonctions typographiques",
   "filter.variableOnly": "Variables uniquement",
   "fontlist.format": "Format",

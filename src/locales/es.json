@@ -253,7 +253,7 @@
   "filter.ratingAtLeast": "Al menos {count} estrellas",
   "filter.scope": "Alcance",
   "filter.show": "Mostrar",
-  "filter.toggleableOnly": "Ocultar fuentes que el SO no permite desactivar",
+  "filter.toggleableOnly": "Ocultar no desactivables",
   "filter.typography": "Funciones tipográficas",
   "filter.variableOnly": "Solo variables",
   "fontlist.format": "Formato",
