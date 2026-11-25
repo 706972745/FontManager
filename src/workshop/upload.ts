@@ -159,6 +159,17 @@ export function readManifest(files: PickedFile[]): Partial<PluginForm> | null {
     }
     if (typeof raw.brief === "string") out.brief = raw.brief;
     if (typeof raw.detail === "string") out.detail = raw.detail;
+    // 运行时清单里常见的 `summary` / `description` 拿来兜底市场字段：
+    // 插件作者写运行时清单时不一定会再抄一份 brief/detail，拖进来直接能传，
+    // 不用先对着「简介不能为空」手打一遍（截断按市场字段的上限来）。
+    if (!out.brief) {
+      const s = typeof raw.summary === "string" ? raw.summary
+        : typeof raw.description === "string" ? raw.description : "";
+      if (s.trim()) out.brief = s.trim().slice(0, MAX_BRIEF);
+    }
+    if (!out.detail && typeof raw.description === "string" && raw.description.trim()) {
+      out.detail = raw.description.trim().slice(0, MAX_DETAIL);
+    }
     // runtime 是 `"python" | "node" | null`：unknown 必须逐值收窄，不能直接赋值
     if (raw.runtime === "python" || raw.runtime === "node") out.runtime = raw.runtime;
     else if (raw.runtime === null || raw.runtime === undefined) out.runtime = null;
@@ -322,6 +333,85 @@ export interface UploadArgs {
   onPhase: (phase: UploadPhase, done?: number, total?: number) => void;
 }
 
+/** fork 上的提交基准：`sha` 是新提交的 parent，`tree` 是新 tree 的 base */
+interface ForkBase {
+  sha: string;
+  tree: string;
+  /** fork 的 main 是否已与上游一致（不一致时下架不能用：目标文件在 fork 里可能还不存在） */
+  current: boolean;
+}
+
+/**
+ * 准备 fork 上的提交基准（fork 不存在就先建）。
+ *
+ * 历史坑（2026-11-25 实测定位）：以前这里把 fork 的 main 直接 `PATCH` 到上游 sha。
+ * 上游 main 里有 `.github/workflows/*`，令牌只有 `public_repo` 时 GitHub **拒绝**
+ * 「OAuth App 创建/更新 workflow 文件」，而且回的是 **404 而不是 403** —— 界面就成了
+ * 「上传失败 — Not Found」。fork 只要落后一次（别人传了插件、聚合脚本推了 index.json），
+ * 之后所有下架/迭代都会失败，报错完全看不出原因。
+ *
+ * 现在的口径：**不要求 fork 与上游一致**。
+ * - 上传：以 fork 自己的 main 为 base 造 commit，PR 的三点 diff 按 merge-base 算，
+ *   上游新增的文件不会混进来；
+ * - 下架：走 `[takedown]` issue（见 `requestTakedown`），根本不碰 fork。
+ *
+ * `merge-upstream` 只是「顺手让 fork 别太旧」的优化：令牌缺 workflow scope 时它必然
+ * 失败（422），失败就跳过 —— 绝不因为同步不上就让上传失败。
+ */
+async function forkBase(
+  token: string,
+  login: string,
+  upSha: string,
+  upTree: string,
+): Promise<ForkBase> {
+  // ① fork 必须存在（首次上传时 GitHub 那边是异步创建的，建完要等它真的出现）
+  let mine = await ghOrNull<{ name: string }>(token, `/repos/${login}/${REPO}`);
+  if (!mine) {
+    await gh(token, `${UPSTREAM_API}/forks`, { method: "POST", body: "{}" });
+    for (let i = 0; i < 20; i++) {
+      await sleep(1500);
+      mine = await ghOrNull<{ name: string }>(token, `/repos/${login}/${REPO}`);
+      if (mine) break;
+    }
+    if (!mine) throw new UploadMessage("uploadErrFork");
+  }
+
+  // ② 读 fork 的 main。空 fork（还没有 main）→ 按上游 sha 建一条
+  const readRef = () =>
+    ghOrNull<{ object: { sha: string } }>(token, `/repos/${login}/${REPO}/git/ref/heads/main`);
+  let ref = await readRef();
+  if (!ref) {
+    await gh(token, `/repos/${login}/${REPO}/git/refs`, {
+      method: "POST",
+      body: JSON.stringify({ ref: "refs/heads/main", sha: upSha }),
+    });
+    return { sha: upSha, tree: upTree, current: true };
+  }
+  if (ref.object.sha === upSha) return { sha: upSha, tree: upTree, current: true };
+
+  // ③ 落后了：顺手试一次官方同步（成功就等于 fast-forward 到上游，PR 更干净）。
+  //    失败不是错误：409 = fork 有自己的提交；422 = 令牌缺 workflow scope。
+  try {
+    await gh(token, `/repos/${login}/${REPO}/merge-upstream`, {
+      method: "POST",
+      body: JSON.stringify({ branch: "main" }),
+    });
+    ref = await readRef();
+    if (ref && ref.object.sha === upSha) {
+      return { sha: upSha, tree: upTree, current: true };
+    }
+  } catch {
+    /* 见上：不只为了同步就让上传失败 */
+  }
+
+  const sha = ref?.object.sha ?? upSha;
+  const commit = await gh<{ tree: { sha: string } }>(
+    token,
+    `/repos/${login}/${REPO}/git/commits/${sha}`,
+  );
+  return { sha, tree: commit.tree.sha, current: sha === upSha };
+}
+
 /**
  * 走一遍完整上传：fork → 同步 main → 逐文件 blob → tree → commit → ref → PR。
  *
@@ -352,44 +442,17 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
   );
   const upstreamTree = upCommit.tree.sha;
 
-  // ② 我的 fork：没有就建一个，建完要等它真的出现（GitHub 那边是异步的）
+  // ② 我的 fork：没有就建；能追上上游就先追上（见 forkBase 的注释）
   onPhase("fork");
-  let mine = await ghOrNull<{ name: string }>(token, `/repos/${login}/${REPO}`);
-  if (!mine) {
-    await gh(token, `${UPSTREAM_API}/forks`, { method: "POST", body: "{}" });
-    for (let i = 0; i < 20; i++) {
-      await sleep(1500);
-      mine = await ghOrNull<{ name: string }>(token, `/repos/${login}/${REPO}`);
-      if (mine) break;
-    }
-    if (!mine) throw new UploadMessage("uploadErrFork");
-  }
-
-  // ③ 把 fork 的 main 对齐到上游：不对齐的话 PR 里会混进别人已经合进去的改动
-  const mineRef = await ghOrNull<{ object: { sha: string } }>(
-    token,
-    `/repos/${login}/${REPO}/git/ref/heads/main`,
-  );
-  if (!mineRef || mineRef.object.sha !== upstreamSha) {
-    try {
-      await gh(token, `/repos/${login}/${REPO}/git/refs/heads/main`, {
-        method: "PATCH",
-        body: JSON.stringify({ sha: upstreamSha, force: true }),
-      });
-    } catch (e) {
-      // fork 刚建好时可能是**空仓库**（还没有 main 分支）→ PATCH 回 404「Not Found」，
-      // 以前这个 404 会原样甩到界面上，看着像「仓库没了」。改成按上游 sha 建分支。
-      if (!(e instanceof GhError && e.status === 404)) throw e;
-      await gh(token, `/repos/${login}/${REPO}/git/refs`, {
-        method: "POST",
-        body: JSON.stringify({ ref: "refs/heads/main", sha: upstreamSha }),
-      });
-    }
-  }
+  const base = await forkBase(token, login, upstreamSha, upstreamTree);
 
   // ④ 逐文件建 blob（大目录会慢，进度回给界面）
   //    每个插件都要额外写一份 plugin.json，所以总步数 = 文件数 + 插件数
-  const totalSteps = items.reduce((n, it) => n + it.files.length + 1, 0);
+  //    （plugin.json 原件不算：它会被重新生成的那份顶掉）
+  const totalSteps = items.reduce(
+    (n, it) => n + it.files.filter((f) => f.path !== "plugin.json").length + 1,
+    0,
+  );
   let done = 0;
   const entries: { path: string; mode: string; type: string; sha: string }[] = [];
 
@@ -397,6 +460,9 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
     const it = items[i];
     const dir = dirs[i];
     for (const f of it.files) {
+      // plugin.json 一律由 buildManifest 重新生成（见 ⑤），原件不能再进 tree：
+      // 同一个 path 出现两条 entry，GitHub 会判 422（面板从文件夹上传时本来就带着它）
+      if (f.path === "plugin.json") continue;
       const created = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/blobs`, {
         method: "POST",
         body: JSON.stringify({ content: toBase64(f.bytes), encoding: "base64" }),
@@ -430,11 +496,15 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
     onPhase("upload", done, totalSteps);
   }
 
-  // ⑥ tree：一次铺开所有插件目录（base 是上游 main，不带上别人已合的改动）
+  // ⑥ tree：一次铺开所有插件目录。base 用 **fork 的 main**（不是上游）：
+  //    只有 fork 里真实存在的对象才能被新 commit 引用，拿上游 sha 造出来的 ref
+  //    在 fork 里会被 GitHub 判 404（见 forkBase 注释）。
+  //    fork 落后也不影响 PR 的可读性 —— GitHub 的三点 diff 以 merge-base 算，
+  //    上游新增的文件不会出现在「Files changed」里。
   onPhase("commit");
   const tree = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/trees`, {
     method: "POST",
-    body: JSON.stringify({ base_tree: upstreamTree, tree: entries }),
+    body: JSON.stringify({ base_tree: base.tree, tree: entries }),
   });
 
   const title =
@@ -446,7 +516,7 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
     body: JSON.stringify({
       message: title,
       tree: tree.sha,
-      parents: [upstreamSha],
+      parents: [base.sha],
     }),
   });
 
@@ -496,125 +566,51 @@ function removeTargets(args: DeleteArgs): string[] {
   for (const name of names) {
     const cut = name.lastIndexOf("__");
     const owner = cut >= 0 ? name.slice(cut + 2) : "";
-    if (!args.allowAny && owner !== args.login) throw new UploadMessage("uploadErrNotOwner");
+    // GitHub 的登录名**大小写不敏感**：清单里写 `Helloooooseff`、token 回
+    // `helloooooseff` 是同一个人。这里按小写比，否则正确署名的作者会被自己的
+    // 插件挡在门外（报「这个插件的署名不是你的名字」，症状就是「没有下架权限」）。
+    if (!args.allowAny && owner.toLowerCase() !== args.login.toLowerCase()) {
+      throw new UploadMessage("uploadErrNotOwner");
+    }
   }
   return names;
 }
 
 /**
- * 下架（删除）自己上传过的插件 —— 走「以删除方式建一个 PR」。
+ * 作者自助下架：开一个 `[takedown]` issue，由 registry 的 `takedown.yml` 校验归属后**直接删**。
  *
- * 归属**只看目录名后缀是不是当前登录名**（`plugins/<id>__<login>`）：
- * 换任何一台电脑登录同一个账号，后缀一样，所以既能覆盖更新、也能在这里下架。
- * 不需要「记住这台电脑」，也不需要本机记录 —— 账号就是身份。
+ * 为什么不再走「fork + 下架 PR」（2026-11-25 真机定位）：
+ * 作者每次下架都要先把 fork 同步到上游，而上游 main 里有 `.github/workflows/*`。
+ * 旧令牌只有 `public_repo`，GitHub 拒绝「OAuth App 创建/更新 workflow 文件」，
+ * 而且回的是 **404**（不是 403）→ 界面显示「上传失败 — Not Found」，用户读成「没有权限」。
+ * fork 只要落后一次（别人上传、聚合脚本推 index.json），下架就永远失败。
  *
- * 客户端判一次只是为了给「不是你的」一句清楚的话；真正的闸门仍在 CI 的作者
- * 校验与人工合并。
+ * issue 通道只用 `public_repo`，与 fork 状态无关；真正的闸门在 Actions 里：
+ * issue 作者必须等于目录名后缀（忽略大小写），且只允许删这个目录。
  */
-export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
-  const { token, login, onPhase } = args;
+export async function requestTakedown(
+  args: DeleteArgs,
+): Promise<{ issueNumber: number; issueUrl: string }> {
+  const { token, login } = args;
   if (args.dirs.length === 0) throw new UploadMessage("uploadErrEmpty");
   const names = removeTargets(args);
-  const branch = `remove/${names[0].replace(/__.*/, "")}-${Date.now()}`;
 
-  const upRef = await gh<{ object: { sha: string } }>(
+  const title = `[takedown] ${names.map((d) => `plugins/${d}`).join(", ")}`;
+  const body = [
+    `由 @${login} 通过 FontManager 插件中心请求下架：`,
+    "",
+    ...names.map((d) => `- \`plugins/${d}/\``),
+    "",
+    "> 仓库的 takedown 工作流会校验：发起人必须是目录署名者本人，且只删除上面这些目录；",
+    "> 通过后立即生效，不需要维护者手动合并。",
+  ].join("\n");
+
+  const issue = await gh<{ number: number; html_url: string }>(
     token,
-    `${UPSTREAM_API}/git/ref/heads/main`,
+    `${UPSTREAM_API}/issues`,
+    { method: "POST", body: JSON.stringify({ title, body }) },
   );
-  const upstreamSha = upRef.object.sha;
-  const upCommit = await gh<{ tree: { sha: string } }>(
-    token,
-    `${UPSTREAM_API}/git/commits/${upstreamSha}`,
-  );
-  const upstreamTree = upCommit.tree.sha;
-
-  // 我的 fork（复用上传那条路：没有就建、建完等它出现）
-  onPhase("fork");
-  let mineRepo = await ghOrNull<{ name: string }>(token, `/repos/${login}/${REPO}`);
-  if (!mineRepo) {
-    await gh(token, `${UPSTREAM_API}/forks`, { method: "POST", body: "{}" });
-    for (let i = 0; i < 20; i++) {
-      await sleep(1500);
-      mineRepo = await ghOrNull<{ name: string }>(token, `/repos/${login}/${REPO}`);
-      if (mineRepo) break;
-    }
-    if (!mineRepo) throw new UploadMessage("uploadErrFork");
-  }
-  const mineRef = await ghOrNull<{ object: { sha: string } }>(
-    token,
-    `/repos/${login}/${REPO}/git/ref/heads/main`,
-  );
-  if (!mineRef || mineRef.object.sha !== upstreamSha) {
-    try {
-      await gh(token, `/repos/${login}/${REPO}/git/refs/heads/main`, {
-        method: "PATCH",
-        body: JSON.stringify({ sha: upstreamSha, force: true }),
-      });
-    } catch (e) {
-      // fork 刚建好时可能是**空仓库**（还没有 main 分支）→ PATCH 回 404「Not Found」，
-      // 以前这个 404 会原样甩到界面上，看着像「仓库没了」。改成按上游 sha 建分支。
-      if (!(e instanceof GhError && e.status === 404)) throw e;
-      await gh(token, `/repos/${login}/${REPO}/git/refs`, {
-        method: "POST",
-        body: JSON.stringify({ ref: "refs/heads/main", sha: upstreamSha }),
-      });
-    }
-  }
-
-  // 目录下每个文件各来一条 `sha: null` —— 比「删目录」稳（tree API 对 tree 类型的
-  // null 条目行为在官方文档里说得含糊，逐 blob 删除是明确的）
-  onPhase("commit");
-  const flat = await gh<{ tree: { path: string; type: string }[]; truncated: boolean }>(
-    token,
-    `${UPSTREAM_API}/git/trees/${upstreamTree}?recursive=1`,
-  );
-  if (flat.truncated) throw new UploadMessage("uploadErrTreeTooBig");
-  const entries = flat.tree
-    .filter((e) => e.type === "blob" && names.some((d) => e.path.startsWith(`plugins/${d}/`)))
-    .map((e) => ({ path: e.path, mode: "100644", type: "blob", sha: null }));
-  if (entries.length === 0) throw new UploadMessage("uploadErrNotFound");
-
-  const tree = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/trees`, {
-    method: "POST",
-    body: JSON.stringify({ base_tree: upstreamTree, tree: entries }),
-  });
-
-  const title = names.length === 1 ? `[remove] ${names[0]} by ${login}` : `[remove] ${names.length} 个插件 by ${login}`;
-  const commit = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/commits`, {
-    method: "POST",
-    body: JSON.stringify({ message: title, tree: tree.sha, parents: [upstreamSha] }),
-  });
-  try {
-    await gh(token, `/repos/${login}/${REPO}/git/refs`, {
-      method: "POST",
-      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
-    });
-  } catch (e) {
-    if (e instanceof GhError && e.status === 422) {
-      await gh(token, `/repos/${login}/${REPO}/git/refs/heads/${branch}`, {
-        method: "PATCH",
-        body: JSON.stringify({ sha: commit.sha, force: true }),
-      });
-    } else throw e;
-  }
-
-  onPhase("pr");
-  const pr = await gh<{ html_url: string; number: number }>(token, `${UPSTREAM_API}/pulls`, {
-    method: "POST",
-    body: JSON.stringify({
-      title,
-      head: `${login}:${branch}`,
-      base: "main",
-      body: [
-        `由 @${login} 通过 FontManager 插件中心请求下架：`,
-        "",
-        ...names.map((d) => `- \`plugins/${d}/\``),
-        "",
-        "> 合并后该插件的目录会被删除，聚合脚本重算 `index.json` 后中心里就不再显示。",
-      ].join("\n"),
-    }),
-  });
-  return { prUrl: pr.html_url, prNumber: pr.number, branch };
+  return { issueNumber: issue.number, issueUrl: issue.html_url };
 }
 
 /**

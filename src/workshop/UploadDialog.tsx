@@ -20,12 +20,12 @@ import { useGithubAuth } from "./auth.ts";
 import {
   ALLOWED_EXTS,
   canMaintain,
-  deletePlugins,
   deletePluginsDirect,
   GhError,
   PERMS,
   pickedFromApp,
   readManifest,
+  requestTakedown,
   uploadPlugins,
   UploadMessage,
   validatePlugin,
@@ -84,12 +84,18 @@ export function UploadDialog({
   t,
   locale,
   entries,
+  removedIds,
+  onRemoved,
   onClose,
 }: {
   t: TFn;
   locale: string;
   /** 清单里的条目：用来列「我上传的插件」（下架入口） */
   entries: WorkshopEntry[];
+  /** 已经在本机确认下架、只是清单还没重算的那些（父组件已经从目录里藏掉了） */
+  removedIds: string[];
+  /** 下架提交成功 → 让父组件立刻把它从插件中心里藏掉 */
+  onRemoved: (id: string) => void;
   onClose: () => void;
 }) {
   /**
@@ -115,7 +121,13 @@ export function UploadDialog({
   const [result, setResult] = useState<{ prUrl: string; prNumber: number } | null>(null);
   /** 正在下架的目录（按钮显示 loading、其余禁用） */
   const [deleting, setDeleting] = useState<string | null>(null);
-  /** 本次会话里已提交下架的目录（提交后先从列表里去掉，不必等 PR 合并） */
+  /**
+   * 本次会话里已提交下架的目录。
+   *
+   * 以前提交完就把这一行从「我的插件」里剔掉：列表瞬间少一条，用户除了底下那句提示
+   * 之外没有任何「它还在生效中」的反馈，容易以为点空了或者点错了。现在保留这一行、
+   * 压灰并挂「已下架（待生效）」，等清单重算后条目真的消失，这行才跟着走。
+   */
   const [deleted, setDeleted] = useState<string[]>([]);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   /**
@@ -127,6 +139,7 @@ export function UploadDialog({
    * 下架按钮点了没反应。用自己的弹窗既避开 ACL，也和面板其它弹层样式一致。
    */
   const [askRemove, setAskRemove] = useState<{
+    id: string;
     dir: string;
     name: string;
     allowAny: boolean;
@@ -168,54 +181,67 @@ export function UploadDialog({
    */
   const mine = useMemo(() => {
     if (!login) return [];
-    const out: { entry: WorkshopEntry; dir: string }[] = [];
+    const out: { entry: WorkshopEntry; dir: string; pending: boolean }[] = [];
     for (const e of entries) {
       if (e.official) continue;
       // registry 的 `dir` 是仓库相对路径（`plugins/<id>__<作者>`）——下架只认最后一段
       // 目录名，`communityDirFor` 干的就是这件事（与 Rust 的 `dir_name_of` 同口径）
       const dir = communityDirFor(e);
-      if (!dir || deleted.includes(dir)) continue;
+      if (!dir) continue;
       const cut = dir.lastIndexOf("__");
       if (cut < 0) continue;
-      // 别人的插件只有维护者能删；普通用户看到的是「我的插件」列表
-      if (dir.slice(cut + 2) !== login && !isMaintainer) continue;
-      out.push({ entry: e, dir });
+      // 别人的插件只有维护者能删；普通用户看到的是「我的插件」列表。
+      // 登录名大小写不敏感（GitHub 允许清单里写成 `Helloooooseff`）。
+      if (dir.slice(cut + 2).toLowerCase() !== login.toLowerCase() && !isMaintainer) continue;
+      // 本会话提交的（deleted）或父组件已经确认下架的（removedIds）都算「待生效」
+      out.push({ entry: e, dir, pending: deleted.includes(dir) || removedIds.includes(e.id) });
     }
     return out;
-  }, [entries, login, deleted, isMaintainer]);
+  }, [entries, login, deleted, removedIds, isMaintainer]);
+
+  // 清单重算后，已下架的目录会从 entries 里消失。这里把「孤儿」标记清掉，否则
+  // 维护者手动把插件恢复上架（或聚合失败回滚）之后，那一行会永远只剩灰条、按钮回不来。
+  useEffect(() => {
+    if (!deleted.length) return;
+    const present = new Set(
+      entries.map((e) => communityDirFor(e)).filter((d): d is string => !!d),
+    );
+    const kept = deleted.filter((d) => present.has(d));
+    if (kept.length !== deleted.length) setDeleted(kept);
+  }, [entries, deleted]);
 
   const removeOne = useCallback(
-    async (dir: string, name: string, allowAny: boolean) => {
+    async (id: string, dir: string, name: string, allowAny: boolean) => {
       if (!token || !login) return;
       setDeleting(dir);
       setError(null);
       setDeleteMsg(null);
+      // 上传成功的浮层是全屏遮罩：不清掉的话，下架的提示会被它盖在下面
+      // （用户只看到「已创建审核请求 #N」，以为下架没反应）。
+      setResult(null);
       try {
-        // 只有维护者（admin / maintain）才可能绕过 main 的 required PR。
-        //
-        // 普通作者**先分流**，不去撞那一次注定失败的直推：GitHub 对「没有写权限的
-        // 写操作」回的状态码不固定 —— 403 还算好认，**404 到了界面上就成了莫名其妙的
-        // 「上传失败 — Not Found」**（用户会以为插件已经不在仓库里了）。身份我们本来就
-        // 查过了（`canMaintain`），按身份走正确的路即可。
+        // 维护者（admin / maintain）直推：即时生效，不留 issue 噪音。
         if (isMaintainer) {
           try {
             await deletePluginsDirect({ token, login, dirs: [dir], onPhase: setPhase, allowAny });
             setDeleted((d) => [...d, dir]);
+            // 直推已经删完了：目录当场就该从中心里消失，别等下一次刷新
+            onRemoved(id);
             setDeleteMsg(t("uploadDeleteDone", { name }));
             return;
           } catch (e) {
-            // 直推被拒（期间有人推了 main / 令牌突然没有上游写权限 / 规则又加了限制）
-            // → 退回老路：在自己的 fork 上删、开 PR，等合并。不能因为直推不通就什么都不做。
+            // 直推被拒（期间有人推了 main / 规则又加了限制）→ 退回 issue 通道，不能什么都不做
             if (!(e instanceof GhError && [403, 404, 409, 422].includes(e.status))) throw e;
           }
         }
-        const out = await deletePlugins({ token, login, dirs: [dir], onPhase: setPhase, allowAny });
+        // 作者：开一个 `[takedown]` issue，仓库 Action 校验「发起人 == 目录署名者」后直接删。
+        // 不走 fork，所以不存在「fork 落后 → 同步失败 → 404 变成没有权限」那条死路。
+        const out = await requestTakedown({ token, login, dirs: [dir], onPhase: setPhase, allowAny });
         setDeleted((d) => [...d, dir]);
-        setDeleteMsg(
-          isMaintainer
-            ? t("uploadDeleteFallback", { number: out.prNumber })
-            : t("uploadDeletePrOpened", { number: out.prNumber }),
-        );
+        // 请求已经进闸门了：先在本地把它从中心里藏掉，父组件会轮询清单确认。
+        // 不藏的话「已经下架还在显示、刷新也没用」—— 聚合脚本最慢要 2 分半。
+        onRemoved(id);
+        setDeleteMsg(t("uploadDeleteSubmitted", { number: out.issueNumber }));
       } catch (e) {
         setError(
           e instanceof UploadMessage
@@ -227,7 +253,7 @@ export function UploadDialog({
         setPhase(null);
       }
     },
-    [isMaintainer, login, t, token],
+    [isMaintainer, login, onRemoved, t, token],
   );
 
   /** 上传时的署名就是登录名（不再有匿名分支） */
@@ -544,12 +570,15 @@ export function UploadDialog({
               <h3 className="ws-up-sec-title">{t("uploadMineTitle")}</h3>
               <p className="ws-up-hint">{t("uploadMineHint")}</p>
               <ul className="ws-up-list">
-                {mine.map(({ entry: e, dir }) => (
-                  <li key={dir} className="ws-up-item">
+                {mine.map(({ entry: e, dir, pending }) => (
+                  <li
+                    key={dir}
+                    className={"ws-up-item" + (pending ? " ws-up-item-pending" : "")}
+                  >
                     <span className="ws-up-item-main" style={{ cursor: "default" }}>
                       <span className="ws-up-item-name">
                         {e.name}
-                        {ownerOf(dir) !== login && (
+                        {!pending && ownerOf(dir) !== login && (
                           <span className="ws-up-item-tag">{t("uploadOwnerTag")}</span>
                         )}
                       </span>
@@ -557,19 +586,25 @@ export function UploadDialog({
                         v{e.version} · plugins/{dir}
                       </span>
                     </span>
-                    <button
-                      className="ws-linkbtn"
-                      onClick={() =>
-                        setAskRemove({
-                          dir,
-                          name: e.name,
-                          allowAny: ownerOf(dir) !== login,
-                        })
-                      }
-                      disabled={deleting !== null}
-                    >
-                      {deleting === dir ? t("uploadDeleting") : t("uploadDelete")}
-                    </button>
+                    {pending ? (
+                      // 已提交、等清单重算：右侧按钮换成灰标签，避免「再点一次」造出重复请求
+                      <span className="ws-up-tag-pending">{t("uploadDeletePendingTag")}</span>
+                    ) : (
+                      <button
+                        className="ws-linkbtn"
+                        onClick={() =>
+                          setAskRemove({
+                            id: e.id,
+                            dir,
+                            name: e.name,
+                            allowAny: ownerOf(dir) !== login,
+                          })
+                        }
+                        disabled={deleting !== null}
+                      >
+                        {deleting === dir ? t("uploadDeleting") : t("uploadDelete")}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -855,7 +890,7 @@ export function UploadDialog({
                 onClick={() => {
                   const target = askRemove;
                   setAskRemove(null);
-                  void removeOne(target.dir, target.name, target.allowAny);
+                  void removeOne(target.id, target.dir, target.name, target.allowAny);
                 }}
                 disabled={deleting !== null}
               >

@@ -15,6 +15,27 @@ import { communityDirFor, type WorkshopEntry } from "../lib/workshop.ts";
 export const INDEX_URL =
   "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/index.json";
 
+const RAW_BASE = "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main";
+
+/**
+ * 探一个插件目录是否**已经不在上游**（true = 真的删掉了）。
+ *
+ * 为什么不用 `index.json` 判断：那份清单会经过浏览器缓存、CDN，甚至用户自己装的
+ * GitHub 加速器（这台机器就是改 hosts 把域名指到 127.0.0.1 的本地服务）。
+ * 2026-11-25 实测：下架目录已经 404 了，清单还能旧好几分钟，而且**查询串被忽略**，
+ * `?v=随机` 也照样返回旧内容。
+ *
+ * 「某个具体文件在不在」没有这层顾虑 —— 没人会预先缓存一个随机查询串下的
+ * 不存在的路径：目录没了就是 404，还在就是 200。用它做下架的权威判定。
+ */
+export async function probePluginDir(dir: string): Promise<boolean> {
+  const url = `${RAW_BASE}/plugins/${dir}/plugin.json?probe=${Date.now()}`;
+  const res = await fetch(url, { cache: "no-cache" });
+  if (res.status === 404) return true;
+  if (res.ok) return false;
+  throw new Error(`probe HTTP ${res.status}`);
+}
+
 /** 一次性会话 key：主程序开窗时放在查询参数里 */
 export function sessionKey(): string {
   try {
@@ -58,18 +79,27 @@ function fetchWithTimeout(url: string, ms: number): Promise<Response> {
   );
 }
 
-export async function fetchIndexText(signal?: AbortSignal): Promise<string> {
-  if (signal) {
-    // 调用方自己管取消（暂无调用方传，留口子）
-    const res = await fetch(INDEX_URL, { signal, cache: "no-cache" });
-    if (!res.ok) throw new Error(`index.json HTTP ${res.status}`);
-    return await res.text();
-  }
+/**
+ * 拉清单原文。
+ *
+ * `fresh`（= 用户点了「刷新」/ 下架后确认）要同时做两件事，缺一件都会表现成
+ * 「刷新按钮根本没用」：
+ *
+ * 1. **URL 加时间戳**：raw.githubusercontent.com 给的是 `cache-control: max-age=300`，
+ *    WebView2 会照缓存 5 分钟。换 URL 让浏览器/CDN 那层直接换一份。
+ * 2. **`cache: "no-cache"`（协商，不是 `no-store`）**：这一项是给**中间代理**看的 ——
+ *    国内常见做法是改 hosts 把 `githubusercontent.com` 指到 127.0.0.1 上的加速器，
+ *    那个加速器只认请求头里的 `Cache-Control: no-cache`，**完全忽略 URL 上的查询串**
+ *    （2026-11-25 真机定位：`?v=` 随机串照样返回上一版 index.json）。`no-store` 不会
+ *    往请求头里写 `Cache-Control`，反而更差，这里明确不用。
+ */
+export async function fetchIndexText(opts: { fresh?: boolean } = {}): Promise<string> {
+  const url = opts.fresh ? `${INDEX_URL}?v=${Date.now()}` : INDEX_URL;
   let last: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) await new Promise((r) => window.setTimeout(r, INDEX_RETRY_GAP_MS));
     try {
-      const res = await fetchWithTimeout(INDEX_URL, INDEX_TIMEOUT_MS);
+      const res = await fetchWithTimeout(url, INDEX_TIMEOUT_MS);
       if (!res.ok) throw new Error(`index.json HTTP ${res.status}`);
       return await res.text();
     } catch (e) {

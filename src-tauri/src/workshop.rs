@@ -1401,7 +1401,13 @@ pub const GITHUB_CLIENT_ID: &str = "Ov23lirUWCuWuZ2B8MGY";
 const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 const GITHUB_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 const GITHUB_USER_URL: &str = "https://api.github.com/user";
-/// fork 自己的仓库 + 开 PR 需要写权限：`public_repo` 够用，且碰不到私有仓
+/// fork 自己的仓库 + 开 PR 需要写权限：`public_repo` 够用，且碰不到私有仓。
+///
+/// **不要为了「同步 fork」加 `workflow`**（2026-11-25 讨论后否掉）：上游 main 里有
+/// `.github/workflows/*`，缺这个 scope 时 `merge-upstream` 会被拒（回 404/422），
+/// 但这**不是**下架失败的原因 —— 下架已经改走 `[takedown]` issue 通道，不碰 fork；
+/// 上传也不需要 fork 与上游一致（PR 按 merge-base 算 diff）。
+/// 加它等于让每个用户多授权「可管理 Actions」，与最小权限相悖。
 const GITHUB_SCOPE: &str = "public_repo";
 const GITHUB_TIMEOUT: Duration = Duration::from_secs(20);
 

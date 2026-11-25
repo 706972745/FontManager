@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowUpCircle, Check, CircleHelp, Download, Puzzle, Refr
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyWorkshopFilters,
+  communityDirFor,
   hasUpdate,
   humanBytes,
   meetsMinAppVersion,
@@ -18,6 +19,7 @@ import {
   fetchIndexText,
   installRequestFor,
   panelApi,
+  probePluginDir,
   releaseBlurGuard,
   PanelSessionExpired,
   type InstalledPlugin,
@@ -41,6 +43,8 @@ import { STAGGER_CAP, STAGGER_STEP, scrimFade, springSoft } from "../design/spri
 /** 与在线页同一个「X 分钟前更新」口径 */
 function ago(fetchedAt: number, locale: PanelLocale): string {
   const secs = Math.max(0, Math.floor(Date.now() / 1000) - fetchedAt);
+  // 刚点完「刷新」就显示「1 分钟前更新」，用户会以为按钮没反应 —— 1 分钟内说「刚刚」
+  if (secs < 45) return panelT(locale, "updatedJustNow");
   if (secs < 3600) return panelT(locale, "updatedMinutes", { count: Math.max(1, Math.floor(secs / 60)) });
   if (secs < 86400) return panelT(locale, "updatedHours", { count: Math.floor(secs / 3600) });
   return panelT(locale, "updatedDays", { count: Math.floor(secs / 86400) });
@@ -102,6 +106,40 @@ function savePersistedCache(c: Cache) {
   }
 }
 
+/**
+ * 「已提交下架、清单还没重算」的插件（id → 提交时间），落 localStorage。
+ *
+ * 为什么要落盘：面板每次打开都是新窗口，模块级状态活不过一次关闭。下架后立刻关掉
+ * 再打开，如果只靠内存，缓存里的旧清单会把它又摆回来 —— 看上去像「下架失败」。
+ *
+ * 30 分钟足够聚合脚本跑完（实测最慢 2 分半）；超时的标记直接丢掉，宁可多显示一次
+ * 也不要永久藏掉一个其实还在架上的插件。
+ */
+const REMOVED_KEY = "fontmanager.workshop.removed.v1";
+const REMOVED_TTL_MS = 30 * 60_000;
+
+function readRemoved(): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(REMOVED_KEY) ?? "{}") as Record<string, number>;
+    const now = Date.now();
+    const out: Record<string, number> = {};
+    for (const [id, ts] of Object.entries(v ?? {})) {
+      if (typeof ts === "number" && now - ts < REMOVED_TTL_MS) out[id] = ts;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveRemoved(map: Record<string, number>) {
+  try {
+    localStorage.setItem(REMOVED_KEY, JSON.stringify(map));
+  } catch {
+    // 同上：写不进去只影响「重开面板后还藏不藏」，不影响本次
+  }
+}
+
 function readSession(): { locale: PanelLocale; theme: string } {
   const params = new URLSearchParams(location.search);
   const lang = params.get("lang");
@@ -157,6 +195,15 @@ export function WorkshopPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   /** 上传弹窗（M3）：面板里直接完成，不跳网页 */
   const [uploadOpen, setUploadOpen] = useState(false);
+  /**
+   * 本机已知「刚下架、清单还没重算」的插件（id → 提交时间）。
+   *
+   * 下架是作者点一下就生效的，但 `index.json` 要等仓库里的聚合脚本重算
+   * （实测 10 秒到 2 分半都有），这中间中心里还挂着那个插件 —— 用户看到的就是
+   * 「已经下架了还在显示，刷新也没用」。既然面板**确定**这次提交成功了，
+   * 就先在本地把它藏掉，等新清单确认它真的没了再把标记清掉。
+   */
+  const [removed, setRemoved] = useState<Record<string, number>>(() => readRemoved());
 
   const installedIds = useMemo(() => new Set(installed.map((p) => p.id)), [installed]);
   /**
@@ -200,7 +247,9 @@ export function WorkshopPanel() {
     setLoading(true);
     setError(null);
     try {
-      const text = await fetchIndexText();
+      // force（用户点刷新 / 下架后的轮询）必须绕开 raw 的 5 分钟缓存，否则拿回来
+      // 的还是旧清单，看起来就是「刷新按钮没用」。
+      const text = await fetchIndexText({ fresh: force });
       const index = parseWorkshopIndexStrict(text);
       const next: Cache = { entries: index.entries, fetchedAt: Date.now() };
       cache = next;
@@ -209,6 +258,21 @@ export function WorkshopPanel() {
       void panelApi.setIndexCache(next.entries, next.fetchedAt).catch(() => {});
       setEntries(next.entries);
       setFetchedAt(next.fetchedAt);
+      // 新清单里已经没有的「待生效」标记可以收工了（它真的下架了）
+      setRemoved((prev) => {
+        const ids = Object.keys(prev);
+        if (!ids.length) return prev;
+        const present = new Set(next.entries.map((e) => e.id));
+        const kept: Record<string, number> = {};
+        let changed = false;
+        for (const [id, ts] of Object.entries(prev)) {
+          if (present.has(id)) kept[id] = ts;
+          else changed = true;
+        }
+        if (!changed) return prev;
+        saveRemoved(kept);
+        return kept;
+      });
       return next.entries;
     } catch (err) {
       setError(String(err));
@@ -301,9 +365,13 @@ export function WorkshopPanel() {
         }
       }
       const hit = cache ?? persistedCache();
-      const fresh = hit ? Date.now() - hit.fetchedAt < CACHE_TTL_MS : false;
-      // 过期或没有：后台刷新（有缓存时界面已经有内容了，不会白屏）
-      if (!fresh) void load(false);
+      // 首帧用缓存，随后**每次都**再拉一份真实清单（stale-while-revalidate）。
+      //
+      // 以前这里是「命中 1 分钟 TTL 就不拉」：刚下架的插件还挂在缓存里，点开面板
+      // 看到的却是旧状态，用户只能反复点刷新 —— 而这正是「刷新按钮没用」的来源。
+      // 现在缓存只负责「别白屏」，数据永远以新拉的为准。
+      if (hit) void load(true);
+      else void load(false);
     })();
     void refreshInstalled();
     return () => {
@@ -313,18 +381,133 @@ export function WorkshopPanel() {
 
   const visible = useMemo(() => {
     if (!entries) return [];
-    return applyWorkshopFilters(entries, { query, kind, runtime, installedOnly, installedIds });
-  }, [entries, query, kind, runtime, installedOnly, installedIds]);
+    // 已经在本机确认下架、只是清单还没重算的那些先藏掉（见 `removed` 的注释）
+    const live = Object.keys(removed).length
+      ? entries.filter((e) => removed[e.id] === undefined)
+      : entries;
+    return applyWorkshopFilters(live, { query, kind, runtime, installedOnly, installedIds });
+  }, [entries, removed, query, kind, runtime, installedOnly, installedIds]);
 
-  const detail = useMemo(
-    () => entries?.find((e) => e.id === detailId) ?? null,
-    [entries, detailId],
-  );
+  const detail = useMemo(() => {
+    if (!detailId || removed[detailId] !== undefined) return null;
+    return entries?.find((e) => e.id === detailId) ?? null;
+  }, [entries, detailId, removed]);
   /** 详情里这个插件能不能更新（能则新版号，不能则 null） */
   const detailUpdate = useMemo(
     () => (detail ? updateTarget(detail) : null),
     [detail, updateTarget],
   );
+
+  /**
+   * 下架提交成功 → 立刻从中心里藏掉。
+   *
+   * 不等聚合脚本：`index.json` 重算实测 10 秒到 2 分半，这中间中心里还挂着它，
+   * 用户怎么点刷新都是旧的。本地先藏，再靠下面的轮询确认。
+   */
+  const markRemoved = useCallback((id: string) => {
+    setRemoved((prev) => {
+      if (prev[id] !== undefined) return prev;
+      const next = { ...prev, [id]: Date.now() };
+      saveRemoved(next);
+      return next;
+    });
+    // 详情层正开着这一条的话一并关掉，否则会看到「详情还在、列表没了」
+    setDetailId((cur) => (cur === id ? null : cur));
+  }, []);
+
+  /** 只认「有哪些 id」，避免每次 tick 都把定时器重置一遍 */
+  const removedKey = useMemo(() => Object.keys(removed).sort().join(","), [removed]);
+
+  // 轮询里要读最新值，但不该因为 entries 每 20 秒换一份就把定时器重置掉
+  const entriesRef = useRef<WorkshopEntry[] | null>(entries);
+  entriesRef.current = entries;
+  const removedRef = useRef(removed);
+  removedRef.current = removed;
+
+  /**
+   * 盯着「到底删掉了没有」，直到确认。
+   *
+   * 判定顺序（2026-11-25 真机踩出来的）：
+   * 1. **目录探测为准**：`plugins/<dir>/plugin.json` 回 404 就是真没了。清单
+   *    （`index.json`）会经过浏览器缓存 / CDN / 用户自己装的加速器，这台机器上
+   *    实测能旧好几分钟。用户看到的「已经下架了还显示」就是这份旧清单。
+   * 2. 清单本身也继续定时强拉：聚合脚本跑完后，这一行会自然消失（不用等探测）。
+   * 3. 宽限期到点还探测到目录存在 → 说明这次下架**没生效**（workflow 拒了、
+   *    或只删了一半），把它放回来。不能让用户以为已经没了。
+   */
+  useEffect(() => {
+    if (!removedKey) return;
+    let alive = true;
+    /** 已确认目录没了的 id：保持隐藏（清单迟早跟上），不用再探 */
+    const confirmed = new Set<string>();
+
+    const dirOf = (id: string): string | null => {
+      const e = (entriesRef.current ?? []).find((x) => x.id === id);
+      return e ? communityDirFor(e) : null;
+    };
+
+    const probe = async () => {
+      for (const id of Object.keys(removedRef.current)) {
+        if (!alive || confirmed.has(id)) continue;
+        const dir = dirOf(id);
+        if (!dir) continue;
+        try {
+          if (await probePluginDir(dir)) {
+            confirmed.add(id);
+            // 一次探一个就够：探测是串行的，别把并行请求打满
+            return;
+          }
+        } catch {
+          // 网络抖动 / 加速器抽风：下一轮再试
+        }
+      }
+    };
+
+    const firstProbe = window.setTimeout(() => void probe(), 4_000);
+    const probeTimer = window.setInterval(() => void probe(), 8_000);
+    const firstLoad = window.setTimeout(() => {
+      if (alive) void load(true);
+    }, 12_000);
+    const loadTimer = window.setInterval(() => {
+      if (alive) void load(true);
+    }, 20_000);
+
+    const giveUp = window.setTimeout(() => {
+      window.clearTimeout(firstProbe);
+      window.clearInterval(probeTimer);
+      window.clearTimeout(firstLoad);
+      window.clearInterval(loadTimer);
+      void (async () => {
+        const stillThere: string[] = [];
+        for (const id of Object.keys(removedRef.current)) {
+          if (confirmed.has(id)) continue;
+          const dir = dirOf(id);
+          if (!dir) continue;
+          try {
+            if (!(await probePluginDir(dir))) stillThere.push(id);
+          } catch {
+            // 探不到就维持现状（宁可继续藏着）
+          }
+        }
+        if (!alive || !stillThere.length) return;
+        setRemoved((prev) => {
+          const next = { ...prev };
+          for (const id of stillThere) delete next[id];
+          saveRemoved(next);
+          return next;
+        });
+      })();
+    }, 180_000);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(firstProbe);
+      window.clearInterval(probeTimer);
+      window.clearTimeout(firstLoad);
+      window.clearInterval(loadTimer);
+      window.clearTimeout(giveUp);
+    };
+  }, [removedKey, load]);
 
   // 首次温馨提醒：localStorage 记忆已读（方案 §7.3 第 1 条）
   const [bannerSeen, setBannerSeen] = useState(() => {
@@ -759,6 +942,8 @@ export function WorkshopPanel() {
             t={t}
             locale={locale}
             entries={entries ?? []}
+            removedIds={Object.keys(removed)}
+            onRemoved={markRemoved}
             onClose={() => setUploadOpen(false)}
           />
         )}

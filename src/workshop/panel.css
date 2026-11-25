@@ -1595,3 +1595,22 @@ body {
   font-size: var(--ws-fs-10);
   color: var(--ws-text-3);
 }
+
+/* 已提交下架、但清单还没重算的条目：整行压灰，右侧按钮位置换成一枚灰标签 ——
+   既保留了「刚点的那条还在」的位置感，也不会让人以为可以再点一次。 */
+.ws-up-item-pending {
+  opacity: 0.6;
+}
+
+.ws-up-tag-pending {
+  flex: none;
+  margin-right: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--ws-fs-10);
+  line-height: 1.6;
+  white-space: nowrap;
+  color: var(--ws-text-3);
+  border: 1px solid var(--ws-line);
+  background: color-mix(in srgb, var(--ws-text) 6%, transparent);
+}
