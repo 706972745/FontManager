@@ -191,36 +191,32 @@ export function UploadDialog({
       setError(null);
       setDeleteMsg(null);
       try {
-        // 先试直推：维护者身份可以绕过 main 的 required PR，点完立刻下架。
-        const out = await deletePluginsDirect({
-          token,
-          login,
-          dirs: [dir],
-          onPhase: setPhase,
-          allowAny,
-        });
-        setDeleted((d) => [...d, dir]);
-        setDeleteMsg(t("uploadDeleteDone", { name }));
-        void out;
-      } catch (e) {
-        // 直推被拒（不是可绕过规则的身份 / 令牌没有上游写权限 / 期间有人推了 main）
-        // → 退回老路：在 fork 上删、开 PR，等合并。不能因为直推不通就什么都不做。
-        if (e instanceof GhError && [403, 409, 422].includes(e.status)) {
+        // 只有维护者（admin / maintain）才可能绕过 main 的 required PR。
+        //
+        // 普通作者**先分流**，不去撞那一次注定失败的直推：GitHub 对「没有写权限的
+        // 写操作」回的状态码不固定 —— 403 还算好认，**404 到了界面上就成了莫名其妙的
+        // 「上传失败 — Not Found」**（用户会以为插件已经不在仓库里了）。身份我们本来就
+        // 查过了（`canMaintain`），按身份走正确的路即可。
+        if (isMaintainer) {
           try {
-            const out = await deletePlugins({
-              token,
-              login,
-              dirs: [dir],
-              onPhase: setPhase,
-              allowAny,
-            });
+            await deletePluginsDirect({ token, login, dirs: [dir], onPhase: setPhase, allowAny });
             setDeleted((d) => [...d, dir]);
-            setDeleteMsg(t("uploadDeleteFallback", { number: out.prNumber }));
-          } catch (e2) {
-            setError(`${t("uploadFail")} — ${String((e2 as Error).message)}`);
+            setDeleteMsg(t("uploadDeleteDone", { name }));
+            return;
+          } catch (e) {
+            // 直推被拒（期间有人推了 main / 令牌突然没有上游写权限 / 规则又加了限制）
+            // → 退回老路：在自己的 fork 上删、开 PR，等合并。不能因为直推不通就什么都不做。
+            if (!(e instanceof GhError && [403, 404, 409, 422].includes(e.status))) throw e;
           }
-          return;
         }
+        const out = await deletePlugins({ token, login, dirs: [dir], onPhase: setPhase, allowAny });
+        setDeleted((d) => [...d, dir]);
+        setDeleteMsg(
+          isMaintainer
+            ? t("uploadDeleteFallback", { number: out.prNumber })
+            : t("uploadDeletePrOpened", { number: out.prNumber }),
+        );
+      } catch (e) {
         setError(
           e instanceof UploadMessage
             ? t(e.key)
@@ -231,7 +227,7 @@ export function UploadDialog({
         setPhase(null);
       }
     },
-    [login, t, token],
+    [isMaintainer, login, t, token],
   );
 
   /** 上传时的署名就是登录名（不再有匿名分支） */

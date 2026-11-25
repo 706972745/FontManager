@@ -371,10 +371,20 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
     `/repos/${login}/${REPO}/git/ref/heads/main`,
   );
   if (!mineRef || mineRef.object.sha !== upstreamSha) {
-    await gh(token, `/repos/${login}/${REPO}/git/refs/heads/main`, {
-      method: "PATCH",
-      body: JSON.stringify({ sha: upstreamSha, force: true }),
-    });
+    try {
+      await gh(token, `/repos/${login}/${REPO}/git/refs/heads/main`, {
+        method: "PATCH",
+        body: JSON.stringify({ sha: upstreamSha, force: true }),
+      });
+    } catch (e) {
+      // fork 刚建好时可能是**空仓库**（还没有 main 分支）→ PATCH 回 404「Not Found」，
+      // 以前这个 404 会原样甩到界面上，看着像「仓库没了」。改成按上游 sha 建分支。
+      if (!(e instanceof GhError && e.status === 404)) throw e;
+      await gh(token, `/repos/${login}/${REPO}/git/refs`, {
+        method: "POST",
+        body: JSON.stringify({ ref: "refs/heads/main", sha: upstreamSha }),
+      });
+    }
   }
 
   // ④ 逐文件建 blob（大目录会慢，进度回给界面）
@@ -535,10 +545,20 @@ export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
     `/repos/${login}/${REPO}/git/ref/heads/main`,
   );
   if (!mineRef || mineRef.object.sha !== upstreamSha) {
-    await gh(token, `/repos/${login}/${REPO}/git/refs/heads/main`, {
-      method: "PATCH",
-      body: JSON.stringify({ sha: upstreamSha, force: true }),
-    });
+    try {
+      await gh(token, `/repos/${login}/${REPO}/git/refs/heads/main`, {
+        method: "PATCH",
+        body: JSON.stringify({ sha: upstreamSha, force: true }),
+      });
+    } catch (e) {
+      // fork 刚建好时可能是**空仓库**（还没有 main 分支）→ PATCH 回 404「Not Found」，
+      // 以前这个 404 会原样甩到界面上，看着像「仓库没了」。改成按上游 sha 建分支。
+      if (!(e instanceof GhError && e.status === 404)) throw e;
+      await gh(token, `/repos/${login}/${REPO}/git/refs`, {
+        method: "POST",
+        body: JSON.stringify({ ref: "refs/heads/main", sha: upstreamSha }),
+      });
+    }
   }
 
   // 目录下每个文件各来一条 `sha: null` —— 比「删目录」稳（tree API 对 tree 类型的
