@@ -457,7 +457,7 @@ export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
   for (const d of dirs) {
     const cut = d.lastIndexOf("__");
     const owner = cut >= 0 ? d.slice(cut + 2) : "";
-    if (owner !== login) throw new UploadMessage("uploadErrNotOwner");
+    if (!args.allowAny && owner !== login) throw new UploadMessage("uploadErrNotOwner");
   }
   const branch = `remove/${dirs[0].replace(/__.*/, "")}-${Date.now()}`;
 
@@ -551,6 +551,100 @@ export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
   return { prUrl: pr.html_url, prNumber: pr.number, branch };
 }
 
+/**
+ * 直推下架：把目录从上游 main 上删掉，**不开 PR**。
+ *
+ * 走 Git Data API 造一个 commit，然后 PATCH `refs/heads/main` —— 这就是一次 push。
+ * main 上有 required PR 规则，但 ruleset 的 bypass 名单里有 `Repository admin`
+ * （`bypass_mode: always`），维护者本人的令牌推得动，所以这一步能直接落地。
+ *
+ * 失败一律抛 GhError，交给调用方决定要不要退回「开 PR」那条老路：
+ * - 403 / 422：令牌没有上游写权限、或不是可以绕过规则的身份
+ * - 409：期间有人推了 main（拿到的 parent 过期）
+ */
+export async function deletePluginsDirect(args: DeleteArgs): Promise<DeleteResult> {
+  const { token, login, dirs, onPhase } = args;
+  if (dirs.length === 0) throw new UploadMessage("uploadErrEmpty");
+  for (const d of dirs) {
+    const cut = d.lastIndexOf("__");
+    const owner = cut >= 0 ? d.slice(cut + 2) : "";
+    if (!args.allowAny && owner !== login) throw new UploadMessage("uploadErrNotOwner");
+  }
+
+  onPhase("commit");
+  const head = await gh<{ object: { sha: string } }>(
+    token,
+    `${UPSTREAM_API}/git/ref/heads/main`,
+  );
+  const baseSha = head.object.sha;
+  const baseCommit = await gh<{ tree: { sha: string } }>(
+    token,
+    `${UPSTREAM_API}/git/commits/${baseSha}`,
+  );
+
+  // 逐 blob 打 `sha: null` 删除，比「删整棵子树」稳（tree 类型条目的 null 语义文档含糊）
+  const flat = await gh<{ tree: { path: string; type: string }[]; truncated: boolean }>(
+    token,
+    `${UPSTREAM_API}/git/trees/${baseCommit.tree.sha}?recursive=1`,
+  );
+  if (flat.truncated) throw new UploadMessage("uploadErrTreeTooBig");
+  const entries = flat.tree
+    .filter((e) => e.type === "blob" && dirs.some((d) => e.path.startsWith(`plugins/${d}/`)))
+    .map((e) => ({ path: e.path, mode: "100644", type: "blob", sha: null }));
+  if (entries.length === 0) throw new UploadMessage("uploadErrNotFound");
+
+  const tree = await gh<{ sha: string }>(token, `${UPSTREAM_API}/git/trees`, {
+    method: "POST",
+    body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: entries }),
+  });
+
+  const title =
+    dirs.length === 1
+      ? `[remove] ${dirs[0]} by ${login}`
+      : `[remove] ${dirs.length} 个插件 by ${login}`;
+  const commit = await gh<{ sha: string }>(token, `${UPSTREAM_API}/git/commits`, {
+    method: "POST",
+    body: JSON.stringify({
+      message: `${title}\n\n由作者在 FontManager 插件中心自助下架（直推，不开 PR）。`,
+      tree: tree.sha,
+      parents: [baseSha],
+    }),
+  });
+
+  // 不带 force：万一期间有人推过 main，会 422 而不是把别人的提交顶掉
+  await gh(token, `${UPSTREAM_API}/git/refs/heads/main`, {
+    method: "PATCH",
+    body: JSON.stringify({ sha: commit.sha, force: false }),
+  });
+
+  return { mode: "direct" };
+}
+
+/**
+ * 当前令牌的主人是不是这个仓库的维护者（能绕过 required PR）。
+ *
+ * 用来决定面板里要不要把「别人的插件」也列出来给删除入口 —— 只影响界面，
+ * 真正的门槛是：非维护者推不动 main，只能走 PR + CI 归属校验。
+ */
+export async function canMaintain(token: string): Promise<boolean> {
+  try {
+    const repo = await ghOrNull<{
+      permissions?: { admin?: boolean; maintain?: boolean; push?: boolean };
+    }>(token, UPSTREAM_API);
+    const p = repo?.permissions ?? {};
+    return Boolean(p.admin || p.maintain);
+  } catch {
+    return false;
+  }
+}
+
+/** 下架结果：直推成功，或退回「开了个 PR，等合并」 */
+export interface DeleteResult {
+  mode: "direct" | "pr";
+  prUrl?: string;
+  prNumber?: number;
+}
+
 /** 下架请求的入参 */
 export interface DeleteArgs {
   token: string;
@@ -558,6 +652,14 @@ export interface DeleteArgs {
   /** 要下架的目录名（清单里的 `dir`，形如 `<id>__<author>`） */
   dirs: string[];
   onPhase: (phase: UploadPhase) => void;
+  /**
+   * 允许删「别人的」插件 —— **只对维护者成立**。
+   *
+   * 安全边界不在这一行：非维护者根本推不动 main（没有 bypass 身份），直推会 403/422
+   * 并退回开 PR，而 PR 那关由 CI 的 `plugins/<id>__<作者>` 归属校验兜住。
+   * 这里提前拦一次只是为了让「不是你的东西」在点下去的一瞬间就有清楚的话。
+   */
+  allowAny?: boolean;
 }
 
 /** registry 的 plugin.json = 运行时清单 + 市场字段（见方案 §3） */

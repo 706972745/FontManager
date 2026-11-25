@@ -1588,3 +1588,10 @@ body {
 .ws-cta-danger:hover:not(:disabled) {
   background: color-mix(in srgb, #ef4444 78%, #000);
 }
+
+/* 「我的插件」列表里，维护者看到别人的条目时挂的小标 */
+.ws-up-item-tag {
+  margin-left: 6px;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}

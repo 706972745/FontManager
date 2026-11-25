@@ -13,13 +13,15 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput.tsx";
 import { holdBlurGuard, panelApi } from "./api.ts";
 import { useGithubAuth } from "./auth.ts";
 import {
   ALLOWED_EXTS,
+  canMaintain,
   deletePlugins,
+  deletePluginsDirect,
   GhError,
   PERMS,
   pickedFromApp,
@@ -72,6 +74,12 @@ interface Draft {
   hasManifest: boolean;
 }
 
+/** `plugins/<id>__<author>` 的署名部分 —— 用来判断这条是不是当前账号自己的 */
+function ownerOf(dir: string): string {
+  const cut = dir.lastIndexOf("__");
+  return cut >= 0 ? dir.slice(cut + 2) : "";
+}
+
 export function UploadDialog({
   t,
   locale,
@@ -118,7 +126,38 @@ export function UploadDialog({
    * 结果就是面板直接白屏报 `Command plugin:dialog|confirm not allowed by ACL`，
    * 下架按钮点了没反应。用自己的弹窗既避开 ACL，也和面板其它弹层样式一致。
    */
-  const [askRemove, setAskRemove] = useState<{ dir: string; name: string } | null>(null);
+  const [askRemove, setAskRemove] = useState<{
+    dir: string;
+    name: string;
+    allowAny: boolean;
+  } | null>(null);
+  /**
+   * 当前账号是不是仓库维护者。
+   *
+   * 非维护者只能下架**自己署名的**目录（目录名后缀 = 登录名）；维护者才能删别人的。
+   * 这只是界面层：非维护者压根推不动 main，直推会 403 并退回开 PR，
+   * 而 PR 那关有 CI 的归属校验 —— 真正的闸门在那边。
+   */
+  const [isMaintainer, setIsMaintainer] = useState(false);
+
+  // 登录后问一次仓库权限：维护者（admin / maintain）才能删别人的插件
+  useEffect(() => {
+    let alive = true;
+    if (!token) {
+      setIsMaintainer(false);
+      return;
+    }
+    void canMaintain(token)
+      .then((ok) => {
+        if (alive) setIsMaintainer(ok);
+      })
+      .catch(() => {
+        if (alive) setIsMaintainer(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [token]);
 
   /**
    * 「我上传的插件」= 目录名后半段等于**当前登录名**的社区件。
@@ -133,21 +172,49 @@ export function UploadDialog({
       if (e.official || !e.dir) return false;
       const cut = e.dir.lastIndexOf("__");
       if (cut < 0) return false;
-      return e.dir.slice(cut + 2) === login && !deleted.includes(e.dir);
+      if (deleted.includes(e.dir)) return false;
+      // 别人的插件只有维护者能删；普通用户看到的是「我的插件」列表
+      return e.dir.slice(cut + 2) === login || isMaintainer;
     });
-  }, [entries, login, deleted]);
+  }, [entries, login, deleted, isMaintainer]);
 
   const removeOne = useCallback(
-    async (dir: string) => {
+    async (dir: string, name: string, allowAny: boolean) => {
       if (!token || !login) return;
       setDeleting(dir);
       setError(null);
       setDeleteMsg(null);
       try {
-        const out = await deletePlugins({ token, login, dirs: [dir], onPhase: setPhase });
+        // 先试直推：维护者身份可以绕过 main 的 required PR，点完立刻下架。
+        const out = await deletePluginsDirect({
+          token,
+          login,
+          dirs: [dir],
+          onPhase: setPhase,
+          allowAny,
+        });
         setDeleted((d) => [...d, dir]);
-        setDeleteMsg(t("uploadDeleteSubmitted", { number: out.prNumber }));
+        setDeleteMsg(t("uploadDeleteDone", { name }));
+        void out;
       } catch (e) {
+        // 直推被拒（不是可绕过规则的身份 / 令牌没有上游写权限 / 期间有人推了 main）
+        // → 退回老路：在 fork 上删、开 PR，等合并。不能因为直推不通就什么都不做。
+        if (e instanceof GhError && [403, 409, 422].includes(e.status)) {
+          try {
+            const out = await deletePlugins({
+              token,
+              login,
+              dirs: [dir],
+              onPhase: setPhase,
+              allowAny,
+            });
+            setDeleted((d) => [...d, dir]);
+            setDeleteMsg(t("uploadDeleteFallback", { number: out.prNumber }));
+          } catch (e2) {
+            setError(`${t("uploadFail")} — ${String((e2 as Error).message)}`);
+          }
+          return;
+        }
         setError(
           e instanceof UploadMessage
             ? t(e.key)
@@ -478,14 +545,25 @@ export function UploadDialog({
                 {mine.map((e) => (
                   <li key={e.dir} className="ws-up-item">
                     <span className="ws-up-item-main" style={{ cursor: "default" }}>
-                      <span className="ws-up-item-name">{e.name}</span>
+                      <span className="ws-up-item-name">
+                        {e.name}
+                        {ownerOf(e.dir!) !== login && (
+                          <span className="ws-up-item-tag">{t("uploadOwnerTag")}</span>
+                        )}
+                      </span>
                       <span className="ws-up-item-meta">
                         v{e.version} · {e.dir}
                       </span>
                     </span>
                     <button
                       className="ws-linkbtn"
-                      onClick={() => setAskRemove({ dir: e.dir!, name: e.name })}
+                      onClick={() =>
+                        setAskRemove({
+                          dir: e.dir!,
+                          name: e.name,
+                          allowAny: ownerOf(e.dir!) !== login,
+                        })
+                      }
                       disabled={deleting !== null}
                     >
                       {deleting === e.dir ? t("uploadDeleting") : t("uploadDelete")}
@@ -775,7 +853,7 @@ export function UploadDialog({
                 onClick={() => {
                   const target = askRemove;
                   setAskRemove(null);
-                  void removeOne(target.dir);
+                  void removeOne(target.dir, target.name, target.allowAny);
                 }}
                 disabled={deleting !== null}
               >
