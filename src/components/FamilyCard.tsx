@@ -8,7 +8,6 @@ import { useListFontCss } from "../lib/fontLoader";
 import { listChars } from "../lib/listChars";
 import { useCardThumb, useThumbGenerate } from "../lib/thumb";
 import { buildFamilyMenu } from "../lib/menus";
-import { applyToActiveApp } from "../lib/applyActive";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { hasScriptNote, useScriptStatus } from "../lib/scriptCoverage";
 import { useCjkSibling } from "../lib/cjkSiblings";
@@ -55,9 +54,6 @@ function FacePreview({
       face={face}
       probeText={probeText}
       onHover={onHover}
-      // 完整界面展开的字重行也支持双击套用：和速览走同一条插件转发链路，
-      // 会把被双击的具体字重（faceId）交给插件，而不是固定套 Regular。
-      onApply={(id) => applyToActiveApp(family.name, id)}
       animate
       index={index}
     />
