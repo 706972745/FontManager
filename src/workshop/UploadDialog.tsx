@@ -110,6 +110,15 @@ export function UploadDialog({
   /** 本次会话里已提交下架的目录（提交后先从列表里去掉，不必等 PR 合并） */
   const [deleted, setDeleted] = useState<string[]>([]);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+  /**
+   * 待确认的下架请求。
+   *
+   * 这里**不能**用 `window.confirm`：Tauri 会把它转发成 `plugin:dialog|confirm`，
+   * 而插件中心是独立窗口，capability 只覆盖 main / splash / setup，没有 dialog 权限，
+   * 结果就是面板直接白屏报 `Command plugin:dialog|confirm not allowed by ACL`，
+   * 下架按钮点了没反应。用自己的弹窗既避开 ACL，也和面板其它弹层样式一致。
+   */
+  const [askRemove, setAskRemove] = useState<{ dir: string; name: string } | null>(null);
 
   /**
    * 「我上传的插件」= 目录名后半段等于**当前登录名**的社区件。
@@ -129,9 +138,8 @@ export function UploadDialog({
   }, [entries, login, deleted]);
 
   const removeOne = useCallback(
-    async (dir: string, name: string) => {
+    async (dir: string) => {
       if (!token || !login) return;
-      if (!window.confirm(t("uploadDeleteConfirm", { name }))) return;
       setDeleting(dir);
       setError(null);
       setDeleteMsg(null);
@@ -477,7 +485,7 @@ export function UploadDialog({
                     </span>
                     <button
                       className="ws-linkbtn"
-                      onClick={() => void removeOne(e.dir!, e.name)}
+                      onClick={() => setAskRemove({ dir: e.dir!, name: e.name })}
                       disabled={deleting !== null}
                     >
                       {deleting === e.dir ? t("uploadDeleting") : t("uploadDelete")}
@@ -730,6 +738,53 @@ export function UploadDialog({
           </button>
         </div>
       </motion.div>
+
+      {/* 下架确认：用自己的弹窗（见 askRemove 的注释，window.confirm 会被 ACL 拦） */}
+      {askRemove && (
+        <div
+          className="ws-upok-mask"
+          onClick={() => deleting === null && setAskRemove(null)}
+        >
+          <motion.div
+            className="ws-upok"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={t("uploadDelete")}
+            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={springSoft}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="ws-upok-icon ws-upok-icon-warn">
+              <AlertTriangle size={20} strokeWidth={2} />
+            </span>
+            <h2 className="ws-upok-title">{t("uploadDelete")}</h2>
+            <p className="ws-upok-body">
+              {t("uploadDeleteConfirm", { name: askRemove.name })}
+            </p>
+            <div className="ws-upok-foot">
+              <button
+                className="ws-linkbtn"
+                onClick={() => setAskRemove(null)}
+                disabled={deleting !== null}
+              >
+                {t("uploadDeviceCancel")}
+              </button>
+              <button
+                className="ws-cta ws-cta-danger"
+                onClick={() => {
+                  const target = askRemove;
+                  setAskRemove(null);
+                  void removeOne(target.dir);
+                }}
+                disabled={deleting !== null}
+              >
+                {t("uploadDelete")}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* 提交成功：独立弹窗而不是底部一行字 —— 提交完人已经切走注意力，
           一行小字根本不会被看见，结果又只有「去 PR」这一个下一步。 */}

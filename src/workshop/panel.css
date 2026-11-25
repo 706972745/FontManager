@@ -1571,3 +1571,20 @@ body {
 .ws-upok-foot .ws-cta {
   margin-top: 0;
 }
+
+/* 下架确认：警告色图标 + 危险动作按钮 */
+.ws-upok-icon-warn {
+  color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  border-color: color-mix(in srgb, #f59e0b 32%, transparent);
+}
+
+.ws-cta-danger {
+  background: color-mix(in srgb, #ef4444 88%, #000);
+  border-color: color-mix(in srgb, #ef4444 88%, #000);
+  color: #fff;
+}
+
+.ws-cta-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, #ef4444 78%, #000);
+}
