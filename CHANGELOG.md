@@ -4,15 +4,6 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [2.7.9] — 2026-11-25
-
-### 修复
-
-- **完整界面不再响应双击套字**：2.7.8 把速览里的「双击字重行 = 复制 + 套用」误带到了完整界面的
-  字族卡片上。套字只该发生在速览 —— 完整界面是用来整理字体库的，双击在那边一直等于复制两次，
-  顺手把目标软件里选中的文字改掉会让人措手不及（尤其只想复制个字体名的时候）。
-  现在完整界面恢复原行为：`FaceLine` 不传 `onApply`，双击只复制；套字入口只剩速览。
-
 ## [2.7.8] — 2026-11-25
 
 ### 新增
@@ -29,6 +20,12 @@ All notable changes to FontManager are documented here. The format follows
 - **插件中心上传规则与 registry 对齐**：插件 id 允许点号（`com.iieozo.adobe-font` 这种包名式），
   入口与文件白名单收 `.exe` / `.dll` —— 主程序本来就支持 `runtime: "exe"` 的原生插件，
   只是校验规则一直把这条路堵着，导致原生插件永远过不了 CI。
+
+### 修复
+
+- **完整界面不响应双击套字**：套字只该发生在速览。完整界面是整理字体库的地方，双击在那边
+  一直等于复制两次，顺手把目标软件里选中的文字改掉会让人措手不及（尤其只想复制个字体名的时候）。
+  `FaceLine` 在完整界面不传 `onApply`，双击只复制；套字入口只剩速览。
 
 ## [2.7.7] — 2026-11-25
 
