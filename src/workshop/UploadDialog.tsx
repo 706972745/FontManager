@@ -34,7 +34,7 @@ import {
   type UploadItem,
   type UploadPhase,
 } from "./upload.ts";
-import type { WorkshopEntry } from "../lib/workshop.ts";
+import { communityDirFor, type WorkshopEntry } from "../lib/workshop.ts";
 
 /**
  * 上传弹窗（M3）：连账号 → 选目录（**可多选**）→ 逐个确认清单 → 勾规则 → 一次提交。
@@ -168,14 +168,20 @@ export function UploadDialog({
    */
   const mine = useMemo(() => {
     if (!login) return [];
-    return entries.filter((e) => {
-      if (e.official || !e.dir) return false;
-      const cut = e.dir.lastIndexOf("__");
-      if (cut < 0) return false;
-      if (deleted.includes(e.dir)) return false;
+    const out: { entry: WorkshopEntry; dir: string }[] = [];
+    for (const e of entries) {
+      if (e.official) continue;
+      // registry 的 `dir` 是仓库相对路径（`plugins/<id>__<作者>`）——下架只认最后一段
+      // 目录名，`communityDirFor` 干的就是这件事（与 Rust 的 `dir_name_of` 同口径）
+      const dir = communityDirFor(e);
+      if (!dir || deleted.includes(dir)) continue;
+      const cut = dir.lastIndexOf("__");
+      if (cut < 0) continue;
       // 别人的插件只有维护者能删；普通用户看到的是「我的插件」列表
-      return e.dir.slice(cut + 2) === login || isMaintainer;
-    });
+      if (dir.slice(cut + 2) !== login && !isMaintainer) continue;
+      out.push({ entry: e, dir });
+    }
+    return out;
   }, [entries, login, deleted, isMaintainer]);
 
   const removeOne = useCallback(
@@ -542,31 +548,31 @@ export function UploadDialog({
               <h3 className="ws-up-sec-title">{t("uploadMineTitle")}</h3>
               <p className="ws-up-hint">{t("uploadMineHint")}</p>
               <ul className="ws-up-list">
-                {mine.map((e) => (
-                  <li key={e.dir} className="ws-up-item">
+                {mine.map(({ entry: e, dir }) => (
+                  <li key={dir} className="ws-up-item">
                     <span className="ws-up-item-main" style={{ cursor: "default" }}>
                       <span className="ws-up-item-name">
                         {e.name}
-                        {ownerOf(e.dir!) !== login && (
+                        {ownerOf(dir) !== login && (
                           <span className="ws-up-item-tag">{t("uploadOwnerTag")}</span>
                         )}
                       </span>
                       <span className="ws-up-item-meta">
-                        v{e.version} · {e.dir}
+                        v{e.version} · plugins/{dir}
                       </span>
                     </span>
                     <button
                       className="ws-linkbtn"
                       onClick={() =>
                         setAskRemove({
-                          dir: e.dir!,
+                          dir,
                           name: e.name,
-                          allowAny: ownerOf(e.dir!) !== login,
+                          allowAny: ownerOf(dir) !== login,
                         })
                       }
                       disabled={deleting !== null}
                     >
-                      {deleting === e.dir ? t("uploadDeleting") : t("uploadDelete")}
+                      {deleting === dir ? t("uploadDeleting") : t("uploadDelete")}
                     </button>
                   </li>
                 ))}

@@ -99,6 +99,29 @@ export function safeRelPath(rel: string): boolean {
   return rel.split("/").every((p) => p !== "" && p !== "." && p !== "..");
 }
 
+/**
+ * registry 的 `dir` → 目录名（最后一段）。
+ *
+ * `index.json` 里的 `dir` 是**仓库相对路径**（`plugins/<id>__<作者>`），而删除时拼的是
+ * 「仓库根下的 blob 路径」和分支名 —— 只该用最后一段。
+ *
+ * 这里踩过一次坑：直接把整条路径塞进 `plugins/${dir}/`，拼成
+ * `plugins/plugins/com.xxx__作者/` 一条都匹配不上，于是插件明明白白还在仓库里，
+ * 面板却报「仓库里已经没有这个插件目录了」。口径与 Rust 的 `dir_name_of` /
+ * 前端的 `communityDirFor` 保持一致。
+ */
+export function dirNameOf(dir: string): string | null {
+  const raw = dir.trim();
+  if (!raw || raw.includes("\\") || raw.includes(":")) return null;
+  for (const seg of raw.split("/")) {
+    if (seg === "." || seg.includes("..")) return null;
+  }
+  // 取最后一段（不过滤空段）：`plugins/` 的末段是空 → null，不回落
+  const last = (raw.split("/").pop() ?? "").trim();
+  if (!last || last.startsWith(".")) return null;
+  return /^[A-Za-z0-9._-]+$/.test(last) ? last : null;
+}
+
 /** 从 `<input webkitdirectory>` 的 FileList 拆出相对路径 */
 /**
  * 主程序读回来的文件（base64）→ 待上传文件。
@@ -246,9 +269,15 @@ async function ghOrNull<T>(token: string, path: string): Promise<T | null> {
  * 带 key 抛出去，由对话框用 `t(key)` 落地。
  */
 export class UploadMessage extends Error {
-  constructor(readonly key: string) {
+  /** i18n 键；由对话框用 `t(key)` 翻成当时的界面语言 */
+  readonly key: string;
+
+  // 不写「构造函数参数属性」（`constructor(readonly key: string)`）：那是唯一一种
+  // Node 的类型剥离跑不了的 TS 语法，写了这个模块就没法在 `node --test` 里直接 import。
+  constructor(key: string) {
     super(key);
     this.name = "UploadMessage";
+    this.key = key;
   }
 }
 
@@ -442,6 +471,27 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
 }
 
 /**
+ * 下架入参归一化：`plugins/<id>__<作者>` 或裸目录名都收，统一成**目录名**。
+ *
+ * 顺带做一次归属预检 —— 只为了让「不是你的东西」在点下去那一刻就有清楚的话；
+ * 真正的闸门是：非维护者推不动 main（直推 403/422 退回 PR），PR 那关还有 CI 的
+ * `plugins/<id>__<作者>` 作者校验。
+ */
+function removeTargets(args: DeleteArgs): string[] {
+  const names = args.dirs.map((d) => {
+    const name = dirNameOf(d);
+    if (!name) throw new UploadMessage("uploadErrBadDir");
+    return name;
+  });
+  for (const name of names) {
+    const cut = name.lastIndexOf("__");
+    const owner = cut >= 0 ? name.slice(cut + 2) : "";
+    if (!args.allowAny && owner !== args.login) throw new UploadMessage("uploadErrNotOwner");
+  }
+  return names;
+}
+
+/**
  * 下架（删除）自己上传过的插件 —— 走「以删除方式建一个 PR」。
  *
  * 归属**只看目录名后缀是不是当前登录名**（`plugins/<id>__<login>`）：
@@ -452,14 +502,10 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
  * 校验与人工合并。
  */
 export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
-  const { token, login, dirs, onPhase } = args;
-  if (dirs.length === 0) throw new UploadMessage("uploadErrEmpty");
-  for (const d of dirs) {
-    const cut = d.lastIndexOf("__");
-    const owner = cut >= 0 ? d.slice(cut + 2) : "";
-    if (!args.allowAny && owner !== login) throw new UploadMessage("uploadErrNotOwner");
-  }
-  const branch = `remove/${dirs[0].replace(/__.*/, "")}-${Date.now()}`;
+  const { token, login, onPhase } = args;
+  if (args.dirs.length === 0) throw new UploadMessage("uploadErrEmpty");
+  const names = removeTargets(args);
+  const branch = `remove/${names[0].replace(/__.*/, "")}-${Date.now()}`;
 
   const upRef = await gh<{ object: { sha: string } }>(
     token,
@@ -504,7 +550,7 @@ export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
   );
   if (flat.truncated) throw new UploadMessage("uploadErrTreeTooBig");
   const entries = flat.tree
-    .filter((e) => e.type === "blob" && dirs.some((d) => e.path.startsWith(`plugins/${d}/`)))
+    .filter((e) => e.type === "blob" && names.some((d) => e.path.startsWith(`plugins/${d}/`)))
     .map((e) => ({ path: e.path, mode: "100644", type: "blob", sha: null }));
   if (entries.length === 0) throw new UploadMessage("uploadErrNotFound");
 
@@ -513,7 +559,7 @@ export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
     body: JSON.stringify({ base_tree: upstreamTree, tree: entries }),
   });
 
-  const title = dirs.length === 1 ? `[remove] ${dirs[0]} by ${login}` : `[remove] ${dirs.length} 个插件 by ${login}`;
+  const title = names.length === 1 ? `[remove] ${names[0]} by ${login}` : `[remove] ${names.length} 个插件 by ${login}`;
   const commit = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/commits`, {
     method: "POST",
     body: JSON.stringify({ message: title, tree: tree.sha, parents: [upstreamSha] }),
@@ -542,7 +588,7 @@ export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
       body: [
         `由 @${login} 通过 FontManager 插件中心请求下架：`,
         "",
-        ...dirs.map((d) => `- \`plugins/${d}/\``),
+        ...names.map((d) => `- \`plugins/${d}/\``),
         "",
         "> 合并后该插件的目录会被删除，聚合脚本重算 `index.json` 后中心里就不再显示。",
       ].join("\n"),
@@ -563,13 +609,9 @@ export async function deletePlugins(args: DeleteArgs): Promise<UploadResult> {
  * - 409：期间有人推了 main（拿到的 parent 过期）
  */
 export async function deletePluginsDirect(args: DeleteArgs): Promise<DeleteResult> {
-  const { token, login, dirs, onPhase } = args;
-  if (dirs.length === 0) throw new UploadMessage("uploadErrEmpty");
-  for (const d of dirs) {
-    const cut = d.lastIndexOf("__");
-    const owner = cut >= 0 ? d.slice(cut + 2) : "";
-    if (!args.allowAny && owner !== login) throw new UploadMessage("uploadErrNotOwner");
-  }
+  const { token, login, onPhase } = args;
+  if (args.dirs.length === 0) throw new UploadMessage("uploadErrEmpty");
+  const names = removeTargets(args);
 
   onPhase("commit");
   const head = await gh<{ object: { sha: string } }>(
@@ -589,7 +631,7 @@ export async function deletePluginsDirect(args: DeleteArgs): Promise<DeleteResul
   );
   if (flat.truncated) throw new UploadMessage("uploadErrTreeTooBig");
   const entries = flat.tree
-    .filter((e) => e.type === "blob" && dirs.some((d) => e.path.startsWith(`plugins/${d}/`)))
+    .filter((e) => e.type === "blob" && names.some((d) => e.path.startsWith(`plugins/${d}/`)))
     .map((e) => ({ path: e.path, mode: "100644", type: "blob", sha: null }));
   if (entries.length === 0) throw new UploadMessage("uploadErrNotFound");
 
@@ -599,9 +641,9 @@ export async function deletePluginsDirect(args: DeleteArgs): Promise<DeleteResul
   });
 
   const title =
-    dirs.length === 1
-      ? `[remove] ${dirs[0]} by ${login}`
-      : `[remove] ${dirs.length} 个插件 by ${login}`;
+    names.length === 1
+      ? `[remove] ${names[0]} by ${login}`
+      : `[remove] ${names.length} 个插件 by ${login}`;
   const commit = await gh<{ sha: string }>(token, `${UPSTREAM_API}/git/commits`, {
     method: "POST",
     body: JSON.stringify({
@@ -649,7 +691,10 @@ export interface DeleteResult {
 export interface DeleteArgs {
   token: string;
   login: string;
-  /** 要下架的目录名（清单里的 `dir`，形如 `<id>__<author>`） */
+  /**
+   * 要下架的目录：`<id>__<作者>` 或 registry 给的仓库相对路径 `plugins/<id>__<作者>` 都行
+   * （内部统一归一化成目录名，见 `removeTargets`）。
+   */
   dirs: string[];
   onPhase: (phase: UploadPhase) => void;
   /**
