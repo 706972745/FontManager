@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirNameOf } from "../src/workshop/upload.ts";
+import { deletePlugins, dirNameOf } from "../src/workshop/upload.ts";
 
 /**
  * 下架（2026-11-25 用户报「仓库里的插件并没有删除」）。
@@ -91,3 +91,74 @@ test("fork 是空仓库时（PATCH ref 回 404）能自己把 main 建出来", (
   );
 });
 
+
+/**
+ * 普通作者真正走的那条路：fork 上删、向上游开 PR。
+ *
+ * 用假 fetch 把请求序列钉死 —— 这一段以前从来没有被跑过（维护者点下架走的是直推），
+ * 而它一旦把 tree/commit 打到**上游**，就又是一次 404/403。
+ */
+test("下架 PR：tree/commit/ref 打在自己的 fork，PR 打到上游且 head 是 <login>:<branch>", async () => {
+  const calls: { method: string; url: string; body: any }[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: any = {}) => {
+    const method = init.method ?? "GET";
+    const body = init.body ? JSON.parse(init.body) : null;
+    const u = String(url);
+    calls.push({ method, url: u, body });
+    const json = (o: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(o) });
+    const UP = "https://api.github.com/repos/706972745/FontManager-Workshop";
+    const MINE = "https://api.github.com/repos/alice/FontManager-Workshop";
+    if (u === MINE) return json({ name: "FontManager-Workshop" });
+    if (u === `${UP}/git/ref/heads/main`) return json({ object: { sha: "up" } });
+    if (u === `${MINE}/git/ref/heads/main`) return json({ object: { sha: "up" } });
+    if (u === `${UP}/git/commits/up`) return json({ tree: { sha: "uptree" } });
+    if (u === `${UP}/git/trees/uptree?recursive=1`)
+      return json({
+        tree: [
+          { path: "plugins/adobe__alice", type: "tree" },
+          { path: "plugins/adobe__alice/plugin.json", type: "blob" },
+          { path: "plugins/adobe__alice/run.py", type: "blob" },
+          { path: "plugins/other__bob/plugin.json", type: "blob" },
+        ],
+        truncated: false,
+      });
+    if (u === `${MINE}/git/trees`) return json({ sha: "mytree" });
+    if (u === `${MINE}/git/commits`) return json({ sha: "mycommit" });
+    if (u === `${MINE}/git/refs`) return json({});
+    if (u === `${UP}/pulls`) return json({ html_url: "https://github.com/x/y/pull/7", number: 7 });
+    throw new Error(`未预期的请求：${method} ${u}`);
+  }) as unknown as typeof fetch;
+
+  let out;
+  try {
+    out = await deletePlugins({
+      token: "t",
+      login: "alice",
+      dirs: ["plugins/adobe__alice"], // 面板从 index.json 拿到的就是这种形态
+      onPhase: () => {},
+      allowAny: false,
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  assert.equal(out.prNumber, 7);
+  assert.equal(out.prUrl, "https://github.com/x/y/pull/7");
+
+  const treePost = calls.find((c) => c.method === "POST" && c.url.endsWith("/git/trees") && c.url.includes("/alice/"))!;
+  assert.ok(treePost, "建 tree 必须打在自己的 fork 上（打上游就是 404/403）");
+  assert.deepEqual(
+    treePost.body.tree.map((e: any) => e.path).sort(),
+    ["plugins/adobe__alice/plugin.json", "plugins/adobe__alice/run.py"],
+    "只删这个目录下的 blob，别人的插件一个都不许碰",
+  );
+  assert.ok(treePost.body.tree.every((e: any) => e.sha === null));
+
+  const commitPost = calls.find((c) => c.method === "POST" && c.url.endsWith("/git/commits"))!;
+  assert.deepEqual(commitPost.body.parents, ["up"], "父提交必须是上游 main，否则 PR 里会夹带无关差异");
+
+  const pr = calls.find((c) => c.url.endsWith("/pulls"))!;
+  assert.match(pr.body.head, /^alice:remove\/adobe-\d+$/, "PR 的 head 必须是 <login>:<branch>");
+  assert.equal(pr.body.base, "main");
+});
