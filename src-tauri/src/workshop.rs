@@ -997,6 +997,7 @@ fn ensure_panel_server(app: AppHandle, dir: PathBuf) -> Result<PanelServerInfo, 
             get(api_index_cache_get).post(api_index_cache_set),
         )
         .route("/api/pick-folders", post(api_pick_folders))
+        .route("/api/pick-packages", post(api_pick_packages))
         .with_state(state);
     tauri::async_runtime::spawn(async move {
         let listener = match tokio::net::TcpListener::from_std(listener) {
@@ -1973,6 +1974,173 @@ async fn api_pick_folders(
                 .unwrap_or_default(),
             files,
         });
+    }
+    json_ok(json!({ "cancelled": false, "dirs": dirs }))
+}
+
+/// 解一个插件分发包（zip）成「一个插件目录」的形态，供 `/api/pick-packages` 用。
+///
+/// 为什么要有这条：插件中心原来只认文件夹，而作者手上通常只有分发包 zip，
+/// 得先解压、再找准那一层目录 —— 解压工具默认多套一层
+/// （`Adobe套字器-0.3.3/plugin.json`），选错就报「缺 plugin.json」，非常劝退。
+/// 这里直接在内存里解开、**剥掉唯一的顶层目录**，前端拿到的结构与「选文件夹」完全一致。
+///
+/// 三道线：
+/// 1. 条目路径必须过 `safe_rel_path`（拒 `..` / 盘符 / 反斜杠 / 绝对路径）—— zip slip
+///    是压缩包最常见的攻击面，`zip` crate 自身会清洗一部分，但这里不依赖它，直接拒；
+/// 2. 跳过 macOS 打包残留（`__MACOSX/`、`._*`）与点开头的垃圾文件；
+/// 3. 体积口径与「选目录」一致：单文件 >10MB 不读内容，累计 >20MB 之后停读。
+///
+/// `dirName` 取「剥掉的那层顶层目录名」，没有顶层目录就取 zip 文件名（去后缀），
+/// 用户在弹窗里看到的名字才和手上的包对得上。
+fn read_zip_package(path: &FsPath) -> Result<PickedDirOut, String> {
+    use std::io::Read as _;
+
+    let file = std::fs::File::open(path).map_err(|e| format!("打不开这个压缩包：{e}"))?;
+    let mut zip = zip::ZipArchive::new(file)
+        .map_err(|e| format!("这不是有效的 zip（或使用了不支持的压缩算法）：{e}"))?;
+
+    // 第一遍只收集名字与大小：读内容要可变借用 archive，不能边遍历边读
+    let mut entries: Vec<(usize, String, u64)> = Vec::new();
+    for i in 0..zip.len() {
+        let e = match zip.by_index(i) {
+            Ok(e) => e,
+            Err(err) => return Err(format!("读取压缩包条目失败：{err}")),
+        };
+        if e.is_dir() {
+            continue;
+        }
+        let name = e.name().replace('\\', "/");
+        if name.is_empty() || name.starts_with("__MACOSX/") || name.split('/').any(|s| s.starts_with("._"))
+        {
+            continue;
+        }
+        // 顶层目录名本身也参与校验：恶意包常用一层 `..%2f` 之类的名字混过去
+        if !safe_rel_path(&name) {
+            return Err(format!("压缩包里有不安全的路径：{name}"));
+        }
+        entries.push((i, name, e.size()));
+    }
+    if entries.is_empty() {
+        return Err("压缩包里没有文件".into());
+    }
+
+    // 剥顶层目录：所有条目同属一个非根目录、且根级没有 plugin.json 时才剥。
+    // 根级已经有 plugin.json 就说明用户是对的内容打包，别动它的结构。
+    let has_root_manifest = entries.iter().any(|(_, n, _)| n == "plugin.json");
+    let mut prefix: Option<String> = None;
+    if !has_root_manifest {
+        for (_, name, _) in &entries {
+            let top = name.split('/').next().unwrap_or("");
+            if !name.contains('/') || top.is_empty() {
+                prefix = None;
+                break;
+            }
+            match &prefix {
+                None => prefix = Some(top.to_string()),
+                Some(p) if p != top => {
+                    prefix = None;
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+    let prefix = prefix.map(|p| p + "/");
+
+    let mut files: Vec<PickedFileOut> = Vec::with_capacity(entries.len());
+    let mut total: u64 = 0;
+    for (index, name, size) in entries {
+        let rel = match &prefix {
+            Some(p) if name.starts_with(p) => name[p.len()..].to_string(),
+            _ => name,
+        };
+        if rel.is_empty() {
+            continue;
+        }
+        let read = size <= PICK_MAX_FILE && total + size <= PICK_MAX_TOTAL;
+        let content = if read {
+            let mut e = zip
+                .by_index(index)
+                .map_err(|err| format!("读取 {rel} 失败：{err}"))?;
+            let mut buf = Vec::with_capacity((size as usize).min(8 * 1024 * 1024));
+            e.read_to_end(&mut buf)
+                .map_err(|err| format!("解压 {rel} 失败：{err}"))?;
+            total += buf.len() as u64;
+            b64_encode(&buf)
+        } else {
+            String::new()
+        };
+        files.push(PickedFileOut {
+            path: rel,
+            size,
+            content,
+        });
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let dir_name = prefix
+        .as_deref()
+        .map(|p| p.trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            path.file_stem()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "package".into())
+        });
+    Ok(PickedDirOut {
+        dirName: dir_name,
+        files,
+    })
+}
+
+/// `POST /api/pick-packages`：选 zip 分发包 → 解压 → 与「选文件夹」同形返回。
+///
+/// 有这条之后上传插件不必先解压：选包、看清单预填、上传，一步到位。
+async fn api_pick_packages(
+    State(st): State<Arc<PanelState>>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if !key_ok(&st, &headers) {
+        return json_err(StatusCode::UNAUTHORIZED, "面板会话已失效，请重新打开插件中心");
+    }
+    let app = st.app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        app.dialog()
+            .file()
+            .add_filter("插件包", &["zip"])
+            .blocking_pick_files()
+    })
+    .await;
+    let picked = match picked {
+        Ok(v) => v,
+        Err(e) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, format!("打开对话框失败：{e}")),
+    };
+    let Some(paths) = picked else {
+        return json_ok(json!({ "cancelled": true, "dirs": [] }));
+    };
+
+    let mut dirs: Vec<PickedDirOut> = Vec::new();
+    for fp in paths {
+        let path = match fp.into_path() {
+            Ok(p) => p,
+            Err(e) => return json_err(StatusCode::BAD_REQUEST, format!("这个位置读不了：{e}")),
+        };
+        match read_zip_package(&path) {
+            Ok(d) => dirs.push(d),
+            Err(e) => {
+                return json_err(
+                    StatusCode::BAD_REQUEST,
+                    format!(
+                        "{}：{e}",
+                        path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    ),
+                )
+            }
+        }
     }
     json_ok(json!({ "cancelled": false, "dirs": dirs }))
 }

@@ -17,7 +17,9 @@ const REPO = "FontManager-Workshop";
 const UPSTREAM_API = `/repos/${OWNER}/${REPO}`;
 
 /** 与 validate_plugins.py 同口径（改这里 = 改上传规则） */
-const ID_RE = /^[a-z0-9-]{2,40}$/;
+/* id 允许点号：主程序里插件 id 是 Java 包名式（com.iieozo.adobe-font），
+   registry 只认 a-z0-9- 会把这类插件全挡在门外。首尾仍要求字母/数字。 */
+const ID_RE = /^[a-z0-9](?:[a-z0-9.-]{0,38}[a-z0-9])$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PLUGIN_BYTES = 20 * 1024 * 1024;
@@ -45,6 +47,8 @@ export const PERMS = [
  */
 export const ALLOWED_EXTS: readonly string[] = [
   ".py", ".js", ".mjs", ".cjs", ".ts",
+  // 原生插件：主程序 `runtime: "exe"` 直接起进程，与脚本插件同一套 stdio 协议
+  ".exe", ".dll",
   ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".cfg",
   ".md", ".txt", ".csv", ".tsv",
   ".html", ".htm", ".css", ".svg",
@@ -52,7 +56,8 @@ export const ALLOWED_EXTS: readonly string[] = [
   ".woff", ".woff2", ".ttf", ".otf",
 ];
 const ALLOWED_EXT = new Set(ALLOWED_EXTS);
-const ENTRY_EXT = new Set([".py", ".js", ".mjs", ".cjs"]);
+/** 入口后缀：.py/.js 走解释器，.exe 是原生插件（runtime 留空即可） */
+const ENTRY_EXT = new Set([".py", ".js", ".mjs", ".cjs", ".exe"]);
 
 /** 一个待上传的文件（path 相对插件根，不含顶层目录名） */
 export interface PickedFile {

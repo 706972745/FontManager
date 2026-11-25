@@ -232,6 +232,12 @@ export const panelApi = {
    */
   pickFolders: () =>
     panelFetch<PickFoldersResult>("/api/pick-folders", { method: "POST", body: "{}" }),
+  /**
+   * 选 zip 分发包。主程序在内存里解压、剥掉唯一的外层目录，
+   * 返回结构与 `pickFolders` **完全一致** —— 前端不用分两套草稿逻辑。
+   */
+  pickPackages: () =>
+    panelFetch<PickFoldersResult>("/api/pick-packages", { method: "POST", body: "{}" }),
   /** 记下「导览看过了」（存主程序 prefs，跨面板窗口有效） */
   markTourDone: () =>
     panelFetch<{ ok: boolean }>("/api/tour-done", { method: "POST", body: "{}" }),

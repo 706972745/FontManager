@@ -5,6 +5,7 @@ import {
   Check,
   Copy,
   ExternalLink,
+  FileArchive,
   FolderOpen,
   LoaderCircle,
   LogIn,
@@ -187,17 +188,13 @@ export function UploadDialog({
   const active = drafts.find((d) => d.key === activeKey) ?? null;
   const ready = drafts.length > 0 && errorCount === 0 && dupKeys.size === 0;
 
-  const onPick = useCallback(async () => {
-    // 系统对话框会让面板失焦（面板是失焦即藏）→ 先置守位
-    void holdBlurGuard();
-    try {
-      const r = await panelApi.pickFolders();
-      if (r.cancelled || r.dirs.length === 0) return;
-      setError(null);
+  /** 把「选目录 / 选 zip」两种来源统一塞进 drafts：来源不同，落地形态一样 */
+  const mergePicked = useCallback(
+    (dirs: { dirName: string; files: { path: string; size: number; content: string }[] }[]) => {
       setDrafts((prev) => {
         const next = [...prev];
         let lastKey: string | null = null;
-        for (const dir of r.dirs) {
+        for (const dir of dirs) {
           const files = pickedFromApp(dir.files);
           const mf = readManifest(files);
           const form: PluginForm = {
@@ -222,6 +219,18 @@ export function UploadDialog({
         if (lastKey) setActiveKey(lastKey);
         return next;
       });
+    },
+    [locale],
+  );
+
+  const onPick = useCallback(async () => {
+    // 系统对话框会让面板失焦（面板是失焦即藏）→ 先置守位
+    void holdBlurGuard();
+    try {
+      const r = await panelApi.pickFolders();
+      if (r.cancelled || r.dirs.length === 0) return;
+      setError(null);
+      mergePicked(r.dirs);
     } catch (e) {
       setError(
         e instanceof UploadMessage
@@ -229,7 +238,27 @@ export function UploadDialog({
           : `${t("uploadFail")} — ${String((e as Error).message)}`,
       );
     }
-  }, [locale, t]);
+  }, [mergePicked, t]);
+
+  /**
+   * 选 zip 分发包：主程序在内存里解压（剥掉多余的外层目录），回来的结构与选目录一致。
+   * 这样作者不用先解压、也不用担心解压工具多套一层导致「缺 plugin.json」。
+   */
+  const onPickZip = useCallback(async () => {
+    void holdBlurGuard();
+    try {
+      const r = await panelApi.pickPackages();
+      if (r.cancelled || r.dirs.length === 0) return;
+      setError(null);
+      mergePicked(r.dirs);
+    } catch (e) {
+      setError(
+        e instanceof UploadMessage
+          ? t(e.key)
+          : `${t("uploadFail")} — ${String((e as Error).message)}`,
+      );
+    }
+  }, [mergePicked, t]);
 
   const removeDraft = (key: string) => {
     setDrafts((prev) => {
@@ -468,6 +497,10 @@ export function UploadDialog({
                 <FolderOpen size={13} strokeWidth={1.5} />
                 {drafts.length ? t("uploadRepick") : t("uploadPick")}
               </button>
+              <button className="ws-btn ws-btn-ghost" onClick={() => void onPickZip()} disabled={busy}>
+                <FileArchive size={13} strokeWidth={1.5} />
+                {t("uploadPickZip")}
+              </button>
               {drafts.length > 0 && (
                 <span className="ws-up-pickmeta">{t("uploadCount", { count: drafts.length })}</span>
               )}
@@ -679,17 +712,6 @@ export function UploadDialog({
           </section>
 
           {error && <p className="ws-up-error">{error}</p>}
-
-          {result && (
-            <div className="ws-up-done">
-              <Check size={14} strokeWidth={2} />
-              <span>{t("uploadDone", { number: result.prNumber })}</span>
-              <button className="ws-cta" onClick={() => void panelApi.openUrl(result.prUrl)}>
-                {t("uploadOpenPr")}
-                <ExternalLink size={12} strokeWidth={1.5} />
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="ws-upload-foot">
@@ -708,6 +730,43 @@ export function UploadDialog({
           </button>
         </div>
       </motion.div>
+
+      {/* 提交成功：独立弹窗而不是底部一行字 —— 提交完人已经切走注意力，
+          一行小字根本不会被看见，结果又只有「去 PR」这一个下一步。 */}
+      {result && (
+        <div className="ws-upok-mask" onClick={() => !busy && setResult(null)}>
+          <motion.div
+            className="ws-upok"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={t("uploadSuccessTitle")}
+            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={springSoft}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="ws-upok-icon">
+              <Check size={20} strokeWidth={2.4} />
+            </span>
+            <h2 className="ws-upok-title">{t("uploadSuccessTitle")}</h2>
+            <p className="ws-upok-body">
+              {t("uploadSuccessBody", { number: result.prNumber })}
+            </p>
+            <div className="ws-upok-foot">
+              <button className="ws-linkbtn" onClick={() => setResult(null)}>
+                {t("uploadSuccessOk")}
+              </button>
+              <button
+                className="ws-cta"
+                onClick={() => void panelApi.openUrl(result.prUrl)}
+              >
+                {t("uploadOpenPr")}
+                <ExternalLink size={12} strokeWidth={1.5} />
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </motion.div>
   );
 }
