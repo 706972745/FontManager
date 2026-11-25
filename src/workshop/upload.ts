@@ -25,6 +25,14 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PLUGIN_BYTES = 20 * 1024 * 1024;
 const MAX_BRIEF = 200;
 const MAX_DETAIL = 1000;
+/**
+ * 插件名称上限（显示名，不是 id）。
+ *
+ * 卡片上一行放不下更长的名字，超过就换行/省略，列表立刻变得参差不齐，
+ * 所以在上传前就卡住：**超过不允许提交**（而不是等到 CI 或合并后再退回来）。
+ * 按「字符」数，不按 UTF-16 长度 —— 中文/emoji 一个字就是一个字。
+ */
+export const MAX_NAME = 15;
 
 /** 主程序 `api.rs` 的 PERMS —— 名单外的名字运行时会被静默丢弃 */
 export const PERMS = [
@@ -190,7 +198,10 @@ export function validatePlugin(form: PluginForm, files: PickedFile[]): Issue[] {
     issues.push({ level: "warn", key, vars });
 
   if (!ID_RE.test(form.id.trim())) err("uploadErrId");
-  if (!form.name.trim()) err("uploadErrName");
+  // 名称：非空 + 不超过 MAX_NAME（按字符数，中文/emoji 一个字算一个）
+  const nameLen = [...form.name.trim()].length;
+  if (!nameLen) err("uploadErrName");
+  else if (nameLen > MAX_NAME) err("uploadErrNameLong", { max: MAX_NAME });
   if (!SEMVER_RE.test(form.version.trim())) err("uploadErrVersion");
   if (!form.brief.trim() || form.brief.length > MAX_BRIEF) err("uploadErrBrief", { max: MAX_BRIEF });
   if (form.detail.length > MAX_DETAIL) err("uploadErrDetail", { max: MAX_DETAIL });

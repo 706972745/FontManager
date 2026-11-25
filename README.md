@@ -624,28 +624,39 @@ Behaviour worth knowing:
 - **Three-level index cache** (memory → local data folder → network), with a 12 s timeout and one retry,
   so a stalled connection can no longer spin forever
 
-#### Uploading your own plugin (all inside the panel, no web detour)
+#### Uploading your own plugin (everything happens inside the panel)
 
-**Upload plugin** in the panel's top-right corner opens a four-step dialog:
+**Upload plugin** in the panel's top-right corner opens the upload dialog. It runs in four steps and never
+leaves the panel — no browser tab to fill in, no token to copy:
 
 | Step | What happens |
 |---|---|
-| **① Connect GitHub** | Paste a fine-grained token once (only `Contents` + `Pull requests`, read & write). It is stored locally with **DPAPI** encryption — never uploaded — and remembered afterwards |
-| **② Pick folders** | The app opens a native folder picker; you can select **several plugin folders at once** |
-| **③ Review the manifest** | If the folder has a `plugin.json` it is pre-filled, otherwise fill it in. Rules match the repository CI exactly: id pattern, file-extension allowlist, 10 MB per file / 20 MB per plugin, permission allowlist, entry script must be inside the bundle |
-| **④ Submit** | Automatically forks → syncs main → uploads each file → creates the commit → opens a pull request. **All selected plugins share one commit and one PR**, with a four-stage progress display |
+| **① Connect GitHub** | Sign in with a **device code**: the panel shows an 8-character code, opens `github.com/login/device`, you type the code once and approve. The token is stored on disk **encrypted with DPAPI** by the app itself — the panel never holds a long-lived one. Browsing, downloading and installing need **no** account |
+| **② Pick the source** | Choose one or more **plugin folders** (the native picker allows multi-select) or drop in a **`.zip` package**. The app unpacks it in memory, strips the single wrapper folder, skips `__MACOSX/` and `._*`, and rejects any path that escapes the bundle |
+| **③ Review the manifest** | If the folder or zip contains a `plugin.json` the form is pre-filled from it (a runtime manifest with only `summary` / `description` also works — those fill in brief and details). Otherwise fill it in yourself. Validation mirrors the repository CI exactly: id `2–40` (`a-z0-9.-`), **name ≤ 15 characters**, semver version, entry script inside the bundle, extension allowlist, 10 MB per file / 20 MB per plugin, permission allowlist, `apiLevel` |
+| **④ Submit** | Forks once → uploads every file → creates the commit → opens a pull request. **All selected plugins share one commit and one PR**, with a four-stage progress display |
 
-The plugin only shows up in the center after the PR is merged and CI has regenerated `index.json`.
+**What happens when you press submit**: the rows turn into **"Submitted #N"** — they can no longer be edited
+and cannot be submitted twice — and the form clears so the next plugin can be prepared without closing the
+dialog. A note at the top spells out the next step: **uploading only opens a review request, a maintainer has
+to merge it.** Once merged, the index is regenerated (about a minute) and the plugin shows up in the center.
 
-**Managing what you uploaded follows your GitHub account, not this computer**: once you're connected, the
-dialog lists every plugin signed with your name (anonymous ones included) with a **Take down** button that
-opens a "delete this folder" pull request. The anonymous signature is derived from your login
-(`anonymous-<hash(login)>` — never stored locally, never random), so signing in on another machine or after
-a reinstall still lets you update or take down your own plugins.
+#### Taking your plugin down (no permissions, no waiting)
 
-"Upload anonymously" is available to the **repository maintainer only**: CI requires the folder name to end
-with `__<PR author>`, so anonymous submissions from anyone else would be rejected — that checkbox stays
-disabled for them.
+**Delisting is the mirror image, and it is automatic.** The same dialog lists every plugin signed with your
+account (ownership follows the GitHub login, not this computer), each with a **Take down** button:
+
+1. **Take down** → a `[takedown]` request for that folder is posted to the registry
+2. A repository Action verifies that **the requester is the directory's author** (case-insensitive) and that
+   the directory really exists, then deletes it on `main` itself — **no maintainer merge, and no repository
+   write permission is handed to you**
+3. The entry disappears from the center **immediately** (it is hidden locally first) and is marked
+   **"Taken down (pending)"** until the catalog is regenerated, which usually takes tens of seconds.
+   If the directory is still there after three minutes, the row comes back — you are never told "gone"
+   when it isn't
+
+None of this grants write access to the repository: the only thing an author can ever do is ask for their
+own folder to be removed.
 
 ### 🖥️ Using the local API
 
@@ -1491,7 +1502,7 @@ fontTools，位于软件目录 `python-runtime/`）——**机器上没装 Pytho
 - **下载与安装都不需要 GitHub 账号**；只有「上传自己的插件」才需要登录
 - **上传和登录的用途说清楚**：「上传插件」只是把插件存进可分享、可留存的共用仓库；
   登录 GitHub 只为了让你管理自己上传的插件（迭代更新、下架删除），**并无其他用途**。
-  这句常驻面板底部，粘令牌那一步也会再显示一次
+  这句常驻面板底部，登录那一步也会再显示一次
 - **面板会自己更新**：装过之后，启动时会查一次（24 小时内不重复），有新版本**后台装好并提示一句**；
   **没装就什么都不下载**，也可以在 设置 → 插件 里把自动更新关掉。所以面板发新版不用等软件发版
 - **点别处自动收起**：面板失焦就隐藏，再打开还是点标题栏那个图标（拖动窗口时不会误收）
@@ -1502,26 +1513,29 @@ fontTools，位于软件目录 `python-runtime/`）——**机器上没装 Pytho
 - **清单缓存三级**（内存 → 本机数据目录 → 网络），拉取带 12 秒超时与一次重试，
   网络卡住不会一直转圈
 
-#### 上传自己的插件（面板内完成，不跳网页）
+#### 上传自己的插件（全部在面板里完成）
 
-面板右上角 **上传插件** → 弹窗走四步：
+面板右上角 **上传插件** → 弹窗走四步，全程不跳网页、不用手粘令牌：
 
 | 步 | 做什么 |
 |---|---|
-| **① 连 GitHub** | 粘一次 fine-grained 令牌（只需 `Contents` + `Pull requests` 读写）。令牌用 **DPAPI 加密**存在本机，不上传云端；连过之后不用再粘 |
-| **② 选文件夹** | 主程序弹系统目录框，**支持一次选多个插件目录** |
-| **③ 核对清单** | 目录里有 `plugin.json` 就自动预填，没有就手填。校验规则与仓库 CI 逐条对齐：插件 ID 正则、文件后缀白名单、单文件 10MB / 单插件 20MB、权限白名单、入口脚本必须在包里 |
-| **④ 提交** | 后台自动 fork → 同步 main → 逐文件上传 → 建提交 → 开 PR。**多个插件共用一次提交、一个 PR**，进度分四段显示 |
+| **① 连 GitHub** | 走 **设备码登录**：面板显示 8 位码，打开 `github.com/login/device`，输一次码并确认即可。令牌由主程序自己写到本机、用 **DPAPI 加密**，面板拿不到长期令牌。**浏览、下载、安装都不需要账号** |
+| **② 选来源** | 选**一个或多个插件文件夹**（系统目录框支持多选），或直接给一个 **`.zip` 包**。主程序在内存里解压、剥掉唯一的外层目录、跳过 `__MACOSX/` 与 `._*`，路径越界（`..` / 盘符 / 反斜杠）一律拒 |
+| **③ 核对清单** | 有 `plugin.json` 就自动预填（只有 `summary` / `description` 的运行时清单也能用，会兜底成简介与详情），没有就手填。校验与仓库 CI 逐条对齐：ID `2–40`（`a-z0-9.-`）、**名称 ≤ 15 个字**、版本 semver、入口脚本必须在包里、后缀白名单、单文件 10MB / 单插件 20MB、权限白名单、`apiLevel` |
+| **④ 提交** | 自动 fork 一次 → 逐文件上传 → 建提交 → 开 PR。**多个插件共用一次提交、一个 PR**，进度分四段显示 |
 
-PR 合并后 CI 重算 `index.json`，插件才会出现在中心里。
+**点完提交之后**：这几行会变成 **「已提交 #N」**——不能再编辑、也不会重复提交，表单同时清空，可以接着准备下一个插件（不用关掉面板）。顶部会写明下一步：**上传只是开审核请求，要等维护者合并**；合并后约 1 分钟重算清单，插件才出现在中心里。
 
-**下架与迭代跟着你的 GitHub 账号走，不跟这台电脑**：连上账号后，弹窗里会列出署名属于你的插件
-（含匿名上传的），每条一个「下架」按钮，提交后是一条「删除该目录」的 PR。
-匿名署名由登录名稳定派生（`anonymous-<hash(login)>`，不存本机、不是随机串），
-所以换电脑、重装软件，只要登录同一个账号，照样能更新或下架自己的插件。
+#### 下架自己的插件（不需要权限、不用等）
 
-「以匿名身份上传」只对**仓库维护者**可用：CI 的归属校验要求目录名以 `__<PR 作者>` 结尾，
-普通用户以匿名身份提交会被拦下，所以那一项对其他人是灰的。
+**下架是反向的一条路，而且是自动的。**同一个弹窗里会列出署名属于你的插件（归属跟着 GitHub 登录名，
+不跟这台电脑），每条一个「下架」按钮：
+
+1. 点「下架」→ 向插件库提交一条 `[takedown]` 请求
+2. 仓库 Action 校验 **发起人就是该目录的署名者**（忽略大小写）且目录真实存在，然后由它自己改 `main` 删除 —— **不需要维护者合并，也不会给你任何仓库写权限**
+3. 中心里**立刻**不再显示它（本地先隐藏），并标成 **「已下架（待生效）」**；清单重算通常几十秒完成。如果 3 分钟后目录还在，这一行会自动回来 —— 不会出现「说没了其实还在」
+
+这些都不涉及仓库写权限：作者能做的只有「请求删掉自己那个目录」。
 
 ### 🖥️ 使用本地 API
 

@@ -1344,6 +1344,115 @@ body {
   color: var(--ws-text-2);
 }
 
+/* 已提交的行：绿边 + 绿标，右侧按钮从「删除」换成「打开请求」。
+   这一行不再是草稿，点它也不会进编辑态（见 UploadDialog 的 done 分支）。 */
+.ws-up-item-done {
+  border-color: color-mix(in srgb, #22c55e 30%, transparent);
+  background: color-mix(in srgb, #22c55e 6%, transparent);
+}
+
+.ws-up-item-done .ws-up-item-main {
+  cursor: default;
+}
+
+/* 已提交的行是个 disabled button：别让浏览器把它压成灰字（绿边绿标要看得清） */
+.ws-up-item-done .ws-up-item-main:disabled {
+  opacity: 1;
+  color: inherit;
+}
+
+/* 「审核中，要改就升版本重传」这句比较长，单行省略，悬停看全 */
+.ws-up-item-done .ws-up-item-state {
+  max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-up-donetag {
+  margin-left: 6px;
+  font-size: var(--ws-fs-10);
+  font-weight: 500;
+  color: #22c55e;
+  white-space: nowrap;
+}
+
+/* 提交成功的内联提示条（不再是全屏浮层：人要留在面板里看/继续传） */
+.ws-up-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 9px 10px;
+  border-radius: var(--ws-radius-ctl);
+  border: 1px solid color-mix(in srgb, #22c55e 32%, transparent);
+  background: color-mix(in srgb, #22c55e 9%, transparent);
+}
+
+.ws-up-banner-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #22c55e;
+  background: color-mix(in srgb, #22c55e 16%, transparent);
+}
+
+.ws-up-banner-text {
+  flex: 1;
+  font-size: var(--ws-fs-11);
+  line-height: 17px;
+  color: var(--ws-text-2);
+}
+
+.ws-up-banner-text strong {
+  color: var(--ws-text);
+  font-weight: 600;
+}
+
+.ws-up-banner-note {
+  margin-top: 3px;
+  font-size: var(--ws-fs-10);
+  line-height: 15px;
+  color: var(--ws-text-3);
+}
+
+.ws-up-banner-link {
+  flex: none;
+  align-self: center;
+  white-space: nowrap;
+}
+
+/* 表单标题右侧的「署名 @xxx」 */
+.ws-up-signas {
+  margin-left: 8px;
+  font-size: var(--ws-fs-10);
+  font-weight: 400;
+  color: var(--ws-text-3);
+}
+
+/* 名称字数计数（12/15）：超了变红，配合 validatePlugin 直接拦住提交 */
+.ws-up-count {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--ws-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-up-count-bad {
+  color: var(--ws-danger);
+}
+
+.ws-up-footnote {
+  margin-right: auto;
+  max-width: 62%;
+  line-height: 15px;
+  font-size: var(--ws-fs-10);
+  color: var(--ws-text-3);
+}
+
 .ws-up-item-bad .ws-up-item-state {
   color: var(--ws-danger);
 }

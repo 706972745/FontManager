@@ -19,6 +19,7 @@ import { holdBlurGuard, panelApi } from "./api.ts";
 import { useGithubAuth } from "./auth.ts";
 import {
   ALLOWED_EXTS,
+  MAX_NAME,
   canMaintain,
   deletePluginsDirect,
   GhError,
@@ -72,6 +73,14 @@ interface Draft {
   files: PickedFile[];
   form: PluginForm;
   hasManifest: boolean;
+  /**
+   * 已经提交过的草稿。
+   *
+   * 提交成功后不把草稿丢掉、也不让表单继续挂着旧内容：这一行改成「已提交 #N」，
+   * 不能再编辑、也**不可能再提交一次**（以前草稿原样留着，一点又开一个重复 PR）。
+   * 表单空出来，用户可以接着传下一个插件。
+   */
+  submitted?: { prNumber: number; prUrl: string };
 }
 
 /** `plugins/<id>__<author>` 的署名部分 —— 用来判断这条是不是当前账号自己的 */
@@ -118,7 +127,14 @@ export function UploadDialog({
   const [phase, setPhase] = useState<UploadPhase | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ prUrl: string; prNumber: number } | null>(null);
+  /**
+   * 刚提交成功的那一次（内联提示条，不是全屏浮层）。
+   *
+   * 以前成功后弹一个全屏对话框：点「知道了」回到表单，草稿还是刚才那份内容，
+   * 人也没被告知「接下来要等维护者合并」。现在改成面板顶部的内联条 + 草稿转
+   * 「已提交」行，人不离开这个面板就能继续看/继续传。
+   */
+  const [banner, setBanner] = useState<{ prUrl: string; prNumber: number } | null>(null);
   /** 正在下架的目录（按钮显示 loading、其余禁用） */
   const [deleting, setDeleting] = useState<string | null>(null);
   /**
@@ -173,6 +189,30 @@ export function UploadDialog({
   }, [token]);
 
   /**
+   * Esc 关闭（按层级退：下架确认 → 顶部提示条 → 整个弹窗）。
+   *
+   * 弹窗只能点遮罩或右上角 ×，键盘用户没路可走；而遮罩点击在「上传进行中」
+   * 是被忽略的，什么都不发生更容易让人以为卡死了。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // 上传进行中不许中途退出：此时关掉面板，人只会以为请求丢了
+      if (e.key !== "Escape" || phase !== null) return;
+      if (askRemove) {
+        setAskRemove(null);
+        return;
+      }
+      if (banner) {
+        setBanner(null);
+        return;
+      }
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [askRemove, banner, onClose, phase]);
+
+  /**
    * 「我上传的插件」= 目录名后半段等于**当前登录名**的社区件。
    *
    * 归属按署名认、不按机器：目录名是 `plugins/<id>__<登录名>`，所以在任何一台
@@ -216,9 +256,8 @@ export function UploadDialog({
       setDeleting(dir);
       setError(null);
       setDeleteMsg(null);
-      // 上传成功的浮层是全屏遮罩：不清掉的话，下架的提示会被它盖在下面
-      // （用户只看到「已创建审核请求 #N」，以为下架没反应）。
-      setResult(null);
+      // 刚上传成功的提示条会占住面板顶部，先收起来，免得下架的反馈被压在下面
+      setBanner(null);
       try {
         // 维护者（admin / maintain）直推：即时生效，不留 issue 噪音。
         if (isMaintainer) {
@@ -259,18 +298,21 @@ export function UploadDialog({
   /** 上传时的署名就是登录名（不再有匿名分支） */
   const author = login ?? "";
 
-  /** 每个草稿各自的校验结果 */
+  /** 还没提交的草稿：校验、计数、提交都只看这一批 */
+  const pending = useMemo(() => drafts.filter((d) => !d.submitted), [drafts]);
+
+  /** 每个草稿各自的校验结果（已提交的不再校验，它已经进闸门了） */
   const issuesByKey = useMemo(() => {
     const map = new Map<string, ReturnType<typeof validatePlugin>>();
-    for (const d of drafts) map.set(d.key, validatePlugin(d.form, d.files));
+    for (const d of pending) map.set(d.key, validatePlugin(d.form, d.files));
     return map;
-  }, [drafts]);
+  }, [pending]);
 
   /** 跨插件：两个目录撞成同一个 `plugins/<id>__<author>` 会互相覆盖 */
   const dupKeys = useMemo(() => {
     const seen = new Map<string, string>();
     const dup = new Set<string>();
-    for (const d of drafts) {
+    for (const d of pending) {
       const dir = `${d.form.id.trim()}__${author}`;
       const prev = seen.get(dir);
       if (prev) {
@@ -279,7 +321,7 @@ export function UploadDialog({
       } else seen.set(dir, d.key);
     }
     return dup;
-  }, [drafts, author]);
+  }, [pending, author]);
 
   const errorCount = useMemo(() => {
     let n = 0;
@@ -288,8 +330,8 @@ export function UploadDialog({
   }, [issuesByKey]);
 
   const busy = phase !== null;
-  const active = drafts.find((d) => d.key === activeKey) ?? null;
-  const ready = drafts.length > 0 && errorCount === 0 && dupKeys.size === 0;
+  const active = pending.find((d) => d.key === activeKey) ?? null;
+  const ready = pending.length > 0 && errorCount === 0 && dupKeys.size === 0;
 
   /** 把「选目录 / 选 zip」两种来源统一塞进 drafts：来源不同，落地形态一样 */
   const mergePicked = useCallback(
@@ -397,11 +439,12 @@ export function UploadDialog({
     setAccountError(null);
     if (!agreed || !ready) return;
     setError(null);
-    setResult(null);
+    setBanner(null);
     setPhase("fork");
     setProgress(null);
+    const batch = pending;
     try {
-      const items: UploadItem[] = drafts.map((d) => ({
+      const items: UploadItem[] = batch.map((d) => ({
         author: author || login,
         form: d.form,
         files: d.files,
@@ -417,7 +460,17 @@ export function UploadDialog({
           }
         },
       });
-      setResult({ prUrl: out.prUrl, prNumber: out.prNumber });
+      // 这一批已经进闸门：转成「已提交」行（不可编辑、不可重复提交），
+      // 表单空出来给下一个插件 —— 提交完人还留在面板里，不用重开。
+      setDrafts((prev) =>
+        prev.map((d) =>
+          batch.some((b) => b.key === d.key)
+            ? { ...d, submitted: { prNumber: out.prNumber, prUrl: out.prUrl } }
+            : d,
+        ),
+      );
+      setActiveKey(null);
+      setBanner({ prUrl: out.prUrl, prNumber: out.prNumber });
     } catch (e) {
       // UploadMessage 自带 i18n key（还没选插件 / fork 没就绪）—— 直接翻，别再包一层
       if (e instanceof UploadMessage) setError(t(e.key));
@@ -432,7 +485,7 @@ export function UploadDialog({
       setPhase(null);
       setProgress(null);
     }
-  }, [agreed, author, drafts, login, ready, t, token]);
+  }, [agreed, author, login, pending, ready, t, token]);
 
   const phaseText = useMemo(() => {
     if (phase === "fork") return t("uploadPhaseFork");
@@ -478,6 +531,40 @@ export function UploadDialog({
 
         <div className="ws-upload-body">
           <p className="ws-upload-intro">{t("uploadIntro")}</p>
+
+          {/* 刚提交成功：内联提示条（不是全屏浮层）。
+              人不用离开表单，也顺带被明确告知「还要等维护者合并」——
+              这条以前完全没有，用户以为点完就已经上架了。 */}
+          {banner && (
+            <motion.div
+              className="ws-up-banner"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={springSoft}
+            >
+              <span className="ws-up-banner-icon">
+                <Check size={13} strokeWidth={2.6} />
+              </span>
+              <div className="ws-up-banner-text">
+                <strong>{t("uploadSuccessTitle")}</strong>{" "}
+                {t("uploadSuccessInline", { number: banner.prNumber })}
+                <div className="ws-up-banner-note">{t("uploadPendingMerge")}</div>
+              </div>
+              <button
+                className="ws-linkbtn ws-up-banner-link"
+                onClick={() => void panelApi.openUrl(banner.prUrl)}
+              >
+                {t("uploadOpenPr")}
+              </button>
+              <button
+                className="ws-banner-close"
+                onClick={() => setBanner(null)}
+                aria-label={t("uploadClose")}
+              >
+                <X size={13} strokeWidth={2} />
+              </button>
+            </motion.div>
+          )}
 
           {/* ① 账号 —— 只走 GitHub 设备码登录（面板不收令牌、也不内置令牌） */}
           <section className="ws-up-sec">
@@ -618,14 +705,16 @@ export function UploadDialog({
             <div className="ws-up-pickrow">
               <button className="ws-cta" onClick={() => void onPick()} disabled={busy}>
                 <FolderOpen size={13} strokeWidth={1.5} />
-                {drafts.length ? t("uploadRepick") : t("uploadPick")}
+                {pending.length ? t("uploadRepick") : t("uploadPick")}
               </button>
               <button className="ws-btn ws-btn-ghost" onClick={() => void onPickZip()} disabled={busy}>
                 <FileArchive size={13} strokeWidth={1.5} />
                 {t("uploadPickZip")}
               </button>
-              {drafts.length > 0 && (
-                <span className="ws-up-pickmeta">{t("uploadCount", { count: drafts.length })}</span>
+              {pending.length > 0 && (
+                <span className="ws-up-pickmeta">
+                  {t("uploadCount", { count: pending.length })}
+                </span>
               )}
             </div>
 
@@ -634,39 +723,75 @@ export function UploadDialog({
                 {drafts.map((d) => {
                   const errs = (issuesByKey.get(d.key) ?? []).filter((i) => i.level === "error").length;
                   const isDup = dupKeys.has(d.key);
-                  const bad = errs > 0 || isDup || !d.hasManifest;
+                  const done = d.submitted;
+                  const bad = !done && (errs > 0 || isDup || !d.hasManifest);
                   return (
                     <li
                       key={d.key}
                       className={
                         "ws-up-item" +
-                        (d.key === activeKey ? " ws-up-item-on" : "") +
-                        (bad ? " ws-up-item-bad" : "")
+                        (d.key === activeKey && !done ? " ws-up-item-on" : "") +
+                        (bad ? " ws-up-item-bad" : "") +
+                        (done ? " ws-up-item-done" : "")
                       }
                     >
-                      <button className="ws-up-item-main" onClick={() => setActiveKey(d.key)}>
-                        <span className="ws-up-item-name">{d.form.name || d.dirName}</span>
+                      <button
+                        className="ws-up-item-main"
+                        // 已提交的行不再进编辑态：它已经进闸门，改表单只会让人以为改动生效了
+                        onClick={() => !done && setActiveKey(d.key)}
+                        disabled={!!done}
+                      >
+                        <span className="ws-up-item-name">
+                          {d.form.name || d.dirName}
+                          {done && (
+                            <span className="ws-up-donetag">
+                              {t("uploadSubmittedTag", { number: done.prNumber })}
+                            </span>
+                          )}
+                        </span>
                         <span className="ws-up-item-meta">
                           v{d.form.version || "?"} · {d.form.id || "—"}
                         </span>
-                        <span className="ws-up-item-state">
-                          {isDup
-                            ? t("uploadDup")
-                            : !d.hasManifest
-                              ? t("uploadNoManifest")
+                        <span
+                          className="ws-up-item-state"
+                          title={
+                            done
+                              ? t("uploadSubmittedHint")
                               : errs > 0
                                 ? t("uploadItemErrors", { count: errs })
-                                : t("uploadItemOk")}
+                                : undefined
+                          }
+                        >
+                          {done
+                            ? t("uploadSubmittedHint")
+                            : isDup
+                              ? t("uploadDup")
+                              : !d.hasManifest
+                                ? t("uploadNoManifest")
+                                : errs > 0
+                                  ? t("uploadItemErrors", { count: errs })
+                                  : t("uploadItemOk")}
                         </span>
                       </button>
-                      <button
-                        className="ws-clear"
-                        onClick={() => removeDraft(d.key)}
-                        disabled={busy}
-                        aria-label={t("uploadRemove")}
-                      >
-                        <Trash2 size={13} strokeWidth={1.5} />
-                      </button>
+                      {done ? (
+                        <button
+                          className="ws-clear"
+                          onClick={() => void panelApi.openUrl(done.prUrl)}
+                          aria-label={t("uploadOpenPr")}
+                          title={t("uploadOpenPr")}
+                        >
+                          <ExternalLink size={13} strokeWidth={1.5} />
+                        </button>
+                      ) : (
+                        <button
+                          className="ws-clear"
+                          onClick={() => removeDraft(d.key)}
+                          disabled={busy}
+                          aria-label={t("uploadRemove")}
+                        >
+                          <Trash2 size={13} strokeWidth={1.5} />
+                        </button>
+                      )}
                     </li>
                   );
                 })}
@@ -674,11 +799,14 @@ export function UploadDialog({
             )}
           </section>
 
-          {/* ③ 当前选中的那个插件的清单 */}
+          {/* ③ 当前选中的那个插件的清单 —— 提交完这一批就自动空出来，
+              下一个插件直接从上面选，不用关掉重开 */}
           {active && (
             <section className="ws-up-sec">
               <h3 className="ws-up-sec-title">
                 {t("uploadFormTitle")} · {active.dirName}
+                {/* 上传的署名就是当前登录名（目录后缀），先说清归属 */}
+                <span className="ws-up-signas">{t("uploadSignAs", { login: author })}</span>
               </h3>
               <div className="ws-up-grid">
                 {/* 字段标签一律走 t()；**填的东西必须是特定写法**（id 只能小写、入口要相对路径、
@@ -695,7 +823,18 @@ export function UploadDialog({
                   />
                 </label>
                 <label className="ws-up-field" title={t("fNameTip")}>
-                  <span className="ws-up-tip">{t("fName")}</span>
+                  <span className="ws-up-tip">
+                    {t("fName")}
+                    {/* 边打字边看还剩几个字：超过 MAX_NAME 会变红并直接拦住提交 */}
+                    <span
+                      className={
+                        "ws-up-count" +
+                        ([...active.form.name].length > MAX_NAME ? " ws-up-count-bad" : "")
+                      }
+                    >
+                      {[...active.form.name].length}/{MAX_NAME}
+                    </span>
+                  </span>
                   <BlinkCaretInput
                     className="ws-input"
                     value={active.form.name}
@@ -838,18 +977,28 @@ export function UploadDialog({
         </div>
 
         <div className="ws-upload-foot">
-          {busy && (
+          {busy ? (
             <span className="ws-up-phase">
               <LoaderCircle size={13} className="ws-spin" />
               {phaseText}
             </span>
+          ) : (
+            <span className="ws-up-phase ws-up-footnote">
+              {/* 按钮为什么是灰的，得说出来 —— 以前只有禁用，用户点不动却不知道缺什么 */}
+              {pending.length > 0 && !agreed
+                ? t("uploadNeedAgree")
+                : pending.length > 0
+                  ? t("uploadPendingMerge")
+                  : ""}
+            </span>
           )}
           <button
             className="ws-cta ws-up-submit"
-            onClick={() => void submit()}
-            disabled={busy || !token || !login || !agreed || !ready}
+            onClick={() => (pending.length === 0 ? onClose() : void submit())}
+            disabled={busy || (pending.length > 0 && (!token || !login || !agreed || !ready))}
+            // 全部提交完就把主按钮换成「关闭」：这时候还写「上传 0 个插件」既没意义也点不动
           >
-            {t("uploadSubmit", { count: drafts.length })}
+            {pending.length === 0 ? t("uploadClose") : t("uploadSubmit", { count: pending.length })}
           </button>
         </div>
       </motion.div>
@@ -901,42 +1050,6 @@ export function UploadDialog({
         </div>
       )}
 
-      {/* 提交成功：独立弹窗而不是底部一行字 —— 提交完人已经切走注意力，
-          一行小字根本不会被看见，结果又只有「去 PR」这一个下一步。 */}
-      {result && (
-        <div className="ws-upok-mask" onClick={() => !busy && setResult(null)}>
-          <motion.div
-            className="ws-upok"
-            role="alertdialog"
-            aria-modal="true"
-            aria-label={t("uploadSuccessTitle")}
-            initial={{ opacity: 0, y: 18, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={springSoft}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="ws-upok-icon">
-              <Check size={20} strokeWidth={2.4} />
-            </span>
-            <h2 className="ws-upok-title">{t("uploadSuccessTitle")}</h2>
-            <p className="ws-upok-body">
-              {t("uploadSuccessBody", { number: result.prNumber })}
-            </p>
-            <div className="ws-upok-foot">
-              <button className="ws-linkbtn" onClick={() => setResult(null)}>
-                {t("uploadSuccessOk")}
-              </button>
-              <button
-                className="ws-cta"
-                onClick={() => void panelApi.openUrl(result.prUrl)}
-              >
-                {t("uploadOpenPr")}
-                <ExternalLink size={12} strokeWidth={1.5} />
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
     </motion.div>
   );
 }
