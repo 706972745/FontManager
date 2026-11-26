@@ -1058,18 +1058,28 @@ pub(crate) fn legacy_ids_for(id: &str) -> impl Iterator<Item = &'static str> + '
 /// 先按当前 ID 找；找不到再按历史 ID 找 —— 老用户升级后点「安装」时，
 /// 这一步把老目录交出去，安装流程就会原地覆盖它（保留数据），而不是并排出第二份。
 fn existing_dir_with_id(base: &Path, id: &str) -> Option<PathBuf> {
-    let find = |want: &str| -> Option<PathBuf> {
-        let mut dirs: Vec<PathBuf> = std::fs::read_dir(base)
-            .ok()?
-            .flatten()
-            .map(|e| e.path())
-            .filter(|d| d.is_dir() && manifest_path(d).is_file())
-            .collect();
-        dirs.sort();
-        dirs.into_iter()
-            .find(|d| read_manifest(d).map(|m| m.id == want).unwrap_or(false))
-    };
-    find(id).or_else(|| legacy_ids_for(id).find_map(find))
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(base)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|d| d.is_dir() && manifest_path(d).is_file())
+        .collect();
+    dirs.sort();
+    if let Some(hit) = dir_with_manifest_id(&dirs, id) {
+        return Some(hit);
+    }
+    // 老名字只在新 ID 找不到时才用：两份都在时优先认新目录（用户已经装过新版）。
+    legacy_ids_for(id).find_map(|old| dir_with_manifest_id(&dirs, old))
+}
+
+/// 在已扫好的目录列表里挑出 manifest id 等于 `want` 的那个。
+///
+/// 单独写成函数而不是闭包：闭包参数写 `&str` 时生命周期推断容易绑死到一个具体
+/// 生命周期，同一个闭包既传 `&str` 又传 `&'static str` 会编译不过。
+fn dir_with_manifest_id(dirs: &[PathBuf], want: &str) -> Option<PathBuf> {
+    dirs.iter()
+        .find(|d| read_manifest(d).map(|m| m.id == want).unwrap_or(false))
+        .cloned()
 }
 
 /// plugin.json 的 id 只允许安全字符：它要当目录名用。
