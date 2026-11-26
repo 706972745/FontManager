@@ -104,6 +104,22 @@ jobs:
           }
           Write-Host "版本号六处一致，CHANGELOG 有对应段落 ✅"
 
+      # 发版门禁：单测必须全绿才允许打包。
+      #
+      # ci.yml 只做 `cargo check --all-targets`，注释给的理由是「避免测试对真实注册表 /
+      # 字体库的依赖在 runner 上不稳定」。但发版前一次都不跑，等于把「代码能编译」
+      # 当成「逻辑是对的」—— 2026-11-26 那次插件 ID 改名就是纯 Rust 逻辑改动
+      # （旧目录认领、面板 URL 常量），编译过不代表行为对。
+      # 红了就停在这里，比发出去再补一版便宜。
+      #
+      # 必须先 pnpm build：tauri-build 的 build.rs 会读 dist/（前端产物）。
+      - name: 前端构建（cargo test 前置，tauri-build 要读 dist/）
+        run: pnpm build
+
+      - name: Rust 单测（发版门禁）
+        working-directory: src-tauri
+        run: cargo test --locked
+
       # NSIS / WiX 打包工具链由 tauri 首次打包时从 GitHub CDN 现下（NSIS 2.3 MB、
       # WiX 10 MB），偶发 502/504。**不要缓存它**：一次 504 会在缓存目录留下半残包，
       # 之后恢复缓存就永远跳过下载、打包一直失败（2026-11-08 踩过）。
