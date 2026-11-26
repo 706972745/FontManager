@@ -75,9 +75,10 @@ test("确认下架：以目录探测为准，宽限期只放回「其实还在�
   );
   // 宽限期：只放回目录仍在的
   const tail = app.slice(app.indexOf("const giveUp = window.setTimeout"));
-  assert.match(tail.slice(0, 1200), /stillThere/, "宽限期要区分「还在」与「已删」");
-  assert.match(tail.slice(0, 1200), /180_000/, "最多盯 3 分钟");
-  assert.match(tail.slice(0, 1200), /if \(!\(await probePluginDir\(dir\)\)\) stillThere\.push\(id\)/, "200 = 还在 → 放回来");
+  // 1600 = 从 `const giveUp` 起算够不够看完整段（这段后来又加了「再问一次 API」的二次确认）
+  assert.match(tail.slice(0, 1600), /stillThere/, "宽限期要区分「还在」与「已删」");
+  assert.match(tail.slice(0, 1600), /180_000/, "最多盯 3 分钟");
+  assert.match(tail.slice(0, 1600), /if \(!\(await probePluginDir\(dir\)\)\) stillThere\.push\(id\)/, "200 = 还在 → 放回来");
 
   // 探测实现：不能只看 index.json
   const api = read("src/workshop/api.ts");

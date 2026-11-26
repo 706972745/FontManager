@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput.tsx";
-import { holdBlurGuard, panelApi } from "./api.ts";
+import { holdBlurGuard, panelApi, probePluginDir } from "./api.ts";
 import { useGithubAuth } from "./auth.ts";
 import {
   ALLOWED_EXTS,
@@ -25,6 +25,7 @@ import {
   GhError,
   PERMS,
   pickedFromApp,
+  pullStatus,
   readManifest,
   requestTakedown,
   uploadPlugins,
@@ -35,6 +36,16 @@ import {
   type UploadItem,
   type UploadPhase,
 } from "./upload.ts";
+import {
+  addTakedown,
+  addUploads,
+  dropTakedown,
+  dropUpload,
+  patchTakedown,
+  patchUpload,
+  readStore,
+  type SubmissionStore,
+} from "./submissions.ts";
 import { communityDirFor, type WorkshopEntry } from "../lib/workshop.ts";
 
 /**
@@ -95,6 +106,8 @@ export function UploadDialog({
   entries,
   removedIds,
   onRemoved,
+  onRefresh,
+  onChanged,
   onClose,
 }: {
   t: TFn;
@@ -105,6 +118,10 @@ export function UploadDialog({
   removedIds: string[];
   /** 下架提交成功 → 让父组件立刻把它从插件中心里藏掉 */
   onRemoved: (id: string) => void;
+  /** 请求父组件强拉一次清单（下架生效 / PR 合并后，中心里要马上反映出来） */
+  onRefresh: () => void;
+  /** 记录有变化（新增/结束）→ 父组件据此决定要不要持续轮询清单 */
+  onChanged: () => void;
   onClose: () => void;
 }) {
   /**
@@ -138,14 +155,35 @@ export function UploadDialog({
   /** 正在下架的目录（按钮显示 loading、其余禁用） */
   const [deleting, setDeleting] = useState<string | null>(null);
   /**
-   * 本次会话里已提交下架的目录。
+   * 已提交下架的目录。
    *
    * 以前提交完就把这一行从「我的插件」里剔掉：列表瞬间少一条，用户除了底下那句提示
    * 之外没有任何「它还在生效中」的反馈，容易以为点空了或者点错了。现在保留这一行、
    * 压灰并挂「已下架（待生效）」，等清单重算后条目真的消失，这行才跟着走。
+   *
+   * 初值从持久记录里取（2026-11-26）：弹窗一关就重新挂载，只靠组件 state 的话，
+   * 重开窗口这一行又变回「可以下架」——用户会认定刚才没下架成功。
    */
-  const [deleted, setDeleted] = useState<string[]>([]);
+  const [deleted, setDeleted] = useState<string[]>(() =>
+    readStore().takedowns.map((r) => r.dir),
+  );
+  /**
+   * 持久记录：已提交的 PR（等合并）与已提交的下架。
+   *
+   * 两个作用：① 重开弹窗还能看到「等待审批」的提示，不再凭空消失；
+   * ② 用来决定灰条上写「待生效」还是「已下架」——后者是目录探测确认仓库里
+   * 已经没了的时刻，清单重算前它就是最准的话。
+   */
+  const [subs, setSubs] = useState<SubmissionStore>(() => readStore());
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+
+  /**
+   * 记录一变就通知父组件：它据此决定「要不要每十几秒强拉一次清单」。
+   * 通知集中在这一处，其它地方只管更新 `subs`。
+   */
+  useEffect(() => {
+    onChanged();
+  }, [subs, onChanged]);
   /**
    * 待确认的下架请求。
    *
@@ -233,11 +271,56 @@ export function UploadDialog({
       // 别人的插件只有维护者能删；普通用户看到的是「我的插件」列表。
       // 登录名大小写不敏感（GitHub 允许清单里写成 `Helloooooseff`）。
       if (dir.slice(cut + 2).toLowerCase() !== login.toLowerCase() && !isMaintainer) continue;
+      // 用户点过「清除这条」：这一行不再占位置。插件在中心里**仍然隐藏**
+      // （removed 标记和记录都还在），只是不再把列表撑长。
+      if (subs.takedowns.some((r) => r.dir === dir && r.hidden)) continue;
       // 本会话提交的（deleted）或父组件已经确认下架的（removedIds）都算「待生效」
       out.push({ entry: e, dir, pending: deleted.includes(dir) || removedIds.includes(e.id) });
     }
     return out;
-  }, [entries, login, deleted, removedIds, isMaintainer]);
+  }, [entries, login, deleted, removedIds, isMaintainer, subs]);
+
+  /**
+   * 「我的提交」= 当前账号提交过、还没在中心里出现的那些 PR。
+   *
+   * 按目录署名过滤：换个账号登录不该看到别人的提交记录（这台机器上有记录不代表是你）。
+   */
+  const mySubs = useMemo(() => {
+    if (!login) return [];
+    return subs.uploads.filter((r) => ownerOf(r.dir).toLowerCase() === login.toLowerCase());
+  }, [subs, login]);
+
+  /** 「已完成」的那些（已合并 / 已关闭）——「清空已完成」只清这一批 */
+  const doneSubs = useMemo(() => mySubs.filter((r) => r.state !== "pending"), [mySubs]);
+
+  /**
+   * 移除一条上传记录。**纯本地**：PR 还在 GitHub 上，不会被撤销 ——
+   * 只是这条不再在弹窗里占位置（一次传十几个插件时，列表会很长）。
+   */
+  const forgetUpload = useCallback(
+    (dir: string) => setSubs(dropUpload(dir)),
+    [],
+  );
+
+  /** 一把清掉「已合并 / 已关闭」的记录（仍在等审核的保留，免得看不到进度） */
+  const clearDoneSubs = useCallback(() => {
+    let next = readStore();
+    for (const r of next.uploads) {
+      if (r.state !== "pending" && ownerOf(r.dir).toLowerCase() === (login ?? "").toLowerCase()) {
+        next = dropUpload(r.dir);
+      }
+    }
+    setSubs(next);
+  }, [login]);
+
+  /**
+   * 清除一条「已下架」记录：只是不再在「我上传的插件」里占一行。
+   * 记录本身留着（`hidden` 标记），这样清单没重算之前这一行不会变回「下架」按钮。
+   */
+  const hideTakedown = useCallback(
+    (dir: string) => setSubs(patchTakedown(dir, { hidden: true })),
+    [],
+  );
 
   // 清单重算后，已下架的目录会从 entries 里消失。这里把「孤儿」标记清掉，否则
   // 维护者手动把插件恢复上架（或聚合失败回滚）之后，那一行会永远只剩灰条、按钮回不来。
@@ -249,6 +332,137 @@ export function UploadDialog({
     const kept = deleted.filter((d) => present.has(d));
     if (kept.length !== deleted.length) setDeleted(kept);
   }, [entries, deleted]);
+
+  /**
+   * 记录被撤掉 → 灰条也要退回「可以下架」。
+   *
+   * 什么时候会撤：面板的宽限期确认这次下架**没生效**（目录还在仓库里）。
+   * 那时候如果弹窗还挂着灰条，用户既不能重试、也看不到按钮，只会更困惑。
+   */
+  useEffect(() => {
+    const recorded = new Set(readStore().takedowns.map((r) => r.dir));
+    setDeleted((prev) => {
+      const next = prev.filter((d) => recorded.has(d));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [subs, removedIds]);
+
+  /**
+   * 记录收工：清单里已经没有它 / 中心里已经有它。
+   *
+   * - 下架：目录从 entries 消失 = 聚合脚本确认过了，持久记录可以删；
+   * - 上传：条目出现在 entries 里 = 已经上架，不再需要「等审批」的行。
+   *
+   * 只在真有变化时 setState，否则每次 entries 刷新都会重渲染一轮。
+   */
+  useEffect(() => {
+    const dirs = new Set(
+      entries.map((e) => communityDirFor(e)).filter((d): d is string => !!d),
+    );
+    // 「已经上架」要**按版本比**：迭代老插件时 id 本来就在清单里，
+    // 只看 id 会在提交那一刻就把记录误删（用户就又看不到「等审批」了）。
+    const live = new Map(
+      entries.filter((e) => !e.official).map((e) => [e.id, e.version ?? ""]),
+    );
+    const cur = readStore();
+    let changed = false;
+    for (const rec of cur.takedowns) {
+      if (!dirs.has(rec.dir)) {
+        dropTakedown(rec.dir);
+        changed = true;
+      }
+    }
+    for (const rec of cur.uploads) {
+      // 清单里已经是这一版 = 合并并聚合完成，这条提交记录没有存在意义
+      if (live.get(rec.id) === rec.version) {
+        dropUpload(rec.dir);
+        changed = true;
+      }
+    }
+    if (changed) setSubs(readStore());
+  }, [entries]);
+
+  /**
+   * 下架到底生效了没有 —— **每 5 秒探一次目录**，不等清单。
+   *
+   * 以前只有父组件在盯，而且确认「没了」之后只是继续藏着：弹窗里那一行还是灰的
+   * 「已下架（待生效）」，用户盯着一动不动，就会以为没成功、再点一次。
+   * 现在探到目录 404 就落一个 `goneAt`：标签当场换成「已下架」，
+   * 同时请面板强拉一次清单（聚合脚本跑完后这一行会自然消失）。
+   *
+   * 用目录探测而不是清单：`index.json` 要等聚合脚本重算（实测 10 秒到 2 分半），
+   * 而且这台机器上的 GitHub 加速器还会让清单再旧好几分钟。
+   */
+  const takedownKey = subs.takedowns.map((r) => `${r.dir}:${r.goneAt ? 1 : 0}`).join(",");
+  useEffect(() => {
+    const rows = readStore().takedowns.filter((r) => !r.goneAt);
+    if (!rows.length) return;
+    let alive = true;
+    const tick = async () => {
+      for (const rec of rows) {
+        if (!alive) return;
+        try {
+          if (await probePluginDir(rec.dir)) {
+            if (!alive) return;
+            setSubs(patchTakedown(rec.dir, { goneAt: Date.now() }));
+            onRefresh();
+            // 一轮只探一个就够（探测是串行的，别把请求打满）
+            return;
+          }
+        } catch {
+          // 网络抖动 / 加速器抽风：下一轮再试
+        }
+      }
+    };
+    const first = window.setTimeout(() => void tick(), 1_200);
+    const timer = window.setInterval(() => void tick(), 5_000);
+    return () => {
+      alive = false;
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [takedownKey, onRefresh]);
+
+  /**
+   * 上架的 PR 到哪一步了：开窗先问一次，之后每分钟问一次。
+   *
+   * 一分钟而不是几秒：这是 api.github.com（未登录时限流 60 次/小时），
+   * 而合并本来就要人点，秒级轮询没有意义。合并后立刻请面板重拉清单 ——
+   * 「合并了但中心里没有，还得手动刷新」就是这么来的。
+   */
+  const uploadKey = subs.uploads
+    .filter((r) => r.state === "pending")
+    .map((r) => r.dir)
+    .join(",");
+  useEffect(() => {
+    const rows = readStore().uploads.filter((r) => r.state === "pending");
+    if (!rows.length) return;
+    let alive = true;
+    const tick = async () => {
+      for (const rec of rows) {
+        if (!alive) return;
+        try {
+          const state = await pullStatus(token, rec.prNumber);
+          if (!alive) return;
+          if (state === "open") {
+            setSubs(patchUpload(rec.dir, { checkedAt: Date.now() }));
+            continue;
+          }
+          setSubs(patchUpload(rec.dir, { state, checkedAt: Date.now() }));
+          if (state === "merged") onRefresh();
+        } catch {
+          // 限流 / 离线：下一轮再问，界面上保持「等待审核」
+        }
+      }
+    };
+    const first = window.setTimeout(() => void tick(), 800);
+    const timer = window.setInterval(() => void tick(), 60_000);
+    return () => {
+      alive = false;
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [uploadKey, token, onRefresh]);
 
   const removeOne = useCallback(
     async (id: string, dir: string, name: string, allowAny: boolean) => {
@@ -266,6 +480,8 @@ export function UploadDialog({
             setDeleted((d) => [...d, dir]);
             // 直推已经删完了：目录当场就该从中心里消失，别等下一次刷新
             onRemoved(id);
+            // 记一笔持久状态：关掉弹窗再打开，这一行仍然是「已下架」，不会又变回按钮
+            setSubs(addTakedown({ dir, id, name, mode: "direct", goneAt: Date.now() }));
             setDeleteMsg(t("uploadDeleteDone", { name }));
             return;
           } catch (e) {
@@ -280,6 +496,16 @@ export function UploadDialog({
         // 请求已经进闸门了：先在本地把它从中心里藏掉，父组件会轮询清单确认。
         // 不藏的话「已经下架还在显示、刷新也没用」—— 聚合脚本最慢要 2 分半。
         onRemoved(id);
+        setSubs(
+          addTakedown({
+            dir,
+            id,
+            name,
+            mode: "issue",
+            issueNumber: out.issueNumber,
+            issueUrl: out.issueUrl,
+          }),
+        );
         setDeleteMsg(t("uploadDeleteSubmitted", { number: out.issueNumber }));
       } catch (e) {
         setError(
@@ -297,6 +523,27 @@ export function UploadDialog({
 
   /** 上传时的署名就是登录名（不再有匿名分支） */
   const author = login ?? "";
+
+  /** 目录 → 下架记录：灰条上写「待生效」还是「已下架」，看它有没有 `goneAt` */
+  const takedownOf = useCallback(
+    (dir: string) => subs.takedowns.find((r) => r.dir === dir) ?? null,
+    [subs],
+  );
+
+  /**
+   * 提交时间按当前语言格式化，不自己拼「几分钟前」——
+   * 那需要九套语言的复数规则，而这里只要一个「什么时候提交的」。
+   */
+  const atText = useCallback(
+    (at: number) =>
+      new Date(at).toLocaleString(locale, {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    [locale],
+  );
 
   /** 还没提交的草稿：校验、计数、提交都只看这一批 */
   const pending = useMemo(() => drafts.filter((d) => !d.submitted), [drafts]);
@@ -470,6 +717,20 @@ export function UploadDialog({
         ),
       );
       setActiveKey(null);
+      // 落一份持久记录（2026-11-26）：关掉弹窗再打开，这一批仍然以「等待审核」
+      // 挂在「我的提交」里 —— 以前提示条是组件 state，一关就没了，用户以为没传成功。
+      setSubs(
+        addUploads(
+          batch.map((d) => ({
+            dir: `${d.form.id.trim()}__${author}`,
+            id: d.form.id.trim(),
+            name: d.form.name.trim() || d.dirName,
+            version: d.form.version.trim(),
+            prNumber: out.prNumber,
+            prUrl: out.prUrl,
+          })),
+        ),
+      );
       setBanner({ prUrl: out.prUrl, prNumber: out.prNumber });
     } catch (e) {
       // UploadMessage 自带 i18n key（还没选插件 / fork 没就绪）—— 直接翻，别再包一层
@@ -649,6 +910,69 @@ export function UploadDialog({
             )}
           </section>
 
+          {/* ①a 我的提交：已开 PR、还在等维护者合并的那些。
+              这块是**持久**的（localStorage），关掉弹窗再打开仍然在 ——
+              以前只有一条一次性的内联提示条，一关就没了，用户会以为没传成功。
+              合并 / 关闭后自动消失（见上面「记录收工」那个 effect）。 */}
+          {mySubs.length > 0 && (
+            <section className="ws-up-sec">
+              <h3 className="ws-up-sec-title">
+                {t("uploadSubsTitle")}
+                {/* 一次传/交十几个插件时列表会很长：已完成的可以一把清掉 */}
+                {doneSubs.length > 0 && (
+                  <button className="ws-up-headlink" onClick={clearDoneSubs}>
+                    {t("uploadSubsClearDone")}
+                  </button>
+                )}
+              </h3>
+              <p className="ws-up-hint">{t("uploadSubsHint")}</p>
+              <ul className="ws-up-list">
+                {mySubs.map((r) => (
+                  <li
+                    key={r.dir}
+                    // 不压灰：它是「等在队列里」，不是「不可操作」。
+                    // 压灰是给「已下架待生效」那种确实不能点的行用的。
+                    className="ws-up-item"
+                  >
+                    <span className="ws-up-item-main" style={{ cursor: "default" }}>
+                      <span className="ws-up-item-name">
+                        {r.name}
+                        <span
+                          className={r.state === "merged" ? "ws-up-donetag" : "ws-up-tag-pending"}
+                        >
+                          {r.state === "merged"
+                            ? t("uploadSubsMerged")
+                            : r.state === "closed"
+                              ? t("uploadSubsClosed")
+                              : t("uploadSubsPending")}
+                        </span>
+                      </span>
+                      <span className="ws-up-item-meta">
+                        v{r.version} · #{r.prNumber} · {atText(r.at)}
+                      </span>
+                    </span>
+                    <button
+                      className="ws-up-iconbtn"
+                      onClick={() => void panelApi.openUrl(r.prUrl)}
+                      aria-label={t("uploadOpenPr")}
+                      title={t("uploadOpenPr")}
+                    >
+                      <ExternalLink size={13} strokeWidth={1.5} />
+                    </button>
+                    <button
+                      className="ws-up-iconbtn"
+                      onClick={() => forgetUpload(r.dir)}
+                      aria-label={t("uploadRecRemove")}
+                      title={t("uploadRecRemove")}
+                    >
+                      <X size={13} strokeWidth={1.6} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {/* ①b 我上传过的插件：下架入口。
               归属按**署名**认，不按"这台电脑"：目录名是 `plugins/<id>__<登录名>`，
               所以换任何一台电脑登录同一个账号，既能覆盖更新，也能在这里下架。 */}
@@ -674,8 +998,26 @@ export function UploadDialog({
                       </span>
                     </span>
                     {pending ? (
-                      // 已提交、等清单重算：右侧按钮换成灰标签，避免「再点一次」造出重复请求
-                      <span className="ws-up-tag-pending">{t("uploadDeletePendingTag")}</span>
+                      // 已提交、等清单重算：右侧按钮换成灰标签，避免「再点一次」造出重复请求。
+                      // 目录探测确认仓库里已经没了 → 文案从「待生效」变「已下架」，
+                      // 不然这一行会一直停在「待生效」，看起来像没成功。
+                      <>
+                        <span className="ws-up-tag-pending">
+                          {takedownOf(dir)?.goneAt
+                            ? t("uploadDeleteDoneTag")
+                            : t("uploadDeletePendingTag")}
+                        </span>
+                        {/* 一次性下架很多插件时，这些灰条会排一长列：
+                            清掉只是不再占位置，插件在中心里仍然是隐藏的。 */}
+                        <button
+                          className="ws-up-iconbtn"
+                          onClick={() => hideTakedown(dir)}
+                          aria-label={t("uploadRecRemove")}
+                          title={t("uploadRecRemove")}
+                        >
+                          <X size={13} strokeWidth={1.6} />
+                        </button>
+                      </>
                     ) : (
                       <button
                         className="ws-linkbtn"
@@ -775,7 +1117,7 @@ export function UploadDialog({
                       </button>
                       {done ? (
                         <button
-                          className="ws-clear"
+                          className="ws-up-iconbtn"
                           onClick={() => void panelApi.openUrl(done.prUrl)}
                           aria-label={t("uploadOpenPr")}
                           title={t("uploadOpenPr")}
@@ -784,7 +1126,7 @@ export function UploadDialog({
                         </button>
                       ) : (
                         <button
-                          className="ws-clear"
+                          className="ws-up-iconbtn"
                           onClick={() => removeDraft(d.key)}
                           disabled={busy}
                           aria-label={t("uploadRemove")}

@@ -707,6 +707,56 @@ export async function canMaintain(token: string): Promise<boolean> {
   }
 }
 
+/**
+ * 目录是否**真的**已经不在上游 —— 走 api.github.com，不看任何缓存。
+ *
+ * 为什么下架确认需要这第二口径：`probePluginDir()`（raw.githubusercontent.com）
+ * 在国内常被 hosts 指到本地加速器，那个加速器**忽略查询串**照缓存回 200，
+ * 于是「已经删掉的目录」还会被探成「还在」。以前宽限期到点就据此把插件放回列表，
+ * 表现正是 2026-11-26 用户报的「下架了，过一会儿又能点下架」。
+ *
+ * GitHub API 的 contents 端点不做这种缓存：404 = 真没了。公开仓库免登录也能查，
+ * 只有 IP 级限流（60 次/小时），所以只在宽限期兜底判定时用一次，不进轮询。
+ */
+export async function probePluginDirApi(dir: string): Promise<boolean> {
+  const res = await fetch(`https://api.github.com${UPSTREAM_API}/contents/plugins/${dir}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    cache: "no-store",
+  });
+  if (res.status === 404) return true;
+  if (res.ok) return false;
+  throw new GhError(res.status, `probe HTTP ${res.status}`);
+}
+
+/** PR 的结局：还在等合并 / 已合并（上架成功）/ 被关掉（没通过） */
+export type PullState = "open" | "merged" | "closed";
+
+/**
+ * 查一次自己那份上传 PR 的状态。
+ *
+ * 上传弹窗靠它把「等待审批」变成一句确定的话：合并了 → 提醒面板重拉清单
+ * （新插件这时才出现在中心里）；被关掉 → 直接说没通过，别让人一直等。
+ * 传了 token 就用（5000 次/小时），没登录也能查公开仓库（60 次/小时，够 1 分钟一次）。
+ */
+export async function pullStatus(token: string | null, number: number): Promise<PullState> {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`https://api.github.com${UPSTREAM_API}/pulls/${number}`, {
+    headers,
+    cache: "no-store",
+  });
+  if (!res.ok) throw new GhError(res.status, `pull HTTP ${res.status}`);
+  const data = (await res.json()) as { merged?: boolean; state?: string };
+  if (data.merged) return "merged";
+  return data.state === "closed" ? "closed" : "open";
+}
+
 /** 下架结果：直推成功，或退回「开了个 PR，等合并」 */
 export interface DeleteResult {
   mode: "direct" | "pr";

@@ -931,6 +931,24 @@ body {
   color: var(--ws-text);
 }
 
+/* 区块标题右侧的小动作（「清空已完成」）——不能抢标题的视觉重量 */
+.ws-up-headlink {
+  margin-left: 8px;
+  padding: 0;
+  font-size: var(--ws-fs-10);
+  font-weight: 400;
+  color: var(--ws-text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ws-up-headlink:hover {
+  color: var(--ws-accent);
+}
+
 .ws-up-hint {
   margin: 0;
   font-size: var(--ws-fs-10);
@@ -1711,6 +1729,30 @@ body {
   opacity: 0.6;
 }
 
+/* 列表行右侧的图标按钮（打开请求 / 删除草稿）。
+   不能复用 `.ws-clear`：它是 `position: absolute`（给弹窗标题栏用的），
+   放进列表行会按视口定位，图标直接飞到窗口右边缘（2026-11-26 实测）。 */
+.ws-up-iconbtn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ws-text-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--ws-radius-ctl);
+  cursor: pointer;
+}
+
+.ws-up-iconbtn:hover {
+  color: var(--ws-text);
+  background: var(--ws-hover);
+}
+
+
 .ws-up-tag-pending {
   flex: none;
   margin-right: 4px;
@@ -1722,4 +1764,47 @@ body {
   color: var(--ws-text-3);
   border: 1px solid var(--ws-line);
   background: color-mix(in srgb, var(--ws-text) 6%, transparent);
+}
+
+/* ═══ 全局滚动条：与主程序同一套（1px 发丝线，靠近变 6px 可拖）═══════════
+   主包 app.css 的最后一段是 `*::-webkit-scrollbar` 全局规则，`.scroll-hot` 由
+   `src/App.tsx` 挂到「指针附近的那个滚动容器」上。面板是**独立产物**，不加载主包
+   的 CSS，所以这里照抄一份数值 —— 否则插件中心里是 Chromium 那条又宽又浅的默认条，
+   和软件其它地方不是一个东西（用户 2026-11-10 的原始口径：全软件统一）。
+
+   槽位固定 10px，视觉宽度靠透明 border 收细：
+   · 平时 `border: 4.5px` → 视觉 1px，就是一条发丝线；
+   · 指针靠近容器右缘 14px 内（面板 App.tsx 的 `useScrollHot`）/ 压在条上 / 正拖着
+     → 边收成 2px → 视觉 6px，抓得住、拖得动；
+   · 槽位不随状态变，所以变粗时内容不会跳一下。
+
+   ⚠️ 这里**不能**写 `scrollbar-width` / `scrollbar-color`：Chromium 里只要声明了
+   `scrollbar-width`，`::-webkit-scrollbar` 系列会被整体禁用（主包那边踩过）。 */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--ws-text-3);
+  background-clip: padding-box;
+  border: 4.5px solid transparent;
+  border-radius: 999px;
+  min-height: 36px;
+}
+
+.scroll-hot::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active {
+  border-width: 2px;
+  background-color: color-mix(in srgb, var(--ws-text) 40%, transparent);
+  background-clip: padding-box;
 }

@@ -28,6 +28,8 @@ import {
 import { isPanelLocale, panelT, type PanelLocale } from "./i18n.ts";
 import { BlinkCaretInput } from "../design/primitives/BlinkCaretInput.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
+import { dropTakedown, pendingCount, readStore } from "./submissions.ts";
+import { probePluginDirApi } from "./upload.ts";
 import { STAGGER_CAP, STAGGER_STEP, scrimFade, springSoft } from "../design/springs.ts";
 
 /**
@@ -147,7 +149,100 @@ function readSession(): { locale: PanelLocale; theme: string } {
   return { locale: isPanelLocale(lang) ? lang : "en", theme };
 }
 
+/**
+ * 「宽限期到了、raw 探测还说目录在」→ 再问一次 GitHub API 才敢把它放回列表。
+ *
+ * raw 那条链路在国内常被 hosts 指到本地加速器：它**忽略查询串**、照缓存回 200，
+ * 于是已经删掉的目录也会被探成「还在」。以前据此放回列表，表现就是
+ * 「下架了，过一会儿又能点下架」（2026-11-26 用户报的第二条）。
+ * API 的 contents 端点没这层缓存，404 才算没了；问不到（限流/断网）就维持隐藏。
+ */
+async function stillInRepo(
+  ids: string[],
+  dirOf: (id: string) => string | null,
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const id of ids) {
+    const dir = dirOf(id);
+    if (!dir) continue;
+    try {
+      if (!(await probePluginDirApi(dir))) out.push(id);
+    } catch {
+      // 限流 / 断网：宁可继续藏着，也别把用户已经下架的东西放回来
+    }
+  }
+  return out;
+}
+
+/**
+ * 滚动条「靠近才变粗」—— 与主程序同一套（主包那份在 `src/App.tsx`）。
+ *
+ * 面板是独立产物，CSS 也只能自带（见 panel.css 末尾的 `*::-webkit-scrollbar`），
+ * 但「1px 发丝线抓不住」这件事同样存在，所以这套交互也要搬过来：
+ * 指针落在某个**能竖向滚动**的容器右缘 14px 内，就给该容器挂 `.scroll-hot`。
+ *
+ * 只判窗口右缘是不够的：上传弹窗的列表、详情弹层都缩在中间，窗口边上的判定
+ * 永远不生效（主包 2026-11-10 二改就是为了这个）。指针压在滚动条本身时拿不到
+ * mousemove，class 会保持上一次的结果 —— 正好，手按上去就能拖。
+ */
+function useScrollHot(): void {
+  useEffect(() => {
+    let raf = 0;
+    let hot: HTMLElement | null = null;
+    const clearHot = () => {
+      hot?.classList.remove("scroll-hot");
+      hot = null;
+    };
+    const onMove = (e: MouseEvent) => {
+      if (raf) return;
+      const { clientX, clientY, target } = e;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        let found: HTMLElement | null = null;
+        for (let n = target as HTMLElement | null; n && n !== document.body; n = n.parentElement) {
+          // 只有真能滚的容器才算（内容比可视区高），否则整页都会被误判
+          if (n.scrollHeight - n.clientHeight <= 2) continue;
+          const r = n.getBoundingClientRect();
+          // 槽位 10px，再留 4px 余量：14px 内且指针确实在这个容器的上下范围里
+          if (
+            clientX >= r.right - 14 &&
+            clientX <= r.right + 1 &&
+            clientY >= r.top &&
+            clientY <= r.bottom
+          ) {
+            found = n;
+            break;
+          }
+        }
+        if (found !== hot) {
+          clearHot();
+          if (found) found.classList.add("scroll-hot");
+          hot = found;
+        }
+      });
+    };
+    const onLeave = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      clearHot();
+    };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    document.addEventListener("mouseleave", onLeave);
+    window.addEventListener("blur", onLeave);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("blur", onLeave);
+      if (raf) cancelAnimationFrame(raf);
+      clearHot();
+    };
+  }, []);
+}
+
 export function WorkshopPanel() {
+  // 全软件统一的滚动条手感：靠近容器右缘才从 1px 变 6px
+  useScrollHot();
+
   const { locale, theme } = useMemo(readSession, []);
   const t = useCallback(
     (key: string, vars?: Record<string, string | number>) => panelT(locale, key, vars),
@@ -203,7 +298,24 @@ export function WorkshopPanel() {
    * 「已经下架了还在显示，刷新也没用」。既然面板**确定**这次提交成功了，
    * 就先在本地把它藏掉，等新清单确认它真的没了再把标记清掉。
    */
-  const [removed, setRemoved] = useState<Record<string, number>>(() => readRemoved());
+  const [removed, setRemoved] = useState<Record<string, number>>(() => {
+    const base = readRemoved();
+    // 持久的下架记录也参与「先藏起来」：同一窗口里重开弹窗、重渲染都必须还认得它，
+    // 否则灰条会变回「可以下架」（2026-11-26 用户反馈的那条）。
+    for (const rec of readStore().takedowns) {
+      if (base[rec.id] === undefined) base[rec.id] = rec.at;
+    }
+    return base;
+  });
+  /**
+   * 「我提交了、但还没落地」的条数（上传等合并 + 下架等生效）。
+   *
+   * 它只影响一件事：**要不要持续强拉清单**。有未落地的动作时每 15 秒拉一次，
+   * 合并 / 生效后中心里就能自己冒出来，不用用户手动点刷新。
+   */
+  const [subsVersion, setSubsVersion] = useState(0);
+  const pendingSubs = useMemo(() => pendingCount(), [subsVersion]);
+  const onSubsChanged = useCallback(() => setSubsVersion((n) => n + 1), []);
 
   const installedIds = useMemo(() => new Set(installed.map((p) => p.id)), [installed]);
   /**
@@ -281,6 +393,13 @@ export function WorkshopPanel() {
       setLoading(false);
     }
   }, []);
+
+  /**
+   * 弹窗「请求面板强拉一次清单」用的回调。
+   * 必须是**稳定的**：它进了弹窗那两个轮询 effect 的依赖数组，
+   * 每次父组件重渲染都换一个新函数的话，定时器会被反复重置（探测节奏全乱）。
+   */
+  const refreshIndex = useCallback(() => void load(true), [load]);
 
   /**
    * 把面板的错误翻译成一句本地化的话。
@@ -490,12 +609,19 @@ export function WorkshopPanel() {
           }
         }
         if (!alive || !stillThere.length) return;
-        setRemoved((prev) => {
-          const next = { ...prev };
-          for (const id of stillThere) delete next[id];
-          saveRemoved(next);
-          return next;
-        });
+        // 只有 GitHub API 能避开本地加速器的缓存（见 stillInRepo）
+        const reallyThere = await stillInRepo(stillThere, dirOf);
+        if (!alive || !reallyThere.length) return;
+        const next = { ...removedRef.current };
+        for (const id of reallyThere) delete next[id];
+        saveRemoved(next);
+        setRemoved(next);
+        // 真没删掉：持久记录也要撤，否则弹窗里永远是灰条
+        for (const id of reallyThere) {
+          const dir = dirOf(id);
+          if (dir) dropTakedown(dir);
+        }
+        setNotice(t("takedownFailed"));
       })();
     }, 180_000);
 
@@ -508,6 +634,19 @@ export function WorkshopPanel() {
       window.clearTimeout(giveUp);
     };
   }, [removedKey, load]);
+
+  /**
+   * 有「已经提交、还没落地」的动作（等合并的 PR / 等生效的下架）时，
+   * 每 15 秒强拉一次清单：PR 合并后新插件就能自己出现在中心里，
+   * 不用用户手动点刷新（2026-11-26 用户报的「上架了中心也不自动刷新」）。
+   *
+   * 只在弹窗开着时轮询：关掉弹窗后，等清单一变，弹窗下次打开也会重新读盘。
+   */
+  useEffect(() => {
+    if (!uploadOpen || pendingSubs === 0) return;
+    const timer = window.setInterval(() => void load(true), 15_000);
+    return () => window.clearInterval(timer);
+  }, [uploadOpen, pendingSubs, load]);
 
   // 首次温馨提醒：localStorage 记忆已读（方案 §7.3 第 1 条）
   const [bannerSeen, setBannerSeen] = useState(() => {
@@ -944,6 +1083,8 @@ export function WorkshopPanel() {
             entries={entries ?? []}
             removedIds={Object.keys(removed)}
             onRemoved={markRemoved}
+            onRefresh={refreshIndex}
+            onChanged={onSubsChanged}
             onClose={() => setUploadOpen(false)}
           />
         )}
