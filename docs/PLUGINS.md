@@ -202,7 +202,7 @@ FM-XXX-XXX
 - 没有图形库的运行时（精简版 Python 没有 `tkinter`）要有降级路径，例如退化成系统
   文件夹选择框；直接崩掉会让用户看到「插件启动 1 秒内就退出」。
 
-参考实现：`examples/plugin-specimen-export/main.py` 的 `open_settings_panel()`。
+参考实现：官方件 `FM-FONT-SPEC`（`Manager-Plugin` 仓的 `FM-FONT-SPEC/main.py`）里的 `open_settings_panel()`。
 
 ## 插件行右键菜单（`"on": "plugin"`）
 

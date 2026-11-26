@@ -84,3 +84,9 @@ __pycache__/
 
 # 给同事的内部交接文档：只在本地协作，不进公库
 /docs/AssetManager-接入插件中心.md
+
+# agent 的任务记录（本地过程文件，不进库）
+/.wb-exec/
+
+# 本地设计草稿
+/docs/架构设计-*.md

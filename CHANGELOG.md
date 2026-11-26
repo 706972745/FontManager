@@ -4,6 +4,24 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.8.0] — 2026-11-26
+
+### 变更
+
+- **仓库按「源码 + 必需文件」瘦身**：只留能构建、能跑、能验证的东西，设计与过程文档移出仓库
+  （需要时从 git 历史取回）。删除 61 个文件：
+  - `docs/UI设计交付规格书.{md,html}`、`docs/图标规范.md`、`docs/交互细节优化-2.4.1.md`
+  - `docs/icons/`（图标交付件与预览图 44 个）
+  - `examples/`（示例插件 —— 参考实现改指 `Manager-Plugin` 仓的 `FM-FONT-SPEC`）
+  - `src-tauri/terminal-fonts.md`
+  - `tools/shoot/`、`tools/shoot-readme.mjs`、`tools/shot*.py`（README 截图工具链；
+    将来要重拍截图，从本提交之前的 git 历史取回即可，产物在仓库根目录的 png 里）
+- **保留**：`src/`、`src-tauri/`（含内置运行时、图标、安装器）、`public/`、`tests/`、`tools/`
+  （构建与 CI 实际调用的 6 个脚本）、`.github/`、根配置、`README.md`（含 15 张界面截图）、
+  `CHANGELOG.md`、`LICENSE`、`CONTRIBUTING.md`、`CODE_SIGNING_POLICY.md`、
+  `docs/PLUGINS.md`、`docs/TRANSLATING.md`、`docs/多软件共用插件库.md`、`mcp/`。
+- **功能无变化**：这一版只调整仓库内容，不涉及运行逻辑；版本号进 minor 是因为仓库结构变了。
+
 ## [2.7.9] — 2026-11-26
 
 ### 变更
