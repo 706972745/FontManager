@@ -1167,9 +1167,17 @@ async fn api_install(
             // 从老 ID 升上来的（`com.fontmanager.font-sync` → `FM-FONT-SYNC`）：
             // 安装是**原地覆盖**老目录（见 plugins::existing_dir_with_id），但老实例
             // 还在内存里跑着，它注册的右键菜单会和新装的那份同时出现 —— 停掉它。
-            // 没在运行会返回 Err，忽略即可。
+            // 它本来是启用状态的话，紧接着用**新 ID** 起来，用户不会看到插件莫名关掉。
+            // disable 对没在运行的 id 返回 Err，正好用来判断「刚才是不是在跑」。
             for old in crate::plugins::legacy_ids_for(&outcome.id) {
-                let _ = crate::plugins::disable(old);
+                if crate::plugins::disable(old).is_ok() {
+                    if let Err(e) = crate::plugins::enable(&outcome.id) {
+                        crate::diag::log(&format!(
+                            "[workshop] 旧 ID {} 已停，但用新 ID 起来失败（用户在插件页手动打开即可）：{e}",
+                            old
+                        ));
+                    }
+                }
             }
             // 主窗口还停在启动时那份插件清单：广播一条变更事件让它立刻重拉，
             // 「装完在插件中心看得见、主界面里却搜不到」就是这么来的。
