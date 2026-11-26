@@ -2,7 +2,11 @@
  * 打包「插件中心面板」（插件中心 M1，v3）。
  *
  * 输入：vite 构建产出的 `dist/workshop.html` + 它真正用到的那几个 chunk。
- * 输出：`workshop-panel.zip`（含 workshop.html 与 assets/），另打印 sha256 / 体积 / 内部结构。
+ * 输出：`panel-fm.zip`（含 workshop.html 与 assets/），另打印 sha256 / 体积 / 内部结构。
+ *
+ * **资产名带软件前缀**（`panel-fm.zip` / `panel-fm-meta.json`）：插件库与发布仓是
+ * FontManager 和 AssetManager 共用的，面板各自发布、互不覆盖。AssetManager 将来出
+ * `panel-am.zip`，主程序读的是自己那一个固定名字（见 docs/多软件共用插件库.md）。
  *
  * 为什么只打包「用到的」那几个 chunk：vite 的多入口构建会把公共依赖（react 等）
  * 拆成共享 chunk，主程序与面板都会引用它们。把整个 dist/ 塞进 zip 会把主程序的
@@ -20,7 +24,7 @@ import { fileURLToPath } from "url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const outDir = process.env.WORKSHOP_PANEL_OUT ?? "E:/Users/87557/文档/wordbuddy/软件迭代/_tmp/workshop-panel-out";
-const outZip = join(outDir, "workshop-panel.zip");
+const outZip = join(outDir, "panel-fm.zip");
 
 /** 收集 workshop.html 引用到的所有 chunk（含它们 import 的共享 chunk） */
 function collectAssets() {

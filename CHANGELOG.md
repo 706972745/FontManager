@@ -8,9 +8,23 @@ All notable changes to FontManager are documented here. The format follows
 
 ### 变更
 
+- **插件库改成「多软件共用」**（2026-11-26 契约，见 `docs/多软件共用插件库.md`）：
+  - 两个仓库改名：`FontManager-Workshop` → **`Manager-Workshop`**、`FontManager-Plugin` → **`Manager-Plugin`**；
+  - 官方插件 ID 一并改成 `FM-*`（`FM-FONT-SYNC`、`FM-FONT-STAT`、`FM-FONT-SPEC`、
+    `FM-FONT-APPLY`、`FM-DEMO-HELLO`），release 资产名 = 插件 ID；
+  - registry 除了全量 `index.json`，还按前缀产出切片 `by-app/fm.json` / `by-app/am.json`，
+    **客户端只拉自己那一片**（`by-app/fm.json`）—— 别的软件的插件根本不进内存；
+  - 面板发布资产按软件分开命名：`panel-fm.zip` + `panel-fm-meta.json`
+    （AssetManager 将来用 `panel-am.*`，不会再互相覆盖）；
+  - 新增 `docs/AssetManager-接入插件中心.md`：给同事的接入步骤、验收清单与 10 条坑。
+- **老 ID 的插件目录会被自动认领**：用户机器上还留着 `com.fontmanager.font-sync` 这类目录，
+  安装新 ID 时按 `LEGACY_ID_ALIASES` 找到它并**原地覆盖**（config / state 保留），不会并排
+  装出第二份、右键菜单不会出现两条一样的项；装完顺带停掉老 ID 的运行实例。
+  插件的**存储键不跟着 ID 改**（凭据名仍是 `FontManager/font-sync/vault`，
+  数据仍在 `%APPDATA%\FontManager\font-sync\`），所以令牌与同步状态都在，不用重新登录。
 - **插件 ID 统一成 `FM-XXX-XXX`**（大写 `FM` + 两段字母或数字，≤ 40 位）：插件仓库要跨软件
   共用，各占一个前缀才不会互相抢名字。插件中心**只识别 `FM-` 前缀的插件**，其余一条都不显示
-  （官方件同样过滤，所以官方插件也一起改名，对照表见 `docs/插件ID-FM前缀-迁移.md`）；
+  （官方件同样过滤，所以官方插件也一起改名，对照表见 `docs/多软件共用插件库.md`）；
   上传对话框顶部常驻说明，ID 不合规时本地就拦住、提交不了，不用等 CI 打回。
   registry 的 `validate_plugins.py` 与聚合脚本需用同一条正则（`^FM-[A-Za-z0-9]+-[A-Za-z0-9]+$`）。
 - **插件名称上限 15 → 25 字**：15 位对「Adobe 套字器（批量）」这类中文名太紧，用户只能起半截名字。

@@ -15,7 +15,7 @@
 import { isPluginId, PLUGIN_ID_MAX } from "../lib/workshop.ts";
 
 const OWNER = "706972745";
-const REPO = "FontManager-Workshop";
+const REPO = "Manager-Workshop";
 const UPSTREAM_API = `/repos/${OWNER}/${REPO}`;
 
 /**

@@ -140,7 +140,7 @@ test("下架走 [takedown] issue：只发一个 issue，不碰 fork / PR", async
   assert.equal(calls.length, 1, "下架只该有一次请求（issue）；碰 fork 就会重新掉进 404 坑");
   const req = calls[0];
   assert.equal(req.method, "POST");
-  assert.equal(req.url, "https://api.github.com/repos/706972745/FontManager-Workshop/issues");
+  assert.equal(req.url, "https://api.github.com/repos/706972745/Manager-Workshop/issues");
   assert.equal(req.body.title, "[takedown] plugins/FM-ADOBE-FONT__alice");
   assert.match(req.body.body, /@alice/);
   assert.match(req.body.body, /plugins\/FM-ADOBE-FONT__alice/);

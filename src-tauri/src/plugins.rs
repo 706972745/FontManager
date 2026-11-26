@@ -1024,20 +1024,52 @@ fn locate_manifest<R: std::io::Read + std::io::Seek>(
     Err("zip 里没找到 plugin.json —— 这不是插件包（字体 zip 包请直接拖进字体库安装）".into())
 }
 
+/// 历史 ID → 当前 ID（2026-11-26 插件 ID 统一成 `FM-XXX-XXX`）。
+///
+/// 改名的理由不是「好看」：插件库要跨软件共用，前缀就是软件编号。但用户机器上
+/// 早就装着一批老 ID 的目录（`com.fontmanager.font-sync` 等），manifest 里写的是旧 id。
+/// 如果不管它们，用户在插件中心点「安装」会**再装一份**：旧的那份还在跑、菜单还在，
+/// 新装的那份也注册菜单 —— 右键菜单里出现两条一模一样的项。
+///
+/// 所以这里维护一张「老名字」表：安装/卸载/打开目录时按它认领老目录，
+/// 装的时候**原地覆盖**（config / state / secret 这些数据文件都留着），不新建目录。
+///
+/// 加新条目时注意：这张表只能增，不能删 —— 删了就等于让还装着老版本的用户
+/// 永远变成「两份插件」。存储键（凭据名、%APPDATA% 子目录）**不要**跟着改，
+/// 那是用户数据的位置，不是插件的身份。
+pub const LEGACY_ID_ALIASES: &[(&str, &str)] = &[
+    ("com.fontmanager.font-sync", "FM-FONT-SYNC"),
+    ("com.fontmanager.example.font-stats", "FM-FONT-STAT"),
+    ("com.fontmanager.example.specimen-export", "FM-FONT-SPEC"),
+    ("com.fontmanager.font-apply", "FM-FONT-APPLY"),
+    ("com.example.hello-plugin", "FM-DEMO-HELLO"),
+];
+
+/// 某个当前 ID 曾经用过的名字（安装/卸载时用来认领老目录）。
+pub(crate) fn legacy_ids_for(id: &str) -> impl Iterator<Item = &'static str> + '_ {
+    LEGACY_ID_ALIASES
+        .iter()
+        .filter(move |(_, new)| *new == id)
+        .map(|(old, _)| *old)
+}
+
 /// 在插件根目录里找「manifest id 相同」的已装目录（目录名可能与 id 不同）。
+///
+/// 先按当前 ID 找；找不到再按历史 ID 找 —— 老用户升级后点「安装」时，
+/// 这一步把老目录交出去，安装流程就会原地覆盖它（保留数据），而不是并排出第二份。
 fn existing_dir_with_id(base: &Path, id: &str) -> Option<PathBuf> {
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(base)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|d| d.is_dir() && manifest_path(d).is_file())
-        .collect();
-    dirs.sort();
-    dirs.into_iter().find(|d| {
-        read_manifest(d)
-            .map(|m| m.id == id)
-            .unwrap_or(false)
-    })
+    let find = |want: &str| -> Option<PathBuf> {
+        let mut dirs: Vec<PathBuf> = std::fs::read_dir(base)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|d| d.is_dir() && manifest_path(d).is_file())
+            .collect();
+        dirs.sort();
+        dirs.into_iter()
+            .find(|d| read_manifest(d).map(|m| m.id == want).unwrap_or(false))
+    };
+    find(id).or_else(|| legacy_ids_for(id).find_map(find))
 }
 
 /// plugin.json 的 id 只允许安全字符：它要当目录名用。
@@ -3075,6 +3107,43 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         d
     }
+    #[test]
+    fn legacy_id_adopts_old_plugin_dir() {
+        // 2026-11-26 插件 ID 改名（com.fontmanager.font-sync → FM-FONT-SYNC）。
+        // 用户机器上还躺着老目录，manifest 里写的是旧 id：点「安装」必须认领它、
+        // 原地覆盖，否则会并排出第二份 —— 右键菜单里出现两条一样的项。
+        let tmp = tempfile_dir("zfm-legacy-id");
+        let old = tmp.join("com.fontmanager.font-sync");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(
+            manifest_path(&old),
+            r#"{"id":"com.fontmanager.font-sync","name":"x","version":"0.9.5","entry":"main.py","apiLevel":1}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            existing_dir_with_id(&tmp, "FM-FONT-SYNC").as_deref(),
+            Some(old.as_path()),
+            "新 ID 没装过时，应当认领老目录（安装就会覆盖它）"
+        );
+
+        // 两份都在（用户先装过新版、老目录没删）→ 优先认新 ID 那份，别退回老的
+        let new = tmp.join("FM-FONT-SYNC__official");
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(
+            manifest_path(&new),
+            r#"{"id":"FM-FONT-SYNC","name":"x","version":"0.9.5","entry":"main.py","apiLevel":1}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            existing_dir_with_id(&tmp, "FM-FONT-SYNC").as_deref(),
+            Some(new.as_path()),
+            "两份都在时优先认新目录"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     #[test]
     fn open_url_classification_panel_browser_reject() {
         // 回环 → 应用内面板窗口

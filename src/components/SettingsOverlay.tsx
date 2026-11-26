@@ -45,7 +45,7 @@ const REQUEST_LANGUAGE_URL = "https://github.com/706972745/FontManager/issues/ne
  * 都在这个仓库里。（2026-11-15：官方插件仓的外链常量已随「获取更多插件」一行一起删除，
  * 官方插件同样在插件中心里展示、下载。）
  */
-const PLUGIN_CENTER_REPO_URL = "https://github.com/706972745/FontManager-Workshop";
+const PLUGIN_CENTER_REPO_URL = "https://github.com/706972745/Manager-Workshop";
 
 /** 「导出时连字体一起打包」的记忆位（本机习惯，不进 state.json） */
 const EXPORT_FONTS_KEY = "zfm.exportFonts";

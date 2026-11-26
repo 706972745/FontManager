@@ -44,11 +44,11 @@ use tauri::{AppHandle, Emitter};
 /// 用户点「下载插件中心面板」直接失败。meta 与 zip 同在 release v1、同批发布
 /// → 两边永远一致（2026-11-15 实测 raw 的 index.json 也踩过同一坑）。
 pub const PANEL_META_URL: &str =
-    "https://github.com/706972745/FontManager-Workshop/releases/download/v1/panel-meta.json";
+    "https://github.com/706972745/Manager-Workshop/releases/download/v1/panel-fm-meta.json";
 
 /// 面板发布包（GitHub release 资产直链，公开、免登录）
 pub const PANEL_RELEASE_URL: &str =
-    "https://github.com/706972745/FontManager-Workshop/releases/download/v1/workshop-panel.zip";
+    "https://github.com/706972745/Manager-Workshop/releases/download/v1/panel-fm.zip";
 
 /// 插件中心允许访问的主机：raw（index / meta / 社区件）+ github release 资产链路。
 ///
@@ -1164,6 +1164,13 @@ async fn api_install(
     };
     match result {
         Ok(outcome) => {
+            // 从老 ID 升上来的（`com.fontmanager.font-sync` → `FM-FONT-SYNC`）：
+            // 安装是**原地覆盖**老目录（见 plugins::existing_dir_with_id），但老实例
+            // 还在内存里跑着，它注册的右键菜单会和新装的那份同时出现 —— 停掉它。
+            // 没在运行会返回 Err，忽略即可。
+            for old in crate::plugins::legacy_ids_for(&outcome.id) {
+                let _ = crate::plugins::disable(old);
+            }
             // 主窗口还停在启动时那份插件清单：广播一条变更事件让它立刻重拉，
             // 「装完在插件中心看得见、主界面里却搜不到」就是这么来的。
             let _ = st.app.emit("plugins:changed", ());
@@ -2377,10 +2384,10 @@ mod tests {
 
     #[test]
     fn host_allow_list() {
-        // index.json 的地址在面板侧（src/workshop/api.ts），这里用同一份
-        // 字面量守住「raw.githubusercontent.com 在白名单里」这条约束
+        // 清单地址在面板侧（src/workshop/api.ts，拉的是 by-app/fm.json 分片），
+        // 这里用同一份字面量守住「raw.githubusercontent.com 在白名单里」这条约束
         assert!(check_host(
-            "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/index.json"
+            "https://raw.githubusercontent.com/706972745/Manager-Workshop/main/by-app/fm.json"
         )
         .is_ok());
         assert!(check_host(PANEL_RELEASE_URL).is_ok());

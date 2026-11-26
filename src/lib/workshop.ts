@@ -5,7 +5,7 @@
  * （tests/workshop.test.ts）。插件中心面板的组件侧在 `src/workshop/`（独立 vite
  * 入口，**不进主 bundle**）；这份纯函数被面板与测试共用。
  *
- * 数据来源：FontManager-Workshop 仓库的 `index.json`（registry 聚合清单，
+ * 数据来源：Manager-Workshop 仓库的 `by-app/fm.json`（registry 按软件切片，
  * 客户端唯一请求；方案 §5）。真实结构以仓库为准，这里按方案 §3 的字段
  * 做**宽容解析**：缺字段给默认值、类型不对就丢弃该条 —— registry 是
  * 社区数据，解析端崩了等于整个插件中心白屏（M1 验收红线）。

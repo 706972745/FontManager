@@ -625,6 +625,9 @@ Behaviour worth knowing:
   **`FM-XXX-XXX`** — uppercase `FM`, then two runs of letters or digits (e.g. `FM-ADOBE-FONT`).
   The registry is shared with our other apps, each owning its own prefix, so `FM-` is how
   FontManager plugins stay apart; entries with any other id are **not shown at all**
+- **The app only fetches its own slice**: the index is published per app (`by-app/fm.json` for
+  FontManager, `by-app/am.json` for AssetManager), so plugins of other apps never even reach
+  the client, and a broken entry there can't affect this one
 - **Three-level index cache** (memory → local data folder → network), with a 12 s timeout and one retry,
   so a stalled connection can no longer spin forever
 
@@ -638,7 +641,7 @@ leaves the panel — no browser tab to fill in, no token to copy:
 | **① Connect GitHub** | Sign in with a **device code**: the panel shows an 8-character code, opens `github.com/login/device`, you type the code once and approve. The token is stored on disk **encrypted with DPAPI** by the app itself — the panel never holds a long-lived one. Browsing, downloading and installing need **no** account |
 | **② Pick the source** | Choose one or more **plugin folders** (the native picker allows multi-select) or drop in a **`.zip` package**. The app unpacks it in memory, strips the single wrapper folder, skips `__MACOSX/` and `._*`, and rejects any path that escapes the bundle |
 | **③ Review the manifest** | If the folder or zip contains a `plugin.json` the form is pre-filled from it (a runtime manifest with only `summary` / `description` also works — those fill in brief and details). Otherwise fill it in yourself. Validation mirrors the repository CI exactly: **id must be `FM-XXX-XXX`** (uppercase `FM`, then two runs of letters or digits, ≤ 40 characters — any other name cannot be submitted), **name ≤ 25 characters**, semver version, entry script inside the bundle, extension allowlist, 10 MB per file / 20 MB per plugin, permission allowlist, `apiLevel` |
-| **④ Submit** | Forks once → uploads every file → creates the commit → opens a pull request. **All selected plugins share one commit and one PR**, with a four-stage progress display |
+| **④ Submit** | Uploads every file → creates a commit on a branch → opens a pull request **directly** (no fork: a stale fork is exactly what made takedowns fail with a 404). **All selected plugins share one commit and one PR**, with a four-stage progress display |
 
 **What happens when you press submit**: the rows turn into **"Submitted #N"** — they can no longer be edited
 and cannot be submitted twice — and the form clears so the next plugin can be prepared without closing the

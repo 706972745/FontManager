@@ -2,7 +2,7 @@
  * 插件中心面板的数据通道。
  *
  * 两条线：
- * - **清单**：面板自己 fetch registry 的 index.json（webview 里没有 CORS 限制，
+ * - **清单**：面板自己 fetch registry 的**分片清单** `by-app/fm.json`（webview 里没有 CORS 限制，
  *   raw.githubusercontent.com 也带 `Access-Control-Allow-Origin: *`）；
  * - **动作**（列已装 / 安装 / 卸载 / 开外链）：走主程序的**本机回环服务**
  *   （127.0.0.1 + 一次性 key）。面板自己**不碰文件系统** —— 下载、sha256 校验、
@@ -11,16 +11,24 @@
 
 import { communityDirFor, type WorkshopEntry } from "../lib/workshop.ts";
 
-/** registry 聚合清单（客户端唯一请求，方案 §2 / §5） */
+/**
+ * registry 里**属于 FontManager 的那一片**（客户端唯一请求）。
+ *
+ * 插件库是 FontManager / AssetManager 共用的，聚合脚本按 ID 前缀分桶：
+ * `index.json` 是全量，`by-app/fm.json` 只含 `FM-*`。拉分片而不是全量，
+ * 别的软件的插件根本不会进内存，也不受它们坏条目的影响（2026-11-26 契约）。
+ *
+ * 文档：docs/多软件共用插件库.md
+ */
 export const INDEX_URL =
-  "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/index.json";
+  "https://raw.githubusercontent.com/706972745/Manager-Workshop/main/by-app/fm.json";
 
-const RAW_BASE = "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main";
+const RAW_BASE = "https://raw.githubusercontent.com/706972745/Manager-Workshop/main";
 
 /**
  * 探一个插件目录是否**已经不在上游**（true = 真的删掉了）。
  *
- * 为什么不用 `index.json` 判断：那份清单会经过浏览器缓存、CDN，甚至用户自己装的
+ * 为什么不用清单判断：那份清单会经过浏览器缓存、CDN，甚至用户自己装的
  * GitHub 加速器（这台机器就是改 hosts 把域名指到 127.0.0.1 的本地服务）。
  * 2026-11-25 实测：下架目录已经 404 了，清单还能旧好几分钟，而且**查询串被忽略**，
  * `?v=随机` 也照样返回旧内容。

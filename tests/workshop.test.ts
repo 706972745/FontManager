@@ -220,7 +220,8 @@ test("meetsMinAppVersion: null min means no restriction", () => {
 
 // ── 真实 registry 清单（回归护栏）───────────────────────────────────────
 //
-// 仓库：FontManager-Workshop（team-lead 搭的测试 registry）。
+// 仓库：Manager-Workshop（registry）。客户端拉的是 `by-app/fm.json` 分片，
+// 结构与全量 index.json 一致，所以这里继续用全量快照验解析器。
 // 这里把**真实那份 index.json** 喂进解析器 —— 字段对不上、目录名口径变了、
 // 清单结构改了，都会在这一条上炸掉，而不是等到用户点「安装」才炸。
 //
@@ -236,7 +237,7 @@ const FIXTURE_INDEX = fileURLToPath(
   new URL("./fixtures/workshop-index.json", import.meta.url),
 );
 const LIVE_INDEX =
-  "https://raw.githubusercontent.com/706972745/FontManager-Workshop/main/index.json";
+  "https://raw.githubusercontent.com/706972745/Manager-Workshop/main/by-app/fm.json";
 
 test("真实 registry 清单能解析出 官方 5 条 + 社区 2 条", async (t) => {
   const { readFileSync, existsSync } = await import("node:fs");
