@@ -16,7 +16,8 @@ All notable changes to FontManager are documented here. The format follows
     **客户端只拉自己那一片**（`by-app/fm.json`）—— 别的软件的插件根本不进内存；
   - 面板发布资产按软件分开命名：`panel-fm.zip` + `panel-fm-meta.json`
     （AssetManager 将来用 `panel-am.*`，不会再互相覆盖）；
-  - 新增 `docs/AssetManager-接入插件中心.md`：给同事的接入步骤、验收清单与 10 条坑。
+  - 另附一份 **AssetManager 接入说明**（内部交接文档，只在本地协作、不进仓库）：
+    接入步骤、验收清单与 10 条坑。
 - **老 ID 的插件目录会被自动认领**：用户机器上还留着 `com.fontmanager.font-sync` 这类目录，
   安装新 ID 时按 `LEGACY_ID_ALIASES` 找到它并**原地覆盖**（config / state 保留），不会并排
   装出第二份、右键菜单不会出现两条一样的项；装完顺带停掉老 ID 的运行实例。
