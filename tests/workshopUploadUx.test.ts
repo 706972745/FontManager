@@ -7,7 +7,7 @@ import { MAX_NAME, validatePlugin, type PickedFile, type PluginForm } from "../s
  * 上传面板的交互与「上传前先规范好」这一批改动。
  *
  * 两条主线：
- * 1. **名称上限 15 字**（原来只校验非空）：超过就不允许提交，而不是等 CI 打回。
+ * 1. **名称上限 25 字**（原来只校验非空）：超过就不允许提交，而不是等 CI 打回。（2026-11-26 由 15 放宽 —— 15 位对「Adobe 套字器（批量）」这类中文名太紧。）
  *    按字符数算，中文 / emoji 一个字就是一个字。
  * 2. **提交后留在面板**：草稿转「已提交 #N」、表单空出来、内联提示条说清
  *    「还要等维护者合并」。以前成功后是草稿原样留着 + 全屏浮层，容易重复开 PR。
@@ -17,7 +17,7 @@ const root = new URL("../", import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, root), "utf8");
 
 const form = (patch: Partial<PluginForm> = {}): PluginForm => ({
-  id: "com.acme.font-renamer",
+  id: "FM-ACME-RENAME",
   name: "字体重命名",
   entry: "main.js",
   version: "1.0.0",
@@ -37,23 +37,23 @@ const has = (issues: { key: string }[], key: string) => issues.some((i) => i.key
 const nameIssue = (name: string) =>
   validatePlugin(form({ name }), files).find((i) => i.key === "uploadErrNameLong");
 
-test("名称 ≤ 15 字放行，16 字拦住并带上限值", () => {
-  assert.equal(MAX_NAME, 15);
-  assert.equal(nameIssue("字".repeat(15)), undefined, "15 字应当通过");
-  const over = nameIssue("字".repeat(16));
-  assert.ok(over, "16 字必须报错");
+test("名称 ≤ 25 字放行，26 字拦住并带上限值", () => {
+  assert.equal(MAX_NAME, 25);
+  assert.equal(nameIssue("字".repeat(25)), undefined, "25 字应当通过");
+  const over = nameIssue("字".repeat(26));
+  assert.ok(over, "26 字必须报错");
   assert.equal(over.level, "error", "是 error，不是 warn —— 否则照样能提交");
-  assert.equal(over.vars?.max, 15);
+  assert.equal(over.vars?.max, 25);
 });
 
 test("名称按字符数算：中文与 emoji 一个字算一个", () => {
-  assert.equal(nameIssue("😀".repeat(15)), undefined, "15 个 emoji 应当通过");
-  assert.ok(nameIssue("😀".repeat(16)), "16 个 emoji 必须报错（按 UTF-16 长度算会误判成 32）");
-  assert.equal(nameIssue("字".repeat(14) + "😀"), undefined, "混排 15 字通过");
+  assert.equal(nameIssue("😀".repeat(25)), undefined, "25 个 emoji 应当通过");
+  assert.ok(nameIssue("😀".repeat(26)), "26 个 emoji 必须报错（按 UTF-16 长度算会误判成 52）");
+  assert.equal(nameIssue("字".repeat(24) + "😀"), undefined, "混排 25 字通过");
 });
 
 test("名称首尾空格不计入，纯空格仍算空", () => {
-  assert.equal(nameIssue("  " + "字".repeat(15) + "  "), undefined, "trim 后 15 字应通过");
+  assert.equal(nameIssue("  " + "字".repeat(25) + "  "), undefined, "trim 后 25 字应通过");
   assert.ok(has(validatePlugin(form({ name: "   " }), files), "uploadErrName"), "纯空格 = 空");
 });
 

@@ -6,6 +6,7 @@ import {
   communityDirFor,
   hasUpdate,
   humanBytes,
+  isPluginId,
   meetsMinAppVersion,
   parseWorkshopIndexStrict,
   touchesFontLibrary,
@@ -89,7 +90,15 @@ function persistedCache(): Cache | null {
     if (raw) {
       const v = JSON.parse(raw) as Cache;
       if (Array.isArray(v?.entries) && typeof v?.fetchedAt === "number") {
-        hydrated = { entries: v.entries, fetchedAt: v.fetchedAt };
+        // 缓存是上个版本的面板写的时，里面可能还有 `font-sync` 这类老 ID：
+        // 这一份是直接拿来渲染的，不经过 parseEntry，所以这里再筛一次 ——
+        // 否则升级后的第一帧会闪出一批本该被过滤掉的插件。
+        hydrated = {
+          entries: (v.entries as WorkshopEntry[]).filter(
+            (e) => !!e && typeof e.id === "string" && isPluginId(e.id),
+          ),
+          fetchedAt: v.fetchedAt,
+        };
       }
     }
   } catch {

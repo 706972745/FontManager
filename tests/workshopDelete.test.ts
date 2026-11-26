@@ -17,11 +17,11 @@ const root = new URL("../", import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, root), "utf8");
 
 test("dirNameOf：仓库相对路径只取最后一段", () => {
-  assert.equal(dirNameOf("plugins/com.iieozo.adobe-font__helloooooseff"), "com.iieozo.adobe-font__helloooooseff");
-  assert.equal(dirNameOf("plugins/font-renamer__alice"), "font-renamer__alice");
+  assert.equal(dirNameOf("plugins/FM-ADOBE-FONT__helloooooseff"), "FM-ADOBE-FONT__helloooooseff");
+  assert.equal(dirNameOf("plugins/FM-FONT-RENAME__alice"), "FM-FONT-RENAME__alice");
   assert.equal(dirNameOf("plugins/my.plugin__alice"), "my.plugin__alice");
   // 裸目录名（面板自己拼的那种）原样保留
-  assert.equal(dirNameOf("font-renamer__alice"), "font-renamer__alice");
+  assert.equal(dirNameOf("FM-FONT-RENAME__alice"), "FM-FONT-RENAME__alice");
   assert.equal(dirNameOf("  plugins/a__b  "), "a__b", "前后空白要容忍");
 });
 
@@ -128,7 +128,7 @@ test("下架走 [takedown] issue：只发一个 issue，不碰 fork / PR", async
     out = await requestTakedown({
       token: "t",
       login: "alice",
-      dirs: ["plugins/com.example.adobe__alice"],
+      dirs: ["plugins/FM-ADOBE-FONT__alice"],
       onPhase: () => {},
       allowAny: false,
     });
@@ -141,9 +141,9 @@ test("下架走 [takedown] issue：只发一个 issue，不碰 fork / PR", async
   const req = calls[0];
   assert.equal(req.method, "POST");
   assert.equal(req.url, "https://api.github.com/repos/706972745/FontManager-Workshop/issues");
-  assert.equal(req.body.title, "[takedown] plugins/com.example.adobe__alice");
+  assert.equal(req.body.title, "[takedown] plugins/FM-ADOBE-FONT__alice");
   assert.match(req.body.body, /@alice/);
-  assert.match(req.body.body, /plugins\/com\.example\.adobe__alice/);
+  assert.match(req.body.body, /plugins\/FM-ADOBE-FONT__alice/);
 });
 
 test("下架归属：登录名大小写不敏感；别人的目录本地就拦住", async () => {

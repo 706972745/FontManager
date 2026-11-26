@@ -16,7 +16,7 @@ import type { WorkshopEntry } from "../src/lib/workshop.ts";
 
 function entry(over: Partial<WorkshopEntry> = {}): WorkshopEntry {
   return {
-    id: "font-renamer",
+    id: "FM-FONT-RENAME",
     name: "批量重命名",
     brief: "按规则批量重命名字体族",
     detail: "详细说明全文",
@@ -28,7 +28,7 @@ function entry(over: Partial<WorkshopEntry> = {}): WorkshopEntry {
     lang: "zh-CN",
     download: null,
     size: 2048,
-    dir: "font-renamer__alice",
+    dir: "FM-FONT-RENAME__alice",
     files: [{ path: "main.py", sha256: "aa", url: "https://x/main.py", size: 64 }],
     permissions: ["fonts:read"],
     ...over,
@@ -86,14 +86,14 @@ test("installRequestFor：官方件给 zip 直链，社区件给逐文件清单"
 
   const community = installRequestFor(entry());
   assert.equal(community.kind, "community");
-  assert.equal(community.dir, "font-renamer__alice");
+  assert.equal(community.dir, "FM-FONT-RENAME__alice");
   assert.equal(community.files?.length, 1);
   assert.equal(community.files?.[0].path, "main.py");
 });
 
 test("installRequestFor：没有 dir 时按 <id>__<author> 拼", () => {
   const req = installRequestFor(entry({ dir: null, author: "" }));
-  assert.equal(req.dir, "font-renamer__anonymous");
+  assert.equal(req.dir, "FM-FONT-RENAME__anonymous");
 });
 
 test("installRequestFor：清单的 dir 字段不合法时明确失败（不兜底、不静默跳过）", () => {
@@ -107,7 +107,7 @@ test("installRequestFor：清单的 dir 字段不合法时明确失败（不兜�
   // 盘符 → 同样拒
   assert.throws(() => installRequestFor(entry({ dir: "C:/evil" })), BadRegistryDirError);
   // 正常值不受影响
-  assert.equal(installRequestFor(entry({ dir: "plugins/font-renamer__alice" })).dir, "font-renamer__alice");
+  assert.equal(installRequestFor(entry({ dir: "plugins/FM-FONT-RENAME__alice" })).dir, "FM-FONT-RENAME__alice");
 });
 
 test("sessionKey 在没有查询参数时返回空串（不抛）", () => {

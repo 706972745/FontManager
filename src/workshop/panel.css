@@ -1808,3 +1808,25 @@ body {
   background-color: color-mix(in srgb, var(--ws-text) 40%, transparent);
   background-clip: padding-box;
 }
+
+/* 上传弹窗顶部的「插件 ID 规范」闸门提示：不是警告色（还没出错），
+   但要比普通 hint 显眼 —— 不符合这条规则的用户根本提交不了。 */
+.ws-up-idrule {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius-ctl);
+  background: color-mix(in srgb, var(--ws-text) 4%, transparent);
+  font-size: var(--ws-fs-10);
+  line-height: 1.65;
+  color: var(--ws-text-2);
+}
+
+.ws-up-idrule svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ws-accent);
+}

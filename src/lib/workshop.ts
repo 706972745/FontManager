@@ -23,6 +23,26 @@ export interface WorkshopFile {
 
 export type WorkshopRuntime = "python" | "node" | null;
 
+/**
+ * 插件 ID 规范：`FM-<字母数字>-<字母数字>`（2026-11-26 用户口径）。
+ *
+ * 为什么要统一前缀：插件库是**跨软件共用**的，`FM` 一眼就能看出这是 FontManager 的
+ * 插件；别的软件（AssetManager 等）用自己的前缀，同一个仓库里不会互相抢名字，
+ * 聚合清单也能按前缀分拣。所以插件中心**只认这一种命名**，其余一条都不显示。
+ *
+ * - 前缀 `FM` **必须大写**（它就是软件的编号，不是可选的写法）；
+ * - 两段各自是任意长度的字母或数字（大小写随意），如 `FM-ADOBE-FONT`、`FM-001-abc`；
+ * - 整串不超过 {@link PLUGIN_ID_MAX}：目录名 = `<id>__<作者>`，太长会在 Windows 上撞 255。
+ */
+export const PLUGIN_ID_RE = /^FM-[A-Za-z0-9]+-[A-Za-z0-9]+$/;
+export const PLUGIN_ID_MAX = 40;
+
+/** 这个字符串是不是合规的插件 ID（`FM-XXX-XXX`）。上传校验与清单过滤共用一条口径 */
+export function isPluginId(id: string): boolean {
+  const s = id.trim();
+  return s.length <= PLUGIN_ID_MAX && PLUGIN_ID_RE.test(s);
+}
+
 /** index.json 里的一条插件卡片（官方 / 社区同构，社区件多 dir + files） */
 export interface WorkshopEntry {
   id: string;
@@ -106,6 +126,10 @@ function parseEntry(raw: unknown, forceOfficial: boolean): WorkshopEntry | null 
   const id = asString(o.id).trim();
   // id 是安装目录名与「已安装」判定的锚点，没有它这条卡片就是死数据
   if (!id) return null;
+  // 只认 `FM-XXX-XXX`：合规性由 registry 的 CI 在上传时把关，这里再挡一次 ——
+  // 老仓库里遗留的 `font-sync` 这类条目会在转型期**直接不显示**，而不是让它们
+  // 混进中心、和跨软件共用的命名空间打架。
+  if (!isPluginId(id)) return null;
   return {
     id,
     name: asString(o.name, id),

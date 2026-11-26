@@ -16,7 +16,7 @@ import {
 
 function entry(over: Partial<WorkshopEntry> = {}): WorkshopEntry {
   return {
-    id: "font-renamer",
+    id: "FM-FONT-RENAME",
     name: "批量重命名",
     brief: "按规则批量重命名字体族",
     detail: "详细说明全文",
@@ -28,7 +28,7 @@ function entry(over: Partial<WorkshopEntry> = {}): WorkshopEntry {
     lang: "zh-CN",
     download: null,
     size: 2048,
-    dir: "font-renamer__alice",
+    dir: "FM-FONT-RENAME__alice",
     files: [{ path: "main.py", sha256: "aa", url: "https://x/main.py", size: 64 }],
     permissions: ["fonts:read"],
     ...over,
@@ -41,12 +41,12 @@ test("parseWorkshopIndex merges official + community and marks official", () => 
   const doc = {
     version: 1,
     generatedAt: "2026-11-14T14:00:00Z",
-    official: [{ id: "font-sync", name: "字体同步", author: "official" }],
+    official: [{ id: "FM-FONT-SYNC", name: "字体同步", author: "official" }],
     plugins: [entry()],
   };
   const idx = parseWorkshopIndex(doc);
   assert.equal(idx.entries.length, 2);
-  assert.equal(idx.entries[0].id, "font-sync");
+  assert.equal(idx.entries[0].id, "FM-FONT-SYNC");
   assert.equal(idx.entries[0].official, true);
   assert.equal(idx.entries[1].official, false);
   assert.equal(idx.version, "1");
@@ -54,9 +54,9 @@ test("parseWorkshopIndex merges official + community and marks official", () => 
 });
 
 test("parseWorkshopIndex is tolerant: missing fields get defaults", () => {
-  const idx = parseWorkshopIndex({ plugins: [{ id: "a" }] });
+  const idx = parseWorkshopIndex({ plugins: [{ id: "FM-A-1" }] });
   const e = idx.entries[0];
-  assert.equal(e.name, "a"); // 名字回落到 id
+  assert.equal(e.name, "FM-A-1"); // 名字回落到 id
   assert.equal(e.brief, "");
   assert.equal(e.runtime, null);
   assert.equal(e.minAppVersion, null);
@@ -67,9 +67,9 @@ test("parseWorkshopIndex is tolerant: missing fields get defaults", () => {
 });
 
 test("parseWorkshopIndex drops entries without id and non-objects", () => {
-  const idx = parseWorkshopIndex({ plugins: [{ name: "no id" }, "junk", 42, null, { id: "ok" }] });
+  const idx = parseWorkshopIndex({ plugins: [{ name: "no id" }, "junk", 42, null, { id: "FM-OK-1" }] });
   assert.equal(idx.entries.length, 1);
-  assert.equal(idx.entries[0].id, "ok");
+  assert.equal(idx.entries[0].id, "FM-OK-1");
 });
 
 test("parseWorkshopIndex never throws on garbage input", () => {
@@ -81,7 +81,7 @@ test("parseWorkshopIndex never throws on garbage input", () => {
 
 test("parseWorkshopIndex filters file rows missing path/url instead of dropping the entry", () => {
   const idx = parseWorkshopIndex({
-    plugins: [{ id: "a", files: [{ path: "p", url: "u" }, { path: "no-url" }, "junk"] }],
+    plugins: [{ id: "FM-A-1", files: [{ path: "p", url: "u" }, { path: "no-url" }, "junk"] }],
   });
   assert.equal(idx.entries[0].files!.length, 1);
   assert.equal(idx.entries[0].files![0].path, "p");
@@ -153,19 +153,19 @@ test("workshopAuthorLabel: official empty, missing author falls back to anonymou
 
 test("communityDirFor: registry dir wins, else <id>__<author>", () => {
   assert.equal(communityDirFor(entry({ dir: "dir-from-registry" })), "dir-from-registry");
-  assert.equal(communityDirFor(entry({ dir: null })), "font-renamer__alice");
-  assert.equal(communityDirFor(entry({ dir: null, author: "" })), "font-renamer__anonymous");
+  assert.equal(communityDirFor(entry({ dir: null })), "FM-FONT-RENAME__alice");
+  assert.equal(communityDirFor(entry({ dir: null, author: "" })), "FM-FONT-RENAME__anonymous");
 });
 
 test("communityDirFor: registry 的 dir 是仓库相对路径，只取最后一段", () => {
   // 真实 registry 的样子：plugins/<id>__<author>
   assert.equal(
-    communityDirFor(entry({ dir: "plugins/font-renamer__alice" })),
-    "font-renamer__alice",
+    communityDirFor(entry({ dir: "plugins/FM-FONT-RENAME__alice" })),
+    "FM-FONT-RENAME__alice",
   );
   assert.equal(
-    communityDirFor(entry({ dir: "plugins/spec-counter__anonymous-7f3a" })),
-    "spec-counter__anonymous-7f3a",
+    communityDirFor(entry({ dir: "plugins/FM-FONT-COUNT__anonymous-7f3a" })),
+    "FM-FONT-COUNT__anonymous-7f3a",
   );
   // 单个点是允许的（带点的 id 合法，别误伤）
   assert.equal(
@@ -197,8 +197,8 @@ test("communityDirFor: 越界输入一律拒（与 Rust 的 dir_name_of 同口�
   assert.equal(communityDirFor(entry({ dir: "plugins/.hidden" })), null);
   assert.equal(communityDirFor(entry({ dir: "plugins/a b" })), null);
   // 空 / 纯空白
-  assert.equal(communityDirFor(entry({ dir: "" })), "font-renamer__alice");
-  assert.equal(communityDirFor(entry({ dir: "   " })), "font-renamer__alice");
+  assert.equal(communityDirFor(entry({ dir: "" })), "FM-FONT-RENAME__alice");
+  assert.equal(communityDirFor(entry({ dir: "   " })), "FM-FONT-RENAME__alice");
 });
 
 // ── 版本比较 ────────────────────────────────────────────────────────────

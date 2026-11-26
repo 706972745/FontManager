@@ -793,6 +793,13 @@ export function UploadDialog({
         <div className="ws-upload-body">
           <p className="ws-upload-intro">{t("uploadIntro")}</p>
 
+          {/* 上传前先把 ID 规范说清楚：不是 `FM-XXX-XXX` 的插件**不允许提交**，
+              中心也不会收录它。这是闸门不是提醒，所以放在最上面、不折叠。 */}
+          <p className="ws-up-idrule">
+            <AlertTriangle size={12} strokeWidth={1.8} />
+            <span>{t("uploadIdRule")}</span>
+          </p>
+
           {/* 刚提交成功：内联提示条（不是全屏浮层）。
               人不用离开表单，也顺带被明确告知「还要等维护者合并」——
               这条以前完全没有，用户以为点完就已经上架了。 */}
@@ -1160,7 +1167,7 @@ export function UploadDialog({
                     className="ws-input"
                     value={active.form.id}
                     onChange={(e) => setField("id", e.target.value)}
-                    placeholder="my-plugin"
+                    placeholder="FM-ADOBE-FONT"
                     spellCheck={false}
                   />
                 </label>

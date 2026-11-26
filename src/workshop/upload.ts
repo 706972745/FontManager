@@ -12,14 +12,19 @@
  * registry 的聚合脚本（aggregate_index.py）会在合并后统一算，客户端只给 `path`。
  */
 
+import { isPluginId, PLUGIN_ID_MAX } from "../lib/workshop.ts";
+
 const OWNER = "706972745";
 const REPO = "FontManager-Workshop";
 const UPSTREAM_API = `/repos/${OWNER}/${REPO}`;
 
-/** 与 validate_plugins.py 同口径（改这里 = 改上传规则） */
-/* id 允许点号：主程序里插件 id 是 Java 包名式（com.iieozo.adobe-font），
-   registry 只认 a-z0-9- 会把这类插件全挡在门外。首尾仍要求字母/数字。 */
-const ID_RE = /^[a-z0-9](?:[a-z0-9.-]{0,38}[a-z0-9])$/;
+/**
+ * 与 registry 的 `validate_plugins.py` 同口径（改这里 = 改上传规则）。
+ *
+ * 2026-11-26 起统一成 `FM-XXX-XXX`：前缀大写 FM，后接两段字母数字（大小写随意）。
+ * 定义在 `src/lib/workshop.ts` 的 `isPluginId()` —— 上传校验与清单过滤共用一条口径，
+ * 不允许再各写一份正则。
+ */
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PLUGIN_BYTES = 20 * 1024 * 1024;
@@ -28,11 +33,12 @@ const MAX_DETAIL = 1000;
 /**
  * 插件名称上限（显示名，不是 id）。
  *
- * 卡片上一行放不下更长的名字，超过就换行/省略，列表立刻变得参差不齐，
- * 所以在上传前就卡住：**超过不允许提交**（而不是等到 CI 或合并后再退回来）。
+ * 卡片上名字太长会换行/省略，列表立刻变得参差不齐，所以在上传前就卡住：
+ * **超过不允许提交**（而不是等到 CI 或合并后再退回来）。上限 2026-11-26 由 15 放宽到 25 ——
+ * 15 位对「Adobe 套字器（批量）」这类中文名太紧，用户只能起半截名字。
  * 按「字符」数，不按 UTF-16 长度 —— 中文/emoji 一个字就是一个字。
  */
-export const MAX_NAME = 15;
+export const MAX_NAME = 25;
 
 /** 主程序 `api.rs` 的 PERMS —— 名单外的名字运行时会被静默丢弃 */
 export const PERMS = [
@@ -197,7 +203,7 @@ export function validatePlugin(form: PluginForm, files: PickedFile[]): Issue[] {
   const warn = (key: string, vars?: Record<string, string | number>) =>
     issues.push({ level: "warn", key, vars });
 
-  if (!ID_RE.test(form.id.trim())) err("uploadErrId");
+  if (!isPluginId(form.id)) err("uploadErrId", { max: PLUGIN_ID_MAX });
   // 名称：非空 + 不超过 MAX_NAME（按字符数，中文/emoji 一个字算一个）
   const nameLen = [...form.name.trim()].length;
   if (!nameLen) err("uploadErrName");
