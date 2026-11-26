@@ -4,6 +4,19 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.8.1] — 2026-11-27
+
+### 变更
+
+- **文档维护，无功能变化**：这一版只修文档里已经过期的说明，源码与安装包行为与 2.8.0 完全一致。
+  - `README.md` 版本徽章由 `2.7.6` 同步为 `2.8.1`（中英文两处）。
+  - `docs/PLUGINS.md` 的「官方插件库」链接指向改名后的 **`Manager-Plugin`**（原 `FontManager-Plugin`，
+    多软件共用插件库契约见 `docs/多软件共用插件库.md`）。
+  - `docs/PLUGINS.md` 里关于「AssetManager 接入步骤」的说明改为中性表述：那份交接材料单独维护，
+    不随本仓库发布。
+- **为什么发一个版本**：仓库说明与版本徽章长期落后于实际版本，会让「Download latest」页面与
+  文档互相矛盾；借这次把版本号推过一遍完整流水线，也顺便验证 2.8.0 瘦身后的构建链仍可用。
+
 ## [2.8.0] — 2026-11-26
 
 ### 变更
