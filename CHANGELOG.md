@@ -4,6 +4,24 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [未发布]
+
+### 修复
+
+- **从插件中心装的社区插件没有右键菜单、没有设置齿轮**：registry 里那份 `plugin.json`
+  既是市场清单、也是装到机器上以后运行时读的清单，而上传面板生成的它只有市场字段
+  （`id` / 名称 / 简介 / 文件 / 权限）—— `hooks` / `menus` / `settings` / `requirements` /
+  `interpreter` / `interpreterPath` 全被丢掉，于是社区件装完就「没有菜单、没有齿轮」，
+  用户以为是插件坏了（官方件走 release zip 安装，不受影响，所以这个坑只在社区件上暴露）。
+  - `src/workshop/upload.ts` 新增 `runtimeManifestFields()`：从 zip 原件里把这批运行字段
+    抄进生成的清单，**市场字段仍以弹窗表单为准**（作者能改简介 / 名字，不被原件顶回去）；
+    类型不对的字段逐项丢掉、原件坏 JSON 也不阻塞上传。
+  - 菜单项按主程序口径收窄：缺 `on` 补 `family`，`on` 写错的丢那一条，空标题丢掉。
+  - 新增 `tests/workshopManifestCarry.test.ts`（6 条）钉住「搬运 / 表单优先 / 脏数据 / 坏清单」。
+  - 面板产物 `panel-fm.zip` 1.4.1（sha256 `b5ffa379…`，173,618 字节）已发布。
+    **2026-11-27 补记**：这批改动此前只存在于已发布的面板产物里、源码没进仓；
+    本次按产物逐字节复刻归位（LF 换行下重打包，sha256 与线上完全一致），无需重新发版。
+
 ## [2.8.1] — 2026-11-27
 
 ### 变更

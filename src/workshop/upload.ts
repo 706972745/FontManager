@@ -478,7 +478,8 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
     const dir = dirs[i];
     for (const f of it.files) {
       // plugin.json 一律由 buildManifest 重新生成（见 ⑤），原件不能再进 tree：
-      // 同一个 path 出现两条 entry，GitHub 会判 422（面板从文件夹上传时本来就带着它）
+      // 同一个 path 出现两条 entry，GitHub 会判 422（面板从文件夹上传时本来就带着它）。
+      // 重新生成的那份会**先把原件的运行字段抄过来**再盖市场字段，所以菜单 / 设置不会丢。
       if (f.path === "plugin.json") continue;
       const created = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/blobs`, {
         method: "POST",
@@ -494,8 +495,10 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
       onPhase("upload", done, totalSteps);
     }
 
-    // ⑤ 清单本身也要进包里（运行时解析的就是它）
-    const manifest = buildManifest(it.form, it.author.trim() || login, it.files.map((f) => f.path));
+    // ⑤ 清单本身也要进包里：**装到机器上以后运行时读的就是它**
+    //    所以它不是纯市场清单 —— buildManifest 会先把 zip 原件里的 hooks / menus /
+    //    settings / requirements / interpreter 抄进来，再盖表单里的市场字段
+    const manifest = buildManifest(it.form, it.author.trim() || login, it.files);
     const manifestBlob = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/blobs`, {
       method: "POST",
       body: JSON.stringify({
@@ -790,10 +793,100 @@ export interface DeleteArgs {
   allowAny?: boolean;
 }
 
-/** registry 的 plugin.json = 运行时清单 + 市场字段（见方案 §3） */
-function buildManifest(form: PluginForm, login: string, paths: string[]) {
+/**
+ * 运行时清单里「装到本机才生效」的那部分字段，原样抄进 registry 的 plugin.json。
+ *
+ * 为什么必须抄：registry 那份 plugin.json 是**市场清单**（id / 名称 / 简介 / 文件 / 权限），
+ * 但它同时也是装到机器上以后**插件进程、右键菜单、设置齿轮读的那份清单** ——
+ * 两个角色压在同一份文件上。以前这里只写市场字段，于是从插件中心装的社区件永远没有
+ * `menus` / `settings` / `hooks` / `requirements`（官方件走 release zip 安装，不受影响）：
+ * 用户装完看到「没有右键菜单、没有齿轮」，只会以为是插件坏了。
+ *
+ * 口径：市场字段以弹窗表单为准（作者可以改简介、改名字），**运行字段以 zip 里的
+ * plugin.json 为准** —— 没人该在弹窗里手抄一遍菜单。类型不对的字段直接丢掉，
+ * 绝不因为原件里有脏数据就让整份清单生成失败。
+ */
+export function runtimeManifestFields(files: PickedFile[]): Record<string, unknown> {
+  const mf = files.find((f) => f.path === "plugin.json");
+  if (!mf || mf.bytes.length === 0) return {};
+  let raw: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(new TextDecoder("utf-8").decode(mf.bytes)) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    raw = parsed as Record<string, unknown>;
+  } catch {
+    return {}; // 清单坏了不阻塞上传：市场字段由表单兜底
+  }
+
+  const out: Record<string, unknown> = {};
+  const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+
+  // 解释器：exe 插件是空串（Rust 侧等于 None，行为一致）；python/node 插件靠它启动
+  const interpreter = str(raw.interpreter);
+  if (interpreter) out.interpreter = interpreter;
+  const interpreterPath = str(raw.interpreterPath);
+  if (interpreterPath) out.interpreterPath = interpreterPath;
+
+  if (Array.isArray(raw.hooks)) {
+    const hooks = raw.hooks.map(str).filter((h) => h !== "");
+    if (hooks.length) out.hooks = hooks;
+  }
+
+  if (Array.isArray(raw.menus)) {
+    const menus: { title: string; on: string }[] = [];
+    for (const item of raw.menus) {
+      if (!item || typeof item !== "object") continue;
+      const { title, on } = item as Record<string, unknown>;
+      const t = str(title);
+      if (!t) continue;
+      // `on` 只认 family / plugin（缺省 = family，与主程序一致）；写错就丢这一条
+      const where = on === undefined || on === null || on === "" ? "family" : str(on);
+      if (where !== "family" && where !== "plugin") continue;
+      menus.push({ title: t, on: where });
+    }
+    if (menus.length) out.menus = menus;
+  }
+
+  if (raw.settings && typeof raw.settings === "object" && !Array.isArray(raw.settings)) {
+    const s = raw.settings as Record<string, unknown>;
+    const title = str(s.title);
+    const hook = str(s.hook) || "settings";
+    if (title || str(s.hook)) out.settings = { title: title || "设置", hook };
+  }
+
+  if (raw.requirements && typeof raw.requirements === "object" && !Array.isArray(raw.requirements)) {
+    const r = raw.requirements as Record<string, unknown>;
+    const req: Record<string, unknown> = {};
+    const runtime = str(r.runtime);
+    if (runtime) req.runtime = runtime;
+    const list = (v: unknown): string[] =>
+      Array.isArray(v) ? v.map(str).filter((x) => x !== "") : [];
+    const libraries = list(r.libraries);
+    const system = list(r.system);
+    const platforms = list(r.platforms);
+    if (libraries.length) req.libraries = libraries;
+    if (system.length) req.system = system;
+    if (platforms.length) req.platforms = platforms;
+    const note = str(r.note);
+    if (note) req.note = note;
+    if (Object.keys(req).length) out.requirements = req;
+  }
+
+  // 卡片小字 / 详情面板读的是这两个；市场字段的 brief / detail 由表单负责，互不覆盖
+  const summary = str(raw.summary);
+  if (summary) out.summary = summary;
+  const description = str(raw.description);
+  if (description) out.description = description;
+
+  return out;
+}
+
+/** registry 的 plugin.json = 市场字段（表单）+ 运行时字段（zip 里的原件，见上） */
+export function buildManifest(form: PluginForm, login: string, files: PickedFile[]) {
+  const paths = files.map((f) => f.path);
   const all = Array.from(new Set([...paths, "plugin.json"])).sort();
   return {
+    ...runtimeManifestFields(files),
     id: form.id.trim(),
     name: form.name.trim(),
     brief: form.brief.trim(),
