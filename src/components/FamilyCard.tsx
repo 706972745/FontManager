@@ -382,7 +382,25 @@ export const FamilyCard = memo(function FamilyCard({
       )}
 
       <div className="card-preview" ref={thumb.ref} style={{ minHeight: size * 1.35 }}>
-        <AnimatePresence mode="wait">
+        {/*
+         * `mode="wait"` → `mode="popLayout"`（2026-11-27）：原来「待加载占位 → 真字体」
+         * 这一对是 wait 模式，新节点必须等旧的 `exit` 淡出**满 100ms** 才允许挂载 ——
+         * 用户看到的「先灰后黑」就是这个空档，不是字形解码迟到。
+         *
+         * popLayout 的三条行为正好对上三条验收：
+         *   ① 新节点**当帧**进入：退出动画与入场动画并行，不再排队等 exit 结束；
+         *   ② 退出节点**立刻脱离文档流**：motion 在 commit 期间（useInsertionEffect，
+         *      早于浏览器绘制）给退出节点注入 `position: absolute !important` +
+         *      实测宽高与 top/left（framer-motion `PopChild`），所以不存在
+         *      「两个 <p> 同时留在 .card-preview（display: flex, gap: 8px）里并排
+         *      把真字挤到右边」的那一帧 —— 画面上的横移正是这条要防的失败态；
+         *   ③ 减少动效（系统 `useReducedMotion` 或软件内 `motionPref === "reduced"`，
+         *      即上面的 `noMotion`）时 exit 时长压到 0，瞬时切换。
+         *
+         * 只改这一对：下面其余四个分支的 initial / animate / transition（`spring` /
+         * `INTRO_OFF` / `delay`）一个字节都没动，入场曲线仍来自 `design/springs.ts`。
+         */}
+        <AnimatePresence mode="popLayout">
           {/* 缺语言文字的标注不依赖字体加载，提到最前 —— 立即可见，
               还能免掉为这一格发起一次子集/完整字体加载 */}
           {hasScriptNote(scriptStatus) ? (
@@ -458,7 +476,9 @@ export const FamilyCard = memo(function FamilyCard({
               initial={intro ? { opacity: 0, y: 5 } : false}
               animate={{ opacity: 1, y: 0 }}
               transition={intro ? spring : INTRO_OFF}
-              exit={{ opacity: 0, transition: { duration: 0.1 } }}
+              /* 退场不再阻塞上屏（popLayout 已把它移出文档流），这里只留一层 100ms 的
+                 交叉淡出免得「啪」地跳色；减少动效时压到 0 = 瞬时切换。 */
+              exit={{ opacity: 0, transition: { duration: noMotion ? 0 : 0.1 } }}
             >
               {text}
             </motion.p>

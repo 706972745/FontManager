@@ -7,6 +7,7 @@ import { INTRO_OFF, useIntro } from "../lib/useIntro";
 import { experiment } from "../lib/experiment";
 import { prefetchFace } from "../lib/fontLoader";
 import { prefetchIndices, type ScrollDir } from "../lib/prefetch";
+import { gridRowHeight } from "../lib/gridMetrics";
 import type { Family } from "../state/fontStore";
 import { SIZES, useFontStore } from "../state/fontStore";
 import { useRevealFamily } from "../lib/useReveal";
@@ -27,12 +28,18 @@ export function FontGrid({ families }: { families: Family[] }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const mountedAt = useRef(Date.now());
   const sizeIndex = useFontStore((s) => s.sizeIndex);
-  const estimate = 120 + SIZES[sizeIndex] * 1.5;
 
   const virtualizer = useVirtualizer({
     count: families.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => estimate,
+    /**
+     * 初值必须贴住真实行高（推导见 `src/lib/gridMetrics.ts` 顶部注释）。
+     * 原来这里是 `120 + SIZES[sizeIndex] * 1.5`：32 档估 168、真机 210（低估 20%），
+     * 96 档估 264、真机还是 210（高估 25%）—— 估高一错，总高就错，滚动条拇指会在
+     * 滚动过程中被逐行「补高」而变长，`scrollToIndex` 也会先落错再挪。
+     * 下面 `ref={virtualizer.measureElement}` 仍是最终校正，这里只修初值，别的参数一律不动。
+     */
+    estimateSize: () => gridRowHeight(SIZES[sizeIndex]),
     overscan: GRID_OVERSCAN,
     getItemKey: (i) => families[i].name,
   });
