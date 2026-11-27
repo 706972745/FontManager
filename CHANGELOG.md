@@ -4,9 +4,23 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [未发布]
+## [2.8.2] — 2026-11-27
 
 ### 修复
+
+- **网格视图滚动时滚动条拇指会一路变短、远端跳转会「先落错再挪一下」**：虚拟列表的行高初值
+  按 `120 + 字号 × 1.5` 估，默认 32px 档估 168 而真机行高是 210（低估 20%），96px 档估 264
+  而真机 214.6（高估 49.4px）。估小的时候总高随滚动逐行被"补高"，拇指就被挤压变短；
+  `scrollToIndex` 的远距落点也按估值算，于是先停到偏上的位置再被实测纠正。
+  - 新增 `src/lib/gridMetrics.ts`：`gridRowHeight()` 把行高从 CSS 逐项推导（卡片 `min-height:196`
+    + 行底 `14` + 头部真实 `28` + 预览块 `max(字号×1.35, 10+字号×1.15)`），不再留魔法数。
+  - `FontGrid` 的 `estimateSize` 改用它：8/14/18/24/32/48/64 档均为 210、96 档 214.6。
+    `measureElement` 动态实测仍在，本次只修初值，不改变任何虚拟化参数。
+  - 新增 `tests/gridMetrics.test.ts`（6 条）逐档钉死数值，含越界外推与非法输入。
+- **卡片预览从"待加载占位"换成真字体时会多等 100ms**：预览区的 `AnimatePresence` 用的是
+  `mode="wait"`，字体就绪后必须等占位态淡出满 100ms 才上真字，观感是"先灰后黑"。
+  改为 `mode="popLayout"`：退场节点由 motion 注入 `position: absolute` 脱流，真字当帧上屏、
+  不产生两个文本并排把真字挤右；减少动态效果时退场时长压到 0，瞬时切换。
 
 - **从插件中心装的社区插件没有右键菜单、没有设置齿轮**：registry 里那份 `plugin.json`
   既是市场清单、也是装到机器上以后运行时读的清单，而上传面板生成的它只有市场字段
