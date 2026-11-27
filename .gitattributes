@@ -1,0 +1,12 @@
+# 面板产物必须可复现：`panel-fm.zip` 的 sha256 写进 registry 的 panel-fm-meta.json，
+# 主程序拿它当硬门槛（对不上就判「坏包」，直接不更新）。
+#
+# workshop.html 是唯一被**原样**拷进 zip 的源文件 —— JS / CSS 由 vite 生成，换行恒为 LF。
+# 但 Windows 上 core.autocrlf=true 会把 checkout 出来的它换成 CRLF（实测还出现过 \r\r\n），
+# 于是同一份源码打出来的 zip sha256 与线上不同：173,629 而不是 173,618。
+# 这看起来像「包被改过」，实际只差换行，排查成本极高（2026-11-27 真踩到）。
+#
+# 所以这一条固定 LF：任意机器 checkout 后，产物逐字节一致。
+# 打包工具里还有一层兜底（tools/build-workshop-panel.mjs 会把 CRLF 归一），
+# 那是给「还没吃到这条规则的老工作区」准备的，不是替代品。
+workshop.html text eol=lf

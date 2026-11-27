@@ -26,9 +26,33 @@ const dist = join(root, "dist");
 const outDir = process.env.WORKSHOP_PANEL_OUT ?? "E:/Users/87557/文档/wordbuddy/软件迭代/_tmp/workshop-panel-out";
 const outZip = join(outDir, "panel-fm.zip");
 
+/** 读到的 LF 版 html（懒加载缓存，见 readWorkshopHtml） */
+let cachedHtml = null;
+
+/**
+ * 读 dist/workshop.html，并把换行**归一成 LF**。
+ *
+ * 为什么必须归一：这个文件是原样进 zip 的（JS / CSS 由 vite 生成，本来就是 LF），
+ * 而 zip 的 sha256 是 panel-fm-meta.json / 面板自动更新的硬门槛。Windows 上
+ * core.autocrlf=true 会让 checkout 出来的源码带 CRLF，跟着一路进产物 —— 同一份源码
+ * 打出来的包 sha256 变成 173,629（线上是 173,618），看起来像「包被动过」。
+ * 仓库根的 .gitattributes 已把 workshop.html 固定成 LF，这里是给老工作区的兜底。
+ */
+function readWorkshopHtml() {
+  // 只读一次：这个函数被 collectAssets 和打包主流程各调一次，缓存后提示也只打一遍
+  if (cachedHtml !== null) return cachedHtml;
+  const raw = readFileSync(join(dist, "workshop.html"), "utf8");
+  const lf = raw.replace(/\r\n?/g, "\n");
+  if (lf !== raw) {
+    console.warn("提示：dist/workshop.html 含 CRLF，已按 LF 归一（见仓库根 .gitattributes）");
+  }
+  cachedHtml = lf;
+  return lf;
+}
+
 /** 收集 workshop.html 引用到的所有 chunk（含它们 import 的共享 chunk） */
 function collectAssets() {
-  const html = readFileSync(join(dist, "workshop.html"), "utf8");
+  const html = readWorkshopHtml();
   const queue = [];
   const seen = new Set();
   const push = (rel) => {
@@ -131,7 +155,7 @@ if (!statSync(join(dist, "workshop.html"), { throwIfNoEntry: false })) {
 }
 const assets = collectAssets();
 const entries = [
-  { name: "workshop.html", data: readFileSync(join(dist, "workshop.html")) },
+  { name: "workshop.html", data: Buffer.from(readWorkshopHtml(), "utf8") },
   ...assets.map((rel) => ({ name: rel, data: readFileSync(join(dist, rel)) })),
 ];
 const zip = writeZip(entries);
