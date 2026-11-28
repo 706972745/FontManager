@@ -624,7 +624,23 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       }
       animating = true;
       const shrinking = toH < fromH;
-      const start = performance.now();
+      /*
+       * 起表时刻 = **第一个 rAF 回调的时间戳**，不是这里的调用时刻（0 表示「还没起表」）。
+       *
+       * 为什么不能用 `performance.now()`：调用方（`expand()`）在进来之前还要
+       * `await win.scaleFactor()`（一次 IPC）并 `setContentHeight(满高)`（一次 React 提交，
+       * 把整个面板 + 虚拟列表挂进 12px / 34px 的窗口）。第一帧 rAF 要等这些跑完才轮到，
+       * 实测首帧延迟 30~50ms。用墙钟起表的话，第一眼看到的面板进度已经是 t≈0.12，
+       * 按 325ms 的总时长算出已经长出去 ~29px —— 用户看到的就是「按下去、停一下、
+       * 已经出来一截」。惰性起表把首帧钉在 0 进度，代价是整体晚一帧（~16ms）。
+       *
+       * 用 rAF 的时间戳参数而不是回调里再调一次 `performance.now()`：后者会把
+       * 「回调被调度到执行」的延迟也算进第一帧，起表又会偏早。两者同一时基（DOMHighResTimeStamp）。
+       *
+       * 起点那一帧本来就已经由下面的 `writeFrameBox(fromH)` 同步写过，所以惰性起表
+       * 不会让首帧露出未初始化的外壳（12px 窗口里只剩 6px、抓手线被切一截那个老坑）。
+       */
+      let start = 0;
       let settled = false;
       /*
        * 起点这一帧先写死再排 rAF：stopAnim() 刚把行内值摘掉，rAF 要等下一帧才跑，
@@ -656,13 +672,15 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         done();
       };
       finishTimer = setTimeout(() => finish(true), durationMs + 800);
-      const step = () => {
+      const step = (ts: number) => {
         raf = undefined;
         if (!alive || settled) return;
         if (document.visibilityState === "hidden") {
           finish(true);
           return;
         }
+        // 第一帧才起表：首帧进度恒为 0（见上面 `let start = 0` 那段注释）
+        if (!start) start = ts;
         /*
          * LEAD 的语义是**相位延迟**，不是「把剩下的时间重新拉满」。
          * 两条轨跑同一段 durationMs、同一条曲线，只是起跑时刻差 lead —— 所以时间轴的
@@ -676,7 +694,7 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
          */
         const lead = Math.min(ANIM_LEAD_MS, Math.max(1, durationMs - 1));
         const totalMs = durationMs + lead;
-        const t = Math.min(1, (performance.now() - start) / totalMs);
+        const t = Math.min(1, (ts - start) / totalMs);
         /** 领先轨：真正跑满 durationMs 的那条（elapsed/duration，最后 lead 段封顶 1） */
         const pLead = Math.min(1, (t * totalMs) / durationMs);
         /** 滞后轨：晚 lead 起跑、同样跑满 durationMs（算法与单测见 lib/quickbarAnim.ts） */

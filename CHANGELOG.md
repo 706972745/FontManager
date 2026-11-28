@@ -4,6 +4,21 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.8.5] — 2026-11-28
+
+### 修复
+
+- **速览界面（<kbd>Alt</kbd> + <kbd>`</kbd>）展开时起步会「跳一截」**：按下热键的那一刻，面板经常
+  已经先冒出来一小段，然后才平滑走完。原因是动画的时间轴按**调用时刻**起表，而第一帧真正绘制
+  要等前面两件事跑完——一次窗口缩放因子查询（IPC）、一次把完整面板和列表挂进只有 12px 高的窗口
+  （React 提交）。这一等就是 30~50ms，动画却已经「走」了这么久：按 325ms 的总时长算，第一眼
+  看到的面板进度已是 12%，对应约 29px 的位移。
+  - 改成**第一帧才起表**（用 `requestAnimationFrame` 的时间戳，与 `performance.now()` 同一时基），
+    首帧进度恒为 0，面板一定是「从那条线开始动」。
+  - 代价是整体晚一帧（约 16ms），总时长、落点、曲线一律不变，2.8.4 的峰值改善（单帧 225 → 154px）
+    全部保留。
+- 顺带说明：2.8.4 修的是「先停一下再猛窜」里的「猛窜」，2.8.5 修的是「停一下」本身。
+
 ## [2.8.4] — 2026-11-28
 
 ### 修复
