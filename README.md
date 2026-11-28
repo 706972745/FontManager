@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.8.2-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.8.3-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,8 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.8.3 — The quick panel scrolls smoothly: the list no longer commits synchronously while scrolling, rows only re-render when their own data changes, and the first scroll down no longer nudges the list**
 
 **2.7.6 — The 3px royal-blue glow now travels with the window (no more fading in on the way back); maximized windows sit flush with the screen; the quick panel no longer shows its hint bar while expanding**
 
@@ -1012,7 +1014,7 @@ The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.8.2-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.8.3-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -1038,6 +1040,8 @@ The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 ---
 
 ## 🆕 最近更新
+
+**2.8.3 —— 速览界面滚动更顺：列表滚动时不再同步提交渲染，一行只在自身数据变化时重绘；第一次往下滚时列表不再轻微跳位**
 
 **2.7.6 —— 四周宝蓝阴影全程跟着窗口走（返回不再淡入）；最大化与系统窗口一致贴满屏幕；速览展开途中不再出现提示条；关于页第二张卡改为作者主页**
 

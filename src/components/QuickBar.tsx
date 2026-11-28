@@ -11,7 +11,16 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openContextMenu } from "../design/primitives/ContextMenu";
 import { useMarquee } from "../design/primitives/useMarquee";
@@ -34,7 +43,6 @@ import { useFamilyMembership } from "../lib/membership";
 import { buildFamilyMenu, copyText } from "../lib/menus";
 import { subscribeContextMenuSize } from "../lib/menuMetrics";
 import { expandQuickbarPanel, minimizeQuickbar, useQuickbarDock } from "../lib/useQuickbarDock";
-import { useInView } from "../lib/useInView";
 import { experiment } from "../lib/experiment";
 import { useWindowDrag } from "../lib/useWindowDrag";
 import { INTRO_OFF, useIntro } from "../lib/useIntro";
@@ -54,15 +62,30 @@ import {
 } from "../state/fontStore";
 
 /**
- * 速览的实验开关（§11.2）。默认值 = 现状。
+ * 速览的虚拟化参数（§11.2）。`qbOverscan` 仍是实验开关（0–20），默认 4。
  *
- * 速览有**两层**门控，实验时要分开动，否则分不清是「挂载多了」还是「提前加载了」：
- * - `overscan` 决定虚拟列表多挂几条 DOM（挂载不等于加载）；
- * - `rootMargin` 决定这些 DOM 里哪些真的去 `useFontCss` 加载字体。
- * 现在只有 `index < ANIMATED_ITEMS || inView` 的项才传非空 face，所以两层是串联的。
+ * **2026-11-28 起只剩一层门控。** 以前是两层串联：`overscan` 决定多挂几条 DOM，
+ * `rootMargin`（IntersectionObserver）决定这些 DOM 里哪些真去加载字体，
+ * 目的是「首屏几张立刻加载、其余等滚到附近再说」。
+ *
+ * 虚拟化接管之后，第二层成了纯开销：能挂载的行本来就只在视口 ± overscan（4×112 =
+ * 448px）内，迟早要进视野；而 IO 会在每次新行挂载时回调一次 `setInView(true)`，
+ * 也就是**一次额外的 React 提交** —— 滚动时一次区间变化本来已有 measure 提交，
+ * 这是第三次。去掉后「挂载即加载」，加载范围不变（仍是 448px 内），少一次提交。
+ *
+ * 注意这**不是**「滚动中不加载」：那种为了省 IPC 让预览格空着的做法在 0.9.9-24
+ * 回归过一次（`fontLoader.ts` 顶部有记录）。这里只是把「什么时候加载」的判定
+ * 完全交给虚拟列表的挂载决策，加载行为本身没有变保守。
  */
 const QB_OVERSCAN = experiment.quickbarOverscan();
-const QB_ROOT_MARGIN = experiment.quickbarRootMargin();
+/**
+ * 滚动停止多久算「静止」（毫秒）。滚动期间 `.qb-body` 带 `data-scrolling="true"`，
+ * CSS 靠它压掉 `.qb-item` 的 180ms hover 背景过渡；尾部静默到这个时长才摘属性，
+ * 让「滚动刚停就要 hover」的那一下仍然有过渡（= 与改前手感一致）。
+ * 取 140：比一次滚动惯性尾部间隔（~16–50ms）长一个数量级，又短到不会让静止后的
+ * 首次 hover 明显迟到（`--t-quick` 本身就是 180ms）。
+ */
+const QB_SCROLL_IDLE_MS = 140;
 import type { FontFace } from "../lib/ipc";
 import { applyToActiveApp } from "../lib/applyActive";
 import { buildFaceIndexCached, entryFaceIds, faceKey } from "../lib/snapshotKey";
@@ -113,7 +136,26 @@ function QuickFaceRow({
   );
 }
 
-function QuickItem({ family, index }: { family: Family; index: number }) {
+/**
+ * 一行速览条目。
+ *
+ * **为什么要 `memo`**（2026-11-28，滚动卡顿第二轮）：虚拟化在滚动时只换 1–2 行，
+ * 但虚拟列表的区间一变，`QuickBar` 整个重渲染，`<QuickItem>` 每次都在新的 map 里
+ * 重新求值 —— 13 行 × 14 个 store 订阅 + 派生计算全部白跑。`families` 是 `useMemo`
+ * 的产物，纯滚动时数组身份不变、`family` 对象身份也不变，所以 `memo` 的浅比较在
+ * 滚动路径上**必然命中**，只剩新挂载的 1–2 行需要跑。
+ *
+ * 注意：`memo` 只挡「父级重渲染」。组件内部的 store 订阅（`useFontStore`、`useIntro`、
+ * `useT` 等）仍然各自生效，启停字体、改示例文字、切字号档都会照常刷新 —— 这不是
+ * 「冻结渲染」，是跳过没必要的重复求值。
+ */
+const QuickItem = memo(function QuickItem({
+  family,
+  index,
+}: {
+  family: Family;
+  index: number;
+}) {
   const t = useT();
   // 速览里同样按界面语言显示字体名（与完整界面一个口径）
   const displayName = useDisplayName();
@@ -136,21 +178,20 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
   const visibleFaces = enabledFaces.length > 0 ? enabledFaces : family.faces;
   /** 与完整界面同一口径：只列出部分字重时，旁边的数字写成「1/4」而不是光一个「1」 */
   const scope = styleScope(visibleFaces, family.faces);
-  // 首屏这几张立刻加载字体；其余等滚动到附近再说，避免上千个 FontFace 一起加载
-  const [itemRef, inView] = useInView<HTMLDivElement>(QB_ROOT_MARGIN);
   /** 鼠标正悬停的字重行：卡片预览临时用它渲染，移开恢复 Regular（与完整界面一致） */
   const [hoverFaceId, setHoverFaceId] = useState<string | null>(null);
   const previewFace = family.faces.find((f) => f.id === hoverFaceId) ?? lead;
   /**
    * 速览条目同样只渲染示例文字 + `Aa`，走列表子集通道（§12）。
-   * `index < ANIMATED_ITEMS || inView` 这个门控保持原样 —— 它是「首屏几张立刻加载、
-   * 其余等滚到附近」的策略，与「加载哪份文件」无关。
+   *
+   * **挂载即加载**（2026-11-28）：这里以前是
+   * `index < ANIMATED_ITEMS || inView ? previewFace : null`，第二段靠 IntersectionObserver
+   * 判定。虚拟化之后，能挂载的行本来就落在视口 ± overscan（448px）内，迟早要进视野；
+   * 而 IO 的首次回调是一次 `setInView(true)` → 一次额外提交。滚动时一次区间变化本来
+   * 已有 measure 提交，这一次是多余的。加载范围没变，只是判定交给虚拟列表。
    */
   const listCharSet = listChars(family, sampleText, t("preview.defaultSample"));
-  const { fontFamily } = useListFontCss(
-    index < ANIMATED_ITEMS || inView ? previewFace : null,
-    listCharSet,
-  );
+  const { fontFamily } = useListFontCss(previewFace, listCharSet);
   const fontStyle = previewFace.italic ? "italic" : "normal";
   const previewWeight = previewFace === lead ? undefined : previewFace.weight;
   // 与完整界面主列表一致：优先用户输入的示例文本，否则用族名
@@ -228,7 +269,6 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
 
   return (
     <Item
-      ref={itemRef}
       role="button"
       tabIndex={0}
       className="qb-item"
@@ -408,7 +448,7 @@ function QuickItem({ family, index }: { family: Family; index: number }) {
       </AnimatePresence>
     </Item>
   );
-}
+});
 
 export function QuickBar() {
   const t = useT();
@@ -672,9 +712,31 @@ export function QuickBar() {
    * 仍用 measureElement 实测，滚动条不会跳。
    */
   const bodyRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: families.length,
-    getScrollElement: () => bodyRef.current,
+
+  /**
+   * `useVirtualizer` 的 options 身份必须**稳定**，否则滚动时测量缓存逐帧失效。
+   *
+   * 实证：`@tanstack/virtual-core/dist/cjs/index.cjs:560-582` 的 `getMeasurementOptions`
+   * 用 `[count, paddingStart, scrollMargin, getItemKey, enabled, lanes, laneAssignmentMode]`
+   * 做浅比较 memo，回调体里还会 `this.pendingMin = null`。以前这里写的是内联
+   * `getItemKey: (i) => families[i].name` —— 每次渲染都是新函数，于是缓存逐帧失效、
+   * `pendingMin` 逐帧清空，滚动时测量值每帧从头重算。
+   *
+   * **收益量级要说实话**：QA 用真 virtual-core（4211 项、10 次重渲染）实测，
+   * 稳定 key 命中 10/10、内联 key 重建 10/10，单次全量重建 **0.0759ms** vs memo 命中
+   * **0.0030ms** —— 净收益 ≈ **0.073ms/渲染**，是 16.7ms 帧的 0.4%，**噪声级**。
+   * 所以这处是「不该有的重复计算被去掉」，不是卡顿的主因，别把它当性能修复的证据。
+   *
+   * **哪些是真的起作用**：必需的是 `getRowKey` 的 `useCallback`（memo 依赖里只有它）。
+   * `estimateSize` 与 `gap` **不在** `getMeasurementOptions` 的依赖里，所以
+   * 「字号档变 → estimateSize 变 → 测量缓存失效」这个因果**不成立**：换字号档是靠
+   * `measureElement` 实测（`resizeItem → itemSizeCacheVersion++`）纠正的。`estimateSize`
+   * 之所以也 `useCallback`，是为了让下面的 options 对象真的稳定（本身开销可忽略）。
+   * 同理 `virtualizerOptions` 的 `useMemo` 严格来说**不是必需的** ——
+   * `useVirtualizerBase` 每次渲染都会 `instance.setOptions(resolvedOptions)`，options 永远是最新的；
+   * 保留它只是把「这个对象不该逐帧变」写成代码，代价为零。
+   */
+  const estimateRowSize = useCallback(
     /**
      * 估高要跟着字号档走（清单 C3）。
      * 行的视觉重心是那串预览大字（`line-height:1.15`），其余部件高度基本固定：
@@ -682,10 +744,111 @@ export function QuickBar() {
      * `max(112, 预览字高 × 1.15 + 8)` —— 32/48/64 档都落在 112，96 档给到 ≈118。
      * 这只是估高：滚动位置的最终值由 measureElement 实测覆盖，估偏只影响滑块长度。
      */
-    estimateSize: () => Math.max(112, Math.round(SIZES[sizeIndex] * 1.15) + 8),
-    overscan: QB_OVERSCAN,
-    getItemKey: (i) => families[i].name,
-  });
+    () => Math.max(112, Math.round(SIZES[sizeIndex] * 1.15) + 8),
+    [sizeIndex],
+  );
+  /**
+   * 行 key 用族名（`measureElement` 的实测缓存按它索引）。
+   *
+   * 越界兜底 `?? \`#${i}\`` 是**防御性加固**，不是在修一个既有崩溃 —— 说清楚可达路径，
+   * 免得下次 review 要求补复现步骤：`indexFromElement`（`virtual-core:cjs:773-783`，`return -1`
+   * 在 `:780`）在节点缺 `data-index` 时返回 **-1** 并 `console.warn`；随后
+   * `instance.measureElement`（`virtual-core:cjs:804-827`，无守卫的调用点在 **`:814-815`**；
+   * 无 `entry` 时的另一处是 **`:144-146`**）会调 `getItemKey(-1)`，旧写法
+   * `families[-1].name` 在这一步 `TypeError`。本组件恒渲染 `data-index={row.index}`，
+   * 而 **ResizeObserver 那条路是安全的，理由不是「被 resizeItem 守卫挡住」**：RO 回调
+   * （`:206-226`）在**求值之后**才把结果交给 `resizeItem`，而带 `entry` 时 `measureElement`
+   * 直接走 `borderBoxSize` 分支（`:135-143`），**根本不会调用 `getItemKey`**。
+   * 所以现实里走不到 —— 兜底的目的是「万一走到，不要整屏白」。
+   * 返回值恒为 `string`，不会让 virtual-core 拿到 `undefined`。
+   */
+  const getRowKey = useCallback(
+    (i: number): string => families[i]?.name ?? `#${i}`,
+    [families],
+  );
+  /** 只读 ref，函数身份恒稳定 */
+  const getScrollElement = useCallback(() => bodyRef.current, []);
+
+  const virtualizerOptions = useMemo(
+    () => ({
+      count: families.length,
+      getScrollElement,
+      estimateSize: estimateRowSize,
+      overscan: QB_OVERSCAN,
+      getItemKey: getRowKey,
+      /**
+       * **关闭同步提交**（本轮卡 P0-①）。默认值 `true` 见
+       * `@tanstack/react-virtual/dist/cjs/index.cjs:25`：区间一变就走
+       * `ReactDOM.flushSync(rerender)`（`:91-95`），把「13 行 QuickItem 重渲染 +
+       * `measureElement` 读 offsetHeight（强制同步布局）」全挤进同一帧，滚动时
+       * 每帧一次**输入任务内的同步工作块**。注意：关掉它**不减少任何工作量**，
+       * 只是把这批工作交回调度器（可被打断、可合并）—— 别读成「卡顿根因已消除」。
+       * 改成 `false` 后重渲染回到 React 的正常调度（可被更高优先级的输入打断）。
+       *
+       * **代价与余量（算式用的是本仓常量，不是拍脑袋）**：
+       * - `MAX_RENDER_SPEED = 1600`（`momentumScroll.ts:92`）；
+       * - `followSpeedLimit = max(1600, |v|×3)`（`:162-163`），`|v|` 被 `measureVelocity`
+       *   夹在 `GLIDE_MAX_VELOCITY = 6000`（`:64` / `:204`）→ 上限 **18000px/s**；
+       * - `dt = clamp(Δ/1000, 0.001, 0.05)`（`:332`）、`cap = speedLimit × dt`（`:178-180`）；
+       * - ⇒ **60fps 单帧上限 ≈300px**；**单帧耗时 50ms 时上限 900px**（正是要优化的那种帧）。
+       * 下面 `overscan: 4` × 基准行高 112px = **448px** ⇒ 能盖 **1.49 个 16.7ms 帧**、
+       * 只盖 **0.50 个 50ms 帧**。结论按条件分开写，别简化成「一定不会露白」：
+       * - **常态 60fps（单帧 ≤300px）：有富余**，不会露白；
+       * - **「≥3 格/帧」的连甩 + 50ms 卡帧复合出现：可能露一帧白**。
+       * 取舍：长帧本身已意味着整帧崩了，而 6 行 = 672px、8 行 = 896px 也都追不上 900px；
+       * 抬高默认值是让**每次提交**都多挂几行 DOM，与「不增加滚动开销」相抵，故**保持 4**。
+       * ⇒「最大滚速 + 卡帧时不得露白」列为**阻塞型**手动验收项（任务卡 §6）；真机看到白边时
+       * 用 `experiment.quickbarOverscan()` 的 `qbOverscan` 开关（0–20）临时调 6 复测，
+       * **改默认值要另开卡**（`src/lib/experiment.ts:89` + `tests/experiment.test.ts:41` 的断言）。
+       */
+      useFlushSync: false,
+    }),
+    [families.length, getScrollElement, estimateRowSize, getRowKey],
+  );
+  const virtualizer = useVirtualizer(virtualizerOptions);
+
+  /**
+   * 滚动期间压掉行的 hover 背景过渡（本轮卡 P0-③）。
+   *
+   * 为什么需要：`.qb-item` 带 `transition: background-color var(--t-quick)`（180ms）。
+   * 滚动时行从光标下连续穿过，几乎每帧都有一行「刚被悬停」→ 连续启动 180ms 背景过渡，
+   * 而 `background-color` 是 paint 属性（不上合成器），等于每帧重绘一整行。
+   * 过渡只在**静止**时才有观感意义，滚动中几乎看不出来，所以滚动期间直接压掉。
+   *
+   * 实现刻意**不走 setState**：那等于每帧一次 React 重渲染，会把 ① 的收益还回去。
+   * 这里只写一个 DOM 属性（`.qb-body[data-scrolling="true"] .qb-item` 在 CSS 里压过渡），
+   * 属性值没变时不重复写；尾部静默 `QB_SCROLL_IDLE_MS` 后摘掉，恢复静止态的 180ms 淡入。
+   * 监听随 `docked` 重挂：收起态 `.qb-body` 不挂载，`[]` 依赖会拿到 null 并永远不再挂上。
+   *
+   * **为什么「绕开 React 写 DOM」在这里是安全的**：`data-scrolling` **从未出现在 JSX 里**，
+   * React 只知道它自己渲染过的属性，re-render 时不会去动一个它没写过的属性 —— 所以本组件
+   * 因任何原因重渲染都不会把属性摘掉。反过来，一旦把它写成 JSX 属性（哪怕是 `undefined`），
+   * 每次 re-render 都会把它清掉，那时就**必须**配 state，等于每帧重渲染。
+   *
+   * 只压 `.qb-item` 自己那条 `background-color` 过渡。`.qb-anchor` 的 transition 列表里
+   * 也有 `background-color`，但它的 hover 态与静止态**同色**（都是 `--qb-anchor-hover`，
+   * 见 app.css `:7212` / `:7230`），滚动穿过时只有 transform / opacity 变化（走合成器、
+   * 不重绘），所以不需要压 —— 这是「按实际会变的属性判断」，不是「它只有两条过渡」。
+   */
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    let idle = 0;
+    const onScroll = () => {
+      if (el.dataset.scrolling !== "true") el.dataset.scrolling = "true";
+      if (idle !== 0) window.clearTimeout(idle);
+      idle = window.setTimeout(() => {
+        idle = 0;
+        delete el.dataset.scrolling;
+      }, QB_SCROLL_IDLE_MS);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (idle !== 0) window.clearTimeout(idle);
+      delete el.dataset.scrolling;
+    };
+  }, [docked]);
 
   // 右键菜单「打字即搜」选中已启用字体后（ContextMenu 派发）：速览不跳界面，
   // 列表滚动到该族（用户 2026-11-05 口径）。未启用字体不走这里——菜单直接退回完整界面。

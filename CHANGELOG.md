@@ -4,6 +4,36 @@ All notable changes to FontManager are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.8.3] — 2026-11-28
+
+### 修复
+
+- **速览界面（<kbd>Alt</kbd> + <kbd>`</kbd>）滚动卡顿**：虚拟列表在滚动时把「十几行重渲染 + 行高测量」
+  全挤进同一帧，且每次渲染都重建一遍测量缓存，滚动时主线程被占满。四处改动：
+  - 关闭 `useVirtualizer` 的 `useFlushSync`：区间变化不再在 `scroll` 事件里同步提交，重渲染回到
+    React 可中断的调度；代价是提交可能晚一帧，用 `overscan: 4`（448px）覆盖。
+  - `options` / `getItemKey` / `estimateSize` / `getScrollElement` 身份稳定化（`useMemo` /
+    `useCallback`）：virtual-core 的 `getMeasurementOptions` 缓存不再逐帧失效，`pendingMin`
+    不再逐帧清空。
+  - `QuickItem` 包 `memo`：纯滚动时 `families` 与 `family` 的引用不变，只有新挂载的 1–2 行求值。
+    组件内部的 store 订阅仍然各自生效——启停字体、改示例文字、切字号档照常刷新。
+  - 去掉速览行上的 IntersectionObserver 门控：虚拟化后能挂载的行本就在视口 ± 448px 内，
+    IO 首次回调只多一次 `setInView` 提交。改为「挂载即加载」，加载范围从 240px **放宽**到 448px。
+- **第一次往下滚时列表会自己跳一下**：`.qb-item` 上的 `content-visibility: auto` +
+  `contain-intrinsic-size: auto 112px` 是虚拟化之前的遗留（当时 4211 行全挂载，靠它跳过屏外绘制）。
+  虚拟化后屏外本来就没有节点，收益为零；而它会让 `measureElement` 先量到 112px、进视野后再纠正
+  成真实高度（96px 档约 120），触发 `resizeItem` 改写 `scrollTop`。已移除。
+- **滚动时行的悬停底色过渡被连续启动**：行从光标下穿过，几乎每帧都有一行「刚被悬停」，各自启动
+  一次 180ms 的 `background-color` 过渡（paint 属性，不上合成器）。滚动期间 `.qb-body` 带
+  `data-scrolling="true"`（passive 监听 + 140ms 静默摘除，**不走 setState**），CSS 只在滚动时压掉
+  这一条过渡，静止后恢复原样。
+
+### 说明
+
+- **没有改字体加载策略**。此前试过「滚动中不加载」这种节流（0.9.9-24），结果是预览格停在占位态、
+  用户判定界面坏了；本次只调整「什么时候提交渲染」，不碰「什么时候加载字体」，所以不会出现
+  「行已经看见但预览缺字」。
+
 ## [2.8.2] — 2026-11-27
 
 ### 修复

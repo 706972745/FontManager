@@ -7142,11 +7142,18 @@ body.ui-fade-out .app-frame {
   outline: none;
   transition: background-color var(--t-quick) ease-out;
   /**
-   * 屏幕外的行跳过布局与绘制，进入速览时才不会把主线程占住几百毫秒。
-   * contain-intrinsic-size 给基准行高，滚动条才不会跳。
+   * 这里**不再用** `content-visibility: auto` + `contain-intrinsic-size`（2026-11-28 移除）。
+   *
+   * 那条规则是**虚拟化之前**写的（原文：「屏幕外的行跳过布局与绘制，进入速览时才
+   * 不会把主线程占住几百毫秒」）—— 当时 4211 行全部挂载，靠它跳过屏外行的绘制。
+   * 现在虚拟列表只挂视口 + overscan 那 12~19 行，屏外本来就没有节点，收益趋零。
+   *
+   * 反过来它有害：被跳过的元素按 `contain-intrinsic-size` 报尺寸，而虚拟列表的
+   * `measureElement` 拿到的就是 `offsetHeight` —— 首次滚过的行会先报 112px，进视野后
+   * 真实高度（96px 档约 118、展开字重时更高）才经 ResizeObserver 纠正，触发
+   * `resizeItem` → `applyScrollAdjustment` 改写 `scrollTop`，表现为「第一次往下滚时
+   * 列表自己跳一下」。虚拟化已经接管了「只渲染可见部分」，这层 containment 是重复的。
    */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 112px;
 }
 /* 行底发丝线：左右各内缩 24（450 宽），和顶栏表头线对齐 */
 .qb-item::after {
@@ -7169,6 +7176,24 @@ body.ui-fade-out .app-frame {
 }
 .qb-item:focus-visible {
   box-shadow: none;
+}
+/**
+ * 滚动期间压掉行的 hover 背景过渡（速览滚动 P0-③）。
+ *
+ * 为什么：`.qb-item` 的 `transition: background-color var(--t-quick)`（180ms）在滚动时
+ * 会被连续启动 —— 行从光标下穿过，几乎每帧都有一行「刚被悬停」。`background-color`
+ * 是 paint 属性（不上合成器），每启动一次就是一次整行背景重绘，180ms 内约 11 帧。
+ * 静止时这条过渡才有观感意义，滚动中看不出来，所以只在滚动期间压掉。
+ *
+ * 属性由 QuickBar 在 `.qb-body` 上直接写 DOM（passive scroll 监听 + 尾部 140ms 静默），
+ * **不走 setState** —— 那等于每帧一次 React 重渲染；安全性来自「`data-scrolling` 从未出现在
+ * JSX 里」，React 不会去动一个它没写过的属性。选择器权重 (0,3,0) > `.qb-item` 的 (0,1,0)。
+ * 只压这一条：`.qb-anchor` 的 transition 列表里虽然也有 `background-color`，但它的 hover 态
+ * 与静止态**同色**（都是 `--qb-anchor-hover`），滚动穿过时只有 transform / opacity 变化
+ * （走合成器、不重绘），所以不需要压。
+ */
+.qb-body[data-scrolling="true"] .qb-item {
+  transition: none;
 }
 
 /* ── 行首定位锚点：点 → 灰线 → 蓝线，三态共用同一个生长起点（x=26 / 行首 +16）──
