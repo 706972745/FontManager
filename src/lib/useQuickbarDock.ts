@@ -12,7 +12,15 @@ import { useEffect, useRef, useState } from "react";
 import { QUICKBAR_WIDTH, syncQuickbarMinSize, useFontStore } from "../state/fontStore";
 import { matchesHotkey } from "./hotkey";
 import { ipc } from "./ipc";
-import { createSerialQueue, leadNormalized } from "./quickbarAnim";
+import {
+  // 时间轴的两个数住在 lib/quickbarAnim.ts：单测的帧位移护栏必须能直接读到真值，
+  // 抄一份字面量进测试等于没护栏（见那两个常量上的注释）。
+  QUICKBAR_ANIM_LEAD_MS as ANIM_LEAD_MS,
+  QUICKBAR_ANIM_MS as ANIM_MS,
+  createSerialQueue,
+  leadNormalized,
+  standardEase,
+} from "./quickbarAnim";
 import { morphWindow } from "./windowMorph";
 import { motionReduced } from "./motion";
 
@@ -29,8 +37,6 @@ const REVEAL_COOLDOWN_MS = 350;
  * 用户从别的软件里回来时不应该还得先点一下。
  */
 const REVEAL_AFTER_BLUR_MS = 600;
-/** 收起 / 展开的窗口动画时长（毫秒） */
-const ANIM_MS = 200;
 /**
  * 收成细线时「提示条滑出屏幕 / 细线落回画面」的时长（毫秒）。
  *
@@ -514,7 +520,9 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     };
 
     /**
-     * 用 0.2s 缓动把窗口高度（物理像素）推到目标值，宽度保持不变。
+     * 用 `ANIM_MS`(280ms) + `ANIM_LEAD_MS`(45ms) 相位延迟（共 325ms）把窗口高度
+     * （物理像素）推到目标值，宽度保持不变。
+     * 两条轨（窗口 / 内容）跑**同一段** 280ms 的 `standardEase`，只是起跑时刻差 45ms。
      * 细线阶段窗口只是变矮，宽度和水平位置都跟速览展开时一致——
      * 这样「收起来在哪、多宽」用户是有预期的，不会出现线跑到屏幕中间的问题。
      *
@@ -522,8 +530,8 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
      * WebView2 的布局/合成跟不上每帧 SetSize，纹理里的内容高度总比窗口滞后 1~3 帧；
      * 如果内容和窗口一样高，窗口底边就会把纹理裁出一条直边——收起/展开途中
      * 下面两个角看起来就是直角。所以 qb-frame 的高度在这里直接写 DOM（不走 React
-     * 状态，60fps setState 会抖）：收起时按 t+LEAD 取值（内容比窗口先到位）、
-     * 展开时按 t-LEAD（内容比窗口慢一步），两个方向内容都缩在窗口里面，
+     * 状态，60fps setState 会抖）：收起时内容轨领先进度（窗口晚 45ms 才起步）、
+     * 展开时窗口轨领先（内容晚 45ms 才起步），两个方向内容都缩在窗口里面，
      * 底边和窗口底边之间露出透明画布（桌面），圆角由 .qb-frame 自己的
      * border-radius 画（见 app.css / App.tsx 的 --qb-radius）。
      *
@@ -533,7 +541,6 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
      * 所以：页面不可见时直接落到终态；可见时也挂一道 setTimeout 兜底
      * （后台标签页定时器会被钳到 ~1s，正好够用），保证 animating 一定会释放。
      */
-    const ANIM_LEAD_MS = 45;
     const animateHeight = (
       fromH: number,
       toH: number,
@@ -656,25 +663,38 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           finish(true);
           return;
         }
-        const t = Math.min(1, (performance.now() - start) / durationMs);
-        // 收起方向：窗口比内容晚 LEAD_MS 起步、在剩余时间里跑完同一条缓动——
-        // WebView2 的纹理要 1~3 帧才反映出新的内容高度，窗口若与内容同时起步，
-        // 头几帧纹理里还是全高内容、被窗口底边裁出直角。窗口晚这一拍，
-        // 任何一帧的纹理里内容底边都在窗口底边内侧，圆角始终完整。
-        // 展开方向正好相反：窗口边在合成器里也可能滞后于纹理，内容若与窗口同步长高，
-        // 纹理里偏高的旧内容会被裁出直角——所以内容滞后 LEAD_MS 再长。
-        // 两个方向的效果一致：内容底边永远缩在可见窗口底边之内，圆角画在内容自己的边缘上。
+        /*
+         * LEAD 的语义是**相位延迟**，不是「把剩下的时间重新拉满」。
+         * 两条轨跑同一段 durationMs、同一条曲线，只是起跑时刻差 lead —— 所以时间轴的
+         * 总长是 durationMs + lead（280 + 45 = 325ms），t 是这个总进度。
+         *
+         * 旧写法（`(t·d-L)/(d-L)` 重映射，2026-11 之前）几何上是**压缩**：内容被塞进
+         * 155ms 跑完 980px，60fps 下单帧峰值 264.4px（比窗口轨还高 17%），而前 45ms
+         * 内容一动不动（窗口在长，但长出窗口的那截是全透明的：`src/app.css:16` 的
+         * `background: transparent` + `tauri.conf.json` 的 `transparent:true, shadow:false`）。
+         * 用户看到「先停一下，再窜出去」。
+         */
         const lead = Math.min(ANIM_LEAD_MS, Math.max(1, durationMs - 1));
-        // 两个方向都把 LEAD 归一化（算法与单测见 lib/quickbarAnim.ts）：
-        // 早先展开方向写成 `t - L/d`，结尾只到 0.775 再补一帧，收尾会跳约 1.14%（§5 第 14 条）。
-        const norm = leadNormalized(t, durationMs, lead);
-        const tw = shrinking ? norm : t;
-        const eased = 1 - Math.pow(1 - tw, 3);
-        const h = Math.round(fromH + (toH - fromH) * eased);
-        // 内容高度：展开时滞后 LEAD，收起时按原始进度（窗口已延后，天然在前）
-        const tf = shrinking ? t : norm;
-        const easedS = 1 - Math.pow(1 - tf, 3);
-        const hs = Math.round(fromH + (toH - fromH) * easedS);
+        const totalMs = durationMs + lead;
+        const t = Math.min(1, (performance.now() - start) / totalMs);
+        /** 领先轨：真正跑满 durationMs 的那条（elapsed/duration，最后 lead 段封顶 1） */
+        const pLead = Math.min(1, (t * totalMs) / durationMs);
+        /** 滞后轨：晚 lead 起跑、同样跑满 durationMs（算法与单测见 lib/quickbarAnim.ts） */
+        const pLag = leadNormalized(t, durationMs, lead);
+        /*
+         * 哪条轨领先由方向决定 —— 这就是「圆角不变量」的全部内容：
+         * 收起时内容领先（窗口晚一拍）：WebView2 的纹理要 1~3 帧才反映出新的内容高度，
+         *   窗口若与内容同时收缩，头几帧纹理里还是全高内容、被窗口底边裁出直角；
+         * 展开时窗口领先（内容晚一拍）：窗口边在合成器里也可能滞后于纹理，
+         *   内容若与窗口同步长高，纹理里偏高的旧内容会被裁出直角。
+         * 两个方向的效果一致：窗口高度 ≥ 内容高度，内容底边永远缩在可见窗口底边之内，
+         * 圆角画在内容自己的边缘上。`writeFrameBox` 的内缩仍按**内容**高度算，不许动。
+         */
+        const tw = shrinking ? pLag : pLead;
+        const h = Math.round(fromH + (toH - fromH) * standardEase(tw));
+        // 内容轨：与窗口轨正好相反的那条
+        const tf = shrinking ? pLead : pLag;
+        const hs = Math.round(fromH + (toH - fromH) * standardEase(tf));
         if (frameEl) writeFrameBox(hs);
         void win.setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, h))).catch(() => {
           /* 窗口正在被拖动时偶尔会失败，忽略即可 */
