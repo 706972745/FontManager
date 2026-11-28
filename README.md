@@ -528,6 +528,21 @@ FontManager opens its core to automation — **opt-in, local-only, permission-sc
 | **Plugins** | Separate processes that talk JSON over stdin/stdout plus a **restricted token** — a plugin crash can never take the app down. Plugins may ship their own interpreter (`interpreterPath`) or a self-contained `.exe` | [docs/PLUGINS.md](docs/PLUGINS.md) |
 | **MCP server** | Wraps the local API as MCP tools so agents (WorkBuddy, Claude, Cursor…) can drive your library in conversation | [mcp/README.md](mcp/README.md) |
 
+#### Uploading to the Plugin Center — overwrite rules (panel 1.4.3+)
+
+Plugins live at `plugins/<ID>__<your-github-login>/` in the shared registry, and
+"same plugin" is decided by **that path** — not by file contents or version numbers:
+
+- **Re-uploading your own ID overwrites it**: the old directory is removed first, then the
+  new files are written — files that disappeared in the newer version don't linger.
+- **Same ID from a different author is a different plugin** (`FM-X__alice` vs `FM-X__bob`):
+  neither can touch the other, and the Center will list both.
+- Re-uploading **byte-identical** content is rejected by GitHub (an empty PR); the panel
+  tells you "identical to the published version — nothing to update".
+
+Full rules incl. the `FM-XXX-XXX` ID gate and author-ownership checks:
+[docs/PLUGINS.md](docs/PLUGINS.md).
+
 #### Ports, listeners and outbound connections
 
 | Listener / connection | Bind | Port | Lifetime | Auth |
@@ -1443,6 +1458,19 @@ FontManager 把核心能力开放给自动化——**默认关闭、仅限本机
 | **本地 HTTP API** | 只监听 `127.0.0.1` 的 REST API：查字体、启停、快照、整理数据。端口可设、令牌可重置、每条路由都有权限检查 | — |
 | **插件** | 独立进程，通过 stdin/stdout 的 JSON + **受限令牌**通信——插件崩溃绝不会带走主程序。插件可以自带解释器（`interpreterPath`），也可以直接是自包含的 `.exe` | [docs/PLUGINS.md](docs/PLUGINS.md) |
 | **MCP 服务器** | 把本地 API 包装成 MCP 工具，让 Agent（WorkBuddy、Claude、Cursor…）在对话里驱动你的字体库 | [mcp/README.md](mcp/README.md) |
+
+#### 上传到插件中心 —— 覆盖规则（面板 1.4.3 起）
+
+插件存放在共用 registry 的 `plugins/<插件ID>__<你的GitHub登录名>/`，「是不是同一个插件」
+按**这条路径**判定 —— 不看文件内容，也不看版本号：
+
+- **重新上传自己的 ID 就是覆盖**：先把旧目录整棵删掉再写入新文件，新版本里删掉的文件
+  不会残留在仓库里；
+- **同 ID 不同作者是两个独立插件**（`FM-X__alice` 与 `FM-X__bob`），互不影响、互删不了，
+  中心里会两份都列出；
+- 上传**逐字节相同**的内容会被 GitHub 拒绝（空 PR），面板会提示「与线上版本一致，无需上传」。
+
+完整规则（含 `FM-XXX-XXX` ID 闸门与作者归属校验）见 [docs/PLUGINS.md](docs/PLUGINS.md)。
 
 #### 端口、监听与出站
 

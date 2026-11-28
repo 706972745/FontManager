@@ -522,9 +522,48 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
   //    fork 落后也不影响 PR 的可读性 —— GitHub 的三点 diff 以 merge-base 算，
   //    上游新增的文件不会出现在「Files changed」里。
   onPhase("commit");
+
+  /**
+   * 覆盖更新：同名目录已存在时，先把这个子树整棵删掉，再铺新文件（2026-11-28）。
+   *
+   * `base_tree` 是**增量**语义 —— 它只把新 entries 并进去，不清理旧目录里多出来的文件。
+   * 插件从 v1 到 v2 如果删掉了某个文件，直接上传的结果是「同名文件被盖掉 + 旧文件
+   * 继续留在仓库里」，装到机器上就是新旧混合、清单与目录对不上。
+   *
+   * 探测用 **fork 的 `base.sha`**（不是上游）：`base_tree` 就是 fork 的树，只有 fork 里
+   * 存在的目录才需要在同一棵树上删；fork 落后时，上游那些文件本来就不在这份树里。
+   *
+   * 分两次请求而不是塞进同一个 `tree` 数组：同一请求里「删目录 + 加同路径文件」的
+   * 处理顺序 GitHub 没有承诺。
+   */
+  const existing: string[] = [];
+  for (const d of dirs) {
+    const found = await ghOrNull<unknown>(
+      token,
+      `/repos/${login}/${REPO}/contents/plugins/${encodeURIComponent(d)}?ref=${base.sha}`,
+    );
+    if (found) existing.push(d);
+  }
+  let baseTree = base.tree;
+  if (existing.length > 0) {
+    const cleared = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/trees`, {
+      method: "POST",
+      body: JSON.stringify({
+        base_tree: base.tree,
+        tree: existing.map((d) => ({
+          path: `plugins/${d}`,
+          mode: "040000",
+          type: "tree",
+          sha: null,
+        })),
+      }),
+    });
+    baseTree = cleared.sha;
+  }
+
   const tree = await gh<{ sha: string }>(token, `/repos/${login}/${REPO}/git/trees`, {
     method: "POST",
-    body: JSON.stringify({ base_tree: base.tree, tree: entries }),
+    body: JSON.stringify({ base_tree: baseTree, tree: entries }),
   });
 
   const title =
@@ -557,15 +596,26 @@ export async function uploadPlugins(args: UploadArgs): Promise<UploadResult> {
 
   // ⑧ 开 PR（对上游）：多个插件仍是**一个** PR，正文里逐个列清
   onPhase("pr");
-  const pr = await gh<{ html_url: string; number: number }>(token, `${UPSTREAM_API}/pulls`, {
-    method: "POST",
-    body: JSON.stringify({
-      title,
-      head: `${login}:${branch}`,
-      base: "main",
-      body: buildPrBody(items, login),
-    }),
-  });
+  let pr: { html_url: string; number: number };
+  try {
+    pr = await gh<{ html_url: string; number: number }>(token, `${UPSTREAM_API}/pulls`, {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        head: `${login}:${branch}`,
+        base: "main",
+        body: buildPrBody(items, login),
+      }),
+    });
+  } catch (e) {
+    // 覆盖上传时，如果新内容与线上**逐字节相同**，删掉再放回去的 commit 没有任何
+    // 变更，GitHub 会拒绝建 PR（422 "No commits between ..."）。这不是故障，
+    // 翻成人话让用户知道「内容一致、无需重新上传」。
+    if (e instanceof GhError && e.status === 422 && /no commits/i.test(e.apiMessage)) {
+      throw new UploadMessage("uploadErrNoChange");
+    }
+    throw e;
+  }
 
   return { prUrl: pr.html_url, prNumber: pr.number, branch };
 }
