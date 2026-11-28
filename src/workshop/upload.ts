@@ -421,6 +421,28 @@ async function forkBase(
     /* 见上：不只为了同步就让上传失败 */
   }
 
+  // ③b 官方同步没追上（fork 分叉 409 / 令牌缺 workflow scope 422）时，
+  //    **强制把 fork main 对齐到上游最新**（2026-11-28 用户实测：fork 落后时上传
+  //    同一个插件，三方合并撞出 plugin.json 冲突，PR 直接挂死在「等待冲突解决」）。
+  //
+  //    为什么敢 force：fork 只是用户账号下的**镜像**，用户从不在 fork 上开发；
+  //    它上面的「独有提交」全部来自旧版面板的错误 force 留下的残渣 —— 丢掉它们
+  //    正是消除冲突的前提。fork main 对齐上游后，上传分支的 merge-base 就是
+  //    上游最新，三方合并退化为快进，不再有 both-modified 冲突。
+  //
+  //    失败面：OAuth 令牌缺 workflow scope 时，若上游与 fork 的 .github/workflows
+  //    有差异，GitHub 会拒（422）。捕住后按旧行为用 fork 旧树继续 —— PR 可能冲突，
+  //    但那是「同步被 GitHub 政策拦住」，不能静默吞掉假装成功。
+  try {
+    await gh(token, `/repos/${login}/${REPO}/git/refs/heads/main`, {
+      method: "PATCH",
+      body: JSON.stringify({ sha: upSha, force: true }),
+    });
+    return { sha: upSha, tree: upTree, current: true };
+  } catch (e) {
+    if (!(e instanceof GhError && [403, 404, 409, 422].includes(e.status))) throw e;
+  }
+
   const sha = ref?.object.sha ?? upSha;
   const commit = await gh<{ tree: { sha: string } }>(
     token,
