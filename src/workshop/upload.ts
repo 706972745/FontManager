@@ -443,16 +443,12 @@ async function forkBase(
     if (!(e instanceof GhError && [403, 404, 409, 422].includes(e.status))) throw e;
   }
 
-  // ③c PATCH fork main 会被 workflow 政策拦（实测 422：OAuth 令牌缺 workflow scope，
-  //     只要 ref 更新让 .github/workflows 出现变化就被拒）—— 但 fork 与上游**共享对象库**
-  //     （fork 空时就是拿上游 sha 建的 main，见 ②；实测 fork 上下文解析上游 commit/tree
-  //     均为 200），所以直接把上传分支挂在上游最新 commit 上：
-  //     commit 的 parent = 上游 main → merge-base 即为上游最新 → 三方合并退化为快进，
-  //     「both added / both modified」冲突的根源消失（2026-11-28 实测修复）。
-  //
-  //     旧实现在这里回退 fork 旧树 —— 那正是 PR 冲突挂死的来源，不能再走。
-  //     fork main 本身没动（PATCH 被拒就保持原样），脏的是它，但不再影响上传。
-  return { sha: upSha, tree: upTree, current: true };
+  const sha = ref?.object.sha ?? upSha;
+  const commit = await gh<{ tree: { sha: string } }>(
+    token,
+    `/repos/${login}/${REPO}/git/commits/${sha}`,
+  );
+  return { sha, tree: commit.tree.sha, current: sha === upSha };
 }
 
 /**
