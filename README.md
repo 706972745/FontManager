@@ -19,7 +19,7 @@ and MCP when you want your tools to join in.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.8.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.8.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows-gray?style=flat-square)](#-platform-notes)
 [![Languages](https://img.shields.io/badge/Languages-9-gray?style=flat-square)](#-translations)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -45,6 +45,8 @@ and MCP when you want your tools to join in.
 ---
 
 ## 🆕 What's new
+
+**2.8.6 — The quick panel's expand/collapse animation is rebuilt: it no longer resizes the OS window on every frame (the one thing a 165Hz display could never keep up with), so it stops stuttering and runs 45% faster — 180ms instead of 325ms; expansion now starts from 0px, and the one-frame "flash fully open" on expand is gone**
 
 **2.8.3 — The quick panel scrolls smoothly: the list no longer commits synchronously while scrolling, rows only re-render when their own data changes, and the first scroll down no longer nudges the list**
 
@@ -1029,7 +1031,7 @@ The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 <br>
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-gray?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.8.5-gray?style=flat-square)](../../releases)
+[![Version](https://img.shields.io/badge/Version-2.8.6-gray?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/平台-Windows-gray?style=flat-square)](#-平台说明)
 [![Languages](https://img.shields.io/badge/界面语言-9种-gray?style=flat-square)](#-翻译)
 [![Built with Tauri](https://img.shields.io/badge/构建于-Tauri%20v2-gray?style=flat-square)](https://tauri.app)
@@ -1055,6 +1057,8 @@ The copyright notice is kept in [LICENSE](LICENSE), as the GPL requires.
 ---
 
 ## 🆕 最近更新
+
+**2.8.6 —— 速览展开 / 收起动画重做：不再每帧改系统窗口尺寸（165Hz 屏上唯一跟不上的那件事），所以不再一卡一卡，而且快了 45%（325ms → 180ms）；展开从 0px 起，展开时「闪一下全展开」也修掉了**
 
 **2.8.3 —— 速览界面滚动更顺：列表滚动时不再同步提交渲染，一行只在自身数据变化时重绘；第一次往下滚时列表不再轻微跳位**
 

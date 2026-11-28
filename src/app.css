@@ -6466,7 +6466,9 @@ body.is-dragging textarea {
    * 基础规则的 height 是 `calc(100% - 2×内缩)`（= 28px），2.7.5 加 3px 阴影边距时
    * 只撤了 margin / max-*，漏了 height —— 结果 34px 的提示条窗口里外壳只有 28px，
    * `12px 抓手 + 20px 提示行` 放不进 26px 的内盒，提示行被 flex 压扁、底部永远空 6px。
-   * （bar 态由 useQuickbarDock 写的行内 height=12 覆盖，两者一致。）
+   * （bar 态同样走这里的 `height: 100%`：2026-11-28 晚起 `QuickBar.tsx` 的 `frameStyle`
+   * 已不再给 bar 态写行内 height。**不要再把它加回来** —— React 在展开时会把这个行内值
+   * 清成 `''`，那一帧外壳回落到满高窗口，就是「展开闪一下」那个 bug。）
    */
   height: 100%;
   max-width: none;

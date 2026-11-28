@@ -13,12 +13,10 @@ import { QUICKBAR_WIDTH, syncQuickbarMinSize, useFontStore } from "../state/font
 import { matchesHotkey } from "./hotkey";
 import { ipc } from "./ipc";
 import {
-  // 时间轴的两个数住在 lib/quickbarAnim.ts：单测的帧位移护栏必须能直接读到真值，
-  // 抄一份字面量进测试等于没护栏（见那两个常量上的注释）。
-  QUICKBAR_ANIM_LEAD_MS as ANIM_LEAD_MS,
+  // 时长住在 lib/quickbarAnim.ts：单测的帧位移护栏必须能直接读到真值，
+  // 抄一份字面量进测试等于没护栏（见那个常量上的注释）。
   QUICKBAR_ANIM_MS as ANIM_MS,
   createSerialQueue,
-  leadNormalized,
   standardEase,
 } from "./quickbarAnim";
 import { morphWindow } from "./windowMorph";
@@ -520,20 +518,14 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
     };
 
     /**
-     * 用 `ANIM_MS`(280ms) + `ANIM_LEAD_MS`(45ms) 相位延迟（共 325ms）把窗口高度
-     * （物理像素）推到目标值，宽度保持不变。
-     * 两条轨（窗口 / 内容）跑**同一段** 280ms 的 `standardEase`，只是起跑时刻差 45ms。
-     * 细线阶段窗口只是变矮，宽度和水平位置都跟速览展开时一致——
-     * 这样「收起来在哪、多宽」用户是有预期的，不会出现线跑到屏幕中间的问题。
+     * 把外壳（`.qb-frame`）的高度从 `fromH`（物理像素）推到 `toH`，宽度与水平位置不变。
      *
-     * 内容底边必须始终落在窗口底边**内侧**（圆角修复的关键）：
-     * WebView2 的布局/合成跟不上每帧 SetSize，纹理里的内容高度总比窗口滞后 1~3 帧；
-     * 如果内容和窗口一样高，窗口底边就会把纹理裁出一条直边——收起/展开途中
-     * 下面两个角看起来就是直角。所以 qb-frame 的高度在这里直接写 DOM（不走 React
-     * 状态，60fps setState 会抖）：收起时内容轨领先进度（窗口晚 45ms 才起步）、
-     * 展开时窗口轨领先（内容晚 45ms 才起步），两个方向内容都缩在窗口里面，
-     * 底边和窗口底边之间露出透明画布（桌面），圆角由 .qb-frame 自己的
-     * border-radius 画（见 app.css / App.tsx 的 --qb-radius）。
+     * **2026-11-28 晚起：窗口尺寸不参与这段动画**（每方向只改一次，见函数内注释）。
+     * 逐帧只写 `.qb-frame` 的 `height` / `--qb-inset`（直接写 DOM，不走 React 状态：
+     * 60fps 的 setState 会抖）。外壳自带 `overflow:hidden` + `border-radius` + 实底，
+     * 内容由 `.qb-pin` 钉在满高，所以「外壳变高」看起来就是「面板在长」，
+     * 底边圆角始终由外壳自己画（见 app.css / App.tsx 的 --qb-radius）。
+     * 窗口恒 ≥ 外壳 ⇒ 内容底边永远在可见区域内，不会再出现直角裁切。
      *
      * 卡死防护（「最小化再恢复后窗口卡住不动」的根因）：窗口最小化 / 被完全遮挡时
      * WebView2 会停发 rAF，动画永远走不到 done，animating 就一直是 true——
@@ -625,29 +617,56 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
       animating = true;
       const shrinking = toH < fromH;
       /*
-       * 起表时刻 = **第一个 rAF 回调的时间戳**，不是这里的调用时刻（0 表示「还没起表」）。
+       * ═══ 这一版的核心：动画期间**窗口尺寸不动** ═══
        *
-       * 为什么不能用 `performance.now()`：调用方（`expand()`）在进来之前还要
-       * `await win.scaleFactor()`（一次 IPC）并 `setContentHeight(满高)`（一次 React 提交，
-       * 把整个面板 + 虚拟列表挂进 12px / 34px 的窗口）。第一帧 rAF 要等这些跑完才轮到，
-       * 实测首帧延迟 30~50ms。用墙钟起表的话，第一眼看到的面板进度已经是 t≈0.12，
-       * 按 325ms 的总时长算出已经长出去 ~29px —— 用户看到的就是「按下去、停一下、
-       * 已经出来一截」。惰性起表把首帧钉在 0 进度，代价是整体晚一帧（~16ms）。
+       * 面板（`.qb-frame`）本身就是一个裁切框：`overflow: hidden` + `border-radius` +
+       * 实底（`src/app.css` 的 `.qb-frame` 规则），内容由 `.qb-pin` 钉在满高
+       * （`QuickBar.tsx` 的 `pinStyle`）。所以「面板在长大」在视觉上就是「裁切框在变高」。
+       * 而窗口比它大出来的那截是**全透明**的（`html/body/#root { background: transparent }`
+       * + `tauri.conf.json` 的 `transparent:true, shadow:false`），根本看不见。
        *
-       * 用 rAF 的时间戳参数而不是回调里再调一次 `performance.now()`：后者会把
-       * 「回调被调度到执行」的延迟也算进第一帧，起表又会偏早。两者同一时基（DOMHighResTimeStamp）。
+       * 为什么必须这么改（不是审美）：本机面板 2560×1600 **@165Hz**，每帧预算只有 6.06ms。
+       * 旧实现每帧要发一次 `win.setSize()` IPC，宿主线程还要 `SetWindowPos` 并让 WebView2
+       * 重建呈现目标 —— 单次成本就吃掉整帧，于是一路掉帧、还掉得不均匀，观感「一卡一卡」。
+       * 曲线/时长怎么调都治不好，因为病根不在曲线。同一课仓库自己写过：
+       * `src-tauri/src/window_morph.rs:3-6`（切进速览的形变因此搬到了原生线程）。
        *
-       * 起点那一帧本来就已经由下面的 `writeFrameBox(fromH)` 同步写过，所以惰性起表
-       * 不会让首帧露出未初始化的外壳（12px 窗口里只剩 6px、抓手线被切一截那个老坑）。
+       * 于是两个方向各只改一次窗口尺寸：
+       *   展开：**起表之前**先 `setSize(toH)`（窗口向下长、全透明，看不见），
+       *         就位后才允许推进进度 —— 否则前几帧裁切框会长到窗口外面被裁掉，
+       *         就是老坑（12px 窗口里外壳只剩 6px、抓手被切）的镜像版本。
+       *   收起：窗口保持原高度跑完整段，**末帧之后**再 `setSize(toH)`（顺序说明见 step 末尾）。
+       *
+       * 起表时刻仍然是**第一个就位后的 rAF 时间戳**，不是调用时刻（惰性起表）：
+       * 调用方进来之前还要 `await win.scaleFactor()` 与一次 React 提交（把面板 + 虚拟列表
+       * 挂进 12px 窗口），首帧实测晚到 30~50ms；按墙钟起表的话第一眼就已经长出去一截。
        */
       let start = 0;
+      /** 窗口是否已就位：收起方向窗口本来就是大的，直接放行 */
+      let windowReady = shrinking;
       let settled = false;
       /*
        * 起点这一帧先写死再排 rAF：stopAnim() 刚把行内值摘掉，rAF 要等下一帧才跑，
        * 中间若发生一次布局/绘制，外壳会按基础规则的 3px 内缩去排 —— 12px 窗口里
-       * 只剩 6px、抓手线被切掉一截。展开的起点正是 12/34px，这一帧最显眼。
+       * 只剩 6px、抓手线被切掉一截。展开的起点现在是 **0**（0 → 满高），
+       * 但收起方向仍然从满高起步，两个方向都要在这一帧把外壳钉准。
        */
       writeFrameBox(fromH);
+      /*
+       * 展开方向：窗口先一次性到终点高度，就位后才开闸。
+       * 失败也要开闸（拖动 / 最小化会让 setSize 被拒），否则动画会卡在门口等到
+       * `finishTimer` 兜底 —— 那一下是「按了 1 秒没反应」。
+       */
+      if (!shrinking) {
+        void win
+          .setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, toH)))
+          .catch(() => {
+            /* 拖动 / 最小化中会失败，恢复后由 healGeometry 自愈 */
+          })
+          .then(() => {
+            windowReady = true;
+          });
+      }
       const finish = (writeFinal: boolean) => {
         if (settled) return;
         settled = true;
@@ -679,46 +698,43 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
           finish(true);
           return;
         }
+        // 窗口还没就位（展开方向）：这一帧不推进进度，等下一次 rAF 再看
+        if (!windowReady) {
+          raf = requestAnimationFrame(step);
+          return;
+        }
         // 第一帧才起表：首帧进度恒为 0（见上面 `let start = 0` 那段注释）
         if (!start) start = ts;
         /*
-         * LEAD 的语义是**相位延迟**，不是「把剩下的时间重新拉满」。
-         * 两条轨跑同一段 durationMs、同一条曲线，只是起跑时刻差 lead —— 所以时间轴的
-         * 总长是 durationMs + lead（280 + 45 = 325ms），t 是这个总进度。
+         * 单轨时间轴。2026-11-28 晚起**没有 LEAD 了**，原因见本函数开头那段
+         * 「窗口尺寸在动画期间不动」的说明：LEAD 存在的唯一理由是窗口与内容两条轨
+         * 不同步，而窗口现在完全不参与逐帧动画 —— 相位差从结构上消失，
+         * 剩下的只有一条轨：裁切框（`.qb-frame`）的高度。
          *
-         * 旧写法（`(t·d-L)/(d-L)` 重映射，2026-11 之前）几何上是**压缩**：内容被塞进
-         * 155ms 跑完 980px，60fps 下单帧峰值 264.4px（比窗口轨还高 17%），而前 45ms
-         * 内容一动不动（窗口在长，但长出窗口的那截是全透明的：`src/app.css:16` 的
-         * `background: transparent` + `tauri.conf.json` 的 `transparent:true, shadow:false`）。
-         * 用户看到「先停一下，再窜出去」。
+         * 圆角不变量因此从「靠时序保证」变成「结构上恒成立」：
+         * 展开方向窗口在起表前就已经是终点高度，收起方向窗口要到末帧之后才收缩，
+         * 任何一帧都满足「窗口高度 ≥ 裁切框高度」，底边永远落在可见区域内。
          */
-        const lead = Math.min(ANIM_LEAD_MS, Math.max(1, durationMs - 1));
-        const totalMs = durationMs + lead;
-        const t = Math.min(1, (ts - start) / totalMs);
-        /** 领先轨：真正跑满 durationMs 的那条（elapsed/duration，最后 lead 段封顶 1） */
-        const pLead = Math.min(1, (t * totalMs) / durationMs);
-        /** 滞后轨：晚 lead 起跑、同样跑满 durationMs（算法与单测见 lib/quickbarAnim.ts） */
-        const pLag = leadNormalized(t, durationMs, lead);
-        /*
-         * 哪条轨领先由方向决定 —— 这就是「圆角不变量」的全部内容：
-         * 收起时内容领先（窗口晚一拍）：WebView2 的纹理要 1~3 帧才反映出新的内容高度，
-         *   窗口若与内容同时收缩，头几帧纹理里还是全高内容、被窗口底边裁出直角；
-         * 展开时窗口领先（内容晚一拍）：窗口边在合成器里也可能滞后于纹理，
-         *   内容若与窗口同步长高，纹理里偏高的旧内容会被裁出直角。
-         * 两个方向的效果一致：窗口高度 ≥ 内容高度，内容底边永远缩在可见窗口底边之内，
-         * 圆角画在内容自己的边缘上。`writeFrameBox` 的内缩仍按**内容**高度算，不许动。
-         */
-        const tw = shrinking ? pLag : pLead;
-        const h = Math.round(fromH + (toH - fromH) * standardEase(tw));
-        // 内容轨：与窗口轨正好相反的那条
-        const tf = shrinking ? pLead : pLag;
-        const hs = Math.round(fromH + (toH - fromH) * standardEase(tf));
-        if (frameEl) writeFrameBox(hs);
-        void win.setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, h))).catch(() => {
-          /* 窗口正在被拖动时偶尔会失败，忽略即可 */
-        });
+        const t = Math.min(1, (ts - start) / durationMs);
+        const h = Math.round(fromH + (toH - fromH) * standardEase(t));
+        if (frameEl) writeFrameBox(h);
         if (t < 1) {
           raf = requestAnimationFrame(step);
+          return;
+        }
+        if (shrinking) {
+          /*
+           * 收起末帧：**先把窗口缩到位，再摘行内高度**。
+           * 顺序反了会出事：`finish()` 里的 `clearFrameDom` 摘掉行内 height 后，
+           * 外壳按 CSS 的 `height: calc(100% - inset*2)` 取当前窗口高度 —— 窗口若还停在
+           * 展开高度，外壳会瞬间回弹成满高（用户看到「收完了又弹回来」）。
+           */
+          void win
+            .setSize(new PhysicalSize(Math.max(1, widthPhys), Math.max(1, toH)))
+            .catch(() => {
+              /* 拖动 / 最小化中会失败，恢复后由 healGeometry 自愈 */
+            })
+            .then(() => finish(false));
           return;
         }
         finish(false);
@@ -921,8 +937,13 @@ export function useQuickbarDock(enabled: boolean): QuickbarDockState {
         const scale = await win.scaleFactor();
         const widthPhys = restoreSize?.width ?? Math.round(QUICKBAR_WIDTH * scale);
         const toH = restoreSize?.height ?? Math.round(1000 * scale);
-        const wasBar = phaseRef.current === "bar";
-        const fromH = wasBar ? Math.round(DOCK_HEIGHT_BAR * scale) : Math.round(DOCK_HEIGHT_HINT * scale);
+        /*
+         * 展开从 **0px** 起（用户 2026-11-28 明确要求）：裁切框从 0 长到满高，
+         * 细线 / 提示条在第一帧就被 0 高度取代 —— 不再有「先长回一条线、再长成面板」
+         * 的中转感。窗口在起表前已一次性撑到满高（见 animateHeight），
+         * 所以从 0 起不会露白：那截窗口是全透明的。
+         */
+        const fromH = 0;
         if (!alive || !dockedRef.current) return;
         void ipc.setDockSensor(false).catch(() => {});
         restoreWindowHints();

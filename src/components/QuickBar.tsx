@@ -510,7 +510,13 @@ export function QuickBar() {
    */
 
   // 拖到屏幕顶部时整个速览窗口收起成一条（contentHeight 用于动画期间钉住内容高度）
-  const { docked, contentHeight, phase, bar } = useQuickbarDock(autoHide);
+  //
+  // **不再解构 `bar`**（2026-11-28 晚）：收起态的窗口尺寸现在只由 CSS 决定
+  // （`.qb-frame[data-dock-phase="hint"|"bar"]` 的 `height:100%` / `margin:0`，
+  // 见下面 `frameStyle` 的注释）。留着这个变量既不读也不用，`tsc` 的
+  // `noUnusedLocals` 会直接报 TS6133 把 `pnpm build` 打断。
+  // hook 的返回值本身没变，仍是 `{ docked, contentHeight, phase, bar }`。
+  const { docked, contentHeight, phase } = useQuickbarDock(autoHide);
 
   /**
    * 内容可见性门控。
@@ -883,17 +889,44 @@ export function QuickBar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [setQuickbar, query]);
 
-  // 窗口形变期间把 qb-frame 钉在目标尺寸；收成细线时钉在细线尺寸。
-  // 收起/展开动画期间 qb-frame 的高度不再走 React——由 useQuickbarDock 的
-  // animateHeight 每帧直接写 DOM（带 45ms 前导量，保证内容底边始终落在窗口
-  // 底边内侧，圆角画在内容自己的边缘上）；contentHeight 只负责把内层
-  // .qb-pin 钉在原高度，让内容不被压缩。
+  /*
+   * 窗口形变期间把 qb-frame 钉在目标尺寸；**收起态（bar）不再由 React 写 width/height**。
+   *
+   * 为什么删掉 bar 分支（2026-11-28 晚，用户报「展开时闪一下：全部展开 → 收起 → 再展开」）：
+   * 只要 React 曾经把 `height` 写进过 style，下一次 `frameStyle` 变成 undefined 时，
+   * React 的 style diff 就会把它**清成 `''`**（不是「保持不动」）。而 expand() 里
+   * `setBar(null)` 触发的这次提交，落在动画已经开始之后（挂载面板 + 虚拟列表要 30~50ms，
+   * 165Hz 下那已经是第 5~8 帧）：行内高度被清掉的那一瞬间，外壳回落到本文件的 CSS 兜底
+   * `height: calc(100% - inset*2)`，也就是**已经撑到满高的窗口** —— 整整一帧画出完整的
+   * 面板，下一帧又被 animateHeight 写回小高度。观感就是「闪一下全展开、又收起、再展开」。
+   *
+   * 删掉之后两个值其实一模一样：收起态窗口宽度就是 bar 宽度，高度由 CSS 的 bar 规则
+   * 直接写死（见下），不是靠 `--qb-inset` 兜底算出来的；但属性不再由 React 持有，
+   * 也就没人会去清它。
+   * `morph` 分支必须保留：形变期间窗口 ≠ 内容，只能由 React 钉住。
+   *
+   * 等价性的**依据**（不是「估计差不多」，两条都在 `src/app.css`）：
+   * - 收起态（`data-dock-phase` 为 `hint` / `bar`）有一条专用规则 `:6461-6477`
+   *   显式写死 `margin: 0; height: 100%; max-width: none; max-height: none`
+   *   —— 外壳高度就是窗口客户区高度，压根不经过 `--qb-inset` 的算式。
+   *   收起落点 `to = Math.round(DOCK_HEIGHT_BAR * scale)`（`useQuickbarDock.ts:790`）
+   *   物理像素，除以 scale 后 ≈ `DOCK_HEIGHT_BAR`（12）：scale = 1.25 / 1.5 时精确相等，
+   *   1.3 这类会让 `12×scale` 落在 .5 上的 DPR 则会差几分之一像素 —— 而 bar 阶段整块
+   *   背景是 transparent（`app.css:6439-6440`），那点差值落在透明区里，肉眼无差。
+   * - 展开态基础规则 `:6290-6293` 的兜底量 `--frame-inset` 本身就是 **0px**
+   *   （`:44`），所以 `calc(100% - 0px*2) === 100%`：`--qb-inset` 有没有、是不是 0
+   *   都不影响结果。
+   * - 宽度更是全程没人写过（只有 `max-width`），块级 flex 容器天然等于窗口宽。
+   *   以前行内那个 `Math.round(widthPhys / scale)` **并不是**在每个 DPR 下都偏 ——
+   *   `QUICKBAR_WIDTH = 472`（`fontStore.ts:827`）在 1.5 下是 708 → 708/1.5 = 472，
+   *   精确。只有两种情形会有 ≤0.5px 的偏差：①`targetWidth` 被 `availWidth`
+   *   夹住（`fontStore.ts:1001-1005`，本机 `2560/1.5 = 1706.67` 本身非整数）；
+   *   ②用户手动拖过窗口宽、`restoreSize.width` 是奇数物理像素。偏差方向随机
+   *   （宽了右侧被窗口裁掉、窄了右侧透一条 1px 桌面细线），新写法两种都消除。
+   */
   const frameStyle: CSSProperties | undefined = morph
     ? { width: `${morph.width}px`, height: `${morph.height}px` }
-    : bar != null
-      // 收成细线时窗口是一小段居中的短线，不再占满整个速览宽度
-      ? { width: `${bar.width}px`, height: `${bar.height}px` }
-      : undefined;
+    : undefined;
   const pinStyle: CSSProperties | undefined =
     contentHeight != null ? { height: `${contentHeight}px` } : undefined;
 

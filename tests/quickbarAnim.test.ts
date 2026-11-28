@@ -249,40 +249,40 @@ function peakStep(frames: Frame[]): Frame {
   return { win, content };
 }
 
-test("帧位移护栏：Δ=980 / 60fps 下两条轨单帧峰值都 ≤ 170 逻辑 px", () => {
-  // ⚠️ 时长与 LEAD **必须从 src import**，不许在这里写 280 / 45：
-  // 抄字面量的话，这道护栏量的是「抄进来的那个数」而不是产品在用的那个 ——
-  // 把 `QUICKBAR_ANIM_MS` 改回 200，测试照样全绿，而产品会退化成内容轨 276.2 px/帧
-  // （比改前 264.4 还差）。这正是本卡 §1 反复强调「曲线与时长必须成对」的机械保险。
+test("帧位移护栏：Δ=980 / 165Hz 下单轨峰值 ≤ 110px，且从 0 起、精确落点", () => {
+  /*
+   * 口径（2026-11-28 晚改）：动画期间窗口尺寸不动，只剩**一条轨**（裁切框高度），
+   * 所以这里量的是单轨的单帧峰值。刷新率取本机实测的 **165Hz**（6.06ms/帧）——
+   * 上一版按 60fps 写，和用户真实环境差 2.7 倍，护栏量的不是用户看到的东西。
+   *
+   * 时长仍然必须从 src import（见 `QUICKBAR_ANIM_MS` 的注释）：抄字面量的话，
+   * 把产品时长改短到 120ms 测试照样全绿，而单帧峰值会涨到 ≈135px。
+   */
   const D = QUICKBAR_ANIM_MS;
-  const L = QUICKBAR_ANIM_LEAD_MS;
-  const totalMs = D + L; // 与 animateHeight 的 step 里同一行
-  for (const shrinking of [false, true]) {
-    const label = shrinking ? "收起" : "展开";
-    const frames = frameHeights({
-      durationMs: D,
-      leadMs: L,
-      totalMs,
-      shrinking,
-      ease: standardEase,
-      lagOf: (t) => leadNormalized(t, D, L),
-    });
-    const peak = peakStep(frames);
-    // 实测窗口轨 153.7 / 内容轨 155.4（60fps 逐帧差分）；
-    // 任务卡 §1 的 159.5 是「峰值斜率 2.7347 × Δ × 16.67/280」的上界估计，
-    // 两者差 3.6%（窗口轨）/ 2.6%（内容轨），且都在安全方向。
-    assert.ok(peak.win <= 170, `${label}窗口轨单帧峰值 ${peak.win.toFixed(1)}px`);
-    assert.ok(peak.content <= 170, `${label}内容轨单帧峰值 ${peak.content.toFixed(1)}px`);
-    // 圆角不变量：任何一帧窗口都不比内容矮（否则窗口底边会裁出直角）
-    for (const frame of frames) {
-      assert.ok(frame.win >= frame.content - 1e-9);
+  const peakAt = (hz: number) => {
+    const frameMs = 1000 / hz;
+    const heights: number[] = [];
+    for (let k = 0; ; k++) {
+      const elapsed = k * frameMs;
+      const t = Math.min(1, elapsed / D);
+      heights.push(DELTA_PX * standardEase(t));
+      if (elapsed >= D) break;
     }
-    // 最后一帧必须真的到位（否则收尾会补一帧，看起来跳一下）
-    const landing = shrinking ? 0 : DELTA_PX;
-    const last = frames[frames.length - 1];
-    assert.ok(Math.abs(last.win - landing) < 1e-9, `${label}窗口落点 ${last.win}`);
-    assert.ok(Math.abs(last.content - landing) < 1e-9, `${label}内容落点 ${last.content}`);
-  }
+    let peak = 0;
+    for (let i = 1; i < heights.length; i++) peak = Math.max(peak, heights[i] - heights[i - 1]);
+    return { heights, peak };
+  };
+
+  const { heights, peak } = peakAt(165);
+  // 起点必须是 0：用户 2026-11-28 要求「展开从 0px 开始」，写死 12/34 会退回「先冒出一小截」
+  assert.equal(heights[0], 0);
+  // 落点必须精确到手（收尾补一帧 = 看起来跳一下）
+  assert.ok(Math.abs(heights[heights.length - 1] - DELTA_PX) < 1e-9);
+  // 180ms + standard 在 165Hz 下实测 ≈ 89.9px（解析上界 980 × 6.06/180 × 2.7347 ≈ 90.2）
+  assert.ok(peak <= 110, `165Hz 单帧峰值 ${peak.toFixed(1)}px`);
+
+  // 同一段时长换到 60Hz 屏：更粗，但不许粗过当初被判「顿」的 225px
+  assert.ok(peakAt(60).peak <= 260, `60Hz 单帧峰值 ${peakAt(60).peak.toFixed(1)}px`);
 
   /*
    * 反证：把同一口径套回旧参数（200ms + `1-(1-t)^3` + 把 LEAD 当压缩用）。
